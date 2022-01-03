@@ -1,11 +1,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "wasm3_libc.h"
 
 #define WASM_IMPORT(MODULE,NAME) __attribute__((import_module(MODULE))) __attribute__((import_name(NAME)))
 
 WASM_IMPORT("*", "sum") int sum(int, int);
 WASM_IMPORT("*", "ext_memcpy") int ext_memcpy(void*, const void*, size_t);
+WASM_IMPORT("*", "sleep") void sleep(uint32_t);
 
 #define WASM_EXPORT __attribute__((used)) __attribute__((visibility ("default")))
 
@@ -26,9 +28,13 @@ int64_t WASM_EXPORT test_memcpy(void)
     return x;
 }
 
-int WASM_EXPORT main() {
+int WASM_EXPORT main(int argc) {
     test(10,20);
+
+    sleep(1);
     test_memcpy();
+
+    print("hello from %c\n", (char)argc);
 
     return 0;
 }

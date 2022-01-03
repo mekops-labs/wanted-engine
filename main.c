@@ -2,11 +2,15 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <unistd.h>
+#include <pthread.h>
+
 #include <wasm3.h>
+#include <m3_api_libc.h>
 
 #include "wasm/test_prog.wasm.h"
 
-#define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return 1; }
+#define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return (void *)1; }
 
 m3ApiRawFunction(sum)
 {
@@ -35,56 +39,77 @@ m3ApiRawFunction(ext_memcpy)
     m3ApiReturn(0)
 }
 
-int main() {
-    M3Result status;
+m3ApiRawFunction(my_sleep)
+{
+    m3ApiGetArg     (uint32_t, t)
 
+    printf("sleep\n");
+
+    sleep(t);
+
+    m3ApiSuccess();
+}
+
+typedef struct {
+    char * name;
+    uint8_t *wasm;
+    size_t wasm_len;
+} data_t;
+
+void *WA_thread( void *ptr )
+{
+    data_t *ctx = ptr;
+    M3Result status;
+    IM3Module mod;
     IM3Environment env = m3_NewEnvironment();
     IM3Runtime rt = m3_NewRuntime(env, 1024, NULL);
-    IM3Module mod;
+    IM3Function f;
 
-    uint8_t *wasm = (uint8_t *) test_prog_wasm;
-    size_t wasm_len = test_prog_wasm_len;
+    printf("entering thread: %s\n", ctx->name);
 
-    status = m3_ParseModule(env, &mod, wasm, wasm_len);
-    if (status) FATAL("m3_ParseModule: %s\n", status);
+    status = m3_ParseModule(env, &mod, ctx->wasm, ctx->wasm_len);
+    if (status) FATAL("m3_ParseModule[%s]: %s", ctx->name, status);
 
     status = m3_LoadModule(rt, mod);
-    if (status) FATAL("m3_LoadModule: %s\n", status);
+    if (status) FATAL("m3_LoadModule[%s]: %s", ctx->name, status);
 
     m3_LinkRawFunction(mod, "*", "sum", "i(ii)", &sum);
     m3_LinkRawFunction(mod, "*", "ext_memcpy", "i(**i)", &ext_memcpy);
+    m3_LinkRawFunction(mod, "*", "sleep", "v(i)", &my_sleep);
 
-/*
-    IM3Function f, f2;
-    status = m3_FindFunction (&f, rt, "test");
-    if (status) FATAL("m3_FindFunction: %s", status);
+    m3_LinkLibC(mod);
 
-    status = m3_FindFunction (&f2, rt, "test_memcpy");
-    if (status) FATAL("m3_FindFunction: %s", status);
-
-    printf("Running test\n");
-
-    int32_t a = 50, b = 10, r;
-    status = m3_CallV (f, a, b);
-    if (status) FATAL("m3_CallV: %s", status);
-
-    m3_GetResultsV(f, &r);
-    printf("test(%d,%d)=%d\n", a, b, r);
-
-    int64_t r2;
-    status = m3_CallV (f2);
-    if (status) FATAL("m3_CallV: %s", status);
-
-    m3_GetResultsV(f2, &r2);
-    printf("test_memcpy()=%lx\n", r2);
-*/
-
-    IM3Function f;
     status = m3_FindFunction (&f, rt, "main");
-    if (status) FATAL("m3_FindFunction: %s", status);
+    if (status) FATAL("m3_FindFunction[%s]: %s", ctx->name, status);
 
-    status = m3_CallV (f);
-    if (status) FATAL("m3_CallV: %s", status);
+    status = m3_CallV (f, (int32_t)ctx->name[1]);
+    if (status) FATAL("m3_CallV[%s]: %s", ctx->name, status);
+
+    return (void *)status;
+}
+
+int main() {
+    pthread_t thread1, thread2;
+
+    data_t t1_data = {.name = "t1", .wasm = (uint8_t *) test_prog_wasm, .wasm_len = test_prog_wasm_len};
+    data_t t2_data = {.name = "t2", .wasm = (uint8_t *) test_prog_wasm, .wasm_len = test_prog_wasm_len};
+
+    int  iret1, iret2;
+
+    /* Create independent threads each of which will execute function */
+
+    iret1 = pthread_create( &thread1, NULL, WA_thread, (void*) &t1_data);
+    iret2 = pthread_create( &thread2, NULL, WA_thread, (void*) &t2_data);
+
+    /* Wait till threads are complete before main continues. Unless we  */
+    /* wait we run the risk of executing an exit which will terminate   */
+    /* the process and all threads before the threads have completed.   */
+
+    pthread_join( thread1, NULL);
+    pthread_join( thread2, NULL);
+
+    printf("Thread 1 returns: %d\n",iret1);
+    printf("Thread 2 returns: %d\n",iret2);
 
     return 0;
 }
