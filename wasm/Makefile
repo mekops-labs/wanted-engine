@@ -2,8 +2,15 @@ NAME=test_prog
 SRC=$(NAME).c
 WASM=$(NAME).wasm
 HEADER=$(NAME).wasm.h
-#CLANG_FLAGS=--target=wasm32-unknown-wasi --sysroot=/home/mek/work/nanocont/wasi-libc/sysroot -Os -s
-CLANG_FLAGS=--target=wasm32 -nostdlib -Wl,--no-entry -Wl,--export-all -Os -s
+CLANG=clang
+WASI_SYSROOT=/usr/share/wasi-sysroot
+
+CLANG_COMMON_FLAGS=-Wl,-export-dynamic -Os -s
+ifdef WASI
+CLANG_FLAGS+=--target=wasm32-unknown-wasi --sysroot=$(WASI_SYSROOT) $(CLANG_COMMON_FLAGS)
+else
+CLANG_FLAGS+=--target=wasm32 -nostdlib -Wl,--no-entry $(CLANG_COMMON_FLAGS)
+endif
 
 all: $(HEADER)
 
@@ -13,7 +20,7 @@ clean:
 .PHONY: all clean
 
 $(WASM): $(SRC)
-	clang-11 $(CLANG_FLAGS) $< -o $@
+	$(CLANG) $(CLANG_FLAGS) $< -o $@
 
 $(HEADER): $(WASM)
 	xxd -i $< >$@

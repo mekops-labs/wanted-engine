@@ -26,7 +26,7 @@ int64_t WASM_EXPORT test_memcpy(void)
     return x;
 }
 
-int WASM_EXPORT _start(int argc, char* argv[]) {
+int WASM_EXPORT main() {
     test(10,20);
     test_memcpy();
 

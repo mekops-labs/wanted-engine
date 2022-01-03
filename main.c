@@ -80,7 +80,7 @@ int main() {
 */
 
     IM3Function f;
-    status = m3_FindFunction (&f, rt, "_start");
+    status = m3_FindFunction (&f, rt, "main");
     if (status) FATAL("m3_FindFunction: %s", status);
 
     status = m3_CallV (f);
