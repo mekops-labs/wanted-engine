@@ -3,38 +3,47 @@
 
 #include "wasm3_libc.h"
 
-#define WASM_IMPORT(MODULE,NAME) __attribute__((import_module(MODULE))) __attribute__((import_name(NAME)))
-
-WASM_IMPORT("*", "sum") int sum(int, int);
-WASM_IMPORT("*", "ext_memcpy") int ext_memcpy(void*, const void*, size_t);
-WASM_IMPORT("*", "sleep") void sleep(uint32_t);
-
 #define WASM_EXPORT __attribute__((used)) __attribute__((visibility ("default")))
 
-int WASM_EXPORT test(int32_t arg1, int32_t arg2)
-{
-    int x = arg1 + arg2;
-    int y = arg1 - arg2;
-    return sum(x, y) / 2;
-}
+char *prefix = "hello ";
 
-int64_t WASM_EXPORT test_memcpy(void)
-{
-    int64_t x = 0;
-    int32_t low = 0x01234567;
-    int32_t high = 0x89abcdef;
-    ext_memcpy(&x, &low, 4);
-    ext_memcpy(((uint8_t*)&x) + 4, &high, 4);
-    return x;
-}
+int WASM_EXPORT entry(char id) {
+    char msg[10] = {'h', 'e', 'l', 'l','o', ' ', 'x', '\0'};
 
-int WASM_EXPORT main(int argc) {
-    test(10,20);
+    msg[6] = id;
 
-    sleep(1);
-    test_memcpy();
+    if (id == '1') {
+        print("[%c] sending: %s\n", id, msg);
+        send(msg, 10);
+    }
+    else
+    {
+        recv(msg, 10);
+        print("[%c] received: %s\n", id, msg);
+    }
 
-    print("hello from %c\n", (char)argc);
+    memset(msg, 0, 10);
+
+    unsigned r = get_rand() % 5;
+
+    print("[%c] sleeping for %d\n", id, r);
+
+    sleep(r);
+
+    if (id == '2') {
+        msg[0] = 'a';
+        msg[1] = 'c';
+        msg[2] = 'k';
+        msg[3] = ' ';
+        msg[4] = id;
+        print("[%c] sending: %s\n", id, msg);
+        send(msg, 10);
+    }
+    else
+    {
+        recv(msg, 10);
+        print("[%c] received: %s\n", id, msg);
+    }
 
     return 0;
 }

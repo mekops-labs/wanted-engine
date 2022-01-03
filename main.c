@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include <unistd.h>
 #include <pthread.h>
@@ -9,46 +10,9 @@
 #include <m3_api_libc.h>
 
 #include "wasm/test_prog.wasm.h"
+#include "my_api.h"
 
 #define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return (void *)1; }
-
-m3ApiRawFunction(sum)
-{
-    m3ApiReturnType  (int32_t)
-    m3ApiGetArg      (int32_t, a)
-    m3ApiGetArg      (int32_t, b)
-
-    printf("sum hit!\n");
-
-    m3ApiReturn(a + b)
-}
-
-m3ApiRawFunction(ext_memcpy)
-{
-    m3ApiReturnType  (int32_t)
-    m3ApiGetArgMem   (void *, tgt)
-    m3ApiGetArgMem   (void *, src)
-    m3ApiGetArg      (size_t, len)
-
-    m3ApiCheckMem(src, len);
-
-
-    printf("memcpy hit!\n");
-    memcpy(tgt, src, len);
-
-    m3ApiReturn(0)
-}
-
-m3ApiRawFunction(my_sleep)
-{
-    m3ApiGetArg     (uint32_t, t)
-
-    printf("sleep\n");
-
-    sleep(t);
-
-    m3ApiSuccess();
-}
 
 typedef struct {
     char * name;
@@ -73,13 +37,10 @@ void *WA_thread( void *ptr )
     status = m3_LoadModule(rt, mod);
     if (status) FATAL("m3_LoadModule[%s]: %s", ctx->name, status);
 
-    m3_LinkRawFunction(mod, "*", "sum", "i(ii)", &sum);
-    m3_LinkRawFunction(mod, "*", "ext_memcpy", "i(**i)", &ext_memcpy);
-    m3_LinkRawFunction(mod, "*", "sleep", "v(i)", &my_sleep);
-
+    LinkMyApi(mod);
     m3_LinkLibC(mod);
 
-    status = m3_FindFunction (&f, rt, "main");
+    status = m3_FindFunction (&f, rt, "entry");
     if (status) FATAL("m3_FindFunction[%s]: %s", ctx->name, status);
 
     status = m3_CallV (f, (int32_t)ctx->name[1]);
@@ -95,6 +56,8 @@ int main() {
     data_t t2_data = {.name = "t2", .wasm = (uint8_t *) test_prog_wasm, .wasm_len = test_prog_wasm_len};
 
     int  iret1, iret2;
+
+    MyApiInit();
 
     /* Create independent threads each of which will execute function */
 

@@ -5,7 +5,7 @@ set(target ${CMAKE_PROJECT_NAME})
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
 
-add_executable(${target} main.c)
+add_executable(${target} main.c my_api.c)
 target_link_libraries(${target} PRIVATE m3)
 
 target_link_libraries(${target} PRIVATE pthread)
@@ -20,7 +20,7 @@ target_link_libraries(${target} PRIVATE m)
 # Copy the 'wasm' directory into the build directory, so that
 # wasm/test_prog.wasm is found even if wasm3_cpp_example is executed
 # from the build directory.
-add_custom_target(compile_wasm
+add_custom_target(wasm
     COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm clean
     COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm
 )

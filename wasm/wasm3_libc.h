@@ -12,3 +12,10 @@ WASM_IMPORT("env", "_abort")     void abort();
 WASM_IMPORT("env", "_exit")      void exit(int32_t);
 WASM_IMPORT("env", "clock_ms")   uint32_t clock_ms();
 WASM_IMPORT("env", "printf")     int32_t print(const char *, ...);
+
+WASM_IMPORT("wanted", "sleep")        void sleep(uint32_t);
+
+WASM_IMPORT("wanted", "send")        void send(const char *, size_t);
+WASM_IMPORT("wanted", "recv")        void recv(char *, size_t);
+
+WASM_IMPORT("wanted", "get_rand")    unsigned get_rand();
