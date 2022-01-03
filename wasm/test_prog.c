@@ -7,42 +7,42 @@
 
 char *prefix = "hello ";
 
-int WASM_EXPORT entry(char id) {
+int WASM_EXPORT entry(int id) {
     char msg[10] = {'h', 'e', 'l', 'l','o', ' ', 'x', '\0'};
 
-    msg[6] = id;
+    msg[6] = id + 0x30;
 
-    if (id == '1') {
-        print("[%c] sending: %s\n", id, msg);
+    if (id == 0) {
+        print("[%d] sending: %s\n", id, msg);
         send(msg, 10);
     }
     else
     {
         recv(msg, 10);
-        print("[%c] received: %s\n", id, msg);
+        print("[%d] received: %s\n", id, msg);
     }
 
     memset(msg, 0, 10);
 
     unsigned r = get_rand() % 5;
 
-    print("[%c] sleeping for %d\n", id, r);
+    print("[%d] sleeping for %d\n", id, r);
 
     sleep(r);
 
-    if (id == '2') {
+    if (id != 0) {
         msg[0] = 'a';
         msg[1] = 'c';
         msg[2] = 'k';
         msg[3] = ' ';
         msg[4] = id;
-        print("[%c] sending: %s\n", id, msg);
+        print("[%d] sending: %s\n", id, msg);
         send(msg, 10);
     }
     else
     {
         recv(msg, 10);
-        print("[%c] received: %s\n", id, msg);
+        print("[%d] received: %s\n", id, msg);
     }
 
     return 0;

@@ -9,15 +9,22 @@
 #include <wasm3.h>
 #include <m3_api_libc.h>
 
+#include <tiny-json.h>
+
 #include "wasm/test_prog.wasm.h"
 #include "my_api.h"
 
-#define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return (void *)1; }
+#define FATAL_N(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return NULL; }
+#define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return 1; }
 
 typedef struct {
-    char * name;
     uint8_t *wasm;
     size_t wasm_len;
+} wapp_t;
+
+typedef struct {
+    uint8_t id;
+    wapp_t *wapp;
 } data_t;
 
 void *WA_thread( void *ptr )
@@ -29,50 +36,87 @@ void *WA_thread( void *ptr )
     IM3Runtime rt = m3_NewRuntime(env, 1024, NULL);
     IM3Function f;
 
-    printf("entering thread: %s\n", ctx->name);
+    printf("entering thread: %d\n", ctx->id);
 
-    status = m3_ParseModule(env, &mod, ctx->wasm, ctx->wasm_len);
-    if (status) FATAL("m3_ParseModule[%s]: %s", ctx->name, status);
+    status = m3_ParseModule(env, &mod, ctx->wapp->wasm, ctx->wapp->wasm_len);
+    if (status) FATAL_N("m3_ParseModule[%d]: %s", ctx->id, status);
 
     status = m3_LoadModule(rt, mod);
-    if (status) FATAL("m3_LoadModule[%s]: %s", ctx->name, status);
+    if (status) FATAL_N("m3_LoadModule[%d]: %s", ctx->id, status);
 
     LinkMyApi(mod);
     m3_LinkLibC(mod);
 
     status = m3_FindFunction (&f, rt, "entry");
-    if (status) FATAL("m3_FindFunction[%s]: %s", ctx->name, status);
+    if (status) FATAL_N("m3_FindFunction[%d]: %s", ctx->id, status);
 
-    status = m3_CallV (f, (int32_t)ctx->name[1]);
-    if (status) FATAL("m3_CallV[%s]: %s", ctx->name, status);
+    printf("starting wapp: %d\n", ctx->id);
+    status = m3_CallV (f, (int32_t)ctx->id);
+    if (status) FATAL_N("m3_CallV[%d]: %s", ctx->id, status);
 
     return (void *)status;
 }
 
-int main() {
-    pthread_t thread1, thread2;
+#define MAX_WAPPS 3
 
-    data_t t1_data = {.name = "t1", .wasm = (uint8_t *) test_prog_wasm, .wasm_len = test_prog_wasm_len};
-    data_t t2_data = {.name = "t2", .wasm = (uint8_t *) test_prog_wasm, .wasm_len = test_prog_wasm_len};
+typedef struct {
+    pthread_t t;
+    data_t data;
+} thread_data_t;
 
-    int  iret1, iret2;
+struct {
+    wapp_t wapps[MAX_WAPPS];
+    size_t n;
+    thread_data_t threads[MAX_WAPPS];
+} config;
+
+int loadWapp(const char *filename, wapp_t * wapp) {
+    long filesize;
+    FILE *f = fopen(filename, "rb");
+    if (NULL == f) FATAL("can't open %s", filename);
+
+    fseek(f, 0L, SEEK_END);
+    filesize = ftell(f);
+    rewind(f);
+
+    wapp->wasm = (uint8_t *)malloc(filesize);
+    if (wapp->wasm == NULL) FATAL("can't allocate memory");
+
+    size_t r = fread(wapp->wasm, 1, filesize, f);
+    if (r != filesize) FATAL("can't read file. %ld != %ld", r, filesize);
+
+    fclose(f);
+
+    wapp->wasm_len = filesize;
+
+    return 0;
+}
+
+int main(int argc, char* argv[]) {
+    wapp_t wapp;
+
+    if (argc < 2) {
+        printf("need wasms filenames!\n");
+        return 1;
+    }
+
+    for (int i = 0; i < argc - 1; i++) {
+        loadWapp(argv[i+1], &config.wapps[i]);
+    }
+    config.n = argc - 1;
 
     MyApiInit();
 
-    /* Create independent threads each of which will execute function */
+    for (int i = 0; i < config.n; i++) {
+        config.threads[i].data.id   = i;
+        config.threads[i].data.wapp = &config.wapps[i];
 
-    iret1 = pthread_create( &thread1, NULL, WA_thread, (void*) &t1_data);
-    iret2 = pthread_create( &thread2, NULL, WA_thread, (void*) &t2_data);
+        pthread_create( &config.threads[i].t, NULL, WA_thread, (void*) &config.threads[i].data);
+    }
 
-    /* Wait till threads are complete before main continues. Unless we  */
-    /* wait we run the risk of executing an exit which will terminate   */
-    /* the process and all threads before the threads have completed.   */
-
-    pthread_join( thread1, NULL);
-    pthread_join( thread2, NULL);
-
-    printf("Thread 1 returns: %d\n",iret1);
-    printf("Thread 2 returns: %d\n",iret2);
+    for (int i = 0; i < config.n; i++) {
+        pthread_join( config.threads[i].t, NULL);
+    }
 
     return 0;
 }
