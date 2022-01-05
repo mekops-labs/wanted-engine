@@ -39,7 +39,7 @@ void *WA_thread( void *ptr )
     IM3Runtime rt = m3_NewRuntime(env, 4096, NULL);
     IM3Function f;
 
-    printf("entering thread: %d\n", ctx->id);
+    //printf("entering thread: %d\n", ctx->id);
 
     status = m3_ParseModule(env, &mod, ctx->wapp->wasm, ctx->wapp->wasm_len);
     if (status) FATAL_N("m3_ParseModule[%d]: %s", ctx->id, status);
@@ -57,7 +57,7 @@ void *WA_thread( void *ptr )
         if (status) FATAL_N("m3_FindFunction[%d]: %s", ctx->id, status);
     }
 
-    printf("starting wapp: %d\n", ctx->id);
+    //printf("starting wapp: %d\n", ctx->id);
     status = m3_CallV (f, (int32_t)ctx->id);
     if (status) {
         M3ErrorInfo info;
