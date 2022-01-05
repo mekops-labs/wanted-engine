@@ -11,8 +11,9 @@ int main (void)
 
   if (dp != NULL)
   {
-    while ((ep = readdir (dp)))
-      puts (ep->d_name);
+    while ((ep = readdir (dp))) {
+      printf ("%s%c\n", ep->d_name, ep->d_type == DT_DIR ? '/' : ' ');
+    }
 
     (void) closedir (dp);
   }

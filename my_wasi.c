@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
 
 #include "my_wasi.h"
 
@@ -15,6 +16,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <dirent.h>
 
 static m3_wasi_context_t* wasi_context;
 
@@ -24,18 +26,21 @@ typedef struct wasi_iovec_t
     __wasi_size_t buf_len;
 } wasi_iovec_t;
 
-#define PREOPEN_CNT   3
-
 typedef struct Preopen {
     int         fd;
-    char*       path;
+    const char* path;
+    const char* real_path;
 } Preopen;
 
-Preopen preopen[PREOPEN_CNT] = {
-    {  0, "<stdin>"  },
-    {  1, "<stdout>" },
-    {  2, "<stderr>" },
+Preopen preopen[] = {
+    {  0, "<stdin>" , "" },
+    {  1, "<stdout>", "" },
+    {  2, "<stderr>", "" },
+    { -1, "/"       , "." },
+    { -1, "./"      , "." },
 };
+
+const size_t preopen_cnt = sizeof(preopen)/sizeof(preopen[0]);
 
 #  define APE_SWITCH_BEG          switch (errnum) {
 #  define APE_SWITCH_END          }
@@ -79,6 +84,32 @@ __wasi_errno_t errno_to_wasi(int errnum) {
     APE_CASE_RET( ERANGE  , __WASI_ERRNO_RANGE  )
     APE_SWITCH_END
     return __WASI_ERRNO_INVAL;
+}
+
+#define DT_UNKNOWN  0
+#define DT_FIFO     1
+#define DT_CHR      2
+#define DT_DIR      4
+#define DT_BLK      6
+#define DT_REG      8
+#define DT_LNK      10
+#define DT_SOCK     12
+#define DT_WHT      14
+
+static inline
+__wasi_filetype_t convert_filetype(unsigned char t) {
+    switch (t) {
+    case DT_UNKNOWN:    return __WASI_FILETYPE_UNKNOWN;
+    case DT_FIFO:       return __WASI_FILETYPE_UNKNOWN;
+    case DT_CHR:        return __WASI_FILETYPE_CHARACTER_DEVICE;
+    case DT_DIR:        return __WASI_FILETYPE_DIRECTORY;
+    case DT_BLK:        return __WASI_FILETYPE_BLOCK_DEVICE;
+    case DT_REG:        return __WASI_FILETYPE_REGULAR_FILE;
+    case DT_LNK:        return __WASI_FILETYPE_SYMBOLIC_LINK;
+    case DT_SOCK:       return __WASI_FILETYPE_SOCKET_STREAM;
+    case DT_WHT:        return __WASI_FILETYPE_UNKNOWN;
+    default:            return __WASI_FILETYPE_UNKNOWN;
+    }
 }
 
 static inline
@@ -202,7 +233,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_prestat_dir_name)
 
     m3ApiCheckMem(path, path_len);
 
-    if (fd < 3 || fd >= PREOPEN_CNT) { m3ApiReturn(__WASI_ERRNO_BADF); }
+    if (fd < 3 || fd >= preopen_cnt) { m3ApiReturn(__WASI_ERRNO_BADF); }
     size_t slen = strlen(preopen[fd].path) + 1;
     memcpy(path, preopen[fd].path, M3_MIN(slen, path_len));
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
@@ -216,7 +247,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_prestat_get)
 
     m3ApiCheckMem(buf, 8);
 
-    if (fd < 3 || fd >= PREOPEN_CNT) { m3ApiReturn(__WASI_ERRNO_BADF); }
+    if (fd < 3 || fd >= preopen_cnt) { m3ApiReturn(__WASI_ERRNO_BADF); }
 
     m3ApiWriteMem32(buf+0, __WASI_PREOPENTYPE_DIR);
     m3ApiWriteMem32(buf+4, strlen(preopen[fd].path) + 1);
@@ -345,12 +376,39 @@ m3ApiRawFunction(m3_wasi_generic_path_open)
 
     // copy path so we can ensure it is NULL terminated
     char host_path[path_len+1];
-
     memcpy (host_path, path, path_len);
     host_path[path_len] = '\0'; // NULL terminator
 
-    // TODO
-    m3ApiReturn(__WASI_ERRNO_NOSYS);
+    // translate o_flags and fs_flags into flags and mode
+    int flags = ((oflags & __WASI_OFLAGS_CREAT)             ? O_CREAT     : 0) |
+                //((oflags & __WASI_OFLAGS_DIRECTORY)         ? O_DIRECTORY : 0) |
+                ((oflags & __WASI_OFLAGS_EXCL)              ? O_EXCL      : 0) |
+                ((oflags & __WASI_OFLAGS_TRUNC)             ? O_TRUNC     : 0) |
+                ((fs_flags & __WASI_FDFLAGS_APPEND)     ? O_APPEND    : 0) |
+                ((fs_flags & __WASI_FDFLAGS_DSYNC)      ? O_DSYNC     : 0) |
+                ((fs_flags & __WASI_FDFLAGS_NONBLOCK)   ? O_NONBLOCK  : 0) |
+                //((fs_flags & __WASI_FDFLAGS_RSYNC)      ? O_RSYNC     : 0) |
+                ((fs_flags & __WASI_FDFLAGS_SYNC)       ? O_SYNC      : 0);
+    if ((fs_rights_base & __WASI_RIGHTS_FD_READ) &&
+        (fs_rights_base & __WASI_RIGHTS_FD_WRITE)) {
+        flags |= O_RDWR;
+    } else if ((fs_rights_base & __WASI_RIGHTS_FD_WRITE)) {
+        flags |= O_WRONLY;
+    } else if ((fs_rights_base & __WASI_RIGHTS_FD_READ)) {
+        flags |= O_RDONLY; // no-op because O_RDONLY is 0
+    }
+    int mode = 0644;
+    int host_fd = openat (preopen[dirfd].fd, host_path, flags, mode);
+
+    if (host_fd < 0)
+    {
+        m3ApiReturn(errno_to_wasi (errno));
+    }
+    else
+    {
+        m3ApiWriteMem32(fd, host_fd);
+        m3ApiReturn(__WASI_ERRNO_SUCCESS);
+    }
 }
 
 m3ApiRawFunction(m3_wasi_generic_fd_read)
@@ -402,6 +460,56 @@ m3ApiRawFunction(m3_wasi_generic_fd_write)
         if ((size_t)ret < len) break;
     }
     m3ApiWriteMem32(nwritten, res);
+    m3ApiReturn(__WASI_ERRNO_SUCCESS);
+}
+
+m3ApiRawFunction(m3_wasi_generic_fd_readdir)
+{
+    m3ApiReturnType  (uint32_t)
+    m3ApiGetArg      (__wasi_fd_t          , fd)
+    m3ApiGetArgMem   (void *               , buf)
+    m3ApiGetArg      (__wasi_size_t        , buf_len)
+    m3ApiGetArg      (__wasi_dircookie_t   , cookie)
+    m3ApiGetArgMem   (__wasi_size_t *      , bufused)
+
+    m3ApiCheckMem(buf,      buf_len);
+    m3ApiCheckMem(bufused,  sizeof(__wasi_size_t));
+
+    __wasi_dirent_t dir;
+    __wasi_size_t used = 0;
+    DIR *dp = fdopendir(fd);
+    struct dirent *ep;
+
+    if (dp != NULL)
+    {
+        if (cookie != __WASI_DIRCOOKIE_START) {
+            seekdir(dp, (long)cookie);
+        }
+
+        while ((ep = readdir (dp)))
+        {
+            dir.d_ino       = ep->d_ino;
+            dir.d_namlen    = strlen(ep->d_name);
+            dir.d_type      = convert_filetype(ep->d_type);
+            dir.d_next      = telldir(dp);
+
+            if (used + sizeof(dir) + dir.d_namlen > buf_len) {
+                used = buf_len;
+                break;
+            }
+            memcpy(buf + used, &dir, sizeof(dir));
+            memcpy(buf + sizeof(dir) + used, ep->d_name, dir.d_namlen);
+
+            used += sizeof(dir) + dir.d_namlen;
+        }
+
+    } else {
+        perror("???");
+        m3ApiReturn(__WASI_ERRNO_NOTDIR);
+    }
+
+    m3ApiWriteMem32(bufused, used);
+
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
@@ -555,7 +663,9 @@ M3Result  LinkWASI  (IM3Module module)
 {
     M3Result result = m3Err_none;
 
-    // TODO: Preopen dirs
+    for (int i = 3; i < preopen_cnt; i++) {
+        preopen[i].fd = open(preopen[i].real_path, O_RDONLY);
+    }
 
     if (!wasi_context) {
         wasi_context = (m3_wasi_context_t*)malloc(sizeof(m3_wasi_context_t));
@@ -596,7 +706,7 @@ _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "fd_prestat_ge
 _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "fd_prestat_dir_name",  "i(i*i)",  &m3_wasi_generic_fd_prestat_dir_name)));
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "fd_pwrite",            "i(i*iI*)",)));
 _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "fd_read",              "i(i*i*)", &m3_wasi_generic_fd_read)));
-//_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "fd_readdir",           "i(i*iI*)",)));
+_       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "fd_readdir",           "i(i*iI*)", &m3_wasi_generic_fd_readdir)));
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "fd_renumber",          "i(ii)",   )));
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "fd_sync",              "i(i)",    )));
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "fd_tell",              "i(i*)",   )));
