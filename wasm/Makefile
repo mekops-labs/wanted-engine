@@ -1,4 +1,4 @@
-NAME=test_prog
+NAME?=test_prog
 SRC=$(NAME).c
 WASM=$(NAME).wasm
 HEADER=$(NAME).wasm.h
@@ -15,7 +15,7 @@ endif
 all: $(HEADER)
 
 clean:
-	rm -f $(HEADER) $(WASM)
+	rm -f *.wasm *.wasm.h
 
 .PHONY: all clean
 
