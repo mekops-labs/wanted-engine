@@ -6,7 +6,7 @@ set(target ${CMAKE_PROJECT_NAME})
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
 
 add_executable(${target}
-    main.c my_api.c
+    main.c my_api.c my_wasi.c
     ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c)
 
 target_link_libraries(${target} PRIVATE m3)

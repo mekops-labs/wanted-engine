@@ -15,6 +15,7 @@
 
 #include "wasm/test_prog.wasm.h"
 #include "my_api.h"
+#include "my_wasi.h"
 
 #define FATAL_N(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return NULL; }
 #define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return 1; }
@@ -35,7 +36,7 @@ void *WA_thread( void *ptr )
     M3Result status;
     IM3Module mod;
     IM3Environment env = m3_NewEnvironment();
-    IM3Runtime rt = m3_NewRuntime(env, 1024, NULL);
+    IM3Runtime rt = m3_NewRuntime(env, 4096, NULL);
     IM3Function f;
 
     printf("entering thread: %d\n", ctx->id);
@@ -46,15 +47,23 @@ void *WA_thread( void *ptr )
     status = m3_LoadModule(rt, mod);
     if (status) FATAL_N("m3_LoadModule[%d]: %s", ctx->id, status);
 
+    LinkWASI(mod);
     LinkMyApi(mod);
     m3_LinkLibC(mod);
 
     status = m3_FindFunction (&f, rt, "entry");
-    if (status) FATAL_N("m3_FindFunction[%d]: %s", ctx->id, status);
+    if (status) {
+        status = m3_FindFunction (&f, rt, "_start");
+        if (status) FATAL_N("m3_FindFunction[%d]: %s", ctx->id, status);
+    }
 
     printf("starting wapp: %d\n", ctx->id);
     status = m3_CallV (f, (int32_t)ctx->id);
-    if (status) FATAL_N("m3_CallV[%d]: %s", ctx->id, status);
+    if (status) {
+        M3ErrorInfo info;
+        m3_GetErrorInfo(rt, &info);
+        FATAL_N("m3_CallV[%d]: %s - %s", ctx->id, status, info.message);
+    }
 
     return (void *)status;
 }
