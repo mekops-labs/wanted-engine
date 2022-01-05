@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#include <sys/mman.h>
+
 #include <wasm3.h>
 #include <m3_api_libc.h>
 
@@ -79,11 +81,8 @@ int loadWapp(const char *filename, wapp_t * wapp) {
     filesize = ftell(f);
     rewind(f);
 
-    wapp->wasm = (uint8_t *)malloc(filesize);
-    if (wapp->wasm == NULL) FATAL("can't allocate memory");
-
-    size_t r = fread(wapp->wasm, 1, filesize, f);
-    if (r != filesize) FATAL("can't read file. %ld != %ld", r, filesize);
+    wapp->wasm = (uint8_t *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, f->_fileno, 0);
+    if (wapp->wasm == MAP_FAILED) FATAL("can't map file");
 
     fclose(f);
 
