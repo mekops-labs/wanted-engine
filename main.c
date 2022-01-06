@@ -13,7 +13,6 @@
 
 #include <tiny-json.h>
 
-#include "wasm/test_prog.wasm.h"
 #include "my_api.h"
 #include "my_wasi.h"
 
