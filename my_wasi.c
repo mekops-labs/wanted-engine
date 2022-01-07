@@ -354,6 +354,58 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_fd_seek)
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
+m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
+{
+    m3ApiReturnType  (uint32_t)
+    m3ApiGetArg      (__wasi_fd_t          , fd)
+    m3ApiGetArg      (__wasi_lookupflags_t , flags)
+    m3ApiGetArgMem   (const char *         , path)
+    m3ApiGetArg      (uint32_t             , path_len)
+    m3ApiGetArgMem   (uint8_t *            , buf)
+
+    if (path_len >= 512)
+        m3ApiReturn(__WASI_ERRNO_INVAL);
+    
+    m3ApiCheckMem(path, path_len);
+    m3ApiCheckMem(buf,  64); // wasi_filestat_t
+ 
+    // copy path so we can ensure it is NULL terminated
+    char host_path[path_len+1];
+    memcpy (host_path, path, path_len);
+    host_path[path_len] = '\0'; // NULL terminator
+
+    struct stat statbuf;
+    __wasi_filestat_t stat;
+
+    int ret = fstatat(preopen[fd].fd, host_path, &statbuf, 0);
+    if (ret < 0) {
+	    m3ApiReturn(errno_to_wasi(errno));
+    }
+
+    stat.filetype = (S_ISBLK(statbuf.st_mode)   ? __WASI_FILETYPE_BLOCK_DEVICE     : 0) |
+                          (S_ISCHR(statbuf.st_mode)   ? __WASI_FILETYPE_CHARACTER_DEVICE : 0) |
+                          (S_ISDIR(statbuf.st_mode)   ? __WASI_FILETYPE_DIRECTORY        : 0) |
+                          (S_ISREG(statbuf.st_mode)   ? __WASI_FILETYPE_REGULAR_FILE     : 0) |
+                          //(S_ISSOCK(mode)  ? __WASI_FILETYPE_SOCKET_STREAM    : 0) |
+                          (S_ISLNK(statbuf.st_mode)   ? __WASI_FILETYPE_SYMBOLIC_LINK    : 0);
+    
+    stat.dev = statbuf.st_dev;
+    stat.ino = statbuf.st_ino;
+    stat.nlink = statbuf.st_nlink;
+    stat.size = statbuf.st_size;
+
+    memset(buf, 0, 64);
+    m3ApiWriteMem64(buf+0,  stat.dev);
+    m3ApiWriteMem64(buf+8,  stat.ino);
+    m3ApiWriteMem8 (buf+16, stat.filetype);
+    m3ApiWriteMem64(buf+24, stat.nlink);
+    m3ApiWriteMem64(buf+32, stat.size);
+    m3ApiWriteMem64(buf+40, stat.atim);
+    m3ApiWriteMem64(buf+48, stat.mtim);
+    m3ApiWriteMem64(buf+56, stat.ctim);
+
+    m3ApiReturn(__WASI_ERRNO_SUCCESS);
+}
 
 m3ApiRawFunction(m3_wasi_generic_path_open)
 {
@@ -679,7 +731,8 @@ M3Result  LinkWASI  (IM3Module module)
     // fd_seek is incompatible
 _   (SuppressLookupFailure (m3_LinkRawFunction (module, namespaces[0], "fd_seek",     "i(iIi*)", &m3_wasi_unstable_fd_seek)));
 _   (SuppressLookupFailure (m3_LinkRawFunction (module, namespaces[1], "fd_seek",     "i(iIi*)", &m3_wasi_snapshot_preview1_fd_seek)));
-
+//_   (SuppressLookupFailure (m3_LinkRawFunction (module, namespaces[0], "path_filestat_get", "i(ii*i*)",  &m3_wasi_unstable_path_filestat_get)));
+_   (SuppressLookupFailure (m3_LinkRawFunction (module, namespaces[1], "path_filestat_get", "i(ii*i*)",  &m3_wasi_snapshot_preview1_path_filestat_get)));
     for (int i=0; i<2; i++)
     {
         const char* wasi = namespaces[i];
