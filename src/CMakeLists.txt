@@ -3,8 +3,24 @@ set(sources
     "my_api.c"
 )
 
-set(wasi-src
-    "wasi/wasi-linux.c")
+set(wasiTypes Linux Romfs)
+set(wasiType Linux CACHE STRING "WASI type")
+set_property(CACHE wasiType PROPERTY STRINGS ${wasiTypes})
+
+if(NOT wasiType IN_LIST wasiTypes)
+    message(FATAL_ERROR "wasiType must be one of ${wasiTypes}")
+endif()
+
+message("Wasi type is ${wasiType}")
+
+if (wasiType STREQUAL "Linux")
+    set(wasi-src
+        "wasi/wasi-linux.c")
+elseif (wasiType STREQUAL "Romfs")
+    set(wasi-src
+        "wasi/wasi-romfs.c"
+    )
+endif()
 
 # Add tiny-json to the build
 set(tiny-json-src
@@ -28,9 +44,9 @@ target_link_libraries(${target} PRIVATE pthread)
 target_compile_options(${target} PUBLIC -g)
 target_compile_options(m3 PUBLIC -Wno-extern-initializer -g)
 
-option(ENABLE_WASM3_TRACE "Enable wasm3 tracing" OFF)
+option(EnableWasm3Trace "Enable wasm3 tracing" OFF)
 
-if (ENABLE_WASM3_TRACE)
+if (EnableWasm3Trace)
     message("Trace for WASM3 enabled")
     target_compile_definitions(m3 PUBLIC d_m3EnableStrace=1 DEBUG=1)
 endif()
