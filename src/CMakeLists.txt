@@ -26,7 +26,7 @@ target_link_libraries(${target} PRIVATE pthread)
 
 # Add debug symbols
 target_compile_options(${target} PUBLIC -g)
-target_compile_options(m3 PUBLIC -g)
+target_compile_options(m3 PUBLIC -Wno-extern-initializer -g)
 
 option(ENABLE_WASM3_TRACE "Enable wasm3 tracing" OFF)
 
