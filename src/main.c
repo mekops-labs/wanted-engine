@@ -89,7 +89,7 @@ int loadWapp(const char *filename, wapp_t * wapp) {
     filesize = ftell(f);
     rewind(f);
 
-    wapp->wasm = (uint8_t *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, f->_fileno, 0);
+    wapp->wasm = (uint8_t *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fileno(f), 0);
     if (wapp->wasm == MAP_FAILED) FATAL("can't map file");
 
     fclose(f);
