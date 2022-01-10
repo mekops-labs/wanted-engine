@@ -1,8 +1,10 @@
 set(sources
     "main.c"
     "my_api.c"
-    "my_wasi.c"
 )
+
+set(wasi-src
+    "wasi/wasi-linux.c")
 
 # Add tiny-json to the build
 set(tiny-json-src
@@ -13,6 +15,7 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
 
 add_executable(${target}
     ${sources}
+    ${wasi-src}
     ${tiny-json-src}
 )
 

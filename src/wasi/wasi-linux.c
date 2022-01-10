@@ -1,13 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #define _XOPEN_SOURCE 700
 
-#include "my_wasi.h"
-
-#include "m3_env.h"
-#include "m3_exception.h"
-
-#include "extra/wasi_core.h"
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/random.h>
@@ -17,6 +10,14 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+
+#include "m3_env.h"
+#include "m3_exception.h"
+
+#include "extra/wasi_core.h"
+
+
+#include "wasi.h"
 
 static m3_wasi_context_t* wasi_context;
 
@@ -365,10 +366,10 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
 
     if (path_len >= 512)
         m3ApiReturn(__WASI_ERRNO_INVAL);
-    
+
     m3ApiCheckMem(path, path_len);
     m3ApiCheckMem(buf,  64); // wasi_filestat_t
- 
+
     // copy path so we can ensure it is NULL terminated
     char host_path[path_len+1];
     memcpy (host_path, path, path_len);
@@ -388,7 +389,7 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
                           (S_ISREG(statbuf.st_mode)   ? __WASI_FILETYPE_REGULAR_FILE     : 0) |
                           //(S_ISSOCK(mode)  ? __WASI_FILETYPE_SOCKET_STREAM    : 0) |
                           (S_ISLNK(statbuf.st_mode)   ? __WASI_FILETYPE_SYMBOLIC_LINK    : 0);
-    
+
     stat.dev = statbuf.st_dev;
     stat.ino = statbuf.st_ino;
     stat.nlink = statbuf.st_nlink;

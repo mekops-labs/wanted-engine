@@ -14,7 +14,7 @@
 #include <tiny-json.h>
 
 #include "my_api.h"
-#include "my_wasi.h"
+#include "wasi/wasi.h"
 
 #define FATAL_N(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return NULL; }
 #define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return 1; }
