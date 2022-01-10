@@ -704,7 +704,7 @@ int OpenRomfs(const char * filename) {
     filesize = ftell(f);
     rewind(f);
 
-    romfs = (uint8_t *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, f->_fileno, 0);
+    romfs = (uint8_t *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fileno(f), 0);
     if (romfs == MAP_FAILED) FATAL("can't map file");
 
     fclose(f);
