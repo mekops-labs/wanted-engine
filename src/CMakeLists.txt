@@ -1,6 +1,8 @@
 set(sources
     "main.c"
     "my_api.c"
+    "fs/romfs.c"
+    "fs/romfs-internal.c"
 )
 
 set(wasiTypes Linux Romfs)
