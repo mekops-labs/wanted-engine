@@ -4,3 +4,6 @@
 [submodule "vendor/tiny-json"]
 	path = vendor/tiny-json
 	url = https://github.com/rafagafe/tiny-json
+[submodule "vendor/romfs-lib"]
+	path = vendor/romfs-lib
+	url = git@github.com:mek-x/romfs-lib
