@@ -432,7 +432,7 @@ m3ApiRawFunction(m3_wasi_generic_path_open)
         flags |= O_RDONLY; // no-op because O_RDONLY is 0
     }
 
-    host_fd = RomfsOpenAt(dirfd, host_path, flags, 0);
+    host_fd = RomfsOpenAt(dirfd, host_path, flags);
     if (host_fd < 0) {
         m3ApiReturn(errno_to_wasi (errno));
     } else {
