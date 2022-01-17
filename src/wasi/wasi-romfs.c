@@ -478,6 +478,10 @@ m3ApiRawFunction(m3_wasi_generic_fd_write)
     m3ApiCheckMem(wasi_iovs,    iovs_len * sizeof(wasi_iovec_t));
     m3ApiCheckMem(nwritten,     sizeof(__wasi_size_t));
 
+    if (fd > 2) {
+        m3ApiReturn(__WASI_ERRNO_ROFS)
+    }
+
     ssize_t res = 0;
     for (__wasi_size_t i = 0; i < iovs_len; i++) {
         void* addr = m3ApiOffsetToPtr(m3ApiReadMem32(&wasi_iovs[i].buf));
@@ -506,11 +510,35 @@ m3ApiRawFunction(m3_wasi_generic_fd_readdir)
     m3ApiCheckMem(bufused,  sizeof(__wasi_size_t));
 
     __wasi_dirent_t dir;
-    __wasi_size_t used = 0;
+    romfs_dirent_t dBuf[10];
+    int ret;
+    uint32_t last = cookie;
+    size_t used;
+    __wasi_size_t bUsed = 0;
 
-    m3ApiReturn(__WASI_ERRNO_NOTDIR);
+    ret = RomfsReadDir(fd, dBuf, 10, last, &used);
+    if (ret < 0) {
+        m3ApiReturn(errno_to_wasi(-ret));
+    }
 
-    m3ApiWriteMem32(bufused, used);
+    for (size_t i = 0; i < used; i++) {
+        dir.d_next = dBuf[i].next;
+        dir.d_ino = dBuf[i].inode;
+        dir.d_namlen = dBuf[i].nameLen;
+        dir.d_type = convert_filetype(dBuf[i].type);
+
+        if (bUsed + sizeof(dir) + dir.d_namlen > buf_len) {
+            bUsed = buf_len;
+            break;
+        }
+
+        memcpy(buf + bUsed, &dir, sizeof(dir));
+        bUsed += sizeof(dir);
+        memcpy(buf + bUsed, dBuf[i].name, dir.d_namlen);
+        bUsed += dir.d_namlen;
+    }
+
+    m3ApiWriteMem32(bufused, bUsed);
 
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
