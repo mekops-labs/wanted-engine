@@ -253,7 +253,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_fdstat_get)
     m3ApiCheckMem(fdstat, sizeof(__wasi_fdstat_t));
 
     int ret = RomfsFdStat(fd);
-    if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
+    if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
 
     fdstat->fs_filetype = convert_filetype(ret & 0xF);
 
@@ -434,7 +434,7 @@ m3ApiRawFunction(m3_wasi_generic_path_open)
 
     host_fd = RomfsOpenAt(dirfd, host_path, flags);
     if (host_fd < 0) {
-        m3ApiReturn(errno_to_wasi (errno));
+        m3ApiReturn(errno_to_wasi (-host_fd));
     } else {
         m3ApiWriteMem32(fd, host_fd);
         m3ApiReturn(__WASI_ERRNO_SUCCESS);
@@ -458,8 +458,8 @@ m3ApiRawFunction(m3_wasi_generic_fd_read)
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
         if (len == 0) continue;
 
-        int ret = read (fd, addr, len);
-        if (ret < 0) m3ApiReturn(errno_to_wasi(errno));
+        int ret = fd >= 3 ? RomfsRead(fd, addr, len) : read(fd, addr, len);
+        if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
         res += ret;
         if ((size_t)ret < len) break;
     }
@@ -507,36 +507,8 @@ m3ApiRawFunction(m3_wasi_generic_fd_readdir)
 
     __wasi_dirent_t dir;
     __wasi_size_t used = 0;
-    DIR *dp = fdopendir(fd);
-    struct dirent *ep;
 
-    if (dp != NULL)
-    {
-        if (cookie != __WASI_DIRCOOKIE_START) {
-            seekdir(dp, (long)cookie);
-        }
-
-        while ((ep = readdir (dp)))
-        {
-            dir.d_ino       = ep->d_ino;
-            dir.d_namlen    = strlen(ep->d_name);
-            //dir.d_type      = convert_filetype(ep->d_type);
-            dir.d_next      = telldir(dp);
-
-            if (used + sizeof(dir) + dir.d_namlen > buf_len) {
-                used = buf_len;
-                break;
-            }
-            memcpy(buf + used, &dir, sizeof(dir));
-            memcpy(buf + sizeof(dir) + used, ep->d_name, dir.d_namlen);
-
-            used += sizeof(dir) + dir.d_namlen;
-        }
-
-    } else {
-        perror("???");
-        m3ApiReturn(__WASI_ERRNO_NOTDIR);
-    }
+    m3ApiReturn(__WASI_ERRNO_NOTDIR);
 
     m3ApiWriteMem32(bufused, used);
 
@@ -548,7 +520,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_close)
     m3ApiReturnType  (uint32_t)
     m3ApiGetArg      (__wasi_fd_t, fd)
 
-    int ret = close(fd);
+    int ret = fd >= 3 ? RomfsClose(fd) : close(fd);
     m3ApiReturn(ret == 0 ? __WASI_ERRNO_SUCCESS : ret);
 }
 
