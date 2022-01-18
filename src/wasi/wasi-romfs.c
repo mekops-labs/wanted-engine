@@ -252,10 +252,10 @@ m3ApiRawFunction(m3_wasi_generic_fd_fdstat_get)
 
     m3ApiCheckMem(fdstat, sizeof(__wasi_fdstat_t));
 
-    int ret = RomfsFdStat(fd);
+    int ret = RomfsFdStat(fd, NULL);
     if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
 
-    fdstat->fs_filetype = convert_filetype(ret & 0xF);
+    fdstat->fs_filetype = convert_filetype(ret & ROMFS_TYPE_MASK);
 
     m3ApiWriteMem16(&fdstat->fs_flags, 0); // no flags supported
     fdstat->fs_rights_base = (uint64_t)-1; // all rights
@@ -294,15 +294,15 @@ m3ApiRawFunction(m3_wasi_unstable_fd_seek)
     int whence;
 
     switch (wasi_whence) {
-    case 0: whence = SEEK_CUR; break;
-    case 1: whence = SEEK_END; break;
-    case 2: whence = SEEK_SET; break;
+    case 0: whence = ROMFS_SEEK_CUR; break;
+    case 1: whence = ROMFS_SEEK_END; break;
+    case 2: whence = ROMFS_SEEK_SET; break;
     default:                m3ApiReturn(__WASI_ERRNO_INVAL);
     }
 
     int64_t ret;
-    ret = lseek(fd, offset, whence);
-    if (ret < 0) { m3ApiReturn(errno_to_wasi(errno)); }
+    ret = RomfsSeek(fd, offset, whence);
+    if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
     m3ApiWriteMem64(result, ret);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
@@ -320,15 +320,15 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_fd_seek)
     int whence;
 
     switch (wasi_whence) {
-    case 0: whence = SEEK_SET; break;
-    case 1: whence = SEEK_CUR; break;
-    case 2: whence = SEEK_END; break;
+    case 0: whence = ROMFS_SEEK_SET; break;
+    case 1: whence = ROMFS_SEEK_CUR; break;
+    case 2: whence = ROMFS_SEEK_END; break;
     default:                m3ApiReturn(__WASI_ERRNO_INVAL);
     }
 
     int64_t ret;
-    ret = lseek(fd, offset, whence);
-    if (ret < 0) { m3ApiReturn(errno_to_wasi(errno)); }
+    ret = RomfsSeek(fd, offset, whence);
+    if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
     m3ApiWriteMem64(result, ret);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
@@ -353,25 +353,23 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
     memcpy (host_path, path, path_len);
     host_path[path_len] = '\0'; // NULL terminator
 
-    struct stat statbuf;
+    romfs_stat_t statbuf;
     __wasi_filestat_t stat;
 
-    int ret = fstatat(preopen[fd].fd, host_path, &statbuf, 0);
+    int ret = RomfsFdStatAt(preopen[fd].fd, host_path, &statbuf);
     if (ret < 0) {
-	    m3ApiReturn(errno_to_wasi(errno));
+	    m3ApiReturn(errno_to_wasi(-ret));
     }
 
-    stat.filetype = (S_ISBLK(statbuf.st_mode)   ? __WASI_FILETYPE_BLOCK_DEVICE     : 0) |
-                          (S_ISCHR(statbuf.st_mode)   ? __WASI_FILETYPE_CHARACTER_DEVICE : 0) |
-                          (S_ISDIR(statbuf.st_mode)   ? __WASI_FILETYPE_DIRECTORY        : 0) |
-                          (S_ISREG(statbuf.st_mode)   ? __WASI_FILETYPE_REGULAR_FILE     : 0) |
-                          //(S_ISSOCK(mode)  ? __WASI_FILETYPE_SOCKET_STREAM    : 0) |
-                          (S_ISLNK(statbuf.st_mode)   ? __WASI_FILETYPE_SYMBOLIC_LINK    : 0);
+    stat.filetype = convert_filetype(statbuf.mode & ROMFS_TYPE_MASK);
 
-    stat.dev = statbuf.st_dev;
-    stat.ino = statbuf.st_ino;
-    stat.nlink = statbuf.st_nlink;
-    stat.size = statbuf.st_size;
+    stat.dev = 0; // not implemented
+    stat.ino = statbuf.ino;
+    stat.nlink = 0; // not implemented
+    stat.size = statbuf.size;
+    stat.atim = 0; // not implemented
+    stat.mtim = 0; // not implemented
+    stat.ctim = 0; // not implemented
 
     memset(buf, 0, 64);
     m3ApiWriteMem64(buf+0,  stat.dev);
