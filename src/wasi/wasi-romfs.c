@@ -21,7 +21,7 @@
 #include "romfs.h"
 #include "wasi.h"
 
-static m3_wasi_context_t* wasi_context;
+static m3_wasi_context_t wasi_context;
 
 typedef struct wasi_iovec_t
 {
@@ -683,49 +683,14 @@ M3Result SuppressLookupFailure(M3Result i_result)
 
 m3_wasi_context_t* GetWasiContext()
 {
-    return wasi_context;
-}
-
-
-uint8_t *romfs;
-size_t romfs_size;
-
-#define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return 1; }
-
-static
-int OpenRomfs(const char * filename) {
-    long filesize;
-    FILE *f = fopen(filename, "rb");
-    if (NULL == f) FATAL("can't open %s", filename);
-
-    fseek(f, 0L, SEEK_END);
-    filesize = ftell(f);
-    rewind(f);
-
-    romfs = (uint8_t *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fileno(f), 0);
-    if (romfs == MAP_FAILED) FATAL("can't map file");
-
-    fclose(f);
-
-    romfs_size = filesize;
-
-    return 0;
+    return &wasi_context;
 }
 
 M3Result  LinkWASI  (IM3Module module)
 {
     M3Result result = m3Err_none;
 
-    OpenRomfs("test.romfs");
-
-    RomfsLoad(romfs, romfs_size);
-
-    if (!wasi_context) {
-        wasi_context = (m3_wasi_context_t*)malloc(sizeof(m3_wasi_context_t));
-        wasi_context->exit_code = 0;
-        wasi_context->argc = 0;
-        wasi_context->argv = 0;
-    }
+    RomfsLoad(wasi_context.RomfsImg, wasi_context.RomfsImgLen);
 
     static const char* namespaces[2] = { "wasi_unstable", "wasi_snapshot_preview1" };
 
@@ -738,8 +703,8 @@ _   (SuppressLookupFailure (m3_LinkRawFunction (module, namespaces[1], "path_fil
     {
         const char* wasi = namespaces[i];
 
-_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "args_get",           "i(**)",   &m3_wasi_generic_args_get, wasi_context)));
-_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "args_sizes_get",     "i(**)",   &m3_wasi_generic_args_sizes_get, wasi_context)));
+_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "args_get",           "i(**)",   &m3_wasi_generic_args_get, &wasi_context)));
+_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "args_sizes_get",     "i(**)",   &m3_wasi_generic_args_sizes_get, &wasi_context)));
 _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "clock_res_get",        "i(i*)",   &m3_wasi_generic_clock_res_get)));
 _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "clock_time_get",       "i(iI*)",  &m3_wasi_generic_clock_time_get)));
 _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "environ_get",          "i(**)",   &m3_wasi_generic_environ_get)));
@@ -778,7 +743,7 @@ _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "path_open",  
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "path_unlink_file",         "i(i*i)",       )));
 
 _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "poll_oneoff",          "i(**i*)", &m3_wasi_generic_poll_oneoff)));
-_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "proc_exit",          "v(i)",    &m3_wasi_generic_proc_exit, wasi_context)));
+_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "proc_exit",          "v(i)",    &m3_wasi_generic_proc_exit, &wasi_context)));
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "proc_raise",           "i(i)",    )));
 _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "random_get",           "i(*i)",   &m3_wasi_generic_random_get)));
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sched_yield",          "i()",     )));

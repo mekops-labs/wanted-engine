@@ -44,6 +44,7 @@ target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-jso
 if (wasiType STREQUAL "Romfs")
     target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/romfs-lib/include)
     target_link_libraries(${target} PRIVATE romfs)
+    target_compile_definitions(${target} PUBLIC WANTED_ROMFS=1)
 endif()
 
 target_link_libraries(${target} PRIVATE m3)
