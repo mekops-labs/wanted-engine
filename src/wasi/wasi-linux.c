@@ -696,6 +696,9 @@ m3ApiRawFunction(m3_wasi_generic_proc_exit)
     m3ApiTrap(m3Err_trapExit);
 }
 
+m3ApiRawFunction(m3_wasi_generic_sock_send)
+{
+}
 
 static
 M3Result SuppressLookupFailure(M3Result i_result)
@@ -777,7 +780,7 @@ _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "random_get", 
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sched_yield",          "i()",     )));
 
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sock_recv",            "i(i*ii**)",        )));
-//_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sock_send",            "i(i*ii*)",         )));
+_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sock_send",            "i(i*ii*)", &m3_wasi_generic_sock_send)));
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sock_shutdown",        "i(ii)",            )));
     }
 
