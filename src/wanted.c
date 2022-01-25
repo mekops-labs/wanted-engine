@@ -4,8 +4,8 @@
 
 #include <tiny-json.h>
 
-#include "my_api.h"
-#include "wasi/wasi.h"
+#include <my_api.h>
+#include <wasi.h>
 
 #include <wanted.h>
 

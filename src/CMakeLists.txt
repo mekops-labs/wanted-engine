@@ -1,6 +1,7 @@
 set(sources
     "wanted.c"
     "my_api.c"
+    "vfs/vfs.c"
 )
 
 set(wasiTypes Linux Romfs)
@@ -41,6 +42,7 @@ add_library(${target} STATIC
 
 target_include_directories(${target}
     PUBLIC ${CMAKE_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     )
 
