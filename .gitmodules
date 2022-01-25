@@ -7,3 +7,6 @@
 [submodule "vendor/romfs-lib"]
 	path = vendor/romfs-lib
 	url = git@github.com:mek-x/romfs-lib
+[submodule "test/unity"]
+	path = test/unity
+	url = https://github.com/ThrowTheSwitch/Unity.git
