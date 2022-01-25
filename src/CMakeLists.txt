@@ -1,5 +1,5 @@
 set(sources
-    "main.c"
+    "wanted.c"
     "my_api.c"
 )
 
@@ -33,18 +33,21 @@ if (wasiType STREQUAL "Romfs")
     add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/romfs)
 endif()
 
-add_executable(${target}
+add_library(${target} STATIC
     ${sources}
     ${wasi-src}
     ${tiny-json-src}
 )
 
-target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json)
+target_include_directories(${target}
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
+    )
 
 if (wasiType STREQUAL "Romfs")
     target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/romfs-lib/include)
     target_link_libraries(${target} PRIVATE romfs)
-    target_compile_definitions(${target} PUBLIC WANTED_ROMFS=1)
+    target_compile_definitions(${target} PRIVATE WANTED_ROMFS=1)
 endif()
 
 target_link_libraries(${target} PRIVATE m3)
@@ -58,7 +61,7 @@ option(EnableWasm3Trace "Enable wasm3 tracing" OFF)
 
 if (EnableWasm3Trace)
     message("Trace for WASM3 enabled")
-    target_compile_definitions(m3 PUBLIC d_m3EnableStrace=1 DEBUG=1)
+    target_compile_definitions(m3 PUBLIC d_m3EnableStrace=1 DEBUG=1 d_m3LogRuntime=1 d_m3LogHeapOps=1 d_m3LogNativeStack=1)# d_m3FixedHeap=307200)
 endif()
 
 target_link_libraries(${target} PRIVATE m)

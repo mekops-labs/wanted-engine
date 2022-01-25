@@ -1,11 +1,20 @@
 cmake_minimum_required(VERSION 3.9)
-project(wanted)
+project(
+    wanted
+    VERSION 0.0.1
+    LANGUAGES C
+    )
 
 set(target ${CMAKE_PROJECT_NAME})
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/src)
 
-target_include_directories(${target} PUBLIC include)
+add_executable(${target}_cmd cmd/main.c)
+
+target_link_libraries(${target}_cmd
+    PUBLIC pthread
+    PUBLIC ${target}
+    )
 
 add_custom_target(wasm
     COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm clean
