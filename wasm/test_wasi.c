@@ -1,24 +1,13 @@
-#define _XOPEN_SOURCE 700
-#include <stdio.h>
-#include <sys/types.h>
-#include <dirent.h>
+#include <unistd.h>
 
 int main (void)
 {
-  DIR *dp;
-  struct dirent *ep;
-  dp = opendir ("./");
+    ssize_t ret;
+    const char *hello = "hello\n";
 
-  if (dp != NULL)
-  {
-    while ((ep = readdir (dp))) {
-      printf ("%s%c\n", ep->d_name, ep->d_type == DT_DIR ? '/' : ' ');
-    }
+    ret = write(STDOUT_FILENO, hello, 8);
 
-    (void) closedir (dp);
-  }
-  else
-    perror ("Couldn't open the directory");
+    if (ret < 0) return -1;
 
-  return 0;
+    return 0;
 }

@@ -3,6 +3,10 @@
 #include <errno.h>
 #include <string.h>
 
+#include <wanted.h>
+
+#include "test_wasi.wasm.h"
+
 /***************************************/
 TEST_GROUP(general);
 /***************************************/
@@ -15,12 +19,23 @@ TEST_TEAR_DOWN(general)
 {
 }
 
-TEST(general, someTest)
+TEST(general, runSimpleWasm)
 {
-    TEST_ASSERT_EQUAL_INT(0, 1);
+    data_t ctx;
+    wapp_t w = {
+        .wasm = test_wasi_wasm,
+        .wasm_len = test_wasi_wasm_len
+        };
+    int ret;
+
+    ctx.id = 0;
+    ctx.wapp = &w;
+
+    ret = RunWapp(&ctx);
+    TEST_ASSERT_EQUAL_INT(0, ret);
 }
 
 TEST_GROUP_RUNNER(general)
 {
-    RUN_TEST_CASE(general, someTest);
+    RUN_TEST_CASE(general, runSimpleWasm);
 }
