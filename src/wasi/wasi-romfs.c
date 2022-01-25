@@ -89,7 +89,7 @@ __wasi_errno_t errno_to_wasi(int errnum) {
 
 static inline
 __wasi_filetype_t convert_filetype(uint8_t t) {
-    switch (t) {
+    switch (t & ROMFS_TYPE_MASK) {
     case ROMFS_TYPE_HARDLINK:   return __WASI_FILETYPE_SYMBOLIC_LINK;
     case ROMFS_TYPE_DIRECTORY:  return __WASI_FILETYPE_DIRECTORY;
     case ROMFS_TYPE_FILE:       return __WASI_FILETYPE_REGULAR_FILE;
@@ -514,7 +514,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_readdir)
     size_t used;
     __wasi_size_t bUsed = 0;
 
-    ret = RomfsReadDir(fd, dBuf, 10, last, &used);
+    ret = RomfsReadDir(fd, dBuf, 10, &last, &used);
     if (ret < 0) {
         m3ApiReturn(errno_to_wasi(-ret));
     }
