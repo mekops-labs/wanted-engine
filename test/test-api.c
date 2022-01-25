@@ -23,8 +23,8 @@ TEST(general, runSimpleWasm)
 {
     data_t ctx;
     wapp_t w = {
-        .wasm = test_wasi_wasm,
-        .wasm_len = test_wasi_wasm_len
+        .img = test_wasi_wasm,
+        .img_len = test_wasi_wasm_len
         };
     int ret;
 

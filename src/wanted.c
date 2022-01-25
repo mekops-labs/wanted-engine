@@ -11,6 +11,34 @@
 
 #define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return -1; }
 
+#ifdef WANTED_ROMFS
+#include <romfs.h>
+
+static int LoadWasmFromRomfs(const char* wasmName, uint8_t *img, size_t imgLen, wapp_t *wasm)
+{
+    int ret;
+
+    if (wasmName == NULL || img == NULL || wasm == NULL) FATAL("invalid paramter");
+
+    ret = RomfsLoad(img, imgLen);
+    if (ret < 0) FATAL("load returned %d", ret);
+
+    ret = RomfsFdStatAt(3, wasmName, NULL);
+    if (ret < 0) FATAL("stat returned %d", ret);
+    if (!IS_FILE(ret)) FATAL("%s is not correct file", wasmName);
+
+    ret = RomfsOpenAt(3, wasmName, 0);
+    if (ret < 0) FATAL("open returned %d", ret);
+
+    ret = RomfsMapFile((void **)&wasm->img, &wasm->img_len, ret, 0);
+
+    RomfsClose(ret);
+
+    return 0;
+}
+
+#endif
+
 int RunWapp(data_t *ctx)
 {
     M3Result status;
@@ -19,11 +47,18 @@ int RunWapp(data_t *ctx)
     IM3Runtime rt = m3_NewRuntime(env, 4096, NULL);
     IM3Function f;
     m3_wasi_context_t *wasiCtx;
+    wapp_t wasm;
+
+#ifdef WANTED_ROMFS
+    if (0 > LoadWasmFromRomfs("app.wasm", ctx->wapp->img, ctx->wapp->img_len, &wasm)) FATAL("Can't load from romfs");
+#else
+    wasm.img = ctx->wapp->img;
+    wasm.img_len = ctx->wapp->img_len;
+#endif
 
     printf("entering thread: %d\n", ctx->id);
-
-    printf("parsing wasm: %p (%ld)\n",ctx->wapp->wasm, ctx->wapp->wasm_len);
-    status = m3_ParseModule(env, &mod, ctx->wapp->wasm, ctx->wapp->wasm_len);
+    printf("parsing wasm: %p (%ld)\n", wasm.img, wasm.img_len);
+    status = m3_ParseModule(env, &mod, wasm.img, wasm.img_len);
     if (status) FATAL("m3_ParseModule[%d]: %s", ctx->id, status);
 
     printf("loading wasm\n");
@@ -37,8 +72,8 @@ int RunWapp(data_t *ctx)
     wasiCtx->argv = NULL;
 
 #ifdef WANTED_ROMFS
-    wasiCtx->RomfsImg = ctx->romfs.img;
-    wasiCtx->RomfsImgLen = ctx->romfs.len;
+    wasiCtx->RomfsImg = ctx->wapp->img;
+    wasiCtx->RomfsImgLen = ctx->wapp->img_len;
 
     printf("romfs: %p (%ld)\n", wasiCtx->RomfsImg, wasiCtx->RomfsImgLen);
 #endif
@@ -63,3 +98,7 @@ int RunWapp(data_t *ctx)
 
     return 0;
 }
+
+/*
+
+    */
