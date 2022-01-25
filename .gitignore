@@ -1,5 +1,5 @@
 .vscode
 build
-*.wasm*
+wasm/*.wasm*
 *.wat
 *.romfs
