@@ -6,6 +6,7 @@ project(
     )
 
 set(target ${CMAKE_PROJECT_NAME})
+message("Building ${target} v${CMAKE_PROJECT_VERSION}")
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/src)
 
@@ -21,3 +22,6 @@ add_custom_target(wasm
     COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm
 )
 #add_dependencies(${CMAKE_PROJECT_NAME} compile_wasm)
+
+enable_testing()
+add_subdirectory(test)
