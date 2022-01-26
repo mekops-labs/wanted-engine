@@ -243,7 +243,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_fdstat_get)
     int ret = preopen[fd].drv->FdStat(preopen[fd].fd, &stat);
     if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
 
-    fdstat->fs_filetype = convert_filetype(ret & ROMFS_TYPE_MASK);
+    fdstat->fs_filetype = stat.filetype;
 
     m3ApiWriteMem16(&fdstat->fs_flags, 0); // no flags supported
     fdstat->fs_rights_base = (uint64_t)-1; // all rights
@@ -341,15 +341,15 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
     memcpy (host_path, path, path_len);
     host_path[path_len] = '\0'; // NULL terminator
 
-    romfs_stat_t statbuf;
+    vfs_filestat_t statbuf;
     __wasi_filestat_t stat;
 
-    int ret = RomfsFdStatAt(preopen[fd].fd, host_path, &statbuf);
+    int ret = preopen[fd].drv->FdStatAt(fd, host_path, &statbuf);
     if (ret < 0) {
 	    m3ApiReturn(errno_to_wasi(-ret));
     }
 
-    stat.filetype = convert_filetype(statbuf.mode & ROMFS_TYPE_MASK);
+    stat.filetype = statbuf.filetype;
 
     stat.dev = 0; // not implemented
     stat.ino = statbuf.ino;
@@ -399,23 +399,23 @@ m3ApiRawFunction(m3_wasi_generic_path_open)
     host_path[path_len] = '\0'; // NULL terminator
 
     // translate o_flags and fs_flags into flags and mode
-    int flags = ((oflags & __WASI_OFLAGS_CREAT)             ? O_CREAT     : 0) |
-                ((oflags & __WASI_OFLAGS_DIRECTORY)         ? O_DIRECTORY : 0) |
-                ((oflags & __WASI_OFLAGS_EXCL)              ? O_EXCL      : 0) |
-                ((oflags & __WASI_OFLAGS_TRUNC)             ? O_TRUNC     : 0) |
-                ((fs_flags & __WASI_FDFLAGS_APPEND)         ? O_APPEND    : 0) |
-                ((fs_flags & __WASI_FDFLAGS_DSYNC)          ? O_DSYNC     : 0) |
-                ((fs_flags & __WASI_FDFLAGS_NONBLOCK)       ? O_NONBLOCK  : 0) |
-                ((fs_flags & __WASI_FDFLAGS_RSYNC)          ? O_RSYNC     : 0) |
-                ((fs_flags & __WASI_FDFLAGS_SYNC)           ? O_SYNC      : 0);
+    int flags = ((oflags & __WASI_OFLAGS_CREAT)             ? VFS_O_CREAT     : 0) |
+                ((oflags & __WASI_OFLAGS_DIRECTORY)         ? VFS_O_DIRECTORY : 0) |
+                ((oflags & __WASI_OFLAGS_EXCL)              ? VFS_O_EXCL      : 0) |
+                ((oflags & __WASI_OFLAGS_TRUNC)             ? VFS_O_TRUNC     : 0) |
+                ((fs_flags & __WASI_FDFLAGS_APPEND)         ? VFS_O_APPEND    : 0) |
+                ((fs_flags & __WASI_FDFLAGS_DSYNC)          ? VFS_O_DSYNC     : 0) |
+                ((fs_flags & __WASI_FDFLAGS_NONBLOCK)       ? VFS_O_NONBLOCK  : 0) |
+                ((fs_flags & __WASI_FDFLAGS_RSYNC)          ? VFS_O_RSYNC     : 0) |
+                ((fs_flags & __WASI_FDFLAGS_SYNC)           ? VFS_O_SYNC      : 0);
 
     if ((fs_rights_base & __WASI_RIGHTS_FD_READ) &&
         (fs_rights_base & __WASI_RIGHTS_FD_WRITE)) {
-        flags |= O_RDWR;
+        flags |= VFS_O_RDWR;
     } else if ((fs_rights_base & __WASI_RIGHTS_FD_WRITE)) {
-        flags |= O_WRONLY;
+        flags |= VFS_O_WRONLY;
     } else if ((fs_rights_base & __WASI_RIGHTS_FD_READ)) {
-        flags |= O_RDONLY; // no-op because O_RDONLY is 0
+        flags |= VFS_O_RDONLY; // no-op because O_RDONLY is 0
     }
 
     host_fd = RomfsOpenAt(dirfd, host_path, flags);
@@ -495,36 +495,16 @@ m3ApiRawFunction(m3_wasi_generic_fd_readdir)
     m3ApiCheckMem(buf,      buf_len);
     m3ApiCheckMem(bufused,  sizeof(__wasi_size_t));
 
-    __wasi_dirent_t dir;
-    romfs_dirent_t dBuf[10];
     int ret;
     uint32_t last = cookie;
     size_t used;
-    __wasi_size_t bUsed = 0;
 
-    ret = RomfsReadDir(fd, dBuf, 10, &last, &used);
+    ret = preopen[fd].drv->ReadDir(fd, buf, buf_len, &last, &used);
     if (ret < 0) {
         m3ApiReturn(errno_to_wasi(-ret));
     }
 
-    for (size_t i = 0; i < used; i++) {
-        dir.d_next = dBuf[i].next;
-        dir.d_ino = dBuf[i].inode;
-        dir.d_namlen = dBuf[i].nameLen;
-        dir.d_type = convert_filetype(dBuf[i].type);
-
-        if (bUsed + sizeof(dir) + dir.d_namlen > buf_len) {
-            bUsed = buf_len;
-            break;
-        }
-
-        memcpy(buf + bUsed, &dir, sizeof(dir));
-        bUsed += sizeof(dir);
-        memcpy(buf + bUsed, dBuf[i].name, dir.d_namlen);
-        bUsed += dir.d_namlen;
-    }
-
-    m3ApiWriteMem32(bufused, bUsed);
+    m3ApiWriteMem32(bufused, (__wasi_size_t)used);
 
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }

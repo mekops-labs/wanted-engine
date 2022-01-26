@@ -6,6 +6,7 @@
 #include <wanted.h>
 
 #include "test_wasi.wasm.h"
+#include "test_wasi.romfs.h"
 
 /***************************************/
 TEST_GROUP(general);
@@ -23,8 +24,13 @@ TEST(general, runSimpleWasm)
 {
     data_t ctx;
     wapp_t w = {
+#ifndef WANTED_ROMFS
         .img = test_wasi_wasm,
         .img_len = test_wasi_wasm_len
+#else
+        .img = test_wasi_romfs,
+        .img_len = test_wasi_romfs_len
+#endif
         };
     int ret;
 

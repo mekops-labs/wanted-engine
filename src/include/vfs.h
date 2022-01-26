@@ -14,6 +14,20 @@ typedef uint8_t vfs_filetype_t;
 #define VFS_FILETYPE_SOCKET_STREAM       6
 #define VFS_FILETYPE_SYMBOLIC_LINK       7
 
+// open flags
+#define VFS_O_CREAT         0100
+#define VFS_O_DIRECTORY     0200000     /* Must be a directory.  */
+#define VFS_O_EXCL          0200
+#define VFS_O_TRUNC         01000
+#define VFS_O_APPEND        02000
+#define VFS_O_NONBLOCK      04000
+#define VFS_O_DSYNC         010000      /* Synchronize data.  */
+#define VFS_O_SYNC          04010000
+#define VFS_O_RSYNC         VFS_O_SYNC  /* Synchronize read operations.  */
+#define VFS_O_RDWR          02
+#define VFS_O_WRONLY        01
+#define VFS_O_RDONLY        00
+
 typedef struct vfs_filestat_t {
     uint32_t dev;               // Device/driver id containing the file.
     uint32_t ino;               // File serial number.

@@ -25,3 +25,7 @@ target_include_directories(tests PUBLIC ${unity_root}/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src/include)
+
+if (wasiType STREQUAL "Romfs" OR wasiType STREQUAL "Vfs")
+target_compile_definitions(tests PRIVATE WANTED_ROMFS=1)
+endif()

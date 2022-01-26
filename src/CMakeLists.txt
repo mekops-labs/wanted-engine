@@ -37,7 +37,7 @@ set(tiny-json-src
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
 
-if (wasiType STREQUAL "Romfs")
+if (wasiType STREQUAL "Romfs" OR wasiType STREQUAL "Vfs")
     add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/romfs)
 endif()
 
@@ -54,7 +54,7 @@ target_include_directories(${target}
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     )
 
-if (wasiType STREQUAL "Romfs")
+if (wasiType STREQUAL "Romfs" OR wasiType STREQUAL "Vfs")
     target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/romfs-lib/include)
     target_link_libraries(${target} PRIVATE romfs)
     target_compile_definitions(${target} PRIVATE WANTED_ROMFS=1)
