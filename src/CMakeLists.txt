@@ -1,10 +1,13 @@
 set(sources
     "wanted.c"
     "my_api.c"
-    "vfs/vfs.c"
 )
 
-set(wasiTypes Linux Romfs)
+set(vfs-srcs
+    "vfs/vfs-romfs.c"
+    )
+
+set(wasiTypes Linux Romfs Vfs)
 set(wasiType Linux CACHE STRING "WASI type")
 set_property(CACHE wasiType PROPERTY STRINGS ${wasiTypes})
 
@@ -21,6 +24,10 @@ elseif (wasiType STREQUAL "Romfs")
     set(wasi-src
         "wasi/wasi-romfs.c"
     )
+elseif (wasiType STREQUAL "Vfs")
+    set(wasi-src
+        "wasi/wasi-vfs.c"
+    )
 endif()
 
 # Add tiny-json to the build
@@ -36,6 +43,7 @@ endif()
 
 add_library(${target} STATIC
     ${sources}
+    ${vfs-srcs}
     ${wasi-src}
     ${tiny-json-src}
 )

@@ -32,14 +32,15 @@ typedef struct vfs_dirent_t {
 } vfs_dirent_t;
 
 typedef struct vfs_driver_t {
-    uint32_t id;
-    int  (*VfsOpenAt)(int fd, const char *path, int flags);
-    int  (*VfsClose)(int fd);
-    int  (*VfsFdStat)(int fd, vfs_filestat_t *stat);
-    int  (*VfsFdStatAt)(int fd, const char *path, vfs_filestat_t *stat);
-    int  (*VfsRead)(int fd, void *buf, size_t nbyte);
-    int  (*VfsWrite)(int fd, void *buf, size_t nbyte);
-    long (*VfsSeek)(int fd, long off, int whence);
-    long (*VfsTell)(int fd);
-    int  (*VfsReadDir)(int fd, void *buf, size_t bufLen, uint32_t *cookie, size_t *bufUsed);
+    const char id[4];
+    int  (*Open)(const char *path, int flags);
+    int  (*OpenAt)(int fd, const char *path, int flags);
+    int  (*Close)(int fd);
+    int  (*FdStat)(int fd, vfs_filestat_t *stat);
+    int  (*FdStatAt)(int fd, const char *path, vfs_filestat_t *stat);
+    int  (*Read)(int fd, void *buf, size_t nbyte);
+    int  (*Write)(int fd, void *buf, size_t nbyte);
+    long (*Seek)(int fd, long off, int whence);
+    long (*Tell)(int fd);
+    int  (*ReadDir)(int fd, void *buf, size_t bufLen, uint32_t *cookie, size_t *bufUsed);
 } vfs_driver_t;
