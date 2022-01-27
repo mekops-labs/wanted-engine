@@ -5,6 +5,7 @@ set(sources
 
 set(vfs-srcs
     "vfs/vfs-romfs.c"
+    "vfs/vfs-linux.c"
     )
 
 set(wasiTypes Linux Romfs Vfs)
@@ -71,7 +72,7 @@ option(EnableWasm3Trace "Enable wasm3 tracing" OFF)
 
 if (EnableWasm3Trace)
     message("Trace for WASM3 enabled")
-    target_compile_definitions(m3 PUBLIC d_m3EnableStrace=1 DEBUG=1 d_m3LogRuntime=1 d_m3LogHeapOps=1 d_m3LogNativeStack=1)# d_m3FixedHeap=307200)
+    target_compile_definitions(m3 PUBLIC d_m3EnableStrace=1 DEBUG=1)
 endif()
 
 target_link_libraries(${target} PRIVATE m)

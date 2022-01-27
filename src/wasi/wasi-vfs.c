@@ -1,5 +1,5 @@
 #include <sys/types.h>
-#include <sys/stat.h>
+#include <fcntl.h>
 #include <sys/random.h>
 #include <time.h>
 #include <errno.h>
@@ -18,6 +18,7 @@
 #include "vfs.h"
 
 extern vfs_driver_t vfs_romfs_drv;
+extern vfs_driver_t vfs_linux_drv;
 
 static m3_wasi_context_t wasi_context;
 
@@ -30,60 +31,71 @@ typedef struct wasi_iovec_t
 typedef struct Preopen {
     int             fd;
     const char*     path;
+    const char*     hpath;
     vfs_driver_t    *drv;
+    bool            opened;
 } Preopen;
 
-Preopen preopen[] = {
-    {  0, "<stdin>" , NULL },
-    {  1, "<stdout>", NULL },
-    {  2, "<stderr>", NULL },
-    {  3, "/"       , &vfs_romfs_drv },
+#define MAX_OPEN 20
+Preopen preopen[MAX_OPEN] = {
+    {  0, "<stdin>" , "", &vfs_linux_drv, true },
+    {  1, "<stdout>", "", &vfs_linux_drv, true },
+    {  2, "<stderr>", "", &vfs_linux_drv, true },
+    { -1, "/"       , "/", &vfs_romfs_drv, true },
+    { -1, "/dir"    , ".", &vfs_linux_drv, true },
+    { -1, "/dir/.." , "/", &vfs_romfs_drv, true },
 };
 
-// dirty!!! TODO: Make it better
-#define ROMFS_FD(fd)    ((fd) | 0xf000)
-#define IS_ROMFS_FD(fd) (((fd) & 0xf000) == 0xf000)
-
-const size_t preopen_cnt = sizeof(preopen)/sizeof(preopen[0]);
+static
+int FindFirstClosedFd()
+{
+    for (int i = 0; i < MAX_OPEN; i++) {
+        if (!preopen[i].opened) {
+            return i;
+        }
+    }
+    return -EMFILE;
+}
 
 #  define CASE_RET(e1,e2)     case e1:   return e2;   break
 
 static
 __wasi_errno_t errno_to_wasi(int errnum) {
     switch (errnum) {
-    CASE_RET( EPERM   , __WASI_ERRNO_PERM   );
-    CASE_RET( ENOENT  , __WASI_ERRNO_NOENT  );
-    CASE_RET( ESRCH   , __WASI_ERRNO_SRCH   );
-    CASE_RET( EINTR   , __WASI_ERRNO_INTR   );
-    CASE_RET( EIO     , __WASI_ERRNO_IO     );
-    CASE_RET( ENXIO   , __WASI_ERRNO_NXIO   );
-    CASE_RET( E2BIG   , __WASI_ERRNO_2BIG   );
-    CASE_RET( ENOEXEC , __WASI_ERRNO_NOEXEC );
-    CASE_RET( EBADF   , __WASI_ERRNO_BADF   );
-    CASE_RET( ECHILD  , __WASI_ERRNO_CHILD  );
-    CASE_RET( EAGAIN  , __WASI_ERRNO_AGAIN  );
-    CASE_RET( ENOMEM  , __WASI_ERRNO_NOMEM  );
-    CASE_RET( EACCES  , __WASI_ERRNO_ACCES  );
-    CASE_RET( EFAULT  , __WASI_ERRNO_FAULT  );
-    CASE_RET( EBUSY   , __WASI_ERRNO_BUSY   );
-    CASE_RET( EEXIST  , __WASI_ERRNO_EXIST  );
-    CASE_RET( EXDEV   , __WASI_ERRNO_XDEV   );
-    CASE_RET( ENODEV  , __WASI_ERRNO_NODEV  );
-    CASE_RET( ENOTDIR , __WASI_ERRNO_NOTDIR );
-    CASE_RET( EISDIR  , __WASI_ERRNO_ISDIR  );
-    CASE_RET( EINVAL  , __WASI_ERRNO_INVAL  );
-    CASE_RET( ENFILE  , __WASI_ERRNO_NFILE  );
-    CASE_RET( EMFILE  , __WASI_ERRNO_MFILE  );
-    CASE_RET( ENOTTY  , __WASI_ERRNO_NOTTY  );
-    CASE_RET( ETXTBSY , __WASI_ERRNO_TXTBSY );
-    CASE_RET( EFBIG   , __WASI_ERRNO_FBIG   );
-    CASE_RET( ENOSPC  , __WASI_ERRNO_NOSPC  );
-    CASE_RET( ESPIPE  , __WASI_ERRNO_SPIPE  );
-    CASE_RET( EROFS   , __WASI_ERRNO_ROFS   );
-    CASE_RET( EMLINK  , __WASI_ERRNO_MLINK  );
-    CASE_RET( EPIPE   , __WASI_ERRNO_PIPE   );
-    CASE_RET( EDOM    , __WASI_ERRNO_DOM    );
-    CASE_RET( ERANGE  , __WASI_ERRNO_RANGE  );
+    CASE_RET( EPERM       , __WASI_ERRNO_PERM         );
+    CASE_RET( ENOENT      , __WASI_ERRNO_NOENT        );
+    CASE_RET( ESRCH       , __WASI_ERRNO_SRCH         );
+    CASE_RET( EINTR       , __WASI_ERRNO_INTR         );
+    CASE_RET( EIO         , __WASI_ERRNO_IO           );
+    CASE_RET( ENXIO       , __WASI_ERRNO_NXIO         );
+    CASE_RET( E2BIG       , __WASI_ERRNO_2BIG         );
+    CASE_RET( ENOEXEC     , __WASI_ERRNO_NOEXEC       );
+    CASE_RET( EBADF       , __WASI_ERRNO_BADF         );
+    CASE_RET( ECHILD      , __WASI_ERRNO_CHILD        );
+    CASE_RET( EAGAIN      , __WASI_ERRNO_AGAIN        );
+    CASE_RET( ENOMEM      , __WASI_ERRNO_NOMEM        );
+    CASE_RET( EACCES      , __WASI_ERRNO_ACCES        );
+    CASE_RET( EFAULT      , __WASI_ERRNO_FAULT        );
+    CASE_RET( EBUSY       , __WASI_ERRNO_BUSY         );
+    CASE_RET( EEXIST      , __WASI_ERRNO_EXIST        );
+    CASE_RET( EXDEV       , __WASI_ERRNO_XDEV         );
+    CASE_RET( ENODEV      , __WASI_ERRNO_NODEV        );
+    CASE_RET( ENOTDIR     , __WASI_ERRNO_NOTDIR       );
+    CASE_RET( EISDIR      , __WASI_ERRNO_ISDIR        );
+    CASE_RET( EINVAL      , __WASI_ERRNO_INVAL        );
+    CASE_RET( ENFILE      , __WASI_ERRNO_NFILE        );
+    CASE_RET( EMFILE      , __WASI_ERRNO_MFILE        );
+    CASE_RET( ENOTTY      , __WASI_ERRNO_NOTTY        );
+    CASE_RET( ETXTBSY     , __WASI_ERRNO_TXTBSY       );
+    CASE_RET( EFBIG       , __WASI_ERRNO_FBIG         );
+    CASE_RET( ENOSPC      , __WASI_ERRNO_NOSPC        );
+    CASE_RET( ESPIPE      , __WASI_ERRNO_SPIPE        );
+    CASE_RET( EROFS       , __WASI_ERRNO_ROFS         );
+    CASE_RET( EMLINK      , __WASI_ERRNO_MLINK        );
+    CASE_RET( EPIPE       , __WASI_ERRNO_PIPE         );
+    CASE_RET( EDOM        , __WASI_ERRNO_DOM          );
+    CASE_RET( ERANGE      , __WASI_ERRNO_RANGE        );
+    CASE_RET( ENAMETOOLONG, __WASI_ERRNO_NAMETOOLONG  );
     }
     return __WASI_ERRNO_INVAL;
 }
@@ -209,7 +221,9 @@ m3ApiRawFunction(m3_wasi_generic_fd_prestat_dir_name)
 
     m3ApiCheckMem(path, path_len);
 
-    if (fd < 3 || fd >= preopen_cnt) { m3ApiReturn(__WASI_ERRNO_BADF); }
+    if (fd < 3 || fd >= MAX_OPEN) { m3ApiReturn(__WASI_ERRNO_BADF); }
+    if (preopen[fd].path == NULL) { m3ApiReturn(__WASI_ERRNO_BADF); }
+
     size_t slen = strlen(preopen[fd].path) + 1;
     memcpy(path, preopen[fd].path, M3_MIN(slen, path_len));
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
@@ -223,7 +237,12 @@ m3ApiRawFunction(m3_wasi_generic_fd_prestat_get)
 
     m3ApiCheckMem(buf, 8);
 
-    if (fd < 3 || fd >= preopen_cnt) { m3ApiReturn(__WASI_ERRNO_BADF); }
+    if (fd < 3 || fd >= MAX_OPEN) { m3ApiReturn(__WASI_ERRNO_BADF); }
+    if (preopen[fd].path == NULL) { m3ApiReturn(__WASI_ERRNO_BADF); }
+
+    if (preopen[fd].fd == -1) {
+        preopen[fd].fd = preopen[fd].drv->Open(preopen[fd].hpath, O_DIRECTORY);
+    }
 
     m3ApiWriteMem32(buf+0, __WASI_PREOPENTYPE_DIR);
     m3ApiWriteMem32(buf+4, strlen(preopen[fd].path) + 1);
@@ -238,7 +257,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_fdstat_get)
 
     m3ApiCheckMem(fdstat, sizeof(__wasi_fdstat_t));
 
-    vfs_filestat_t stat;
+    vfs_fdstat_t stat;
 
     int ret = preopen[fd].drv->FdStat(preopen[fd].fd, &stat);
     if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
@@ -288,10 +307,10 @@ m3ApiRawFunction(m3_wasi_unstable_fd_seek)
     default:                m3ApiReturn(__WASI_ERRNO_INVAL);
     }
 
-    int64_t ret;
-    ret = RomfsSeek(fd, offset, whence);
+    long pos;
+    int ret = preopen[fd].drv->Seek(preopen[fd].fd, offset, whence, &pos);
     if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
-    m3ApiWriteMem64(result, ret);
+    m3ApiWriteMem64(result, pos);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
@@ -314,10 +333,10 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_fd_seek)
     default:                m3ApiReturn(__WASI_ERRNO_INVAL);
     }
 
-    int64_t ret;
-    ret = RomfsSeek(fd, offset, whence);
+    long pos;
+    int ret = preopen[fd].drv->Seek(preopen[fd].fd, offset, whence, &pos);
     if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
-    m3ApiWriteMem64(result, ret);
+    m3ApiWriteMem64(result, pos);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
@@ -344,20 +363,17 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
     vfs_filestat_t statbuf;
     __wasi_filestat_t stat;
 
-    int ret = preopen[fd].drv->FdStatAt(fd, host_path, &statbuf);
-    if (ret < 0) {
-	    m3ApiReturn(errno_to_wasi(-ret));
-    }
+    int ret = preopen[fd].drv->FileStatAt(preopen[fd].fd, host_path, &statbuf);
+    if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
 
     stat.filetype = statbuf.filetype;
-
-    stat.dev = 0; // not implemented
-    stat.ino = statbuf.ino;
-    stat.nlink = 0; // not implemented
-    stat.size = statbuf.size;
-    stat.atim = 0; // not implemented
-    stat.mtim = 0; // not implemented
-    stat.ctim = 0; // not implemented
+    stat.dev      = statbuf.dev;
+    stat.ino      = statbuf.ino;
+    stat.nlink    = statbuf.nlink;
+    stat.size     = statbuf.size;
+    stat.atim     = statbuf.atim;
+    stat.mtim     = statbuf.mtim;
+    stat.ctim     = statbuf.ctim;
 
     memset(buf, 0, 64);
     m3ApiWriteMem64(buf+0,  stat.dev);
@@ -418,11 +434,20 @@ m3ApiRawFunction(m3_wasi_generic_path_open)
         flags |= VFS_O_RDONLY; // no-op because O_RDONLY is 0
     }
 
-    host_fd = RomfsOpenAt(dirfd, host_path, flags);
+    host_fd = preopen[dirfd].drv->OpenAt(preopen[dirfd].fd, host_path, flags);
     if (host_fd < 0) {
         m3ApiReturn(errno_to_wasi (-host_fd));
     } else {
-        m3ApiWriteMem32(fd, ROMFS_FD(host_fd));
+        int ret = FindFirstClosedFd();
+        if (ret < 0) {
+            preopen[dirfd].drv->Close(host_fd);
+            m3ApiReturn(errno_to_wasi (-ret));
+        }
+        preopen[ret].fd = host_fd;
+        preopen[ret].opened = true;
+        preopen[ret].drv = preopen[dirfd].drv;
+
+        m3ApiWriteMem32(fd, ret);
         m3ApiReturn(__WASI_ERRNO_SUCCESS);
     }
 }
@@ -444,7 +469,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_read)
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
         if (len == 0) continue;
 
-        int ret = fd >= 3 ? RomfsRead(fd, addr, len) : read(fd, addr, len);
+        int ret = preopen[fd].drv->Read(fd, addr, len);
         if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
         res += ret;
         if ((size_t)ret < len) break;
@@ -474,8 +499,8 @@ m3ApiRawFunction(m3_wasi_generic_fd_write)
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
         if (len == 0) continue;
 
-        int ret = write (fd, addr, len);
-        if (ret < 0) m3ApiReturn(errno_to_wasi(errno));
+        int ret = preopen[fd].drv->Write(fd, addr, len);
+        if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
         res += ret;
         if ((size_t)ret < len) break;
     }
@@ -496,10 +521,10 @@ m3ApiRawFunction(m3_wasi_generic_fd_readdir)
     m3ApiCheckMem(bufused,  sizeof(__wasi_size_t));
 
     int ret;
-    uint32_t last = cookie;
-    size_t used;
+    uint64_t last = cookie;
+    size_t used = 0;
 
-    ret = preopen[fd].drv->ReadDir(fd, buf, buf_len, &last, &used);
+    ret = preopen[fd].drv->ReadDir(preopen[fd].fd, buf, buf_len, &last, &used);
     if (ret < 0) {
         m3ApiReturn(errno_to_wasi(-ret));
     }
@@ -514,8 +539,11 @@ m3ApiRawFunction(m3_wasi_generic_fd_close)
     m3ApiReturnType  (uint32_t)
     m3ApiGetArg      (__wasi_fd_t, fd)
 
-    int ret = fd >= 3 ? RomfsClose(fd) : close(fd);
-    m3ApiReturn(ret == 0 ? __WASI_ERRNO_SUCCESS : ret);
+    if (fd >= MAX_OPEN) m3ApiReturn(errno_to_wasi(-EBADF));
+    int ret = preopen[fd].drv->Close(fd);
+    preopen[fd].opened = false;
+
+    m3ApiReturn(ret < 0 ? errno_to_wasi(-ret) : __WASI_ERRNO_SUCCESS);
 }
 
 m3ApiRawFunction(m3_wasi_generic_fd_datasync)

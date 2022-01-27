@@ -7,22 +7,31 @@
 static int  _Open(const char *path, int flags);
 static int  _OpenAt(int fd, const char *path, int flags);
 static int  _Close(int fd);
-static int  _FdStat(int fd, vfs_filestat_t *stat);
-static int  _FdStatAt(int fd, const char *path, vfs_filestat_t *stat);
+static int  _FdStat(int fd, vfs_fdstat_t *stat);
+static int  _FileStatAt(int fd, const char *path, vfs_filestat_t *stat);
 static int  _Read(int fd, void *buf, size_t nbyte);
-static long _Seek(int fd, long off, int whence);
-static int  _ReadDir(int fd, void *buf, size_t bufLen, uint32_t *cookie, size_t *bufUsed);
+static int  _Seek(int fd, long off, int whence, long *pos);
+static int  _ReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+
+static int  _Write(int fd, const void *buf, size_t nbyte) {
+    return -EROFS;
+}
+
+static int  _Tell(int fd, long *pos) {
+    return -EINVAL;
+}
 
 vfs_driver_t vfs_romfs_drv = {
     .id = { 'R', 'o', 'm', 'f' },
+    .Open        = _Open,
     .OpenAt      = _OpenAt,
     .Close       = _Close,
     .FdStat      = _FdStat,
-    .FdStatAt    = _FdStatAt,
+    .FileStatAt  = _FileStatAt,
     .Read        = _Read,
-    .Write       = NULL,     // not implemented
+    .Write       = _Write,
     .Seek        = _Seek,
-    .Tell        = NULL,     // not implemented
+    .Tell        = _Tell,
     .ReadDir     = _ReadDir,
 };
 
@@ -56,7 +65,7 @@ static int _Close(int fd)
     return RomfsClose(fd);
 }
 
-static int _FdStat(int fd, vfs_filestat_t *stat)
+static int _FdStat(int fd, vfs_fdstat_t *stat)
 {
     int ret;
     romfs_stat_t romfsStat;
@@ -66,18 +75,13 @@ static int _FdStat(int fd, vfs_filestat_t *stat)
     ret = RomfsFdStat(fd, &romfsStat);
     if (ret < 0) return ret;
 
-    stat->atim = 0;
-    stat->mtim = 0;
-    stat->ctim = 0;
-    stat->dev = *((uint32_t *)vfs_romfs_drv.id);
-    stat->ino = romfsStat.ino;
-    stat->size = romfsStat.size;
     stat->filetype = convertFiletype(romfsStat.mode);
+    stat->flags = 0;
 
     return 0;
 }
 
-static int _FdStatAt(int fd, const char *path, vfs_filestat_t *stat)
+static int _FileStatAt(int fd, const char *path, vfs_filestat_t *stat)
 {
     int ret;
     romfs_stat_t romfsStat;
@@ -103,14 +107,14 @@ static int _Read(int fd, void *buf, size_t nbyte)
     return RomfsRead(fd, buf, nbyte);
 }
 
-static long _Seek(int fd, long off, int whence)
+static int _Seek(int fd, long off, int whence, long *pos)
 {
     return RomfsSeek(fd, off, (romfs_seek_t)whence);
 }
 
 #define DIR_BUF_LEN 10
 
-static int _ReadDir(int fd, void *buf, size_t bufLen, uint32_t *cookie, size_t *bufUsed)
+static int _ReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
 {
     int ret;
     romfs_dirent_t dir[DIR_BUF_LEN];
@@ -122,7 +126,7 @@ static int _ReadDir(int fd, void *buf, size_t bufLen, uint32_t *cookie, size_t *
     if (NULL == buf || NULL == cookie || NULL == bufUsed) return -EINVAL;
 
     do {
-        ret = RomfsReadDir(fd, dir, DIR_BUF_LEN, cookie, &used);
+        ret = RomfsReadDir(fd, dir, DIR_BUF_LEN, &last, &used);
         if (ret < 0) return ret;
 
         for (size_t i = 0; i < used; i++) {
@@ -142,10 +146,11 @@ static int _ReadDir(int fd, void *buf, size_t bufLen, uint32_t *cookie, size_t *
             bUsed += entry.d_namlen;
         }
 
-        if (*cookie == ROMFS_COOKIE_LAST || bufLen == bUsed) break;
+        if (last == ROMFS_COOKIE_LAST || bufLen == bUsed) break;
     } while (used == DIR_BUF_LEN);
 
     *bufUsed = bUsed;
+    *cookie = last;
 
     return ret;
 }
