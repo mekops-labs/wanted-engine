@@ -53,9 +53,12 @@ void *WA_thread( void *ptr )
 
 int main(int argc, char* argv[]) {
     wapp_t wapp;
+    const char *defFile = "default";
 
     if (argc < 2) {
-        FATAL("Please provide at least one image file name");
+        //FATAL("Please provide at least one image file name");
+        if (loadWapp(defFile, &config.wapps[0]) < 0) FATAL("Wapp loading failed");
+        config.n = 1;
     } else {
         for (int i = 0; i < argc - 1; i++) {
             if (loadWapp(argv[i+1], &config.wapps[i]) < 0) FATAL("Wapp loading failed");
