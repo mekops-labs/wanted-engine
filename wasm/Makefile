@@ -5,7 +5,7 @@ HEADER=$(NAME).wasm.h
 CLANG=clang
 WASI_SYSROOT=/usr/share/wasi-sysroot
 
-CLANG_COMMON_FLAGS=-Wl,-export-dynamic -Os -s
+CLANG_COMMON_FLAGS=-Wl,-export-dynamic -Wl,--initial-memory=65536 -Wl,--max-memory=65536 -z stack-size=4096 -Os -Wl,--strip-all
 ifdef WASI
 CLANG_FLAGS+=--target=wasm32-unknown-wasi --sysroot=$(WASI_SYSROOT) $(CLANG_COMMON_FLAGS)
 else
