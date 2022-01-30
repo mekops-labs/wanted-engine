@@ -10,3 +10,6 @@
 [submodule "test/unity"]
 	path = test/unity
 	url = https://github.com/ThrowTheSwitch/Unity.git
+[submodule "vendor/cwalk"]
+	path = vendor/cwalk
+	url = https://github.com/likle/cwalk

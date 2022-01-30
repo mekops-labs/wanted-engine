@@ -56,8 +56,9 @@ target_include_directories(${target}
     )
 
 if (wasiType STREQUAL "Romfs" OR wasiType STREQUAL "Vfs")
+    add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk cwalk)
     target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/romfs-lib/include)
-    target_link_libraries(${target} PRIVATE romfs)
+    target_link_libraries(${target} PRIVATE romfs PRIVATE cwalk)
     target_compile_definitions(${target} PRIVATE WANTED_ROMFS=1)
 endif()
 

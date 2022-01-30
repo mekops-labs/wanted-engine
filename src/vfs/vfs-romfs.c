@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <romfs.h>
 #include <vfs.h>
+#include <cwalk.h>
 
 static int  _Open(const char *path, int flags);
 static int  _OpenAt(int fd, const char *path, int flags);
@@ -52,12 +53,18 @@ static vfs_filetype_t convertFiletype(uint8_t t)
 
 static int _Open(const char *path, int flags)
 {
-    return RomfsOpenRoot(path, flags);
+    char normalized[MAX_PATH_LEN];
+
+    cwk_path_normalize(path, normalized, sizeof(normalized));
+    return RomfsOpenRoot(normalized, flags);
 }
 
 static int _OpenAt(int fd, const char *path, int flags)
 {
-    return RomfsOpenAt(fd, path, flags);
+    char normalized[MAX_PATH_LEN];
+
+    cwk_path_normalize(path, normalized, sizeof(normalized));
+    return RomfsOpenAt(fd, normalized, flags);
 }
 
 static int _Close(int fd)
@@ -85,10 +92,12 @@ static int _FileStatAt(int fd, const char *path, vfs_filestat_t *stat)
 {
     int ret;
     romfs_stat_t romfsStat;
+    char normalized[MAX_PATH_LEN];
 
     if (NULL == stat) return -EINVAL;
 
-    ret = RomfsFdStatAt(fd, path, &romfsStat);
+    cwk_path_normalize(path, normalized, sizeof(normalized));
+    ret = RomfsFdStatAt(fd, normalized, &romfsStat);
     if (ret < 0) return ret;
 
     stat->atim = 0;
