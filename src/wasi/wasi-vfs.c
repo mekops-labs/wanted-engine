@@ -19,6 +19,7 @@
 
 extern vfs_driver_t vfs_romfs_drv;
 extern vfs_driver_t vfs_linux_drv;
+extern vfs_driver_t vfs_virtual_drv;
 
 static m3_wasi_context_t wasi_context;
 
@@ -41,9 +42,9 @@ Preopen preopen[MAX_OPEN] = {
     {  0, "<stdin>" , "", &vfs_linux_drv, true },
     {  1, "<stdout>", "", &vfs_linux_drv, true },
     {  2, "<stderr>", "", &vfs_linux_drv, true },
-    { -1, "/"       , "/", &vfs_romfs_drv, true },
+    { -1, "/"       , "/", &vfs_virtual_drv, true },
     { -1, "/dir"    , ".", &vfs_linux_drv, true },
-    { -1, "/dir/.." , "/", &vfs_romfs_drv, true },
+    { -1, "/rom"    , "/", &vfs_romfs_drv, true },
 };
 
 static
@@ -469,7 +470,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_read)
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
         if (len == 0) continue;
 
-        int ret = preopen[fd].drv->Read(fd, addr, len);
+        int ret = preopen[fd].drv->Read(preopen[fd].fd, addr, len);
         if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
         res += ret;
         if ((size_t)ret < len) break;
@@ -499,7 +500,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_write)
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
         if (len == 0) continue;
 
-        int ret = preopen[fd].drv->Write(fd, addr, len);
+        int ret = preopen[fd].drv->Write(preopen[fd].fd, addr, len);
         if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
         res += ret;
         if ((size_t)ret < len) break;

@@ -4,6 +4,8 @@ set(sources
 )
 
 set(vfs-srcs
+    "vfs/vfs.c"
+    "vfs/vfs-virt.c"
     "vfs/vfs-romfs.c"
     "vfs/vfs-linux.c"
     )

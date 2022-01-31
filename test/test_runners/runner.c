@@ -2,7 +2,7 @@
 
 static void runAllTests(void)
 {
-    RUN_TEST_GROUP(vfs);
+    RUN_TEST_GROUP(vfs_internal);
     RUN_TEST_GROUP(general);
 }
 

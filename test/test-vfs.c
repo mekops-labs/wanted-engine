@@ -5,24 +5,80 @@
 
 #include <vfs.h>
 
+#include "vfs/vfs-internal.h"
+
 /***************************************/
-TEST_GROUP(vfs);
+TEST_GROUP(vfs_internal);
 /***************************************/
 
-TEST_SETUP(vfs)
+file_t fs[] = {
+    {".",    0, VFS_FILETYPE_DIRECTORY,         -1},
+    {"dev",  0, VFS_FILETYPE_DIRECTORY,         -1},
+    {"xyz",  1, VFS_FILETYPE_CHARACTER_DEVICE,   1},
+    {"net",  0, VFS_FILETYPE_DIRECTORY,         -1},
+    {"sock", 3, VFS_FILETYPE_SOCKET_STREAM,      2},
+    {"sys",  0, VFS_FILETYPE_DIRECTORY,         -1},
+    {"bus",  5, VFS_FILETYPE_SOCKET_DGRAM,       0},
+};
+
+TEST_SETUP(vfs_internal)
 {
 }
 
-TEST_TEAR_DOWN(vfs)
+TEST_TEAR_DOWN(vfs_internal)
 {
 }
 
-TEST(vfs, runSimpleWasm)
+TEST(vfs_internal, findFileNotFound)
 {
-    TEST_ASSERT_EQUAL_INT(0, 2);
+    int i = VfsFindFile(0, "not_a_file", fs);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
+    i = VfsFindFile(0, "/not_a_file", fs);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
+    i = VfsFindFile(0, "/dev/a", fs);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
+    i = VfsFindFile(0, "/dev/xyzz", fs);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
+    i = VfsFindFile(1, "dev/xyz", fs);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 }
 
-TEST_GROUP_RUNNER(vfs)
+TEST(vfs_internal, findFileRoot)
 {
-    RUN_TEST_CASE(vfs, runSimpleWasm);
+    int i = VfsFindFile(0, "/", fs);
+    TEST_ASSERT_EQUAL_INT(0, i);
+
+    i = VfsFindFile(0, ".", fs);
+    TEST_ASSERT_EQUAL_INT(0, i);
+
+    i = VfsFindFile(0, "..", fs);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
+    i = VfsFindFile(0, "./.", fs);
+    TEST_ASSERT_EQUAL_INT(0, i);
+}
+
+TEST(vfs_internal, findFileDir)
+{
+    int i = VfsFindFile(0, "/dev", fs);
+    TEST_ASSERT_EQUAL_INT(1, i);
+
+    i = VfsFindFile(0, "dev", fs);
+    TEST_ASSERT_EQUAL_INT(1, i);
+
+    i = VfsFindFile(0, "/../dev", fs);
+    TEST_ASSERT_EQUAL_INT(1, i);
+}
+
+
+
+TEST_GROUP_RUNNER(vfs_internal)
+{
+    RUN_TEST_CASE(vfs_internal, findFileNotFound);
+    RUN_TEST_CASE(vfs_internal, findFileRoot);
+    RUN_TEST_CASE(vfs_internal, findFileDir);
 }
