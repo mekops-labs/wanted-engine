@@ -11,7 +11,7 @@ set(vfs-srcs
     )
 
 set(wasiTypes Linux Romfs Vfs)
-set(wasiType Linux CACHE STRING "WASI type")
+set(wasiType Vfs CACHE STRING "WASI type")
 set_property(CACHE wasiType PROPERTY STRINGS ${wasiTypes})
 
 if(NOT wasiType IN_LIST wasiTypes)
