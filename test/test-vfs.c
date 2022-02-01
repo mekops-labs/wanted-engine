@@ -11,6 +11,8 @@
 TEST_GROUP(vfs_internal);
 /***************************************/
 
+#ifdef WANTED_ROMFS
+
 file_t fs[] = {
     {".",    0, VFS_FILETYPE_DIRECTORY,         -1},
     {"dev",  0, VFS_FILETYPE_DIRECTORY,         -1},
@@ -74,11 +76,13 @@ TEST(vfs_internal, findFileDir)
     TEST_ASSERT_EQUAL_INT(1, i);
 }
 
-
+#endif
 
 TEST_GROUP_RUNNER(vfs_internal)
 {
+#ifdef WANTED_ROMFS
     RUN_TEST_CASE(vfs_internal, findFileNotFound);
     RUN_TEST_CASE(vfs_internal, findFileRoot);
     RUN_TEST_CASE(vfs_internal, findFileDir);
+#endif
 }

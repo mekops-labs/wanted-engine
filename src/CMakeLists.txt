@@ -30,6 +30,7 @@ elseif (wasiType STREQUAL "Romfs")
 elseif (wasiType STREQUAL "Vfs")
     set(wasi-src
         "wasi/wasi-vfs.c"
+        ${vfs-srcs}
     )
 endif()
 
@@ -46,7 +47,6 @@ endif()
 
 add_library(${target} STATIC
     ${sources}
-    ${vfs-srcs}
     ${wasi-src}
     ${tiny-json-src}
 )
