@@ -3,11 +3,17 @@ add_subdirectory(unity)
 
 file(GLOB test_src "./test-*.c")
 
-add_executable(tests ${test_src} test_runners/runner.c)
+execute_process(
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMAND  ${CMAKE_CURRENT_SOURCE_DIR}/generate_runner.sh
+             ${CMAKE_CURRENT_BINARY_DIR}/runner.c
+)
+
+add_executable(tests ${test_src} ${CMAKE_CURRENT_BINARY_DIR}/runner.c)
 target_link_libraries(tests unity ${target})
 
-EXECUTE_PROCESS(
-    COMMAND grep TEST_GROUP ${CMAKE_SOURCE_DIR}/test/test_runners/runner.c
+execute_process(
+    COMMAND grep TEST_GROUP ${CMAKE_CURRENT_BINARY_DIR}/runner.c
     COMMAND bash "-c" "sed -e 's/.*RUN_TEST_GROUP(\\(.*\\));/\\1/'"
     COMMAND xargs
     OUTPUT_VARIABLE TEST_LIST
