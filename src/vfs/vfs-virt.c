@@ -13,10 +13,10 @@ file_t files[] = {
     {"xyz",  1, VFS_FILETYPE_CHARACTER_DEVICE,   1},
     {"dir",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"net",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"sock", 3, VFS_FILETYPE_SOCKET_STREAM,      2},
+    {"sock", 4, VFS_FILETYPE_SOCKET_STREAM,      2},
     {"rom",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"sys",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"bus",  5, VFS_FILETYPE_SOCKET_DGRAM,       0},
+    {"bus",  7, VFS_FILETYPE_SOCKET_DGRAM,       0},
 };
 
 const size_t files_cnt = sizeof(files)/sizeof(files[0]);

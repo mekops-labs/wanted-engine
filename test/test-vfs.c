@@ -17,8 +17,10 @@ file_t fs[] = {
     {".",    0, VFS_FILETYPE_DIRECTORY,         -1},
     {"dev",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"xyz",  1, VFS_FILETYPE_CHARACTER_DEVICE,   1},
+    {"dir",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"net",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"sock", 3, VFS_FILETYPE_SOCKET_STREAM,      2},
+    {"rom",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"sys",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"bus",  5, VFS_FILETYPE_SOCKET_DGRAM,       0},
 };
@@ -76,6 +78,12 @@ TEST(vfs_internal, findFileDir)
 
     i = VfsFindFile(0, "/../dev", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(1, i);
+
+    i = VfsFindFile(0, "/dir/../dir", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(3, i);
+
+    i = VfsFindFile(0, "////./dir", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(3, i);
 }
 
 #endif
