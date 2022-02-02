@@ -11,8 +11,10 @@ file_t files[] = {
     {".",    0, VFS_FILETYPE_DIRECTORY,         -1},
     {"dev",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"xyz",  1, VFS_FILETYPE_CHARACTER_DEVICE,   1},
+    {"dir",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"net",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"sock", 3, VFS_FILETYPE_SOCKET_STREAM,      2},
+    {"rom",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"sys",  0, VFS_FILETYPE_DIRECTORY,         -1},
     {"bus",  5, VFS_FILETYPE_SOCKET_DGRAM,       0},
 };
@@ -44,13 +46,13 @@ vfs_driver_t vfs_virtual_drv = {
     .ReadDir     = _ReadDir,
 };
 
-int VfsFindFile(int fd, const char *path, file_t *files)
+int VfsFindFile(int fd, const char *path, file_t *files, size_t filesCnt)
 {
     struct cwk_segment seg;
     char normalized[20];
     int last;
 
-    if (fd >= files_cnt) return -EBADF;
+    if (fd >= filesCnt) return -EBADF;
 
     cwk_path_normalize(path, normalized, 20);
 
@@ -63,7 +65,7 @@ int VfsFindFile(int fd, const char *path, file_t *files)
     do {
         if (seg.size == 0) continue;
         last = -1;
-        for (int i = fd; i < files_cnt; i++) {
+        for (int i = fd; i < filesCnt; i++) {
             if (files[i].parent == fd && strlen(files[i].name) == seg.size && strncmp(files[i].name, seg.begin, seg.size) == 0) {
                 last = i;
                 fd = last;
@@ -82,7 +84,7 @@ static int _Open(const char *path, int flags)
 
 static int _OpenAt(int fd, const char *path, int flags)
 {
-    return VfsFindFile(fd, path, files);
+    return VfsFindFile(fd, path, files, files_cnt);
 }
 
 static int _Close(int fd)
@@ -103,7 +105,7 @@ static int _FdStat(int fd, vfs_fdstat_t *s)
 
 static int _FileStatAt(int fd, const char *path, vfs_filestat_t *s)
 {
-    int f = VfsFindFile(fd, path, files);
+    int f = VfsFindFile(fd, path, files, files_cnt);
     if (f < 0) return f;
 
     s->atim = 0;

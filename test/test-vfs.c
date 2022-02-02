@@ -23,6 +23,8 @@ file_t fs[] = {
     {"bus",  5, VFS_FILETYPE_SOCKET_DGRAM,       0},
 };
 
+const size_t fsLen = sizeof(fs)/sizeof(fs[0]);
+
 TEST_SETUP(vfs_internal)
 {
 }
@@ -33,46 +35,46 @@ TEST_TEAR_DOWN(vfs_internal)
 
 TEST(vfs_internal, findFileNotFound)
 {
-    int i = VfsFindFile(0, "not_a_file", fs);
+    int i = VfsFindFile(0, "not_a_file", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFile(0, "/not_a_file", fs);
+    i = VfsFindFile(0, "/not_a_file", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFile(0, "/dev/a", fs);
+    i = VfsFindFile(0, "/dev/a", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFile(0, "/dev/xyzz", fs);
+    i = VfsFindFile(0, "/dev/xyzz", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFile(1, "dev/xyz", fs);
+    i = VfsFindFile(1, "dev/xyz", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 }
 
 TEST(vfs_internal, findFileRoot)
 {
-    int i = VfsFindFile(0, "/", fs);
+    int i = VfsFindFile(0, "/", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFile(0, ".", fs);
+    i = VfsFindFile(0, ".", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFile(0, "..", fs);
+    i = VfsFindFile(0, "..", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFile(0, "./.", fs);
+    i = VfsFindFile(0, "./.", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(0, i);
 }
 
 TEST(vfs_internal, findFileDir)
 {
-    int i = VfsFindFile(0, "/dev", fs);
+    int i = VfsFindFile(0, "/dev", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(1, i);
 
-    i = VfsFindFile(0, "dev", fs);
+    i = VfsFindFile(0, "dev", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(1, i);
 
-    i = VfsFindFile(0, "/../dev", fs);
+    i = VfsFindFile(0, "/../dev", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(1, i);
 }
 

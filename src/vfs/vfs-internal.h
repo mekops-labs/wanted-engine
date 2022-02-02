@@ -9,4 +9,4 @@ typedef struct {
     int driver;
 } file_t;
 
-int VfsFindFile(int fd, const char *path, file_t *files);
+int VfsFindFile(int fd, const char *path, file_t *files, size_t filesCnt);
