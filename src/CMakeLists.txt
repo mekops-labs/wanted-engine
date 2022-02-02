@@ -78,9 +78,9 @@ if (EnableWasm3Trace)
     target_compile_definitions(m3 PUBLIC d_m3EnableStrace=1 DEBUG=1)
 endif()
 
-option(ENABLE_WANTED_TRACE "Enable debug prints for Wanted" OFF)
+option(WANTED_DEBUG_TRACES "Enable debug prints for Wanted" OFF)
 
-if (ENABLE_WANTED_TRACE)
+if (WANTED_DEBUG_TRACES)
     message("-- Debug tracing for Wanted enabled")
     target_compile_definitions(${target} PUBLIC DEBUG=1)
 endif()
