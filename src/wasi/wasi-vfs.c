@@ -30,33 +30,19 @@ typedef struct wasi_iovec_t
 } wasi_iovec_t;
 
 typedef struct Preopen {
-    int             fd;
     const char*     path;
-    const char*     hpath;
-    vfs_driver_t    *drv;
-    bool            opened;
 } Preopen;
 
-#define MAX_OPEN 20
-Preopen preopen[MAX_OPEN] = {
-    {  0, "<stdin>" , "", &vfs_linux_drv, true },
-    {  1, "<stdout>", "", &vfs_linux_drv, true },
-    {  2, "<stderr>", "", &vfs_linux_drv, true },
-    { -1, "/"       , "/", &vfs_virtual_drv, true },
-    { -1, "/dir"    , ".", &vfs_linux_drv, true },
-    { -1, "/rom"    , "/", &vfs_romfs_drv, true },
+Preopen preopen[] = {
+    { "<stdin>"  },
+    { "<stdout>" },
+    { "<stderr>" },
+    { "/"        },
+    { "/dir"     },
+    { "/rom"     },
 };
 
-static
-int FindFirstClosedFd()
-{
-    for (int i = 0; i < MAX_OPEN; i++) {
-        if (!preopen[i].opened) {
-            return i;
-        }
-    }
-    return -EMFILE;
-}
+const size_t preopen_cnt = sizeof(preopen)/sizeof(preopen[0]);
 
 #  define CASE_RET(e1,e2)     case e1:   return e2;   break
 
@@ -222,8 +208,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_prestat_dir_name)
 
     m3ApiCheckMem(path, path_len);
 
-    if (fd < 3 || fd >= MAX_OPEN) { m3ApiReturn(__WASI_ERRNO_BADF); }
-    if (preopen[fd].path == NULL) { m3ApiReturn(__WASI_ERRNO_BADF); }
+    if (fd < 3 || fd >= preopen_cnt) { m3ApiReturn(__WASI_ERRNO_BADF); }
 
     size_t slen = strlen(preopen[fd].path) + 1;
     memcpy(path, preopen[fd].path, M3_MIN(slen, path_len));
@@ -238,11 +223,13 @@ m3ApiRawFunction(m3_wasi_generic_fd_prestat_get)
 
     m3ApiCheckMem(buf, 8);
 
-    if (fd < 3 || fd >= MAX_OPEN) { m3ApiReturn(__WASI_ERRNO_BADF); }
-    if (preopen[fd].path == NULL) { m3ApiReturn(__WASI_ERRNO_BADF); }
+    if (fd < 3 || fd >= preopen_cnt) { m3ApiReturn(__WASI_ERRNO_BADF); }
 
-    if (preopen[fd].fd == -1) {
-        preopen[fd].fd = preopen[fd].drv->Open(preopen[fd].hpath, O_DIRECTORY);
+    int host_fd = VfsOpen(preopen[fd].path, O_DIRECTORY);
+
+    if (fd != host_fd) {
+        VfsClose(host_fd);
+        m3ApiReturn(__WASI_ERRNO_BADF);
     }
 
     m3ApiWriteMem32(buf+0, __WASI_PREOPENTYPE_DIR);
@@ -260,7 +247,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_fdstat_get)
 
     vfs_fdstat_t stat;
 
-    int ret = preopen[fd].drv->FdStat(preopen[fd].fd, &stat);
+    int ret = VfsFdStat(fd, &stat);
     if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
 
     fdstat->fs_filetype = stat.filetype;
@@ -309,7 +296,7 @@ m3ApiRawFunction(m3_wasi_unstable_fd_seek)
     }
 
     long pos;
-    int ret = preopen[fd].drv->Seek(preopen[fd].fd, offset, whence, &pos);
+    int ret = VfsSeek(fd, offset, whence, &pos);
     if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
     m3ApiWriteMem64(result, pos);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
@@ -335,7 +322,7 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_fd_seek)
     }
 
     long pos;
-    int ret = preopen[fd].drv->Seek(preopen[fd].fd, offset, whence, &pos);
+    int ret = VfsSeek(fd, offset, whence, &pos);
     if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
     m3ApiWriteMem64(result, pos);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
@@ -364,7 +351,7 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
     vfs_filestat_t statbuf;
     __wasi_filestat_t stat;
 
-    int ret = preopen[fd].drv->FileStatAt(preopen[fd].fd, host_path, &statbuf);
+    int ret = VfsFileStatAt(fd, host_path, &statbuf);
     if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
 
     stat.filetype = statbuf.filetype;
@@ -408,8 +395,6 @@ m3ApiRawFunction(m3_wasi_generic_path_open)
     if (path_len >= 512)
         m3ApiReturn(__WASI_ERRNO_INVAL);
 
-    int host_fd;
-
     // copy path so we can ensure it is NULL terminated
     char host_path[path_len+1];
     memcpy (host_path, path, path_len);
@@ -435,22 +420,13 @@ m3ApiRawFunction(m3_wasi_generic_path_open)
         flags |= VFS_O_RDONLY; // no-op because O_RDONLY is 0
     }
 
-    host_fd = preopen[dirfd].drv->OpenAt(preopen[dirfd].fd, host_path, flags);
+    int host_fd = VfsOpenAt(dirfd, host_path, flags);
     if (host_fd < 0) {
         m3ApiReturn(errno_to_wasi (-host_fd));
-    } else {
-        int ret = FindFirstClosedFd();
-        if (ret < 0) {
-            preopen[dirfd].drv->Close(host_fd);
-            m3ApiReturn(errno_to_wasi (-ret));
-        }
-        preopen[ret].fd = host_fd;
-        preopen[ret].opened = true;
-        preopen[ret].drv = preopen[dirfd].drv;
-
-        m3ApiWriteMem32(fd, ret);
-        m3ApiReturn(__WASI_ERRNO_SUCCESS);
     }
+
+    m3ApiWriteMem32(fd, host_fd);
+    m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
 m3ApiRawFunction(m3_wasi_generic_fd_read)
@@ -470,7 +446,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_read)
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
         if (len == 0) continue;
 
-        int ret = preopen[fd].drv->Read(preopen[fd].fd, addr, len);
+        int ret = VfsRead(fd, addr, len);
         if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
         res += ret;
         if ((size_t)ret < len) break;
@@ -500,7 +476,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_write)
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
         if (len == 0) continue;
 
-        int ret = preopen[fd].drv->Write(preopen[fd].fd, addr, len);
+        int ret = VfsWrite(fd, addr, len);
         if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
         res += ret;
         if ((size_t)ret < len) break;
@@ -525,7 +501,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_readdir)
     uint64_t last = cookie;
     size_t used = 0;
 
-    ret = preopen[fd].drv->ReadDir(preopen[fd].fd, buf, buf_len, &last, &used);
+    ret = VfsReadDir(fd, buf, buf_len, &last, &used);
     if (ret < 0) {
         m3ApiReturn(errno_to_wasi(-ret));
     }
@@ -540,9 +516,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_close)
     m3ApiReturnType  (uint32_t)
     m3ApiGetArg      (__wasi_fd_t, fd)
 
-    if (fd >= MAX_OPEN) m3ApiReturn(errno_to_wasi(-EBADF));
-    int ret = preopen[fd].drv->Close(fd);
-    preopen[fd].opened = false;
+    int ret = VfsClose(fd);
 
     m3ApiReturn(ret < 0 ? errno_to_wasi(-ret) : __WASI_ERRNO_SUCCESS);
 }
