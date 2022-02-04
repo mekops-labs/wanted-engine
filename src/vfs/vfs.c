@@ -5,8 +5,8 @@
 #include <stdbool.h>
 
 #include <vfs.h>
-
-#include "../wanted-internal.h"
+#include "vfs-internal.h"
+#include <debug_trace.h>
 
 #define MAX_OPEN 20
 
@@ -27,8 +27,6 @@ vfs_entry_t fildes[MAX_OPEN] = {
     { 1,  "<stdout>", "",  &vfs_linux_drv,      true},
     { 2,  "<stderr>", "",  &vfs_linux_drv,      true},
     { -1, "/",        "/", &vfs_virtual_drv,    false},
-    { -1, "/dir",     ".", &vfs_linux_drv,      false},
-    { -1, "/rom",     "/", &vfs_romfs_drv,      false},
 };
 
 static inline
@@ -65,7 +63,7 @@ int VfsOpen(const char *path, int flags)
         if (!fildes[i].path) break;
         if (memcmp(fildes[i].path, path, strlen(fildes[i].path)+1) == 0) {
             if (fildes[i].drv_fd < 0) {
-                fildes[i].drv_fd = fildes[i].drv->Open(fildes[i].drv_path, flags);
+                fildes[i].drv_fd = TRY(fildes[i].drv, Open, fildes[i].drv_path, flags);
                 fildes[i].opened = true;
             }
             return i;

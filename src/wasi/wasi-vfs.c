@@ -38,8 +38,6 @@ Preopen preopen[] = {
     { "<stdout>" },
     { "<stderr>" },
     { "/"        },
-    { "/dir"     },
-    { "/rom"     },
 };
 
 const size_t preopen_cnt = sizeof(preopen)/sizeof(preopen[0]);

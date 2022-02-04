@@ -6,20 +6,25 @@
 #include <vfs.h>
 #include <cwalk.h>
 
+#include <debug_trace.h>
 
-file_t files[] = {
-    {".",    0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"dev",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"xyz",  1, VFS_FILETYPE_CHARACTER_DEVICE,   1},
-    {"dir",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"net",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"sock", 4, VFS_FILETYPE_SOCKET_STREAM,      2},
-    {"rom",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"sys",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"bus",  7, VFS_FILETYPE_SOCKET_DGRAM,       0},
+
+extern vfs_driver_t vfs_romfs_drv;
+extern vfs_driver_t vfs_linux_drv;
+
+file_t root[] = {
+    {"/",    0, VFS_FILETYPE_DIRECTORY,         NULL,          },
+    {"dev",  1, VFS_FILETYPE_DIRECTORY,         NULL,          },
+    {"xyz",  2, VFS_FILETYPE_CHARACTER_DEVICE,  NULL,          },
+    {"dir",  1, VFS_FILETYPE_DIRECTORY,         &vfs_linux_drv,},
+    {"net",  1, VFS_FILETYPE_DIRECTORY,         NULL,          },
+    {"sock", 2, VFS_FILETYPE_SOCKET_STREAM,     NULL,          },
+    {"rom",  1, VFS_FILETYPE_DIRECTORY,         &vfs_romfs_drv,},
+    {"sys",  1, VFS_FILETYPE_DIRECTORY,         NULL,          },
+    {"bus",  2, VFS_FILETYPE_SOCKET_DGRAM,      NULL,          },
 };
 
-const size_t files_cnt = sizeof(files)/sizeof(files[0]);
+const size_t rootLen = sizeof(root)/sizeof(root[0]);
 
 static int  _Open(const char *path, int flags);
 static int  _OpenAt(int fd, const char *path, int flags);
@@ -33,48 +38,87 @@ static int  _Tell(int fd, long *pos);
 static int  _ReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
 vfs_driver_t vfs_virtual_drv = {
-    .id = { 'V', 'i', 'r', 't' },
-    .Open        = _Open,
-    .OpenAt      = _OpenAt,
-    .Close       = _Close,
-    .FdStat      = _FdStat,
-    .FileStatAt  = _FileStatAt,
-    .Read        = _Read,
-    .Write       = _Write,
-    .Seek        = _Seek,
-    .Tell        = _Tell,
-    .ReadDir     = _ReadDir,
+    .id         = { 'V', 'i', 'r', 't' },
+    .Open       = _Open,
+    .OpenAt     = _OpenAt,
+    .Close      = _Close,
+    .FdStat     = _FdStat,
+    .FileStatAt = _FileStatAt,
+    .Read       = _Read,
+    .Write      = _Write,
+    .Seek       = _Seek,
+    .Tell       = _Tell,
+    .ReadDir    = _ReadDir,
 };
 
-int VfsFindFile(int fd, const char *path, file_t *files, size_t filesCnt)
+int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt)
 {
     struct cwk_segment seg;
-    char normalized[20];
-    int last;
+    int f;
+    uint16_t d;
+    bool found = false;
 
-    if (fd >= filesCnt) return -EBADF;
-
-    cwk_path_normalize(path, normalized, 20);
-
-    if (strlen(normalized) == 1) {
-         if (normalized[0] == '/') normalized[0] = '.';
+    if (fd >= filesCnt) {
+        return -EBADF;
     }
 
-    if (!cwk_path_get_first_segment(normalized, &seg)) return -EINVAL;
+    if (files[fd].type != VFS_FILETYPE_DIRECTORY) {
+        return -ENOTDIR;
+    }
+
+    d = files[fd].depth + 1;
+    f = fd;
+
+    if (cwk_path_is_absolute(path)) {
+        while (*path == '/') {
+            path++;
+        }
+        fd = 0;
+    }
+
+    DEBUG_TRACE("path: %s", path);
+
+    cwk_path_get_first_segment(path, &seg);
+
+    if (seg.size == 0) {
+        // probably could only happen when initial path was /
+        return fd;
+    }
 
     do {
-        if (seg.size == 0) continue;
-        last = -1;
-        for (int i = fd; i < filesCnt; i++) {
-            if (files[i].parent == fd && strlen(files[i].name) == seg.size && strncmp(files[i].name, seg.begin, seg.size) == 0) {
-                last = i;
-                fd = last;
+        DEBUG_TRACE("segment: %.*s (%d)", seg.size, seg.begin, seg.size);
+        found = false;
+
+
+        if (memcmp(".", seg.begin, seg.size) == 0) {
+            found = true;
+            continue;
+        }
+
+        if (memcmp("..", seg.begin, seg.size) == 0) {
+            if (d == 1) break; // root dir can't go up
+            found = true;
+            f = fd = 0;
+            d--;
+            continue;
+        }
+
+        for (f = fd+1; (f < filesCnt); f++) {
+            if ((files[f].depth == d) && strncmp(files[f].name, seg.begin, seg.size) == 0) {
+                found = true;
                 break;
             }
         }
-    } while (cwk_path_get_next_segment(&seg) && last != -1);
+        if (!found) break;
 
-    return last == -1 ? -ENOENT : last;
+        d++;
+    } while (cwk_path_get_next_segment(&seg));
+
+    if (found) {
+        return f;
+    } else {
+        return -ENOENT;
+    }
 }
 
 static int _Open(const char *path, int flags)
@@ -84,7 +128,7 @@ static int _Open(const char *path, int flags)
 
 static int _OpenAt(int fd, const char *path, int flags)
 {
-    return VfsFindFile(fd, path, files, files_cnt);
+    return VfsFindFileAt(fd, path, root, rootLen);
 }
 
 static int _Close(int fd)
@@ -94,8 +138,8 @@ static int _Close(int fd)
 
 static int _FdStat(int fd, vfs_fdstat_t *s)
 {
-    if (fd < files_cnt) {
-        s->filetype = files[fd].type;
+    if (fd < rootLen) {
+        s->filetype = root[fd].type;
     } else {
         return -EBADF;
     }
@@ -105,15 +149,15 @@ static int _FdStat(int fd, vfs_fdstat_t *s)
 
 static int _FileStatAt(int fd, const char *path, vfs_filestat_t *s)
 {
-    int f = VfsFindFile(fd, path, files, files_cnt);
+    int f = VfsFindFileAt(fd, path, root, rootLen);
     if (f < 0) return f;
 
     s->atim = 0;
     s->ctim = 0;
     s->mtim = 0;
-    s->dev = files[f].driver;
+    s->dev = (root[f].driver != NULL) ? *(uint32_t*)root[f].driver->id : 0;
     s->ino = f;
-    s->filetype = files[f].type;
+    s->filetype = root[f].type;
     s->nlink = 0;
     s->size = 0;
 
@@ -125,11 +169,11 @@ static int _Read(int fd, void *buf, size_t nbyte)
     static bool read = false;
     char c[2];
 
-    if (fd >= files_cnt) {
+    if (fd >= rootLen) {
         return -EBADF;
     }
 
-    if (files[fd].type == VFS_FILETYPE_DIRECTORY) {
+    if (root[fd].type == VFS_FILETYPE_DIRECTORY) {
         return -EISDIR;
     }
 
@@ -137,7 +181,7 @@ static int _Read(int fd, void *buf, size_t nbyte)
         return -EINVAL;
     }
 
-    c[0] = files[fd].driver + 0x30;
+    c[0] = (root[fd].driver != NULL) ? *(uint32_t*)root[fd].driver->id : 0; + 0x30;
     c[1] = '\n';
 
     memcpy(buf, &c, 2);
@@ -171,19 +215,19 @@ static int _ReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *
     vfs_dirent_t dir;
     size_t used = 0;
 
-    if (fd >= files_cnt) {
+    if (fd >= rootLen) {
         return -EBADF;
     }
 
-    if (files[fd].type != VFS_FILETYPE_DIRECTORY) {
+    if (root[fd].type != VFS_FILETYPE_DIRECTORY) {
         return -ENOTDIR;
     }
 
-    for (int i = fd + 1; i < files_cnt; i++) {
-        if (files[i].parent == fd) {
+    for (int i = fd + 1; i < rootLen && (root[i].depth > root[fd].depth); i++) {
+        if (root[i].depth == root[fd].depth + 1) {
             dir.d_ino       = i;
-            dir.d_namlen    = strnlen(files[i].name, 256);
-            dir.d_type      = files[i].type;
+            dir.d_namlen    = strnlen(root[i].name, 256);
+            dir.d_type      = root[i].type;
             dir.d_next      = i;
 
             if (used + sizeof(dir) + dir.d_namlen > bufLen) {
@@ -191,7 +235,7 @@ static int _ReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *
                 break;
             }
             memcpy(buf + used, &dir, sizeof(dir));
-            memcpy(buf + sizeof(dir) + used, files[i].name, dir.d_namlen);
+            memcpy(buf + sizeof(dir) + used, root[i].name, dir.d_namlen);
 
             used += sizeof(dir) + dir.d_namlen;
         }

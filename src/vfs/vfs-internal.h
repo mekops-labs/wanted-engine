@@ -1,12 +1,15 @@
 #pragma once
 
 #include <stdint.h>
+#include <vfs.h>
 
-typedef struct {
-    const char *name;
-    uint8_t parent;
-    uint8_t type;
-    int driver;
+#define TRY(drv_ptr,oper,...) (((drv_ptr)->oper != NULL) ? (drv_ptr)->oper( __VA_ARGS__ ) : -EPERM)
+
+typedef struct file_t {
+    const char      *name;
+    uint16_t        depth;
+    vfs_filetype_t  type;
+    vfs_driver_t    *driver;
 } file_t;
 
-int VfsFindFile(int fd, const char *path, file_t *files, size_t filesCnt);
+int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt);

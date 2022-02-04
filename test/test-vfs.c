@@ -14,15 +14,16 @@ TEST_GROUP(vfs_internal);
 #ifdef WANTED_ROMFS
 
 file_t fs[] = {
-    {".",    0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"dev",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"xyz",  1, VFS_FILETYPE_CHARACTER_DEVICE,   1},
-    {"dir",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"net",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"sock", 3, VFS_FILETYPE_SOCKET_STREAM,      2},
-    {"rom",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"sys",  0, VFS_FILETYPE_DIRECTORY,         -1},
-    {"bus",  5, VFS_FILETYPE_SOCKET_DGRAM,       0},
+    {"/",    0, VFS_FILETYPE_DIRECTORY,         NULL},
+    {"dev",  1, VFS_FILETYPE_DIRECTORY,         NULL},
+    {"xyz",  2, VFS_FILETYPE_CHARACTER_DEVICE,  NULL},
+    {"dir",  1, VFS_FILETYPE_DIRECTORY,         NULL},
+    {"net",  1, VFS_FILETYPE_DIRECTORY,         NULL},
+    {"sock", 2, VFS_FILETYPE_SOCKET_STREAM,     NULL},
+    {"rom",  1, VFS_FILETYPE_DIRECTORY,         NULL},
+    {"sys",  1, VFS_FILETYPE_DIRECTORY,         NULL},
+    {"bus",  2, VFS_FILETYPE_SOCKET_DGRAM,      NULL},
+    {".dotfile", 1, VFS_FILETYPE_REGULAR_FILE,  NULL},
 };
 
 const size_t fsLen = sizeof(fs)/sizeof(fs[0]);
@@ -37,53 +38,80 @@ TEST_TEAR_DOWN(vfs_internal)
 
 TEST(vfs_internal, findFileNotFound)
 {
-    int i = VfsFindFile(0, "not_a_file", fs, fsLen);
+    int i = VfsFindFileAt(0, "not_a_file", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFile(0, "/not_a_file", fs, fsLen);
+    i = VfsFindFileAt(0, "/not_a_file", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFile(0, "/dev/a", fs, fsLen);
+    i = VfsFindFileAt(0, "/dev/a", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFile(0, "/dev/xyzz", fs, fsLen);
+    i = VfsFindFileAt(0, "/dev/xyzz", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFile(1, "dev/xyz", fs, fsLen);
+    i = VfsFindFileAt(1, "dev/xyzz", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
+    i = VfsFindFileAt(0, "../dev/xyz", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
+    i = VfsFindFileAt(0, "/dev/../xyz", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 }
 
 TEST(vfs_internal, findFileRoot)
 {
-    int i = VfsFindFile(0, "/", fs, fsLen);
+    int i = VfsFindFileAt(0, "/", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFile(0, ".", fs, fsLen);
+    i = VfsFindFileAt(0, ".", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFile(0, "..", fs, fsLen);
+    i = VfsFindFileAt(0, "..", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFile(0, "./.", fs, fsLen);
+    i = VfsFindFileAt(0, "./.", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(0, i);
+
+    i = VfsFindFileAt(0, ".dotfile", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(9, i);
+
+    i = VfsFindFileAt(0, "/dev", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(1, i);
+
+    i = VfsFindFileAt(0, "dev", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(1, i);
+
+    i = VfsFindFileAt(0, "/./dev", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(1, i);
+
+    i = VfsFindFileAt(0, "/dir/../dir", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(3, i);
+
+    i = VfsFindFileAt(0, "////./dir", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(3, i);
+
+    i = VfsFindFileAt(0, ".//////dir/..////./dir", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(3, i);
 }
 
 TEST(vfs_internal, findFileDir)
 {
-    int i = VfsFindFile(0, "/dev", fs, fsLen);
-    TEST_ASSERT_EQUAL_INT(1, i);
+    int i = VfsFindFileAt(1, "xyz", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(2, i);
 
-    i = VfsFindFile(0, "dev", fs, fsLen);
-    TEST_ASSERT_EQUAL_INT(1, i);
+    i = VfsFindFileAt(1, "../net", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(4, i);
 
-    i = VfsFindFile(0, "/../dev", fs, fsLen);
-    TEST_ASSERT_EQUAL_INT(1, i);
+    i = VfsFindFileAt(1, "../", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFile(0, "/dir/../dir", fs, fsLen);
-    TEST_ASSERT_EQUAL_INT(3, i);
+    i = VfsFindFileAt(1, "..", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFile(0, "////./dir", fs, fsLen);
-    TEST_ASSERT_EQUAL_INT(3, i);
+    i = VfsFindFileAt(1, "../././.", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(0, i);
 }
 
 #endif

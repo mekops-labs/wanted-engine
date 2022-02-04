@@ -43,5 +43,5 @@ TEST(general, runSimpleWasm)
 
 TEST_GROUP_RUNNER(general)
 {
-    RUN_TEST_CASE(general, runSimpleWasm);
+//    RUN_TEST_CASE(general, runSimpleWasm);
 }
