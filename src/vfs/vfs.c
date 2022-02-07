@@ -140,7 +140,7 @@ int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt, cons
             *pathLeft = NULL;
         } else {
             if (!cwk_path_get_next_segment(&seg)) {
-                *pathLeft = seg.end;
+                *pathLeft = "/";
             } else {
                 *pathLeft = seg.begin;
             }
@@ -192,6 +192,8 @@ int VfsOpenAt(int fd, const char *path, int flags)
         fildes[new_fd].drv = root[f].drv;
         f = TRY(root[f].drv, Open, pathLeft, flags);
         if (f < 0) return f;
+    } else {
+        fildes[new_fd].drv = NULL;
     }
 
     fildes[new_fd].drv_fd = f;
@@ -202,14 +204,17 @@ int VfsOpenAt(int fd, const char *path, int flags)
 
 int VfsClose(int fd)
 {
+    int ret = 0;
     DEBUG_TRACE("%d", fd);
 
     if (!CheckFd(fd)) return -EBADF;
 
-    int ret = fildes[fd].drv->Close(fildes[fd].drv_fd);
-    if (ret < 0) return ret;
+    if (fildes[fd].drv) {
+        ret = TRY(fildes[fd].drv, Close, fildes[fd].drv_fd);
+    }
 
     fildes[fd].opened = false;
+    fildes[fd].drv = NULL;
     return ret;
 }
 

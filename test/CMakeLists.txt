@@ -1,7 +1,7 @@
 option(UNITY_EXTENSION_FIXTURE "Compiles Unity with the \"fixture\" extension." ON)
 add_subdirectory(unity)
 
-file(GLOB test_src "./test-*.c")
+file(GLOB test_src "./*.c")
 
 execute_process(
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -31,6 +31,7 @@ target_include_directories(tests PUBLIC ${unity_root}/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src/include)
+target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/romfs-lib/include)
 
 if (wasiType STREQUAL "Romfs" OR wasiType STREQUAL "Vfs")
     target_compile_definitions(tests PRIVATE WANTED_ROMFS=1)

@@ -4,8 +4,9 @@
 #include <string.h>
 
 #include <vfs.h>
+#include <romfs.h>
 
-#include "vfs/vfs-internal.h"
+#include "external_symbols.h"
 
 /***************************************/
 TEST_GROUP(vfs_internal);
@@ -139,7 +140,7 @@ TEST(vfs_internal, findFileDriver)
     i = VfsFindFileAt(0, "/drv", fs, fsLen, &drvPath);
     TEST_ASSERT_NOT_NULL(drvPath);
     TEST_ASSERT_EQUAL_INT(10, i);
-    TEST_ASSERT_EQUAL_STRING("", drvPath);
+    TEST_ASSERT_EQUAL_STRING("/", drvPath);
 
     drvPath = NULL;
 
@@ -158,35 +159,6 @@ TEST(vfs_internal, findFileDriver)
     TEST_ASSERT_NULL(drvPath);
     TEST_ASSERT_EQUAL_INT(3, i);
 }
-
-
-
-/***************************************/
-TEST_GROUP(vfs_ops);
-/***************************************/
-
-extern vfs_entry_t fildes[];
-
-TEST_SETUP(vfs_ops)
-{
-}
-
-TEST_TEAR_DOWN(vfs_ops)
-{
-}
-
-TEST(vfs_ops, Open)
-{
-    int i = VfsOpen("/", 0);
-    TEST_ASSERT_EQUAL_INT(3, i);
-}
-
-TEST_GROUP_RUNNER(vfs_ops)
-{
-    RUN_TEST_CASE(vfs_ops, Open);
-}
-
-
 #endif
 
 TEST_GROUP_RUNNER(vfs_internal)
@@ -198,3 +170,65 @@ TEST_GROUP_RUNNER(vfs_internal)
     RUN_TEST_CASE(vfs_internal, findFileDriver);
 #endif
 }
+
+#ifdef WANTED_ROMFS
+
+/***************************************/
+TEST_GROUP(vfs_openclose);
+/***************************************/
+
+TEST_SETUP(vfs_openclose)
+{
+    RomfsLoad(test_wasi_romfs, test_wasi_romfs_len);
+}
+
+TEST_TEAR_DOWN(vfs_openclose)
+{
+}
+
+TEST(vfs_openclose, OpenFail)
+{
+    int i = VfsOpen("xxx", 0);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+    TEST_ASSERT_FALSE(fildes[3].opened);
+    TEST_ASSERT_EQUAL_PTR(NULL, fildes[3].drv);
+
+    i = VfsOpen("/roms", 0);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+    TEST_ASSERT_FALSE(fildes[3].opened);
+    TEST_ASSERT_EQUAL_PTR(NULL, fildes[3].drv);
+}
+
+TEST(vfs_openclose, OpenThenClose)
+{
+    int i = VfsOpen("/", 0);
+    TEST_ASSERT_EQUAL_INT(3, i);
+    TEST_ASSERT_TRUE(fildes[3].opened);
+    TEST_ASSERT_NULL(fildes[3].drv);
+
+    i = VfsOpen("/rom", 0);
+    TEST_ASSERT_EQUAL_INT(4, i);
+    TEST_ASSERT_TRUE(fildes[4].opened);
+    TEST_ASSERT_EQUAL_PTR(&vfs_romfs_drv, fildes[4].drv);
+
+    i = VfsClose(3);
+    TEST_ASSERT_EQUAL_INT(0, i);
+    TEST_ASSERT_FALSE(fildes[3].opened);
+    TEST_ASSERT_NULL(fildes[3].drv);
+
+    i = VfsClose(4);
+    TEST_ASSERT_EQUAL_INT(0, i);
+    TEST_ASSERT_FALSE(fildes[4].opened);
+    TEST_ASSERT_NULL(fildes[4].drv);
+}
+
+TEST_GROUP_RUNNER(vfs_openclose)
+{
+    RUN_TEST_CASE(vfs_openclose, OpenFail);
+    RUN_TEST_CASE(vfs_openclose, OpenThenClose);
+}
+
+
+#endif
+
+

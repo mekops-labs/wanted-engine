@@ -5,22 +5,21 @@
 
 #include <wanted.h>
 
-#include "test_wasi.wasm.h"
-#include "test_wasi.romfs.h"
+#include "external_symbols.h"
 
 /***************************************/
-TEST_GROUP(general);
+TEST_GROUP(wanted_api);
 /***************************************/
 
-TEST_SETUP(general)
+TEST_SETUP(wanted_api)
 {
 }
 
-TEST_TEAR_DOWN(general)
+TEST_TEAR_DOWN(wanted_api)
 {
 }
 
-TEST(general, runSimpleWasm)
+TEST(wanted_api, runSimpleWasm)
 {
     data_t ctx;
     wapp_t w = {
@@ -41,7 +40,7 @@ TEST(general, runSimpleWasm)
     TEST_ASSERT_EQUAL_INT(0, ret);
 }
 
-TEST_GROUP_RUNNER(general)
+TEST_GROUP_RUNNER(wanted_api)
 {
-//    RUN_TEST_CASE(general, runSimpleWasm);
+//    RUN_TEST_CASE(wanted_api, runSimpleWasm);
 }
