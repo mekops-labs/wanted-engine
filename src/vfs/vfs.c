@@ -12,12 +12,6 @@
 
 #define MAX_OPEN 20
 
-typedef struct vfs_entry_t {
-    int             drv_fd;
-    vfs_driver_t    *drv;
-    bool            opened;
-} vfs_entry_t;
-
 extern vfs_driver_t vfs_romfs_drv;
 extern vfs_driver_t vfs_linux_drv;
 
@@ -27,7 +21,6 @@ vfs_entry_t fildes[MAX_OPEN] = {
     { 0,        &vfs_linux_drv,      true},
     { 1,        &vfs_linux_drv,      true},
     { 2,        &vfs_linux_drv,      true},
-    { ROOT_FD,  NULL,          true},
 };
 
 file_t root[] = {
@@ -64,12 +57,17 @@ int FindFirstClosedFd()
     return -EMFILE;
 }
 
-int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt)
+int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt, const char **pathLeft)
 {
     struct cwk_segment seg;
     int f;
     uint16_t d;
+    char norm[MAX_PATH_LEN];
     bool found = false;
+
+    if (pathLeft) {
+        *pathLeft = NULL;
+    }
 
     if (fd >= filesCnt) {
         return -EBADF;
@@ -89,9 +87,14 @@ int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt)
         fd = 0;
     }
 
-    DEBUG_TRACE("path: %s", path);
+    int r = cwk_path_normalize(path, norm, MAX_PATH_LEN);
+    if (r >= MAX_PATH_LEN) {
+        return -ENAMETOOLONG;
+    }
 
-    cwk_path_get_first_segment(path, &seg);
+    DEBUG_TRACE("path: %s", norm);
+
+    cwk_path_get_first_segment(norm, &seg);
 
     if (seg.size == 0) {
         // probably could only happen when initial path was /
@@ -126,13 +129,31 @@ int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt)
 
         d++;
         fd = f;
-    } while (cwk_path_get_next_segment(&seg));
+    } while (files[f].drv == NULL && cwk_path_get_next_segment(&seg));
 
-    if (found) {
-        return f;
-    } else {
+    if (!found) {
         return -ENOENT;
     }
+
+    if (pathLeft) {
+        if (files[f].drv == NULL) {
+            *pathLeft = NULL;
+        } else {
+            if (!cwk_path_get_next_segment(&seg)) {
+                *pathLeft = seg.end;
+            } else {
+                *pathLeft = seg.begin;
+            }
+
+            DEBUG_TRACE("pathLeft: %s", *pathLeft);
+
+            if (*pathLeft != "" && files[f].type != VFS_FILETYPE_DIRECTORY) {
+                return -ENOENT;
+            }
+        }
+    }
+
+    return f;
 }
 
 
@@ -147,27 +168,33 @@ int VfsOpen(const char *path, int flags)
 {
     DEBUG_TRACE("%s (0x%x)", path, flags);
 
-    return VfsOpenAt(0, path, flags);
+    return VfsOpenAt(ROOT_FD, path, flags);
 }
 
 int VfsOpenAt(int fd, const char *path, int flags)
 {
+    const char *pathLeft;
     DEBUG_TRACE("%d: %s (0x%x)", fd, path, flags);
+
+    if (fd < ROOT_FD) {
+        return fd;
+    }
 
     if (!CheckFd(fd)) return -EBADF;
 
     int new_fd = FindFirstClosedFd();
     if (new_fd < 0) return new_fd;
 
-    fd = fd - ROOT_FD;
-
-    int f = VfsFindFileAt(fd, path, root, rootLen);
+    int f = VfsFindFileAt(fd - ROOT_FD, path, root, rootLen, &pathLeft);
     if (f < 0) return f;
+
+    if (pathLeft) {
+        fildes[new_fd].drv = root[f].drv;
+        f = TRY(root[f].drv, Open, pathLeft, flags);
+        if (f < 0) return f;
+    }
+
     fildes[new_fd].drv_fd = f;
-
-    TRY(fildes[f].drv, OpenAt, fildes[f].drv_fd, path, flags);
-
-    fildes[new_fd].drv = fildes[fd].drv;
     fildes[new_fd].opened = true;
 
     return new_fd;
