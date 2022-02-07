@@ -11,6 +11,10 @@
 TEST_GROUP(vfs_internal);
 /***************************************/
 
+vfs_driver_t dummy = {
+
+};
+
 #ifdef WANTED_ROMFS
 
 file_t fs[] = {
@@ -24,6 +28,7 @@ file_t fs[] = {
     {"sys",  1, VFS_FILETYPE_DIRECTORY,         NULL},
     {"bus",  2, VFS_FILETYPE_SOCKET_DGRAM,      NULL},
     {".dotfile", 1, VFS_FILETYPE_REGULAR_FILE,  NULL},
+    {"drv",  1, VFS_FILETYPE_DIRECTORY,         &dummy},
 };
 
 const size_t fsLen = sizeof(fs)/sizeof(fs[0]);
@@ -47,6 +52,12 @@ TEST(vfs_internal, findFileNotFound)
     i = VfsFindFileAt(0, "/dev/a", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
+    i = VfsFindFileAt(0, "/dir/dir", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
+    i = VfsFindFileAt(0, "/net/bus", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
     i = VfsFindFileAt(0, "/dev/xyzz", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
@@ -58,6 +69,9 @@ TEST(vfs_internal, findFileNotFound)
 
     i = VfsFindFileAt(0, "/dev/../xyz", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
+    i = VfsFindFileAt(0, "..", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 }
 
 TEST(vfs_internal, findFileRoot)
@@ -67,9 +81,6 @@ TEST(vfs_internal, findFileRoot)
 
     i = VfsFindFileAt(0, ".", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(0, i);
-
-    i = VfsFindFileAt(0, "..", fs, fsLen);
-    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
     i = VfsFindFileAt(0, "./.", fs, fsLen);
     TEST_ASSERT_EQUAL_INT(0, i);
@@ -114,6 +125,38 @@ TEST(vfs_internal, findFileDir)
     TEST_ASSERT_EQUAL_INT(0, i);
 }
 
+TEST(vfs_internal, findFileDriver)
+{
+    int i = VfsFindFileAt(0, "/drv/a", fs, fsLen);
+    TEST_ASSERT_EQUAL_INT(0, i);
+}
+
+
+
+/***************************************/
+TEST_GROUP(vfs_ops);
+/***************************************/
+
+TEST_SETUP(vfs_ops)
+{
+}
+
+TEST_TEAR_DOWN(vfs_ops)
+{
+}
+
+TEST(vfs_ops, Open)
+{
+    int i = VfsOpen("/", 0);
+    TEST_ASSERT_EQUAL_INT(0, i);
+}
+
+TEST_GROUP_RUNNER(vfs_ops)
+{
+    RUN_TEST_CASE(vfs_ops, Open);
+}
+
+
 #endif
 
 TEST_GROUP_RUNNER(vfs_internal)
@@ -122,5 +165,6 @@ TEST_GROUP_RUNNER(vfs_internal)
     RUN_TEST_CASE(vfs_internal, findFileNotFound);
     RUN_TEST_CASE(vfs_internal, findFileRoot);
     RUN_TEST_CASE(vfs_internal, findFileDir);
+    RUN_TEST_CASE(vfs_internal, findFileDriver);
 #endif
 }
