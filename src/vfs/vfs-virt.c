@@ -9,34 +9,7 @@
 #include <debug_trace.h>
 
 
-extern vfs_driver_t vfs_romfs_drv;
-extern vfs_driver_t vfs_linux_drv;
-
-file_t root[] = {
-    {"/",    0, VFS_FILETYPE_DIRECTORY,         NULL,          },
-    {"dev",  1, VFS_FILETYPE_DIRECTORY,         NULL,          },
-    {"xyz",  2, VFS_FILETYPE_CHARACTER_DEVICE,  NULL,          },
-    {"dir",  1, VFS_FILETYPE_DIRECTORY,         &vfs_linux_drv,},
-    {"net",  1, VFS_FILETYPE_DIRECTORY,         NULL,          },
-    {"sock", 2, VFS_FILETYPE_SOCKET_STREAM,     NULL,          },
-    {"rom",  1, VFS_FILETYPE_DIRECTORY,         &vfs_romfs_drv,},
-    {"sys",  1, VFS_FILETYPE_DIRECTORY,         NULL,          },
-    {"bus",  2, VFS_FILETYPE_SOCKET_DGRAM,      NULL,          },
-};
-
-const size_t rootLen = sizeof(root)/sizeof(root[0]);
-
-static int  _Open(const char *path, int flags);
-static int  _OpenAt(int fd, const char *path, int flags);
-static int  _Close(int fd);
-static int  _FdStat(int fd, vfs_fdstat_t *stat);
-static int  _FileStatAt(int fd, const char *path, vfs_filestat_t *stat);
-static int  _Read(int fd, void *buf, size_t nbyte);
-static int  _Write(int fd, const void *buf, size_t nbyte);
-static int  _Seek(int fd, long off, int whence, long *pos);
-static int  _Tell(int fd, long *pos);
-static int  _ReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
-
+/*
 vfs_driver_t vfs_virtual_drv = {
     .id         = { 'V', 'i', 'r', 't' },
     .Open       = _Open,
@@ -51,75 +24,6 @@ vfs_driver_t vfs_virtual_drv = {
     .ReadDir    = _ReadDir,
 };
 
-int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt)
-{
-    struct cwk_segment seg;
-    int f;
-    uint16_t d;
-    bool found = false;
-
-    if (fd >= filesCnt) {
-        return -EBADF;
-    }
-
-    if (files[fd].type != VFS_FILETYPE_DIRECTORY) {
-        return -ENOTDIR;
-    }
-
-    d = files[fd].depth + 1;
-    f = fd;
-
-    if (cwk_path_is_absolute(path)) {
-        while (*path == '/') {
-            path++;
-        }
-        fd = 0;
-    }
-
-    DEBUG_TRACE("path: %s", path);
-
-    cwk_path_get_first_segment(path, &seg);
-
-    if (seg.size == 0) {
-        // probably could only happen when initial path was /
-        return fd;
-    }
-
-    do {
-        DEBUG_TRACE("segment: %.*s (%d)", seg.size, seg.begin, seg.size);
-        found = false;
-
-
-        if (memcmp(".", seg.begin, seg.size) == 0) {
-            found = true;
-            continue;
-        }
-
-        if (memcmp("..", seg.begin, seg.size) == 0) {
-            if (d == 1) break; // root dir can't go up
-            found = true;
-            f = fd = 0;
-            d--;
-            continue;
-        }
-
-        for (f = fd+1; (f < filesCnt); f++) {
-            if ((files[f].depth == d) && strncmp(files[f].name, seg.begin, seg.size) == 0) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) break;
-
-        d++;
-    } while (cwk_path_get_next_segment(&seg));
-
-    if (found) {
-        return f;
-    } else {
-        return -ENOENT;
-    }
-}
 
 static int _Open(const char *path, int flags)
 {
@@ -246,3 +150,5 @@ static int _ReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *
 
     return 0;
 }
+
+*/

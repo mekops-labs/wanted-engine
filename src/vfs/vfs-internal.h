@@ -9,7 +9,7 @@ typedef struct file_t {
     const char      *name;
     uint16_t        depth;
     vfs_filetype_t  type;
-    vfs_driver_t    *driver;
+    vfs_driver_t    *drv;
 } file_t;
 
 int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt);
