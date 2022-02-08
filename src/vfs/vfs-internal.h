@@ -11,6 +11,7 @@ typedef struct file_t {
     uint16_t        depth;
     vfs_filetype_t  type;
     vfs_driver_t    *drv;
+    int             drv_fd;
 } file_t;
 
 typedef struct vfs_entry_t {

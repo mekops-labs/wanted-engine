@@ -140,7 +140,7 @@ TEST(vfs_internal, findFileDriver)
     i = VfsFindFileAt(0, "/drv", fs, fsLen, &drvPath);
     TEST_ASSERT_NOT_NULL(drvPath);
     TEST_ASSERT_EQUAL_INT(10, i);
-    TEST_ASSERT_EQUAL_STRING("/", drvPath);
+    TEST_ASSERT_EQUAL_STRING(".", drvPath);
 
     drvPath = NULL;
 

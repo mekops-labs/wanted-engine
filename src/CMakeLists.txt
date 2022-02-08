@@ -5,7 +5,6 @@ set(sources
 
 set(vfs-srcs
     "vfs/vfs.c"
-    "vfs/vfs-virt.c"
     "vfs/vfs-romfs.c"
     "vfs/vfs-linux.c"
     )
@@ -75,14 +74,14 @@ option(EnableWasm3Trace "Enable wasm3 tracing" OFF)
 
 if (EnableWasm3Trace)
     message("Trace for WASM3 enabled")
-    target_compile_definitions(m3 PUBLIC d_m3EnableStrace=1 DEBUG=1)
+    target_compile_definitions(m3 PRIVATE d_m3EnableStrace=1 DEBUG=1)
 endif()
 
 option(WANTED_DEBUG_TRACES "Enable debug prints for Wanted" OFF)
 
 if (WANTED_DEBUG_TRACES)
     message("-- Debug tracing for Wanted enabled")
-    target_compile_definitions(${target} PUBLIC DEBUG=1)
+    target_compile_definitions(${target} PRIVATE DEBUG=1)
 endif()
 
 target_link_libraries(${target} PRIVATE m)

@@ -123,7 +123,7 @@ static int _FileStatAt(int fd, const char *path, vfs_filestat_t *s)
     if (ret < 0) return -errno;
 
     s->filetype = convertFiletype(statbuf.st_mode);
-    s->dev = statbuf.st_dev;
+    s->dev = *((uint32_t *)vfs_linux_drv.id); //statbuf.st_dev;
     s->ino = statbuf.st_ino;
     s->nlink = statbuf.st_nlink;
     s->size = statbuf.st_size;

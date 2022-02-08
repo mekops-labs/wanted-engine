@@ -62,7 +62,7 @@ int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt, cons
     struct cwk_segment seg;
     int f;
     uint16_t d;
-    char norm[MAX_PATH_LEN];
+    //char norm[MAX_PATH_LEN];
     bool found = false;
 
     if (pathLeft) {
@@ -87,14 +87,14 @@ int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt, cons
         fd = 0;
     }
 
-    int r = cwk_path_normalize(path, norm, MAX_PATH_LEN);
-    if (r >= MAX_PATH_LEN) {
-        return -ENAMETOOLONG;
-    }
+    //int r = cwk_path_normalize(path, norm, MAX_PATH_LEN);
+    //if (r >= MAX_PATH_LEN) {
+      //  return -ENAMETOOLONG;
+    //}
 
-    DEBUG_TRACE("path: %s", norm);
+    DEBUG_TRACE("path: %s", path);
 
-    cwk_path_get_first_segment(norm, &seg);
+    cwk_path_get_first_segment(path, &seg);
 
     if (seg.size == 0) {
         // probably could only happen when initial path was /
@@ -140,8 +140,9 @@ int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt, cons
             *pathLeft = NULL;
         } else {
             if (!cwk_path_get_next_segment(&seg)) {
-                *pathLeft = "/";
+                *pathLeft = ".";
             } else {
+                // TODO: seg.begin is pointing to normalized version of path!!!
                 *pathLeft = seg.begin;
             }
 
@@ -188,9 +189,11 @@ int VfsOpenAt(int fd, const char *path, int flags)
     int f = VfsFindFileAt(fd - ROOT_FD, path, root, rootLen, &pathLeft);
     if (f < 0) return f;
 
-    if (pathLeft) {
+    if (pathLeft && NULL != root[f].drv) {
         fildes[new_fd].drv = root[f].drv;
-        f = TRY(root[f].drv, Open, pathLeft, flags);
+        int rootFd = TRY(fildes[new_fd].drv, Open, "/", 0);
+        f = TRY(fildes[new_fd].drv, OpenAt, rootFd, pathLeft, flags);
+        TRY(fildes[new_fd].drv, Close, rootFd);
         if (f < 0) return f;
     } else {
         fildes[new_fd].drv = NULL;
@@ -198,6 +201,8 @@ int VfsOpenAt(int fd, const char *path, int flags)
 
     fildes[new_fd].drv_fd = f;
     fildes[new_fd].opened = true;
+
+    pathLeft = path;
 
     return new_fd;
 }
@@ -209,7 +214,11 @@ int VfsClose(int fd)
 
     if (!CheckFd(fd)) return -EBADF;
 
-    if (fildes[fd].drv) {
+    if (!fildes[fd].opened) {
+        return -EBADF;
+    }
+
+    if (NULL != fildes[fd].drv) {
         ret = TRY(fildes[fd].drv, Close, fildes[fd].drv_fd);
     }
 
@@ -220,20 +229,61 @@ int VfsClose(int fd)
 
 int VfsFdStat(int fd, vfs_fdstat_t *stat)
 {
+    int ret = 0;
     DEBUG_TRACE("%d", fd);
 
     if (!CheckFd(fd)) return -EBADF;
 
-    return fildes[fd].drv->FdStat(fildes[fd].drv_fd, stat);
+    if (!fildes[fd].opened) {
+        return -EBADF;
+    }
+
+    stat->filetype = root[fd].type;
+    stat->flags = 0;
+
+    if (NULL != fildes[fd].drv) {
+        ret = TRY(fildes[fd].drv, FdStat, fd, stat);
+    }
+
+    return ret;
 }
 
 int VfsFileStatAt(int fd, const char *path, vfs_filestat_t *stat)
 {
+    int f, ret = 0;
+    const char *pathLeft;
+    const char drvRoot[] = {'/', '\0'};
+
     DEBUG_TRACE("%d: %s", fd, path);
 
     if (!CheckFd(fd)) return -EBADF;
 
-    return fildes[fd].drv->FileStatAt(fildes[fd].drv_fd, path, stat);
+    if (!fildes[fd].opened) {
+        return -EBADF;
+    }
+
+    fd = fildes[fd].drv_fd;
+
+    f = VfsFindFileAt(fd, path, root, rootLen, &pathLeft);
+    if (f < 0) return f;
+
+    if (pathLeft && NULL != root[f].drv) {
+        fd = TRY(root[f].drv, Open, drvRoot, 0);
+        ret = TRY(root[f].drv, FileStatAt, fd, pathLeft, stat);
+        TRY(root[f].drv, Close, fd);
+        if (ret < 0) return ret;
+    } else {
+        stat->atim = 0;
+        stat->ctim = 0;
+        stat->mtim = 0;
+        stat->dev = (fildes[f].drv != NULL) ? *(uint32_t*)fildes[f].drv->id : 0;
+        stat->ino = f;
+        stat->filetype = root[f].type;
+        stat->nlink = 0;
+        stat->size = 0;
+    }
+
+    return 0;
 }
 
 int VfsRead(int fd, void *buf, size_t nbyte)
@@ -242,7 +292,15 @@ int VfsRead(int fd, void *buf, size_t nbyte)
 
     if (!CheckFd(fd)) return -EBADF;
 
-    return fildes[fd].drv->Read(fildes[fd].drv_fd, buf, nbyte);;
+    if (!fildes[fd].opened) {
+        return -EBADF;
+    }
+
+    if (NULL == fildes[fd].drv) {
+        return -EPERM;
+    }
+
+    return TRY(fildes[fd].drv, Read, fildes[fd].drv_fd, buf, nbyte);
 }
 
 int VfsWrite(int fd, const void *buf, size_t nbyte)
@@ -251,7 +309,15 @@ int VfsWrite(int fd, const void *buf, size_t nbyte)
 
     if (!CheckFd(fd)) return -EBADF;
 
-    return fildes[fd].drv->Write(fildes[fd].drv_fd, buf, nbyte);
+    if (!fildes[fd].opened) {
+        return -EBADF;
+    }
+
+    if (NULL == fildes[fd].drv) {
+        return -EPERM;
+    }
+
+    return TRY(fildes[fd].drv, Write ,fildes[fd].drv_fd, buf, nbyte);
 }
 
 int VfsSeek(int fd, long off, int whence, long *pos)
@@ -260,7 +326,15 @@ int VfsSeek(int fd, long off, int whence, long *pos)
 
     if (!CheckFd(fd)) return -EBADF;
 
-    return fildes[fd].drv->Seek(fildes[fd].drv_fd, off, whence, pos);
+    if (!fildes[fd].opened) {
+        return -EBADF;
+    }
+
+    if (NULL == fildes[fd].drv) {
+        return -EPERM;
+    }
+
+    return TRY(fildes[fd].drv, Seek, fildes[fd].drv_fd, off, whence, pos);
 }
 
 int VfsTell(int fd, long *pos)
@@ -269,14 +343,60 @@ int VfsTell(int fd, long *pos)
 
     if (!CheckFd(fd)) return -EBADF;
 
-     return fildes[fd].drv->Tell(fildes[fd].drv_fd, pos);
+    if (!fildes[fd].opened) {
+        return -EBADF;
+    }
+
+    if (NULL == fildes[fd].drv) {
+        return -EPERM;
+    }
+
+    return TRY(fildes[fd].drv, Tell, fildes[fd].drv_fd, pos);
 }
 
 int VfsReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
 {
+    vfs_dirent_t dir;
+    size_t used = 0;
+    int f;
     DEBUG_TRACE("%d", fd);
 
     if (!CheckFd(fd)) return -EBADF;
 
-    return fildes[fd].drv->ReadDir(fildes[fd].drv_fd, buf, bufLen, cookie, bufUsed);
+    if (!fildes[fd].opened) {
+        return -EBADF;
+    }
+
+    f = fildes[fd].drv_fd;
+
+    if (root[f].type != VFS_FILETYPE_DIRECTORY) {
+        return -ENOTDIR;
+    }
+
+    if (NULL != fildes[fd].drv) {
+        return TRY(fildes[fd].drv, ReadDir, f, buf, bufLen, cookie, bufUsed);
+    }
+
+    for (int i = f + 1; (i < rootLen) && (root[i].depth > root[f].depth); i++) {
+        if (root[i].depth == root[f].depth + 1) {
+            dir.d_ino       = i;
+            dir.d_namlen    = strnlen(root[i].name, 256);
+            dir.d_type      = root[i].type;
+            dir.d_next      = i;
+
+            if (used + sizeof(dir) + dir.d_namlen > bufLen) {
+                used = bufLen;
+                break;
+            }
+            memcpy(buf + used, &dir, sizeof(dir));
+            memcpy(buf + sizeof(dir) + used, root[i].name, dir.d_namlen);
+
+            used += sizeof(dir) + dir.d_namlen;
+        }
+    }
+
+    *bufUsed = used;
+    *cookie = dir.d_next; // last found directory entry
+
+    return 0;
 }
