@@ -8,11 +8,9 @@
 #include <wasi.h>
 
 #include <wanted.h>
+#include <romfs.h>
 
 #define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return -1; }
-
-#ifdef WANTED_ROMFS
-#include <romfs.h>
 
 static int LoadWasmFromRomfs(const char* wasmName, uint8_t *img, size_t imgLen, wapp_t *wasm)
 {
@@ -37,8 +35,6 @@ static int LoadWasmFromRomfs(const char* wasmName, uint8_t *img, size_t imgLen, 
     return 0;
 }
 
-#endif
-
 int RunWapp(data_t *ctx)
 {
     M3Result status;
@@ -49,12 +45,7 @@ int RunWapp(data_t *ctx)
     m3_wasi_context_t *wasiCtx;
     wapp_t wasm;
 
-#ifdef WANTED_ROMFS
     if (0 > LoadWasmFromRomfs("app.wasm", ctx->wapp->img, ctx->wapp->img_len, &wasm)) FATAL("Can't load from romfs");
-#else
-    wasm.img = ctx->wapp->img;
-    wasm.img_len = ctx->wapp->img_len;
-#endif
 
     printf("entering thread: %d\n", ctx->id);
     printf("parsing wasm: %p (%ld)\n", wasm.img, wasm.img_len);
@@ -71,12 +62,10 @@ int RunWapp(data_t *ctx)
     wasiCtx->argc = 0;
     wasiCtx->argv = NULL;
 
-#ifdef WANTED_ROMFS
     wasiCtx->RomfsImg = ctx->wapp->img;
     wasiCtx->RomfsImgLen = ctx->wapp->img_len;
 
     printf("romfs: %p (%ld)\n", wasiCtx->RomfsImg, wasiCtx->RomfsImgLen);
-#endif
 
     LinkWASI(mod);
     LinkMyApi(mod);
@@ -98,7 +87,3 @@ int RunWapp(data_t *ctx)
 
     return 0;
 }
-
-/*
-
-    */

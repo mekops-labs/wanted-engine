@@ -10,29 +10,9 @@ set(vfs-srcs
     "vfs/vfs-dummy.c"
     )
 
-set(wasiTypes Linux Romfs Vfs)
-set(wasiType Vfs CACHE STRING "WASI type")
-set_property(CACHE wasiType PROPERTY STRINGS ${wasiTypes})
-
-if(NOT wasiType IN_LIST wasiTypes)
-    message(FATAL_ERROR "wasiType must be one of ${wasiTypes}")
-endif()
-
-message("Wasi type is ${wasiType}")
-
-if (wasiType STREQUAL "Linux")
-    set(wasi-src
-        "wasi/wasi-linux.c")
-elseif (wasiType STREQUAL "Romfs")
-    set(wasi-src
-        "wasi/wasi-romfs.c"
-    )
-elseif (wasiType STREQUAL "Vfs")
-    set(wasi-src
-        "wasi/wasi-vfs.c"
-        ${vfs-srcs}
-    )
-endif()
+set(wasi-src
+    "wasi/wasi-vfs.c"
+)
 
 # Add tiny-json to the build
 set(tiny-json-src
@@ -40,13 +20,11 @@ set(tiny-json-src
 )
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
-
-if (wasiType STREQUAL "Romfs" OR wasiType STREQUAL "Vfs")
-    add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/romfs)
-endif()
+add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/romfs)
 
 add_library(${target} STATIC
     ${sources}
+    ${vfs-srcs}
     ${wasi-src}
     ${tiny-json-src}
 )
@@ -57,12 +35,9 @@ target_include_directories(${target}
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     )
 
-if (wasiType STREQUAL "Romfs" OR wasiType STREQUAL "Vfs")
-    add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk cwalk)
-    target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/romfs-lib/include)
-    target_link_libraries(${target} PRIVATE romfs PRIVATE cwalk)
-    target_compile_definitions(${target} PRIVATE WANTED_ROMFS=1)
-endif()
+add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk cwalk)
+target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/romfs-lib/include)
+target_link_libraries(${target} PRIVATE romfs PRIVATE cwalk)
 
 target_link_libraries(${target} PRIVATE m3)
 target_link_libraries(${target} PRIVATE pthread)

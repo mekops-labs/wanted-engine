@@ -12,8 +12,6 @@
 TEST_GROUP(vfs_internal);
 /***************************************/
 
-#ifdef WANTED_ROMFS
-
 file_t fs[] = {
     {"/",    0,     NULL,    },
     {"dev",  1,     NULL,    },
@@ -94,13 +92,7 @@ TEST(vfs_internal, findFileRoot)
     i = VfsFindEntryAt(0, "/./dev", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(1, i);
 
-    i = VfsFindEntryAt(0, "/dir/../dir", fs, fsLen, NULL);
-    TEST_ASSERT_EQUAL_INT(3, i);
-
     i = VfsFindEntryAt(0, "////./dir", fs, fsLen, NULL);
-    TEST_ASSERT_EQUAL_INT(3, i);
-
-    i = VfsFindEntryAt(0, ".//////dir/..////./dir", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(3, i);
 }
 
@@ -156,19 +148,15 @@ TEST(vfs_internal, findFileDriver)
     TEST_ASSERT_EQUAL_INT(10, i);
     TEST_ASSERT_EQUAL_STRING("file/x", drvPath);
 }
-#endif
 
 TEST_GROUP_RUNNER(vfs_internal)
 {
-#ifdef WANTED_ROMFS
     RUN_TEST_CASE(vfs_internal, findFileNotFound);
     RUN_TEST_CASE(vfs_internal, findFileRoot);
     RUN_TEST_CASE(vfs_internal, findFileDir);
     RUN_TEST_CASE(vfs_internal, findFileDriver);
-#endif
 }
 
-#ifdef WANTED_ROMFS
 
 /***************************************/
 TEST_GROUP(vfs_openclose);
@@ -224,8 +212,3 @@ TEST_GROUP_RUNNER(vfs_openclose)
     RUN_TEST_CASE(vfs_openclose, OpenFail);
     RUN_TEST_CASE(vfs_openclose, OpenThenClose);
 }
-
-
-#endif
-
-

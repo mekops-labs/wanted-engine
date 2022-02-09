@@ -23,14 +23,9 @@ TEST(wanted_api, runSimpleWasm)
 {
     data_t ctx;
     wapp_t w = {
-#ifndef WANTED_ROMFS
-        .img = test_wasi_wasm,
-        .img_len = test_wasi_wasm_len
-#else
         .img = test_wasi_romfs,
         .img_len = test_wasi_romfs_len
-#endif
-        };
+    };
     int ret;
 
     ctx.id = 0;
