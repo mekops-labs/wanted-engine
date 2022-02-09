@@ -18,10 +18,6 @@ static int  _Write(int fd, const void *buf, size_t nbyte) {
     return -EROFS;
 }
 
-static int  _Tell(int fd, long *pos) {
-    return -EINVAL;
-}
-
 vfs_driver_t vfs_romfs_drv = {
     .id = { 'R', 'o', 'm', 'f' },
     .filetype    = VFS_FILETYPE_DIRECTORY,
@@ -33,7 +29,6 @@ vfs_driver_t vfs_romfs_drv = {
     .Read        = _Read,
     .Write       = _Write,
     .Seek        = _Seek,
-    .Tell        = _Tell,
     .ReadDir     = _ReadDir,
 };
 
