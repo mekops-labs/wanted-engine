@@ -103,7 +103,6 @@ m3ApiRawFunction(my_connect)
     struct sockaddr_in *a = (struct sockaddr_in *)addr;
     if (a->sin_family == 1) a->sin_family = 2;
 
-    printf("!!! %d %x %x\n", a->sin_family, a->sin_port, a->sin_addr);
     int ret = connect(sockfd, addr, addrlen);
 
     m3ApiReturn(ret);
