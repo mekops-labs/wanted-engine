@@ -4,7 +4,7 @@
 
 #include <tiny-json.h>
 
-#include <my_api.h>
+#include <wanted_wasm_api.h>
 #include <wasi.h>
 
 #include <wanted.h>
@@ -68,7 +68,7 @@ int RunWapp(data_t *ctx)
     printf("romfs: %p (%ld)\n", wasiCtx->RomfsImg, wasiCtx->RomfsImgLen);
 
     LinkWASI(mod);
-    LinkMyApi(mod);
+    LinkWantedApi(mod);
     m3_LinkLibC(mod);
 
     status = m3_FindFunction (&f, rt, "entry");

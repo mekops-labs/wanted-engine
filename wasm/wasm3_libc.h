@@ -13,9 +13,4 @@ WASM_IMPORT("env", "_exit")      void e_exit(int32_t);
 WASM_IMPORT("env", "clock_ms")   uint32_t e_clock_ms();
 WASM_IMPORT("env", "printf")     int32_t e_print(const char *, ...);
 
-WASM_IMPORT("wanted", "sleep")        void w_sleep(uint32_t);
-
-WASM_IMPORT("wanted", "send")        void w_send(const char *, size_t);
-WASM_IMPORT("wanted", "recv")        void w_recv(char *, size_t);
-
-WASM_IMPORT("wanted", "get_rand")    unsigned w_get_rand();
+WASM_IMPORT("wanted", "func")        int32_t wanted_func(int32_t a, int32_t b, int32_t c);

@@ -22,7 +22,8 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/src)
 
 add_custom_target(wasm
     COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm clean
-    COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm
+    COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm NAME=test_prog
+    COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm NAME=test_wasi WASI=1
     )
 #add_dependencies(${CMAKE_PROJECT_NAME} compile_wasm)
 

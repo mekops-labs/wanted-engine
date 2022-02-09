@@ -66,8 +66,6 @@ int main(int argc, char* argv[]) {
         config.n = argc - 1;
     }
 
-    MyApiInit();
-
     for (int i = 0; i < config.n; i++) {
         config.threads[i].data.id   = i;
         config.threads[i].data.wapp = &config.wapps[i];
