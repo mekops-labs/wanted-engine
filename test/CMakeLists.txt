@@ -10,7 +10,7 @@ execute_process(
 )
 
 add_executable(tests ${test_src} ${CMAKE_CURRENT_BINARY_DIR}/runner.c)
-target_link_libraries(tests unity ${target})
+target_link_libraries(tests unity ${project})
 
 execute_process(
     COMMAND grep TEST_GROUP ${CMAKE_CURRENT_BINARY_DIR}/runner.c
