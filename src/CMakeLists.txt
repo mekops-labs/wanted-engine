@@ -6,7 +6,6 @@ set(sources
 set(vfs-srcs
     "vfs/vfs.c"
     "vfs/vfs-romfs.c"
-    "vfs/vfs-linux.c"
     "vfs/vfs-dummy.c"
     )
 
@@ -21,6 +20,7 @@ set(tiny-json-src
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/romfs)
+add_subdirectory(${CMAKE_SOURCE_DIR}/platform ${CMAKE_BINARY_DIR}/platform)
 
 add_library(${target} STATIC
     ${sources}
@@ -37,14 +37,16 @@ target_include_directories(${target}
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk cwalk)
 target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/romfs-lib/include)
-target_link_libraries(${target} PRIVATE romfs PRIVATE cwalk)
+target_link_libraries(${target} PRIVATE romfs PRIVATE cwalk PRIVATE platform)
 
 target_link_libraries(${target} PRIVATE m3)
 target_link_libraries(${target} PRIVATE pthread)
 
 # Add debug symbols
 target_compile_options(${target} PUBLIC -g)
-target_compile_options(m3 PUBLIC -Wno-extern-initializer -g)
+
+# Set flags for m3, disable harmless wanings
+target_compile_options(m3 PRIVATE -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer)
 
 option(EnableWasm3Trace "Enable wasm3 tracing" OFF)
 
