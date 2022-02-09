@@ -11,7 +11,6 @@ typedef struct file_t {
     uint16_t        depth;
     vfs_filetype_t  type;
     vfs_driver_t    *drv;
-    int             drv_fd;
 } file_t;
 
 typedef struct vfs_entry_t {
@@ -21,4 +20,4 @@ typedef struct vfs_entry_t {
 } vfs_entry_t;
 
 
-int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt, const char **pathLeft);
+int VfsFindEntryAt(int fd, const char *path, file_t *files, size_t filesCnt, const char **pathLeft);

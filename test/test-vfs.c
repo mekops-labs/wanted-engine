@@ -44,85 +44,85 @@ TEST_TEAR_DOWN(vfs_internal)
 
 TEST(vfs_internal, findFileNotFound)
 {
-    int i = VfsFindFileAt(0, "not_a_file", fs, fsLen, NULL);
+    int i = VfsFindEntryAt(0, "not_a_file", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFileAt(0, "/not_a_file", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "/not_a_file", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFileAt(0, "/dev/a", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "/dev/a", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFileAt(0, "/dir/dir", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "/dir/dir", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFileAt(0, "/net/bus", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "/net/bus", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFileAt(0, "/dev/xyzz", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "/dev/xyzz", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFileAt(1, "dev/xyzz", fs, fsLen, NULL);
+    i = VfsFindEntryAt(1, "dev/xyzz", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFileAt(0, "../dev/xyz", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "../dev/xyz", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFileAt(0, "/dev/../xyz", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "/dev/../xyz", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindFileAt(0, "..", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "..", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 }
 
 TEST(vfs_internal, findFileRoot)
 {
-    int i = VfsFindFileAt(0, "/", fs, fsLen, NULL);
+    int i = VfsFindEntryAt(0, "/", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFileAt(0, ".", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, ".", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFileAt(0, "./.", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "./.", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFileAt(0, ".dotfile", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, ".dotfile", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(9, i);
 
-    i = VfsFindFileAt(0, "/dev", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "/dev", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(1, i);
 
-    i = VfsFindFileAt(0, "dev", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "dev", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(1, i);
 
-    i = VfsFindFileAt(0, "/./dev", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "/./dev", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(1, i);
 
-    i = VfsFindFileAt(0, "/dir/../dir", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "/dir/../dir", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(3, i);
 
-    i = VfsFindFileAt(0, "////./dir", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, "////./dir", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(3, i);
 
-    i = VfsFindFileAt(0, ".//////dir/..////./dir", fs, fsLen, NULL);
+    i = VfsFindEntryAt(0, ".//////dir/..////./dir", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(3, i);
 }
 
 TEST(vfs_internal, findFileDir)
 {
-    int i = VfsFindFileAt(1, "xyz", fs, fsLen, NULL);
+    int i = VfsFindEntryAt(1, "xyz", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(2, i);
 
-    i = VfsFindFileAt(1, "../net", fs, fsLen, NULL);
+    i = VfsFindEntryAt(1, "../net", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(4, i);
 
-    i = VfsFindFileAt(1, "../", fs, fsLen, NULL);
+    i = VfsFindEntryAt(1, "../", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFileAt(1, "..", fs, fsLen, NULL);
+    i = VfsFindEntryAt(1, "..", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindFileAt(1, "../././.", fs, fsLen, NULL);
+    i = VfsFindEntryAt(1, "../././.", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(0, i);
 }
 
@@ -130,34 +130,35 @@ TEST(vfs_internal, findFileDriver)
 {
     const char *drvPath = NULL;
 
-    int i = VfsFindFileAt(0, "/drv/a", fs, fsLen, &drvPath);
+    int i = VfsFindEntryAt(0, "/drv/a", fs, fsLen, &drvPath);
     TEST_ASSERT_NOT_NULL(drvPath);
     TEST_ASSERT_EQUAL_INT(10, i);
     TEST_ASSERT_EQUAL_STRING("a", drvPath);
 
     drvPath = NULL;
 
-    i = VfsFindFileAt(0, "/drv", fs, fsLen, &drvPath);
+    i = VfsFindEntryAt(0, "/drv", fs, fsLen, &drvPath);
     TEST_ASSERT_NOT_NULL(drvPath);
     TEST_ASSERT_EQUAL_INT(10, i);
     TEST_ASSERT_EQUAL_STRING(".", drvPath);
 
     drvPath = NULL;
 
-    i = VfsFindFileAt(0, "/drv/x/y/z", fs, fsLen, &drvPath);
+    i = VfsFindEntryAt(0, "/drv/x/y/z", fs, fsLen, &drvPath);
     TEST_ASSERT_NOT_NULL(drvPath);
     TEST_ASSERT_EQUAL_INT(10, i);
     TEST_ASSERT_EQUAL_STRING("x/y/z", drvPath);
 
-    i = VfsFindFileAt(0, "/dir", fs, fsLen, &drvPath);
+    i = VfsFindEntryAt(0, "/dir", fs, fsLen, &drvPath);
     TEST_ASSERT_NULL(drvPath);
     TEST_ASSERT_EQUAL_INT(3, i);
 
     drvPath = NULL;
 
-    i = VfsFindFileAt(0, "/drv/../dir", fs, fsLen, &drvPath);
-    TEST_ASSERT_NULL(drvPath);
-    TEST_ASSERT_EQUAL_INT(3, i);
+    i = VfsFindEntryAt(0, "/drv/file/x", fs, fsLen, &drvPath);
+    TEST_ASSERT_NOT_NULL(drvPath);
+    TEST_ASSERT_EQUAL_INT(10, i);
+    TEST_ASSERT_EQUAL_STRING("file/x", drvPath);
 }
 #endif
 

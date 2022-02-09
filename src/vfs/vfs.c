@@ -57,12 +57,12 @@ int FindFirstClosedFd()
     return -EMFILE;
 }
 
-int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt, const char **pathLeft)
+/* requires normalized path */
+int VfsFindEntryAt(int fd, const char *path, file_t *files, size_t filesCnt, const char **pathLeft)
 {
     struct cwk_segment seg;
     int f;
     uint16_t d;
-    //char norm[MAX_PATH_LEN];
     bool found = false;
 
     if (pathLeft) {
@@ -86,13 +86,6 @@ int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt, cons
         }
         fd = 0;
     }
-
-    //int r = cwk_path_normalize(path, norm, MAX_PATH_LEN);
-    //if (r >= MAX_PATH_LEN) {
-      //  return -ENAMETOOLONG;
-    //}
-
-    DEBUG_TRACE("path: %s", path);
 
     cwk_path_get_first_segment(path, &seg);
 
@@ -142,7 +135,6 @@ int VfsFindFileAt(int fd, const char *path, file_t *files, size_t filesCnt, cons
             if (!cwk_path_get_next_segment(&seg)) {
                 *pathLeft = ".";
             } else {
-                // TODO: seg.begin is pointing to normalized version of path!!!
                 *pathLeft = seg.begin;
             }
 
@@ -174,6 +166,7 @@ int VfsOpen(const char *path, int flags)
 
 int VfsOpenAt(int fd, const char *path, int flags)
 {
+    const char normalized[MAX_PATH_LEN];
     const char *pathLeft;
     DEBUG_TRACE("%d: %s (0x%x)", fd, path, flags);
 
@@ -186,7 +179,11 @@ int VfsOpenAt(int fd, const char *path, int flags)
     int new_fd = FindFirstClosedFd();
     if (new_fd < 0) return new_fd;
 
-    int f = VfsFindFileAt(fd - ROOT_FD, path, root, rootLen, &pathLeft);
+    if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
+        return -ENAMETOOLONG;
+    }
+
+    int f = VfsFindEntryAt(fd - ROOT_FD, normalized, root, rootLen, &pathLeft);
     if (f < 0) return f;
 
     if (pathLeft && NULL != root[f].drv) {
@@ -251,6 +248,7 @@ int VfsFdStat(int fd, vfs_fdstat_t *stat)
 int VfsFileStatAt(int fd, const char *path, vfs_filestat_t *stat)
 {
     int f, ret = 0;
+    const char normalized[MAX_PATH_LEN];
     const char *pathLeft;
     const char drvRoot[] = {'/', '\0'};
 
@@ -264,7 +262,11 @@ int VfsFileStatAt(int fd, const char *path, vfs_filestat_t *stat)
 
     fd = fildes[fd].drv_fd;
 
-    f = VfsFindFileAt(fd, path, root, rootLen, &pathLeft);
+    if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
+        return -ENAMETOOLONG;
+    }
+
+    f = VfsFindEntryAt(fd, normalized, root, rootLen, &pathLeft);
     if (f < 0) return f;
 
     if (pathLeft && NULL != root[f].drv) {
@@ -369,12 +371,12 @@ int VfsReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUs
 
     f = fildes[fd].drv_fd;
 
-    if (root[f].type != VFS_FILETYPE_DIRECTORY) {
-        return -ENOTDIR;
-    }
-
     if (NULL != fildes[fd].drv) {
         return TRY(fildes[fd].drv, ReadDir, f, buf, bufLen, cookie, bufUsed);
+    }
+
+    if (root[f].type != VFS_FILETYPE_DIRECTORY) {
+        return -ENOTDIR;
     }
 
     for (int i = f + 1; (i < rootLen) && (root[i].depth > root[f].depth); i++) {
