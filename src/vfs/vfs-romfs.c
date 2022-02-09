@@ -24,6 +24,7 @@ static int  _Tell(int fd, long *pos) {
 
 vfs_driver_t vfs_romfs_drv = {
     .id = { 'R', 'o', 'm', 'f' },
+    .filetype    = VFS_FILETYPE_DIRECTORY,
     .Open        = _Open,
     .OpenAt      = _OpenAt,
     .Close       = _Close,
