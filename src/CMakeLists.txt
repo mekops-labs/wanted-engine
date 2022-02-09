@@ -18,9 +18,10 @@ set(tiny-json-src
     ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c
 )
 
+add_subdirectory(${CMAKE_SOURCE_DIR}/platform ${CMAKE_BINARY_DIR}/platform)
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/romfs)
-add_subdirectory(${CMAKE_SOURCE_DIR}/platform ${CMAKE_BINARY_DIR}/platform)
+add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
 
 add_library(${target} STATIC
     ${sources}
@@ -35,12 +36,10 @@ target_include_directories(${target}
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     )
 
-add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk cwalk)
-target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/romfs-lib/include)
 target_link_libraries(${target} PRIVATE romfs PRIVATE cwalk PRIVATE platform)
-
 target_link_libraries(${target} PRIVATE m3)
 target_link_libraries(${target} PRIVATE pthread)
+target_link_libraries(${target} PRIVATE m)
 
 # Add debug symbols
 target_compile_options(${target} PUBLIC -g)
@@ -61,7 +60,3 @@ if (WANTED_DEBUG_TRACES)
     message("-- Debug tracing for Wanted enabled")
     target_compile_definitions(${target} PRIVATE DEBUG=1)
 endif()
-
-target_link_libraries(${target} PRIVATE m)
-
-

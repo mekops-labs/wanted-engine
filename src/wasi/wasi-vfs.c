@@ -1,25 +1,15 @@
-#include <sys/types.h>
-#include <fcntl.h>
-#include <sys/random.h>
-#include <time.h>
 #include <errno.h>
-#include <stdio.h>
-#include <unistd.h>
 
-#include <sys/mman.h>
-
+/* m3 includes */
 #include "m3_env.h"
 #include "m3_exception.h"
-
 #include "extra/wasi_core.h"
 
-#include "wasi.h"
-#include "romfs.h"
-#include "vfs.h"
-
-extern vfs_driver_t vfs_romfs_drv;
-extern vfs_driver_t vfs_linux_drv;
-extern vfs_driver_t vfs_virtual_drv;
+/* wanted includes */
+#include <wasi.h>
+#include <romfs.h>
+#include <vfs.h>
+#include <platform.h>
 
 static m3_wasi_context_t wasi_context;
 
@@ -46,7 +36,7 @@ const size_t preopen_cnt = sizeof(preopen)/sizeof(preopen[0]);
 
 static
 __wasi_errno_t errno_to_wasi(int errnum) {
-    switch (errnum) {
+    switch (-errnum) {
     CASE_RET( EPERM       , __WASI_ERRNO_PERM         );
     CASE_RET( ENOENT      , __WASI_ERRNO_NOENT        );
     CASE_RET( ESRCH       , __WASI_ERRNO_SRCH         );
@@ -83,36 +73,6 @@ __wasi_errno_t errno_to_wasi(int errnum) {
     CASE_RET( ENAMETOOLONG, __WASI_ERRNO_NAMETOOLONG  );
     }
     return __WASI_ERRNO_INVAL;
-}
-
-static inline
-int convert_clockid(__wasi_clockid_t in) {
-    switch (in) {
-    case __WASI_CLOCKID_MONOTONIC:            return CLOCK_MONOTONIC;
-    //case __WASI_CLOCKID_PROCESS_CPUTIME_ID:   return CLOCK_PROCESS_CPUTIME_ID;
-    case __WASI_CLOCKID_REALTIME:             return CLOCK_REALTIME;
-    //case __WASI_CLOCKID_THREAD_CPUTIME_ID:    return CLOCK_THREAD_CPUTIME_ID;
-    default: return -1;
-    }
-}
-
-static inline
-__wasi_timestamp_t convert_timespec(const struct timespec *ts) {
-    if (ts->tv_sec < 0)
-        return 0;
-    if ((__wasi_timestamp_t)ts->tv_sec >= UINT64_MAX / 1000000000)
-        return UINT64_MAX;
-    return (__wasi_timestamp_t)ts->tv_sec * 1000000000 + ts->tv_nsec;
-}
-
-static inline
-struct timespec convert_timestamp(__wasi_timestamp_t t) {
-    struct timespec ts;
-
-    ts.tv_sec = t / 1000000000ULL;
-    ts.tv_nsec = t % 1000000000LL;
-
-    return ts;
 }
 
 /*
@@ -223,7 +183,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_prestat_get)
 
     if (fd < 3 || fd >= preopen_cnt) { m3ApiReturn(__WASI_ERRNO_BADF); }
 
-    int host_fd = VfsOpen(preopen[fd].path, O_DIRECTORY);
+    int host_fd = VfsOpen(preopen[fd].path, __WASI_OFLAGS_DIRECTORY);
 
     if (fd != host_fd) {
         VfsClose(host_fd);
@@ -246,7 +206,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_fdstat_get)
     vfs_fdstat_t stat;
 
     int ret = VfsFdStat(fd, &stat);
-    if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
+    if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
 
     fdstat->fs_filetype = stat.filetype;
 
@@ -295,7 +255,7 @@ m3ApiRawFunction(m3_wasi_unstable_fd_seek)
 
     long pos;
     int ret = VfsSeek(fd, offset, whence, &pos);
-    if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
+    if (ret < 0) { m3ApiReturn(errno_to_wasi(ret)); }
     m3ApiWriteMem64(result, pos);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
@@ -321,7 +281,7 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_fd_seek)
 
     long pos;
     int ret = VfsSeek(fd, offset, whence, &pos);
-    if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
+    if (ret < 0) { m3ApiReturn(errno_to_wasi(ret)); }
     m3ApiWriteMem64(result, pos);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
@@ -350,7 +310,7 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
     __wasi_filestat_t stat;
 
     int ret = VfsFileStatAt(fd, host_path, &statbuf);
-    if (ret < 0) { m3ApiReturn(errno_to_wasi(-ret)); }
+    if (ret < 0) { m3ApiReturn(errno_to_wasi(ret)); }
 
     stat.filetype = statbuf.filetype;
     stat.dev      = statbuf.dev;
@@ -420,7 +380,7 @@ m3ApiRawFunction(m3_wasi_generic_path_open)
 
     int host_fd = VfsOpenAt(dirfd, host_path, flags);
     if (host_fd < 0) {
-        m3ApiReturn(errno_to_wasi (-host_fd));
+        m3ApiReturn(errno_to_wasi (host_fd));
     }
 
     m3ApiWriteMem32(fd, host_fd);
@@ -445,7 +405,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_read)
         if (len == 0) continue;
 
         int ret = VfsRead(fd, addr, len);
-        if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
+        if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
         res += ret;
         if ((size_t)ret < len) break;
     }
@@ -475,7 +435,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_write)
         if (len == 0) continue;
 
         int ret = VfsWrite(fd, addr, len);
-        if (ret < 0) m3ApiReturn(errno_to_wasi(-ret));
+        if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
         res += ret;
         if ((size_t)ret < len) break;
     }
@@ -501,7 +461,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_readdir)
 
     ret = VfsReadDir(fd, buf, buf_len, &last, &used);
     if (ret < 0) {
-        m3ApiReturn(errno_to_wasi(-ret));
+        m3ApiReturn(errno_to_wasi(ret));
     }
 
     m3ApiWriteMem32(bufused, (__wasi_size_t)used);
@@ -516,7 +476,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_close)
 
     int ret = VfsClose(fd);
 
-    m3ApiReturn(ret < 0 ? errno_to_wasi(-ret) : __WASI_ERRNO_SUCCESS);
+    m3ApiReturn(ret < 0 ? errno_to_wasi(ret) : __WASI_ERRNO_SUCCESS);
 }
 
 m3ApiRawFunction(m3_wasi_generic_fd_datasync)
@@ -537,15 +497,10 @@ m3ApiRawFunction(m3_wasi_generic_random_get)
     m3ApiCheckMem(buf, buf_len);
 
     while (1) {
-        ssize_t retlen = 0;
-
-        retlen = getrandom(buf, buf_len, 0);
+        int64_t retlen = PlatfromGetRandom(buf, buf_len);
 
         if (retlen < 0) {
-            if (errno == EINTR || errno == EAGAIN) {
-                continue;
-            }
-            m3ApiReturn(errno_to_wasi(errno));
+            m3ApiReturn(errno_to_wasi(retlen));
         } else if (retlen == buf_len) {
             m3ApiReturn(__WASI_ERRNO_SUCCESS);
         } else {
@@ -563,15 +518,11 @@ m3ApiRawFunction(m3_wasi_generic_clock_res_get)
 
     m3ApiCheckMem(resolution, sizeof(__wasi_timestamp_t));
 
-    int clk = convert_clockid(wasi_clk_id);
-    if (clk < 0) m3ApiReturn(__WASI_ERRNO_INVAL);
+    uint64_t res;
+    int ret = PlatformClockGetRes(wasi_clk_id, &res);
+    if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
 
-    struct timespec tp;
-    if (clock_getres(clk, &tp) != 0) {
-        m3ApiWriteMem64(resolution, 1000000);
-    } else {
-        m3ApiWriteMem64(resolution, convert_timespec(&tp));
-    }
+    m3ApiWriteMem64(resolution, res);
 
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
@@ -585,15 +536,11 @@ m3ApiRawFunction(m3_wasi_generic_clock_time_get)
 
     m3ApiCheckMem(time, sizeof(__wasi_timestamp_t));
 
-    int clk = convert_clockid(wasi_clk_id);
-    if (clk < 0) m3ApiReturn(__WASI_ERRNO_INVAL);
+    plat_timestamp_t t;
+    int ret = PlatformClockGetTime(wasi_clk_id, &t);
+    if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
 
-    struct timespec tp;
-    if (clock_gettime(clk, &tp) != 0) {
-        m3ApiReturn(errno_to_wasi(errno));
-    }
-
-    m3ApiWriteMem64(time, convert_timespec(&tp));
+    m3ApiWriteMem64(time, t);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
@@ -612,15 +559,9 @@ m3ApiRawFunction(m3_wasi_generic_poll_oneoff)
     __wasi_errno_t ret = __WASI_ERRNO_NOSYS;
 
     if (in->type == __WASI_EVENTTYPE_CLOCK) {
-        struct timespec rqtp = convert_timestamp(in->u.clock.timeout);
-
-        clock_nanosleep(
-            convert_clockid(in->u.clock.id),
-            in->u.clock.flags,
-            &rqtp, NULL
-            );
+        int ret = PlatformClockNanoSleep(in->u.clock.id, in->u.clock.timeout, in->u.clock.flags);
+        if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
     }
-
 
     //TODO: m3ApiWriteMem
 
