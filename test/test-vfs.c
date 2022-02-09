@@ -44,6 +44,12 @@ TEST(vfs_internal, findFileNotFound)
     i = VfsFindEntryAt(0, "/not_a_file", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
+    i = VfsFindEntryAt(0, "/n", fs, fsLen, NULL);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
+    i = VfsFindEntryAt(0, "n", fs, fsLen, NULL);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
+
     i = VfsFindEntryAt(0, "/dev/a", fs, fsLen, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 

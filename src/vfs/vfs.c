@@ -114,7 +114,7 @@ int VfsFindEntryAt(int fd, const char *path, file_t *files, size_t filesCnt, con
         }
 
         for (f = fd+1; (f < filesCnt) && (files[f].depth > files[fd].depth); f++) {
-            if ((files[f].depth == d) && strncmp(files[f].name, seg.begin, seg.size) == 0) {
+            if ((files[f].depth == d) && strncmp(files[f].name, seg.begin, MAX(seg.size, strlen(files[f].name))) == 0) {
                 found = true;
                 break;
             }
@@ -163,7 +163,7 @@ int VfsOpen(const char *path, int flags)
 
 int VfsOpenAt(int fd, const char *path, int flags)
 {
-    const char normalized[MAX_PATH_LEN];
+    char normalized[MAX_PATH_LEN];
     const char *pathLeft;
     DEBUG_TRACE("%d: %s (0x%x)", fd, path, flags);
 
@@ -245,7 +245,7 @@ int VfsFdStat(int fd, vfs_fdstat_t *stat)
 int VfsFileStatAt(int fd, const char *path, vfs_filestat_t *stat)
 {
     int f, ret = 0;
-    const char normalized[MAX_PATH_LEN];
+    char normalized[MAX_PATH_LEN];
     const char *pathLeft;
     const char drvRoot[] = {'/', '\0'};
 

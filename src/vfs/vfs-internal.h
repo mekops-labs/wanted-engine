@@ -6,6 +6,8 @@
 
 #define TRY(drv_ptr,oper,...) (((drv_ptr)->oper != NULL) ? (drv_ptr)->oper( __VA_ARGS__ ) : -EPERM)
 
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+
 typedef struct file_t {
     const char      *name;
     uint16_t        depth;
