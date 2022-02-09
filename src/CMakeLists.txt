@@ -7,6 +7,7 @@ set(vfs-srcs
     "vfs/vfs.c"
     "vfs/vfs-romfs.c"
     "vfs/vfs-linux.c"
+    "vfs/vfs-dummy.c"
     )
 
 set(wasiTypes Linux Romfs Vfs)

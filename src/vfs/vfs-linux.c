@@ -22,6 +22,7 @@ static int  _ReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t 
 
 vfs_driver_t vfs_linux_drv = {
     .id = { 'L', 'i', 'n', 'u' },
+    .filetype    = VFS_FILETYPE_DIRECTORY,
     .Open        = _Open,
     .OpenAt      = _OpenAt,
     .Close       = _Close,

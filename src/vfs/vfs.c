@@ -14,6 +14,7 @@
 
 extern vfs_driver_t vfs_romfs_drv;
 extern vfs_driver_t vfs_linux_drv;
+extern vfs_driver_t vfs_dummy_drv;
 
 #define ROOT_FD     3
 
@@ -24,15 +25,15 @@ vfs_entry_t fildes[MAX_OPEN] = {
 };
 
 file_t root[] = {
-    {"/",    0, VFS_FILETYPE_DIRECTORY,         NULL,          },
-    {"dev",  1, VFS_FILETYPE_DIRECTORY,         NULL,          },
-    {"xyz",  2, VFS_FILETYPE_CHARACTER_DEVICE,  NULL,          },
-    {"dir",  1, VFS_FILETYPE_DIRECTORY,         &vfs_linux_drv,},
-    {"net",  1, VFS_FILETYPE_DIRECTORY,         NULL,          },
-    {"sock", 2, VFS_FILETYPE_SOCKET_STREAM,     NULL,          },
-    {"rom",  1, VFS_FILETYPE_DIRECTORY,         &vfs_romfs_drv,},
-    {"sys",  1, VFS_FILETYPE_DIRECTORY,         NULL,          },
-    {"bus",  2, VFS_FILETYPE_SOCKET_DGRAM,      NULL,          },
+    {"/",    0, NULL,          },
+    {"dev",  1, NULL,          },
+    {"xyz",  2, &vfs_dummy_drv,},
+    {"dir",  1, &vfs_linux_drv,},
+    {"net",  1, NULL,          },
+    {"sock", 2, NULL,          },
+    {"rom",  1, &vfs_romfs_drv,},
+    {"sys",  1, NULL,          },
+    {"bus",  2, NULL,          },
 };
 
 const size_t rootLen = sizeof(root)/sizeof(root[0]);
@@ -73,7 +74,7 @@ int VfsFindEntryAt(int fd, const char *path, file_t *files, size_t filesCnt, con
         return -EBADF;
     }
 
-    if (files[fd].type != VFS_FILETYPE_DIRECTORY) {
+    if (files[fd].drv && files[fd].drv->filetype != VFS_FILETYPE_DIRECTORY) {
         return -ENOTDIR;
     }
 
@@ -139,10 +140,6 @@ int VfsFindEntryAt(int fd, const char *path, file_t *files, size_t filesCnt, con
             }
 
             DEBUG_TRACE("pathLeft: %s", *pathLeft);
-
-            if (*pathLeft != "" && files[f].type != VFS_FILETYPE_DIRECTORY) {
-                return -ENOENT;
-            }
         }
     }
 
@@ -235,7 +232,7 @@ int VfsFdStat(int fd, vfs_fdstat_t *stat)
         return -EBADF;
     }
 
-    stat->filetype = root[fd].type;
+    stat->filetype = root[fd].drv ? root[fd].drv->filetype : VFS_FILETYPE_DIRECTORY;
     stat->flags = 0;
 
     if (NULL != fildes[fd].drv) {
@@ -280,7 +277,7 @@ int VfsFileStatAt(int fd, const char *path, vfs_filestat_t *stat)
         stat->mtim = 0;
         stat->dev = (fildes[f].drv != NULL) ? *(uint32_t*)fildes[f].drv->id : 0;
         stat->ino = f;
-        stat->filetype = root[f].type;
+        stat->filetype = root[f].drv ? root[f].drv->filetype : VFS_FILETYPE_DIRECTORY;
         stat->nlink = 0;
         stat->size = 0;
     }
@@ -375,15 +372,11 @@ int VfsReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUs
         return TRY(fildes[fd].drv, ReadDir, f, buf, bufLen, cookie, bufUsed);
     }
 
-    if (root[f].type != VFS_FILETYPE_DIRECTORY) {
-        return -ENOTDIR;
-    }
-
     for (int i = f + 1; (i < rootLen) && (root[i].depth > root[f].depth); i++) {
         if (root[i].depth == root[f].depth + 1) {
             dir.d_ino       = i;
             dir.d_namlen    = strnlen(root[i].name, 256);
-            dir.d_type      = root[i].type;
+            dir.d_type      = root[i].drv ? root[i].drv->filetype : VFS_FILETYPE_DIRECTORY;
             dir.d_next      = i;
 
             if (used + sizeof(dir) + dir.d_namlen > bufLen) {

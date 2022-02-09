@@ -12,24 +12,20 @@
 TEST_GROUP(vfs_internal);
 /***************************************/
 
-vfs_driver_t dummy = {
-
-};
-
 #ifdef WANTED_ROMFS
 
 file_t fs[] = {
-    {"/",    0, VFS_FILETYPE_DIRECTORY,         NULL},
-    {"dev",  1, VFS_FILETYPE_DIRECTORY,         NULL},
-    {"xyz",  2, VFS_FILETYPE_CHARACTER_DEVICE,  NULL},
-    {"dir",  1, VFS_FILETYPE_DIRECTORY,         NULL},
-    {"net",  1, VFS_FILETYPE_DIRECTORY,         NULL},
-    {"sock", 2, VFS_FILETYPE_SOCKET_STREAM,     NULL},
-    {"rom",  1, VFS_FILETYPE_DIRECTORY,         NULL},
-    {"sys",  1, VFS_FILETYPE_DIRECTORY,         NULL},
-    {"bus",  2, VFS_FILETYPE_SOCKET_DGRAM,      NULL},
-    {".dotfile", 1, VFS_FILETYPE_REGULAR_FILE,  NULL},
-    {"drv",  1, VFS_FILETYPE_DIRECTORY,         &dummy},
+    {"/",    0,     NULL,    },
+    {"dev",  1,     NULL,    },
+    {"xyz",  2,     NULL,    },
+    {"dir",  1,     NULL,    },
+    {"net",  1,     NULL,    },
+    {"sock", 2,     NULL,    },
+    {"rom",  1,     NULL,    },
+    {"sys",  1,     NULL,    },
+    {"bus",  2,     NULL,    },
+    {".dotfile", 1, NULL,    },
+    {"drv",  1,     &vfs_dummy_drv,  },
 };
 
 const size_t fsLen = sizeof(fs)/sizeof(fs[0]);

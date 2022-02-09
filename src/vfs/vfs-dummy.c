@@ -1,0 +1,43 @@
+#include <vfs.h>
+#include <string.h>
+
+static int  _OpenAt(int fd, const char *path, int flags);
+static int  _Read(int fd, void *buf, size_t nbyte);
+static int  _Close(int fd);
+
+vfs_driver_t vfs_dummy_drv = {
+    .id = { 'D', 'u', 'm', 'm' },
+    .filetype   = VFS_FILETYPE_REGULAR_FILE,
+    .OpenAt     = _OpenAt,
+    .Close      = _Close,
+    .Read       = _Read,
+};
+
+
+char data[] = "This is dummy driver\n";
+char *ptr = data;
+
+
+static int  _OpenAt(int fd, const char *path, int flags)
+{
+    return 0;
+}
+
+static int  _Read(int fd, void *buf, size_t nbyte)
+{
+    char *b = buf;
+    int r = 0;
+
+    while(*ptr) {
+        *(b++) = *(ptr++);
+        r++;
+    }
+
+    return r;
+}
+
+static int  _Close(int fd)
+{
+    ptr = data;
+    return 0;
+}

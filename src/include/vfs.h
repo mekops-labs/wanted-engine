@@ -58,6 +58,7 @@ typedef struct vfs_dirent_t {
 
 typedef struct vfs_driver_t {
     const char id[4];
+    const vfs_filetype_t filetype;
     int  (*Open)(const char *path, int flags);
     int  (*OpenAt)(int fd, const char *path, int flags);
     int  (*Close)(int fd);
