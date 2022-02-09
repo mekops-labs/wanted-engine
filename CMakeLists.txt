@@ -1,7 +1,16 @@
 cmake_minimum_required(VERSION 3.9)
+
+include(cmake/VersionFromGit.cmake)
+
+# Use it
+version_from_git(
+  LOG       ON
+  TIMESTAMP "%Y%m%d%H%M%S"
+)
+
 project(
     wanted
-    VERSION 0.0.1
+    VERSION ${VERSION}
     LANGUAGES C
     )
 

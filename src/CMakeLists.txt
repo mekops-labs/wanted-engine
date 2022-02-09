@@ -48,9 +48,9 @@ target_compile_options(${target} PUBLIC -g)
 # Set flags for m3, disable harmless wanings
 target_compile_options(m3 PRIVATE -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer)
 
-option(EnableWasm3Trace "Enable wasm3 tracing" OFF)
+option(M3_DEBUG_TRACES "Enable wasm3 tracing" OFF)
 
-if (EnableWasm3Trace)
+if (M3_DEBUG_TRACES)
     message("Trace for WASM3 enabled")
     target_compile_definitions(m3 PRIVATE d_m3EnableStrace=1 DEBUG=1)
 endif()
