@@ -4,7 +4,6 @@ include(cmake/VersionFromGit.cmake)
 
 # Use it
 version_from_git(
-  LOG       ON
   TIMESTAMP "%Y%m%d%H%M%S"
 )
 
@@ -15,7 +14,7 @@ project(
     )
 
 set(target ${CMAKE_PROJECT_NAME})
-message("Building ${target} v${CMAKE_PROJECT_VERSION}")
+message("Building ${target} v${SEMVER}")
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/src)
 
