@@ -1,9 +1,9 @@
 #include <vfs.h>
 #include <string.h>
 
-static int  _OpenAt(int fd, const char *path, int flags);
-static int  _Read(int fd, void *buf, size_t nbyte);
-static int  _Close(int fd);
+static int  _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags);
+static int  _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int  _Close(vfs_driver_ctx_t d, int fd);
 
 vfs_driver_t vfs_dummy_drv = {
     .id = { 'D', 'u', 'm', 'm' },
@@ -18,12 +18,12 @@ char data[] = "This is dummy driver\n";
 char *ptr = data;
 
 
-static int  _OpenAt(int fd, const char *path, int flags)
+static int  _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
 {
     return 0;
 }
 
-static int  _Read(int fd, void *buf, size_t nbyte)
+static int  _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 {
     char *b = buf;
     int r = 0;
@@ -36,7 +36,7 @@ static int  _Read(int fd, void *buf, size_t nbyte)
     return r;
 }
 
-static int  _Close(int fd)
+static int  _Close(vfs_driver_ctx_t d, int fd)
 {
     ptr = data;
     return 0;

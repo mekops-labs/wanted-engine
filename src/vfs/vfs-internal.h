@@ -4,7 +4,7 @@
 #include <vfs.h>
 #include <stdbool.h>
 
-#define TRY(drv_ptr,oper,...) (((drv_ptr)->oper != NULL) ? (drv_ptr)->oper( __VA_ARGS__ ) : -EPERM)
+#define TRY_DRV(drv_ptr,oper,...) (((drv_ptr)->oper != NULL) ? (drv_ptr)->oper( (drv_ptr)->ctx, __VA_ARGS__ ) : -EPERM)
 
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 

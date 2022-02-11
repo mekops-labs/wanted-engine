@@ -1,6 +1,7 @@
 #pragma once
 
 #include "m3_core.h"
+#include <romfs.h>
 
 d_m3BeginExternC
 
@@ -9,8 +10,6 @@ typedef struct m3_wasi_context_t
     i32                     exit_code;
     u32                     argc;
     ccstr_t *               argv;
-    uint8_t *RomfsImg;
-    size_t RomfsImgLen;
 } m3_wasi_context_t;
 
     M3Result    LinkWASI     (IM3Module io_module);

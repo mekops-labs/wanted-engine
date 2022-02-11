@@ -56,21 +56,32 @@ typedef struct vfs_dirent_t {
     vfs_filetype_t d_type;      // The type of the file referred to by this directory entry.
 } vfs_dirent_t;
 
+typedef struct vfs_driver_ctx_t *vfs_driver_ctx_t;
+
 typedef struct vfs_driver_t {
-    const char id[4];
-    const vfs_filetype_t filetype;
-    int  (*Open)(const char *path, int flags);
-    int  (*OpenAt)(int fd, const char *path, int flags);
-    int  (*Close)(int fd);
-    int  (*FdStat)(int fd, vfs_fdstat_t *stat);
-    int  (*FileStatAt)(int fd, const char *path, vfs_filestat_t *stat);
-    int  (*Read)(int fd, void *buf, size_t nbyte);
-    int  (*Write)(int fd, const void *buf, size_t nbyte);
-    int  (*Seek)(int fd, long off, int whence, long *pos);
-    int  (*Tell)(int fd, long *pos);
-    int  (*ReadDir)(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+    union {
+        const char          id[4];
+        uint32_t            bytesId;
+    };
+
+    vfs_filetype_t      filetype;
+    vfs_driver_ctx_t    ctx;
+
+    int  (*Start)       (vfs_driver_ctx_t d);
+    int  (*Open)        (vfs_driver_ctx_t d, const char *path, int flags);
+    int  (*OpenAt)      (vfs_driver_ctx_t d, int fd, const char *path, int flags);
+    int  (*Close)       (vfs_driver_ctx_t d, int fd);
+    int  (*FdStat)      (vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat);
+    int  (*FileStatAt)  (vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat);
+    int  (*Read)        (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+    int  (*Write)       (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+    int  (*Seek)        (vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
+    int  (*Tell)        (vfs_driver_ctx_t d, int fd, long *pos);
+    int  (*ReadDir)     (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 } vfs_driver_t;
 
+int  VfsInit();
+int  VfsRegister(const char *path, vfs_driver_t *driver);
 int  VfsOpen(const char *path, int flags);
 int  VfsOpenAt(int fd, const char *path, int flags);
 int  VfsClose(int fd);

@@ -9,16 +9,18 @@
 
 #include <vfs.h>
 
-static int  _Open(const char *path, int flags);
-static int  _OpenAt(int fd, const char *path, int flags);
-static int  _Close(int fd);
-static int  _FdStat(int fd, vfs_fdstat_t *stat);
-static int  _FileStatAt(int fd, const char *path, vfs_filestat_t *stat);
-static int  _Read(int fd, void *buf, size_t nbyte);
-static int  _Write(int fd, const void *buf, size_t nbyte);
-static int  _Seek(int fd, long off, int whence, long *pos);
-static int  _Tell(int fd, long *pos);
-static int  _ReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+
+static int _Start(vfs_driver_ctx_t d);
+static int _Open(vfs_driver_ctx_t d, const char *path, int flags);
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags);
+static int _Close(vfs_driver_ctx_t d, int fd);
+static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat);
+static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat);
+static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
+static int _Tell(vfs_driver_ctx_t d, int fd, long *pos);
+static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
 vfs_driver_t vfs_linux_drv = {
     .id = { 'L', 'i', 'n', 'u' },
@@ -65,7 +67,12 @@ static inline vfs_filetype_t convertDirtype(uint8_t t)
     }
 }
 
-static int _Open(const char *path, int flags)
+static int _Start(vfs_driver_ctx_t d)
+{
+    return 0;
+}
+
+static int _Open(vfs_driver_ctx_t d, const char *path, int flags)
 {
     int mode = 0644;
     int fd = open(path, flags, mode);
@@ -73,7 +80,7 @@ static int _Open(const char *path, int flags)
     return fd;
 }
 
-static int _OpenAt(int fd, const char *path, int flags)
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
 {
     int mode = 0644;
     int ret = openat(fd, path, flags, mode);
@@ -81,14 +88,14 @@ static int _OpenAt(int fd, const char *path, int flags)
     return ret;
 }
 
-static int _Close(int fd)
+static int _Close(vfs_driver_ctx_t d, int fd)
 {
     int ret = close(fd);
     if (ret < 0) return -errno;
     return ret;
 }
 
-static int _FdStat(int fd, vfs_fdstat_t *s)
+static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *s)
 {
     struct stat fd_stat;
 
@@ -116,7 +123,7 @@ static inline uint64_t convertTimespec(const struct timespec *ts)
     return (uint64_t)ts->tv_sec * 1000000000ULL + ts->tv_nsec;
 }
 
-static int _FileStatAt(int fd, const char *path, vfs_filestat_t *s)
+static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *s)
 {
     struct stat statbuf;
 
@@ -135,21 +142,21 @@ static int _FileStatAt(int fd, const char *path, vfs_filestat_t *s)
     return 0;
 }
 
-static int _Read(int fd, void *buf, size_t nbyte)
+static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 {
     int ret = read(fd, buf, nbyte);
     if (ret < 0) return -errno;
     return ret;
 }
 
-static int  _Write(int fd, const void *buf, size_t nbyte)
+static int  _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 {
     int ret = write(fd, buf, nbyte);
     if (ret < 0) return -errno;
     return ret;
 }
 
-static int _Seek(int fd, long off, int whence, long *pos)
+static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos)
 {
     if (pos == NULL) return -EINVAL;
 
@@ -160,7 +167,7 @@ static int _Seek(int fd, long off, int whence, long *pos)
     return 0;
 }
 
-static int _Tell(int fd, long *pos)
+static int _Tell(vfs_driver_ctx_t d, int fd, long *pos)
 {
     if (pos == NULL) return -EINVAL;
 
@@ -171,7 +178,7 @@ static int _Tell(int fd, long *pos)
     return 0;
 }
 
-static int _ReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
+static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
 {
     vfs_dirent_t dir;
     size_t used = 0;

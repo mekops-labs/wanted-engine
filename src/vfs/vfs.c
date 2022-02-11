@@ -11,8 +11,8 @@
 #include <cwalk.h>
 
 #define MAX_OPEN 20
+#define MAX_ENTRIES 10
 
-extern vfs_driver_t vfs_romfs_drv;
 extern vfs_driver_t vfs_linux_drv;
 extern vfs_driver_t vfs_dummy_drv;
 
@@ -24,14 +24,14 @@ vfs_entry_t fildes[MAX_OPEN] = {
     { 2,        &vfs_linux_drv,      true},
 };
 
-file_t root[] = {
+file_t root[MAX_ENTRIES] = {
     {"/",    0, NULL,          },
     {"dev",  1, NULL,          },
     {"xyz",  2, &vfs_dummy_drv,},
     {"dir",  1, &vfs_linux_drv,},
     {"net",  1, NULL,          },
     {"sock", 2, NULL,          },
-    {"rom",  1, &vfs_romfs_drv,},
+    {"rom",  1, NULL,          },
     {"sys",  1, NULL,          },
     {"bus",  2, NULL,          },
 };
@@ -149,9 +149,15 @@ int VfsFindEntryAt(int fd, const char *path, file_t *files, size_t filesCnt, con
 
 /* PUBLIC INTERFACE */
 
-int VfsRegister(const char *path, const char *drvPath, vfs_driver_t *driver)
+int VfsInit()
 {
     return -1;
+}
+
+int VfsRegister(const char *path, vfs_driver_t *driver)
+{
+    root[6].drv = driver;
+    return 0;
 }
 
 int VfsOpen(const char *path, int flags)
@@ -185,9 +191,9 @@ int VfsOpenAt(int fd, const char *path, int flags)
 
     if (pathLeft && NULL != root[f].drv) {
         fildes[new_fd].drv = root[f].drv;
-        int rootFd = TRY(fildes[new_fd].drv, Open, "/", 0);
-        f = TRY(fildes[new_fd].drv, OpenAt, rootFd, pathLeft, flags);
-        TRY(fildes[new_fd].drv, Close, rootFd);
+        int rootFd = TRY_DRV(fildes[new_fd].drv, Open, "/", 0);
+        f = TRY_DRV(fildes[new_fd].drv, OpenAt, rootFd, pathLeft, flags);
+        TRY_DRV(fildes[new_fd].drv, Close, rootFd);
         if (f < 0) return f;
     } else {
         fildes[new_fd].drv = NULL;
@@ -213,7 +219,7 @@ int VfsClose(int fd)
     }
 
     if (NULL != fildes[fd].drv) {
-        ret = TRY(fildes[fd].drv, Close, fildes[fd].drv_fd);
+        ret = TRY_DRV(fildes[fd].drv, Close, fildes[fd].drv_fd);
     }
 
     fildes[fd].opened = false;
@@ -236,7 +242,7 @@ int VfsFdStat(int fd, vfs_fdstat_t *stat)
     stat->flags = 0;
 
     if (NULL != fildes[fd].drv) {
-        ret = TRY(fildes[fd].drv, FdStat, fd, stat);
+        ret = TRY_DRV(fildes[fd].drv, FdStat, fd, stat);
     }
 
     return ret;
@@ -267,9 +273,9 @@ int VfsFileStatAt(int fd, const char *path, vfs_filestat_t *stat)
     if (f < 0) return f;
 
     if (pathLeft && NULL != root[f].drv) {
-        fd = TRY(root[f].drv, Open, drvRoot, 0);
-        ret = TRY(root[f].drv, FileStatAt, fd, pathLeft, stat);
-        TRY(root[f].drv, Close, fd);
+        fd = TRY_DRV(root[f].drv, Open, drvRoot, 0);
+        ret = TRY_DRV(root[f].drv, FileStatAt, fd, pathLeft, stat);
+        TRY_DRV(root[f].drv, Close, fd);
         if (ret < 0) return ret;
     } else {
         stat->atim = 0;
@@ -299,7 +305,7 @@ int VfsRead(int fd, void *buf, size_t nbyte)
         return -EPERM;
     }
 
-    return TRY(fildes[fd].drv, Read, fildes[fd].drv_fd, buf, nbyte);
+    return TRY_DRV(fildes[fd].drv, Read, fildes[fd].drv_fd, buf, nbyte);
 }
 
 int VfsWrite(int fd, const void *buf, size_t nbyte)
@@ -316,7 +322,7 @@ int VfsWrite(int fd, const void *buf, size_t nbyte)
         return -EPERM;
     }
 
-    return TRY(fildes[fd].drv, Write ,fildes[fd].drv_fd, buf, nbyte);
+    return TRY_DRV(fildes[fd].drv, Write ,fildes[fd].drv_fd, buf, nbyte);
 }
 
 int VfsSeek(int fd, long off, int whence, long *pos)
@@ -333,7 +339,7 @@ int VfsSeek(int fd, long off, int whence, long *pos)
         return -EPERM;
     }
 
-    return TRY(fildes[fd].drv, Seek, fildes[fd].drv_fd, off, whence, pos);
+    return TRY_DRV(fildes[fd].drv, Seek, fildes[fd].drv_fd, off, whence, pos);
 }
 
 int VfsTell(int fd, long *pos)
@@ -350,7 +356,7 @@ int VfsTell(int fd, long *pos)
         return -EPERM;
     }
 
-    return TRY(fildes[fd].drv, Tell, fildes[fd].drv_fd, pos);
+    return TRY_DRV(fildes[fd].drv, Tell, fildes[fd].drv_fd, pos);
 }
 
 int VfsReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
@@ -369,7 +375,7 @@ int VfsReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUs
     f = fildes[fd].drv_fd;
 
     if (NULL != fildes[fd].drv) {
-        return TRY(fildes[fd].drv, ReadDir, f, buf, bufLen, cookie, bufUsed);
+        return TRY_DRV(fildes[fd].drv, ReadDir, f, buf, bufLen, cookie, bufUsed);
     }
 
     for (int i = f + 1; (i < rootLen) && (root[i].depth > root[f].depth); i++) {

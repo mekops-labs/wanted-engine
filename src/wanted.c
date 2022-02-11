@@ -9,28 +9,32 @@
 
 #include <wanted.h>
 #include <romfs.h>
+#include <vfs.h>
+#include <drivers.h>
 
 #define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return -1; }
 
 static int LoadWasmFromRomfs(const char* wasmName, uint8_t *img, size_t imgLen, wapp_t *wasm)
 {
     int ret;
+    romfs_t r;
 
     if (wasmName == NULL || img == NULL || wasm == NULL) FATAL("invalid paramter");
 
-    ret = RomfsLoad(img, imgLen);
+    ret = RomfsLoad(img, imgLen, &r);
     if (ret < 0) FATAL("load returned %d", ret);
 
-    ret = RomfsFdStatAt(3, wasmName, NULL);
+    ret = RomfsFdStatAt(r, 3, wasmName, NULL);
     if (ret < 0) FATAL("stat returned %d", ret);
     if (!IS_FILE(ret)) FATAL("%s is not correct file", wasmName);
 
-    ret = RomfsOpenAt(3, wasmName, 0);
+    ret = RomfsOpenAt(r, 3, wasmName, 0);
     if (ret < 0) FATAL("open returned %d", ret);
 
-    ret = RomfsMapFile((void **)&wasm->img, &wasm->img_len, ret, 0);
+    ret = RomfsMapFile(r, (void **)&wasm->img, &wasm->img_len, ret, 0);
 
-    RomfsClose(ret);
+    RomfsClose(r, ret);
+    RomfsUnload(&r);
 
     return 0;
 }
@@ -44,6 +48,8 @@ int RunWapp(data_t *ctx)
     IM3Function f;
     m3_wasi_context_t *wasiCtx;
     wapp_t wasm;
+    vfs_driver_t romfsDrv;
+    int ret;
 
     if (0 > LoadWasmFromRomfs("app.wasm", ctx->wapp->img, ctx->wapp->img_len, &wasm)) FATAL("Can't load from romfs");
 
@@ -62,14 +68,16 @@ int RunWapp(data_t *ctx)
     wasiCtx->argc = 0;
     wasiCtx->argv = NULL;
 
-    wasiCtx->RomfsImg = ctx->wapp->img;
-    wasiCtx->RomfsImgLen = ctx->wapp->img_len;
-
-    printf("romfs: %p (%ld)\n", wasiCtx->RomfsImg, wasiCtx->RomfsImgLen);
-
     LinkWASI(mod);
     LinkWantedApi(mod);
     m3_LinkLibC(mod);
+
+    VfsInit();
+
+    ret = VfsRomfsInit("dir", ctx->wapp->img, ctx->wapp->img_len, &romfsDrv);
+    if (ret < 0) FATAL("VfsRomfsInit: can't load romfs (%d)", ret);
+
+    VfsRegister("", &romfsDrv);
 
     status = m3_FindFunction (&f, rt, "entry");
     if (status) {
@@ -84,6 +92,8 @@ int RunWapp(data_t *ctx)
         m3_GetErrorInfo(rt, &info);
         FATAL("m3_CallV[%d]: %s - %s", ctx->id, status, info.message);
     }
+
+    VfsRomfsDestroy(&romfsDrv);
 
     return 0;
 }

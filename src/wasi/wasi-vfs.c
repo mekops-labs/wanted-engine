@@ -600,8 +600,6 @@ M3Result  LinkWASI  (IM3Module module)
 {
     M3Result result = m3Err_none;
 
-    RomfsLoad(wasi_context.RomfsImg, wasi_context.RomfsImgLen);
-
     static const char* namespaces[2] = { "wasi_unstable", "wasi_snapshot_preview1" };
 
     // fd_seek is incompatible

@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include <vfs.h>
-#include <romfs.h>
+#include <drivers.h>
 
 #include "external_symbols.h"
 
@@ -168,13 +168,18 @@ TEST_GROUP_RUNNER(vfs_internal)
 TEST_GROUP(vfs_openclose);
 /***************************************/
 
+vfs_driver_t romfs;
+
 TEST_SETUP(vfs_openclose)
 {
-    RomfsLoad(test_wasi_romfs, test_wasi_romfs_len);
+    VfsInit();
+    VfsRomfsInit("/", test_wasi_romfs, test_wasi_romfs_len, &romfs);
+    VfsRegister("rom", &romfs);
 }
 
 TEST_TEAR_DOWN(vfs_openclose)
 {
+    VfsRomfsDestroy(&romfs);
 }
 
 TEST(vfs_openclose, OpenFail)
@@ -200,7 +205,7 @@ TEST(vfs_openclose, OpenThenClose)
     i = VfsOpen("/rom", 0);
     TEST_ASSERT_EQUAL_INT(4, i);
     TEST_ASSERT_TRUE(fildes[4].opened);
-    TEST_ASSERT_EQUAL_PTR(&vfs_romfs_drv, fildes[4].drv);
+    TEST_ASSERT_EQUAL_PTR(&romfs, fildes[4].drv);
 
     i = VfsClose(3);
     TEST_ASSERT_EQUAL_INT(0, i);

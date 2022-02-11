@@ -19,7 +19,12 @@ set(tiny-json-src
 )
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/platform ${CMAKE_BINARY_DIR}/platform)
+
+set(CUSTOM_MALLOC_IMPL ${CMAKE_CURRENT_SOURCE_DIR}/romfs_malloc.c)
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/romfs)
+target_compile_definitions(romfs PRIVATE ROMFS_CUSTOM_MALLOC=1)
+
+
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
 
 # WAMS3 related things
