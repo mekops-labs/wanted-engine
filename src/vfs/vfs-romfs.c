@@ -29,7 +29,7 @@ struct vfs_driver_ctx_t {
 vfs_driver_t vfs_romfs_drv = {
     .id         = { 'R', 'o', 'm', 'f' },
     .filetype   = VFS_FILETYPE_DIRECTORY,
-    .Start      = _Start,
+//    .Start      = _Start,
     .Open       = _Open,
     .OpenAt     = _OpenAt,
     .Close      = _Close,
@@ -41,7 +41,7 @@ vfs_driver_t vfs_romfs_drv = {
     .ReadDir    = _ReadDir,
 };
 
-int VfsRomfsInit(const char *root, uint8_t *RomfsImg, size_t RomfsImgLen, vfs_driver_t *driver)
+int VfsRomfsInit(vfs_driver_t *driver, const char *root, uint8_t *RomfsImg, size_t RomfsImgLen)
 {
     int ret;
 
@@ -58,7 +58,6 @@ int VfsRomfsInit(const char *root, uint8_t *RomfsImg, size_t RomfsImgLen, vfs_dr
     driver->bytesId         = vfs_romfs_drv.bytesId;
     driver->filetype        = vfs_romfs_drv.filetype;
     driver->ctx->rootPath   = root;
-    driver->Start           = vfs_romfs_drv.Start;
     driver->Open            = vfs_romfs_drv.Open;
     driver->OpenAt          = vfs_romfs_drv.OpenAt;
     driver->Close           = vfs_romfs_drv.Close;
