@@ -10,7 +10,7 @@
 #include <wanted.h>
 #include <romfs.h>
 #include <vfs.h>
-#include <drivers.h>
+#include <vfs-drivers.h>
 
 #define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return -1; }
 
@@ -64,20 +64,21 @@ int RunWapp(data_t *ctx)
 
     printf("getting context\n");
     wasiCtx = GetWasiContext();
+    vfs_ctx_t c = VfsInit();
 
     wasiCtx->argc = 0;
     wasiCtx->argv = NULL;
+    wasiCtx->vfsCtx = c;
 
     LinkWASI(mod);
     LinkWantedApi(mod);
     m3_LinkLibC(mod);
 
-    VfsInit();
 
-    ret = VfsRomfsInit("dir", ctx->wapp->img, ctx->wapp->img_len, &romfsDrv);
+    ret = VfsRomfsInit(&romfsDrv, "dir", ctx->wapp->img, ctx->wapp->img_len);
     if (ret < 0) FATAL("VfsRomfsInit: can't load romfs (%d)", ret);
 
-    VfsRegister("", &romfsDrv);
+    VfsRegister(c, "", &romfsDrv);
 
     status = m3_FindFunction (&f, rt, "entry");
     if (status) {

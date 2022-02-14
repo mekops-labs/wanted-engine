@@ -4,400 +4,268 @@
 #include <errno.h>
 #include <stdbool.h>
 
+#include <wanted_malloc.h>
 #include <vfs.h>
 #include "vfs-internal.h"
 #include <debug_trace.h>
 
 #include <cwalk.h>
 
-#define MAX_OPEN 20
-#define MAX_ENTRIES 10
-
-extern vfs_driver_t vfs_linux_drv;
-extern vfs_driver_t vfs_dummy_drv;
-
-#define ROOT_FD     3
-
-vfs_entry_t fildes[MAX_OPEN] = {
-    { 0,        &vfs_linux_drv,      true},
-    { 1,        &vfs_linux_drv,      true},
-    { 2,        &vfs_linux_drv,      true},
-};
-
-file_t root[MAX_ENTRIES] = {
-    {"/",    0, NULL,          },
-    {"dev",  1, NULL,          },
-    {"xyz",  2, &vfs_dummy_drv,},
-    {"dir",  1, &vfs_linux_drv,},
-    {"net",  1, NULL,          },
-    {"sock", 2, NULL,          },
-    {"rom",  1, NULL,          },
-    {"sys",  1, NULL,          },
-    {"bus",  2, NULL,          },
-};
-
-const size_t rootLen = sizeof(root)/sizeof(root[0]);
-
 static inline
-bool CheckFd(int fd)
+bool CheckFd(struct vfs_ctx_t *c, int fd)
 {
     if (fd >= MAX_OPEN) return false;
-    //if (fildes[fd].drv == NULL) return false;
+    if (c && c->fildes[fd].drv == NULL) return false;
 
     return true;
 }
 
 static
-int FindFirstClosedFd()
+int FindFirstClosedFd(struct vfs_ctx_t *c)
 {
+    if (!c) return -EINVAL;
+
     for (int i = 0; i < MAX_OPEN; i++) {
-        if (!fildes[i].opened) {
+        if (!c->fildes[i].opened) {
             return i;
         }
     }
     return -EMFILE;
 }
 
-/* requires normalized path */
-int VfsFindEntryAt(int fd, const char *path, file_t *files, size_t filesCnt, const char **pathLeft)
-{
-    struct cwk_segment seg;
-    int f;
-    uint16_t d;
-    bool found = false;
-
-    if (pathLeft) {
-        *pathLeft = NULL;
-    }
-
-    if (fd >= filesCnt) {
-        return -EBADF;
-    }
-
-    if (files[fd].drv && files[fd].drv->filetype != VFS_FILETYPE_DIRECTORY) {
-        return -ENOTDIR;
-    }
-
-    d = files[fd].depth + 1;
-    f = fd;
-
-    if (cwk_path_is_absolute(path)) {
-        while (*path == '/') {
-            path++;
-        }
-        fd = 0;
-    }
-
-    cwk_path_get_first_segment(path, &seg);
-
-    if (seg.size == 0) {
-        // probably could only happen when initial path was /
-        return fd;
-    }
-
-    do {
-        DEBUG_TRACE("segment: %.*s (%d)", seg.size, seg.begin, seg.size);
-        found = false;
-
-
-        if (memcmp(".", seg.begin, seg.size) == 0) {
-            found = true;
-            continue;
-        }
-
-        if (memcmp("..", seg.begin, seg.size) == 0) {
-            if (d == 1) break; // root dir can't go up
-            found = true;
-            f = fd = 0;
-            d--;
-            continue;
-        }
-
-        for (f = fd+1; (f < filesCnt) && (files[f].depth > files[fd].depth); f++) {
-            if ((files[f].depth == d) && strncmp(files[f].name, seg.begin, MAX(seg.size, strlen(files[f].name))) == 0) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) break;
-
-        d++;
-        fd = f;
-    } while (files[f].drv == NULL && cwk_path_get_next_segment(&seg));
-
-    if (!found) {
-        return -ENOENT;
-    }
-
-    if (pathLeft) {
-        if (files[f].drv == NULL) {
-            *pathLeft = NULL;
-        } else {
-            if (!cwk_path_get_next_segment(&seg)) {
-                *pathLeft = ".";
-            } else {
-                *pathLeft = seg.begin;
-            }
-
-            DEBUG_TRACE("pathLeft: %s", *pathLeft);
-        }
-    }
-
-    return f;
-}
-
-
 /* PUBLIC INTERFACE */
 
-int VfsInit()
+vfs_ctx_t VfsInit()
 {
-    return -1;
+    struct vfs_ctx_t *c;
+
+    c = (struct vfs_ctx_t *)WantedMalloc(sizeof(*c));
+    memset(c, 0, sizeof(*c));
+
+    return c;
 }
 
-int VfsRegister(const char *path, vfs_driver_t *driver)
+void VfsDestroy(vfs_ctx_t *c)
 {
-    root[6].drv = driver;
+    if (NULL == c || NULL == *c) return;
+    WantedFree(*c);
+    *c = NULL;
+}
+
+int VfsRegister(vfs_ctx_t c, const char *path, vfs_driver_t *driver)
+{
+    if (NULL == driver || NULL == c) {
+        return -EINVAL;
+    }
+
+    struct cwk_segment seg;
+
+    if (memcmp("/", path, 2) == 0) {
+        c->fildes[ROOT_FD].drv = driver;
+        c->fildes[ROOT_FD].drv_fd = TRY_DRV(driver, Open, "/", 0);
+        if (c->fildes[ROOT_FD].drv_fd < 0) {
+            return c->fildes[ROOT_FD].drv_fd;
+        }
+        c->fildes[ROOT_FD].opened = true;
+    } else if (memcmp("<stdin>", path, 8) == 0) {
+        c->fildes[VFS_STDIN].drv = driver;
+        c->fildes[VFS_STDIN].drv_fd = VFS_STDIN;
+        c->fildes[VFS_STDIN].opened = true;
+    } else if (memcmp("<stdout>", path, 9) == 0) {
+        c->fildes[VFS_STDOUT].drv = driver;
+        c->fildes[VFS_STDOUT].drv_fd = VFS_STDOUT;
+        c->fildes[VFS_STDOUT].opened = true;
+    } else if (memcmp("<stderr>", path, 9) == 0) {
+        c->fildes[VFS_STDERR].drv = driver;
+        c->fildes[VFS_STDERR].drv_fd = VFS_STDERR;
+        c->fildes[VFS_STDERR].opened = true;
+    } else {
+        if (!c->fildes[ROOT_FD].opened) {
+            return -EINVAL;
+        }
+
+        if (!cwk_path_get_first_segment(path, &seg)) {
+            return -EINVAL;
+        }
+
+        return TRY_DRV(c->fildes[ROOT_FD].drv, Register, seg.begin, driver);
+    }
     return 0;
 }
 
-int VfsOpen(const char *path, int flags)
+int VfsOpen(vfs_ctx_t c, const char *path, int flags)
 {
     DEBUG_TRACE("%s (0x%x)", path, flags);
 
-    return VfsOpenAt(ROOT_FD, path, flags);
+    return VfsOpenAt(c, ROOT_FD, path, flags);
 }
 
-int VfsOpenAt(int fd, const char *path, int flags)
+int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, int flags)
 {
-    char normalized[MAX_PATH_LEN];
-    const char *pathLeft;
-    DEBUG_TRACE("%d: %s (0x%x)", fd, path, flags);
-
-    if (fd < ROOT_FD) {
-        return fd;
-    }
-
-    if (!CheckFd(fd)) return -EBADF;
-
-    int new_fd = FindFirstClosedFd();
-    if (new_fd < 0) return new_fd;
-
-    if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
-        return -ENAMETOOLONG;
-    }
-
-    int f = VfsFindEntryAt(fd - ROOT_FD, normalized, root, rootLen, &pathLeft);
-    if (f < 0) return f;
-
-    if (pathLeft && NULL != root[f].drv) {
-        fildes[new_fd].drv = root[f].drv;
-        int rootFd = TRY_DRV(fildes[new_fd].drv, Open, "/", 0);
-        f = TRY_DRV(fildes[new_fd].drv, OpenAt, rootFd, pathLeft, flags);
-        TRY_DRV(fildes[new_fd].drv, Close, rootFd);
-        if (f < 0) return f;
-    } else {
-        fildes[new_fd].drv = NULL;
-    }
-
-    fildes[new_fd].drv_fd = f;
-    fildes[new_fd].opened = true;
-
-    pathLeft = path;
-
-    return new_fd;
+    if (!CheckFd(c, fd)) return -EBADF;
 }
 
-int VfsClose(int fd)
+int VfsClose(vfs_ctx_t c, int fd)
 {
-    int ret = 0;
-    DEBUG_TRACE("%d", fd);
+    // int ret = 0;
+    // DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(fd)) return -EBADF;
+    // if (!CheckFd(fd)) return -EBADF;
 
-    if (!fildes[fd].opened) {
-        return -EBADF;
-    }
+    // if (!fildes[fd].opened) {
+    //     return -EBADF;
+    // }
 
-    if (NULL != fildes[fd].drv) {
-        ret = TRY_DRV(fildes[fd].drv, Close, fildes[fd].drv_fd);
-    }
+    // if (NULL != fildes[fd].drv) {
+    //     ret = TRY_DRV(fildes[fd].drv, Close, fildes[fd].drv_fd);
+    // }
 
-    fildes[fd].opened = false;
-    fildes[fd].drv = NULL;
-    return ret;
+    // fildes[fd].opened = false;
+    // fildes[fd].drv = NULL;
+    // return ret;
+    return 0;
 }
 
-int VfsFdStat(int fd, vfs_fdstat_t *stat)
+int VfsFdStat(vfs_ctx_t c, int fd, vfs_fdstat_t *stat)
 {
-    int ret = 0;
-    DEBUG_TRACE("%d", fd);
+    // int ret = 0;
+    // DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(fd)) return -EBADF;
+    // if (!CheckFd(fd)) return -EBADF;
 
-    if (!fildes[fd].opened) {
-        return -EBADF;
-    }
+    // if (!fildes[fd].opened) {
+    //     return -EBADF;
+    // }
 
-    stat->filetype = root[fd].drv ? root[fd].drv->filetype : VFS_FILETYPE_DIRECTORY;
-    stat->flags = 0;
+    // stat->filetype = root[fd].drv ? root[fd].drv->filetype : VFS_FILETYPE_DIRECTORY;
+    // stat->flags = 0;
 
-    if (NULL != fildes[fd].drv) {
-        ret = TRY_DRV(fildes[fd].drv, FdStat, fd, stat);
-    }
+    // if (NULL != fildes[fd].drv) {
+    //     ret = TRY_DRV(fildes[fd].drv, FdStat, fd, stat);
+    // }
 
-    return ret;
+    // return ret;
+    return 0;
 }
 
-int VfsFileStatAt(int fd, const char *path, vfs_filestat_t *stat)
+int VfsFileStatAt(vfs_ctx_t c, int fd, const char *path, vfs_filestat_t *stat)
 {
-    int f, ret = 0;
-    char normalized[MAX_PATH_LEN];
-    const char *pathLeft;
-    const char drvRoot[] = {'/', '\0'};
-
-    DEBUG_TRACE("%d: %s", fd, path);
-
-    if (!CheckFd(fd)) return -EBADF;
-
-    if (!fildes[fd].opened) {
-        return -EBADF;
-    }
-
-    fd = fildes[fd].drv_fd;
-
-    if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
-        return -ENAMETOOLONG;
-    }
-
-    f = VfsFindEntryAt(fd, normalized, root, rootLen, &pathLeft);
-    if (f < 0) return f;
-
-    if (pathLeft && NULL != root[f].drv) {
-        fd = TRY_DRV(root[f].drv, Open, drvRoot, 0);
-        ret = TRY_DRV(root[f].drv, FileStatAt, fd, pathLeft, stat);
-        TRY_DRV(root[f].drv, Close, fd);
-        if (ret < 0) return ret;
-    } else {
-        stat->atim = 0;
-        stat->ctim = 0;
-        stat->mtim = 0;
-        stat->dev = (fildes[f].drv != NULL) ? *(uint32_t*)fildes[f].drv->id : 0;
-        stat->ino = f;
-        stat->filetype = root[f].drv ? root[f].drv->filetype : VFS_FILETYPE_DIRECTORY;
-        stat->nlink = 0;
-        stat->size = 0;
-    }
 
     return 0;
 }
 
-int VfsRead(int fd, void *buf, size_t nbyte)
+int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte)
 {
-    DEBUG_TRACE("%d", fd);
+    // DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(fd)) return -EBADF;
+    // if (!CheckFd(fd)) return -EBADF;
 
-    if (!fildes[fd].opened) {
-        return -EBADF;
-    }
+    // if (!fildes[fd].opened) {
+    //     return -EBADF;
+    // }
 
-    if (NULL == fildes[fd].drv) {
-        return -EPERM;
-    }
+    // if (NULL == fildes[fd].drv) {
+    //     return -EPERM;
+    // }
 
-    return TRY_DRV(fildes[fd].drv, Read, fildes[fd].drv_fd, buf, nbyte);
+    // return TRY_DRV(fildes[fd].drv, Read, fildes[fd].drv_fd, buf, nbyte);
+    return 0;
 }
 
-int VfsWrite(int fd, const void *buf, size_t nbyte)
+int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte)
 {
-    DEBUG_TRACE("%d", fd);
+    // DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(fd)) return -EBADF;
+    // if (!CheckFd(fd)) return -EBADF;
 
-    if (!fildes[fd].opened) {
-        return -EBADF;
-    }
+    // if (!fildes[fd].opened) {
+    //     return -EBADF;
+    // }
 
-    if (NULL == fildes[fd].drv) {
-        return -EPERM;
-    }
+    // if (NULL == fildes[fd].drv) {
+    //     return -EPERM;
+    // }
 
-    return TRY_DRV(fildes[fd].drv, Write ,fildes[fd].drv_fd, buf, nbyte);
+    // return TRY_DRV(fildes[fd].drv, Write ,fildes[fd].drv_fd, buf, nbyte);
+    return 0;
 }
 
-int VfsSeek(int fd, long off, int whence, long *pos)
+int VfsSeek(vfs_ctx_t c, int fd, long off, int whence, long *pos)
 {
-    DEBUG_TRACE("%d", fd);
+    // DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(fd)) return -EBADF;
+    // if (!CheckFd(fd)) return -EBADF;
 
-    if (!fildes[fd].opened) {
-        return -EBADF;
-    }
+    // if (!fildes[fd].opened) {
+    //     return -EBADF;
+    // }
 
-    if (NULL == fildes[fd].drv) {
-        return -EPERM;
-    }
+    // if (NULL == fildes[fd].drv) {
+    //     return -EPERM;
+    // }
 
-    return TRY_DRV(fildes[fd].drv, Seek, fildes[fd].drv_fd, off, whence, pos);
+    // return TRY_DRV(fildes[fd].drv, Seek, fildes[fd].drv_fd, off, whence, pos);
+    return 0;
 }
 
-int VfsTell(int fd, long *pos)
+int VfsTell(vfs_ctx_t c, int fd, long *pos)
 {
-    DEBUG_TRACE("%d", fd);
+    // DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(fd)) return -EBADF;
+    // if (!CheckFd(fd)) return -EBADF;
 
-    if (!fildes[fd].opened) {
-        return -EBADF;
-    }
+    // if (!fildes[fd].opened) {
+    //     return -EBADF;
+    // }
 
-    if (NULL == fildes[fd].drv) {
-        return -EPERM;
-    }
+    // if (NULL == fildes[fd].drv) {
+    //     return -EPERM;
+    // }
 
-    return TRY_DRV(fildes[fd].drv, Tell, fildes[fd].drv_fd, pos);
+    // return TRY_DRV(fildes[fd].drv, Tell, fildes[fd].drv_fd, pos);
+    return 0;
 }
 
-int VfsReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
+int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
 {
-    vfs_dirent_t dir;
-    size_t used = 0;
-    int f;
-    DEBUG_TRACE("%d", fd);
+    // vfs_dirent_t dir;
+    // size_t used = 0;
+    // int f;
+    // DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(fd)) return -EBADF;
+    // if (!CheckFd(fd)) return -EBADF;
 
-    if (!fildes[fd].opened) {
-        return -EBADF;
-    }
+    // if (!fildes[fd].opened) {
+    //     return -EBADF;
+    // }
 
-    f = fildes[fd].drv_fd;
+    // f = fildes[fd].drv_fd;
 
-    if (NULL != fildes[fd].drv) {
-        return TRY_DRV(fildes[fd].drv, ReadDir, f, buf, bufLen, cookie, bufUsed);
-    }
+    // if (NULL != fildes[fd].drv) {
+    //     return TRY_DRV(fildes[fd].drv, ReadDir, f, buf, bufLen, cookie, bufUsed);
+    // }
 
-    for (int i = f + 1; (i < rootLen) && (root[i].depth > root[f].depth); i++) {
-        if (root[i].depth == root[f].depth + 1) {
-            dir.d_ino       = i;
-            dir.d_namlen    = strnlen(root[i].name, 256);
-            dir.d_type      = root[i].drv ? root[i].drv->filetype : VFS_FILETYPE_DIRECTORY;
-            dir.d_next      = i;
+    // for (int i = f + 1; root[i].name != NULL; i++) {
+    //     //if (root[i].depth == root[f].depth + 1) {
+    //         dir.d_ino       = i;
+    //         dir.d_namlen    = strnlen(root[i].name, 256);
+    //         dir.d_type      = root[i].drv ? root[i].drv->filetype : VFS_FILETYPE_DIRECTORY;
+    //         dir.d_next      = i;
 
-            if (used + sizeof(dir) + dir.d_namlen > bufLen) {
-                used = bufLen;
-                break;
-            }
-            memcpy(buf + used, &dir, sizeof(dir));
-            memcpy(buf + sizeof(dir) + used, root[i].name, dir.d_namlen);
+    //         if (used + sizeof(dir) + dir.d_namlen > bufLen) {
+    //             used = bufLen;
+    //             break;
+    //         }
+    //         memcpy(buf + used, &dir, sizeof(dir));
+    //         memcpy(buf + sizeof(dir) + used, root[i].name, dir.d_namlen);
 
-            used += sizeof(dir) + dir.d_namlen;
-        }
-    }
+    //         used += sizeof(dir) + dir.d_namlen;
+    //     //}
+    // }
 
-    *bufUsed = used;
-    *cookie = dir.d_next; // last found directory entry
+    // *bufUsed = used;
+    // *cookie = dir.d_next; // last found directory entry
 
+    // return 0;
     return 0;
 }

@@ -67,7 +67,6 @@ typedef struct vfs_driver_t {
     vfs_filetype_t      filetype;
     vfs_driver_ctx_t    ctx;
 
-    int  (*Start)       (vfs_driver_ctx_t d);
     int  (*Open)        (vfs_driver_ctx_t d, const char *path, int flags);
     int  (*OpenAt)      (vfs_driver_ctx_t d, int fd, const char *path, int flags);
     int  (*Close)       (vfs_driver_ctx_t d, int fd);
@@ -78,17 +77,26 @@ typedef struct vfs_driver_t {
     int  (*Seek)        (vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
     int  (*Tell)        (vfs_driver_ctx_t d, int fd, long *pos);
     int  (*ReadDir)     (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+
+    int  (*Register)    (vfs_driver_ctx_t d, const char *path, struct vfs_driver_t *driver);
 } vfs_driver_t;
 
-int  VfsInit();
-int  VfsRegister(const char *path, vfs_driver_t *driver);
-int  VfsOpen(const char *path, int flags);
-int  VfsOpenAt(int fd, const char *path, int flags);
-int  VfsClose(int fd);
-int  VfsFdStat(int fd, vfs_fdstat_t *stat);
-int  VfsFileStatAt(int fd, const char *path, vfs_filestat_t *stat);
-int  VfsRead(int fd, void *buf, size_t nbyte);
-int  VfsWrite(int fd, const void *buf, size_t nbyte);
-int  VfsSeek(int fd, long off, int whence, long *pos);
-int  VfsTell(int fd, long *pos);
-int  VfsReadDir(int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+#define VFS_STDIN   0
+#define VFS_STDOUT  1
+#define VFS_STDERR  2
+
+typedef struct vfs_ctx_t *vfs_ctx_t;
+
+vfs_ctx_t VfsInit();
+void VfsDestroy(vfs_ctx_t *c);
+int  VfsRegister(vfs_ctx_t c, const char *path, vfs_driver_t *driver);
+int  VfsOpen(vfs_ctx_t c, const char *path, int flags);
+int  VfsOpenAt(vfs_ctx_t c, int fd, const char *path, int flags);
+int  VfsClose(vfs_ctx_t c, int fd);
+int  VfsFdStat(vfs_ctx_t c, int fd, vfs_fdstat_t *stat);
+int  VfsFileStatAt(vfs_ctx_t c, int fd, const char *path, vfs_filestat_t *stat);
+int  VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte);
+int  VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte);
+int  VfsSeek(vfs_ctx_t c, int fd, long off, int whence, long *pos);
+int  VfsTell(vfs_ctx_t c, int fd, long *pos);
+int  VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);

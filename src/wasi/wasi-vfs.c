@@ -7,8 +7,6 @@
 
 /* wanted includes */
 #include <wasi.h>
-#include <romfs.h>
-#include <vfs.h>
 #include <platform.h>
 
 static m3_wasi_context_t wasi_context;
@@ -183,10 +181,10 @@ m3ApiRawFunction(m3_wasi_generic_fd_prestat_get)
 
     if (fd < 3 || fd >= preopen_cnt) { m3ApiReturn(__WASI_ERRNO_BADF); }
 
-    int host_fd = VfsOpen(preopen[fd].path, __WASI_OFLAGS_DIRECTORY);
+    int host_fd = VfsOpen(wasi_context.vfsCtx, preopen[fd].path, __WASI_OFLAGS_DIRECTORY);
 
     if (fd != host_fd) {
-        VfsClose(host_fd);
+        VfsClose(wasi_context.vfsCtx, host_fd);
         m3ApiReturn(__WASI_ERRNO_BADF);
     }
 
@@ -205,7 +203,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_fdstat_get)
 
     vfs_fdstat_t stat;
 
-    int ret = VfsFdStat(fd, &stat);
+    int ret = VfsFdStat(wasi_context.vfsCtx, fd, &stat);
     if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
 
     fdstat->fs_filetype = stat.filetype;
@@ -254,7 +252,7 @@ m3ApiRawFunction(m3_wasi_unstable_fd_seek)
     }
 
     long pos;
-    int ret = VfsSeek(fd, offset, whence, &pos);
+    int ret = VfsSeek(wasi_context.vfsCtx, fd, offset, whence, &pos);
     if (ret < 0) { m3ApiReturn(errno_to_wasi(ret)); }
     m3ApiWriteMem64(result, pos);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
@@ -280,7 +278,7 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_fd_seek)
     }
 
     long pos;
-    int ret = VfsSeek(fd, offset, whence, &pos);
+    int ret = VfsSeek(wasi_context.vfsCtx, fd, offset, whence, &pos);
     if (ret < 0) { m3ApiReturn(errno_to_wasi(ret)); }
     m3ApiWriteMem64(result, pos);
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
@@ -309,7 +307,7 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
     vfs_filestat_t statbuf;
     __wasi_filestat_t stat;
 
-    int ret = VfsFileStatAt(fd, host_path, &statbuf);
+    int ret = VfsFileStatAt(wasi_context.vfsCtx, fd, host_path, &statbuf);
     if (ret < 0) { m3ApiReturn(errno_to_wasi(ret)); }
 
     stat.filetype = statbuf.filetype;
@@ -378,7 +376,7 @@ m3ApiRawFunction(m3_wasi_generic_path_open)
         flags |= VFS_O_RDONLY; // no-op because O_RDONLY is 0
     }
 
-    int host_fd = VfsOpenAt(dirfd, host_path, flags);
+    int host_fd = VfsOpenAt(wasi_context.vfsCtx, dirfd, host_path, flags);
     if (host_fd < 0) {
         m3ApiReturn(errno_to_wasi (host_fd));
     }
@@ -404,7 +402,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_read)
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
         if (len == 0) continue;
 
-        int ret = VfsRead(fd, addr, len);
+        int ret = VfsRead(wasi_context.vfsCtx, fd, addr, len);
         if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
         res += ret;
         if ((size_t)ret < len) break;
@@ -434,7 +432,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_write)
         size_t len = m3ApiReadMem32(&wasi_iovs[i].buf_len);
         if (len == 0) continue;
 
-        int ret = VfsWrite(fd, addr, len);
+        int ret = VfsWrite(wasi_context.vfsCtx, fd, addr, len);
         if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
         res += ret;
         if ((size_t)ret < len) break;
@@ -459,7 +457,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_readdir)
     uint64_t last = cookie;
     size_t used = 0;
 
-    ret = VfsReadDir(fd, buf, buf_len, &last, &used);
+    ret = VfsReadDir(wasi_context.vfsCtx, fd, buf, buf_len, &last, &used);
     if (ret < 0) {
         m3ApiReturn(errno_to_wasi(ret));
     }
@@ -474,7 +472,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_close)
     m3ApiReturnType  (uint32_t)
     m3ApiGetArg      (__wasi_fd_t, fd)
 
-    int ret = VfsClose(fd);
+    int ret = VfsClose(wasi_context.vfsCtx, fd);
 
     m3ApiReturn(ret < 0 ? errno_to_wasi(ret) : __WASI_ERRNO_SUCCESS);
 }
