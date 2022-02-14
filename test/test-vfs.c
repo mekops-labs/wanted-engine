@@ -10,9 +10,9 @@
 #include "external_symbols.h"
 
 
-vfs_ctx_t vfs;
-vfs_driver_t romfs;
-vfs_driver_t virt1, virt2;
+static vfs_ctx_t vfs;
+static vfs_driver_t romfs;
+static vfs_driver_t virt1, virt2;
 
 /***************************************/
 TEST_GROUP(vfs_init);

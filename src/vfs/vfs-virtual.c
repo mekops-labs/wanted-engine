@@ -2,7 +2,6 @@
 #include <string.h>
 #include <errno.h>
 
-
 #include <wanted_malloc.h>
 #include "vfs-internal.h"
 
@@ -11,7 +10,7 @@
 #include <debug_trace.h>
 #include <cwalk.h>
 
-#define MAX_ENTRIES 10
+#include "vfs-virtual.h"
 
 const char id[] = { 'V', 'i', 'r', 't' };
 
@@ -25,11 +24,6 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 static int _Register(vfs_driver_ctx_t d, const char *path, vfs_driver_t *driver);
-
-struct vfs_driver_ctx_t {
-    vfs_entry_t entries[MAX_ENTRIES];
-    size_t cnt;
-};
 
 int VfsVirtualInit(vfs_driver_t *driver)
 {
@@ -64,6 +58,7 @@ int VfsVirtualInit(vfs_driver_t *driver)
 void VfsVirtualDestroy(vfs_driver_t *driver)
 {
     WantedFree(driver->ctx);
+    driver->ctx = NULL;
 }
 
 int VfsFindEntryAt(int fd, const char *path, vfs_entry_t *files, const char **pathLeft)
@@ -78,10 +73,6 @@ int VfsFindEntryAt(int fd, const char *path, vfs_entry_t *files, const char **pa
 
     if (fd >= MAX_ENTRIES) {
         return -EBADF;
-    }
-
-    if (files[fd].drv && files[fd].drv->filetype != VFS_FILETYPE_DIRECTORY) {
-        return -ENOTDIR;
     }
 
     f = fd;
@@ -104,17 +95,10 @@ int VfsFindEntryAt(int fd, const char *path, vfs_entry_t *files, const char **pa
         DEBUG_TRACE("segment: %.*s (%d)", seg.size, seg.begin, seg.size);
         found = false;
 
-
         if (memcmp(".", seg.begin, seg.size) == 0) {
             found = true;
             continue;
         }
-
-        // if (memcmp("..", seg.begin, seg.size) == 0) {
-        //     found = true;
-        //     f = fd = 0;
-        //     continue;
-        // }
 
         for (f = fd; files[f].name[0] != '\0'; f++) {
             if (strncmp(files[f].name, seg.begin, MAX(seg.size, strlen(files[f].name))) == 0) {
@@ -131,15 +115,16 @@ int VfsFindEntryAt(int fd, const char *path, vfs_entry_t *files, const char **pa
         return -ENOENT;
     }
 
-    if (pathLeft) {
-        if (files[f].drv == NULL) {
-            *pathLeft = NULL;
-        } else {
-            if (cwk_path_get_next_segment(&seg)) {
+    if (cwk_path_get_next_segment(&seg)) {
+        if (pathLeft) {
+            if (files[f].drv == NULL) {
+                *pathLeft = NULL;
+            } else {
                 *pathLeft = seg.begin;
             }
-
             DEBUG_TRACE("pathLeft: %s", *pathLeft);
+        } else {
+            f = -ENOENT;
         }
     }
 
@@ -154,19 +139,26 @@ static int _Register(vfs_driver_ctx_t d, const char *path, vfs_driver_t *driver)
         return -EINVAL;
     }
 
+    if (memcmp(".", path, 2) == 0 || memcmp("..", path, 3) == 0) {
+        return -EINVAL;
+    }
+
     int entry = VfsFindEntryAt(0, seg.begin, d->entries, &pathLeft);
 
     if (entry == -ENOENT) {
-        d->entries[d->cnt].drv = driver;
-        memcpy(d->entries[d->cnt++].name, seg.begin, seg.size);
-    } else if (entry < 0) {
-        return entry;
+        if (d->cnt >= MAX_ENTRIES) {
+            return -ENFILE;
+        }
+        entry = d->cnt++;
+        d->entries[entry].drv = driver;
+        memcpy(d->entries[entry].name, seg.begin, seg.size);
     } else if (pathLeft) {
-        TRY_DRV(d->entries[entry].drv, Register, pathLeft, driver);
+        return TRY_DRV(d->entries[entry].drv, Register, pathLeft, driver);
     } else {
-        return -EINVAL;
+        d->entries[entry].drv = driver;
+        memcpy(d->entries[entry].name, seg.begin, seg.size);
     }
-    return 0;
+    return entry;
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, int flags)
@@ -179,8 +171,6 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
     char normalized[MAX_PATH_LEN];
     const char *pathLeft;
     DEBUG_TRACE("%d: %s (0x%x)", fd, path, flags);
-
-
 
     // int new_fd = FindFirstClosedFd();
     // if (new_fd < 0) return new_fd;
