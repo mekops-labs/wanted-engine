@@ -1,5 +1,4 @@
-#include "../include/wanted.h"
-
+#include "include/wanted_malloc.h"
 #include <romfs.h>
 
 void *RomfsMalloc(size_t s)

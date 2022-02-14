@@ -2,7 +2,7 @@
 #include <string.h>
 #include <errno.h>
 
-#include <wanted.h>
+#include <wanted_malloc.h>
 #include <romfs.h>
 #include <vfs.h>
 #include <cwalk.h>
