@@ -52,6 +52,10 @@ int VfsVirtualInit(vfs_driver_t *driver)
     driver->Tell            = NULL;
     driver->ReadDir         = _ReadDir;
 
+    driver->ctx->entries[0].drv = driver;
+    driver->ctx->entries[0].name[0] = '/';
+    driver->ctx->cnt++;
+
     return 0;
 }
 
@@ -172,33 +176,23 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
     const char *pathLeft;
     DEBUG_TRACE("%d: %s (0x%x)", fd, path, flags);
 
-    // int new_fd = FindFirstClosedFd();
-    // if (new_fd < 0) return new_fd;
+    if (NULL == path || *path == '\0') {
+        return -EINVAL;
+    }
 
-    // if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
-    //     return -ENAMETOOLONG;
-    // }
+    if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
+        return -ENAMETOOLONG;
+    }
 
-    // int f = VfsFindEntryAt(fd - ROOT_FD, normalized, root, &pathLeft);
-    // if (f < 0) return f;
+    int f = VfsFindEntryAt(fd, normalized, d->entries, &pathLeft);
+    if (f < 0) return f;
 
-    // if (pathLeft && NULL != root[f].drv) {
-    //     fildes[new_fd].drv = root[f].drv;
-    //     int rootFd = TRY_DRV(fildes[new_fd].drv, Open, "/", 0);
-    //     f = TRY_DRV(fildes[new_fd].drv, OpenAt, rootFd, pathLeft, flags);
-    //     TRY_DRV(fildes[new_fd].drv, Close, rootFd);
-    //     if (f < 0) return f;
-    // } else {
-    //     fildes[new_fd].drv = NULL;
-    // }
+    if (pathLeft && NULL != d->entries[f].drv) {
+        f = TRY_DRV(d->entries[f].drv, Open, pathLeft, flags);
+        if (f < 0) return f;
+    }
 
-    // fildes[new_fd].drv_fd = f;
-    // fildes[new_fd].opened = true;
-
-    // pathLeft = path;
-
-    // return new_fd;
-    return 0;
+    return f;
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd)
@@ -214,11 +208,20 @@ static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat)
 static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat)
 {
     int f, ret = 0;
+    char normalized[MAX_PATH_LEN];
     const char *pathLeft;
 
     DEBUG_TRACE("%d: %s", fd, path);
 
-    f = VfsFindEntryAt(fd, path, d->entries, &pathLeft);
+    if (NULL == path || *path == '\0' || NULL == stat) {
+        return -EINVAL;
+    }
+
+    if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
+        return -ENAMETOOLONG;
+    }
+
+    f = VfsFindEntryAt(fd, normalized, d->entries, &pathLeft);
     if (f < 0) return f;
 
     if (pathLeft && NULL != d->entries[f].drv) {
