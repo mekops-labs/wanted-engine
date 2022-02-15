@@ -84,6 +84,7 @@ int VfsVirtualInit(vfs_driver_t *driver)
     driver->ctx->fildes[0].drv_fd = 0;
     driver->ctx->fildes[0].drv = driver;
     driver->ctx->fildes[0].opened = true;
+    driver->ctx->fildes[0].flags = VFS_O_RDWR;
 
     return 0;
 }
@@ -239,6 +240,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
     d->fildes[fd].drv_fd = newFd;
     d->fildes[fd].drv = d->entries[f].drv;
     d->fildes[fd].opened = true;
+    d->fildes[fd].flags = flags;
 
     return fd;
 }
@@ -260,13 +262,15 @@ static int _Close(vfs_driver_ctx_t d, int fd)
 static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat)
 {
     if (!CheckFd(d, fd)) { return -EBADF; }
+    if (!stat) { return -EINVAL; }
 
-    if (d->entries[fd].drv->ctx == d) {
-
+    if (d->fildes[fd].drv->ctx == d) {
+        stat->filetype = d->fildes[fd].drv->filetype;
+        stat->flags    = d->fildes[fd].flags;
         return 0;
     }
 
-    return TRY_DRV(d->entries[fd].drv, FdStat, fd, stat);
+    return TRY_DRV(d->fildes[fd].drv, FdStat, d->fildes[fd].drv_fd, stat);
 }
 
 static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat)

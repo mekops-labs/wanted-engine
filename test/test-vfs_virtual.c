@@ -31,7 +31,7 @@ static int _DummyClose(vfs_driver_ctx_t d, int fd) {
 static vfs_driver_t virt, virt2;
 
 static vfs_driver_t dummy_test = {
-    .Open = _DummyOpen,
+    .Open  = _DummyOpen,
     .Close = _DummyClose,
 };
 
@@ -523,6 +523,71 @@ TEST_GROUP_RUNNER(vfs_virtual_close)
 {
     RUN_TEST_CASE(vfs_virtual_close, CloseFail);
     RUN_TEST_CASE(vfs_virtual_close, CloseOk);
+}
+
+/***************************************/
+TEST_GROUP(vfs_virtual_fdstat);
+/***************************************/
+
+TEST_SETUP(vfs_virtual_fdstat)
+{
+    VfsVirtualInit(&virt);
+    VfsVirtualInit(&virt2);
+    dummy_test.filetype = 0;
+    dummy_test.bytesId = 0;
+    TRY_DRV(&virt, Register, "a", &dummy_test);
+    TRY_DRV(&virt, Register, "b", &dummy_test);
+    TRY_DRV(&virt, Register, "c", &dummy_test);
+    TRY_DRV(&virt, Register, "net", &dummy_test);
+    TRY_DRV(&virt, Register, "dir", &virt2);
+    TRY_DRV(&virt, Register, "dir/xyz", &dummy_test);
+    TRY_DRV(&virt, Register, "dev", &virt2);
+    TRY_DRV(&virt, Register, "dev/a", &dummy_test);
+    TRY_DRV(&virt, Register, ".dotfile", &dummy_test);
+}
+
+TEST_TEAR_DOWN(vfs_virtual_fdstat)
+{
+    VfsVirtualDestroy(&virt2);
+    VfsVirtualDestroy(&virt);
+}
+
+TEST(vfs_virtual_fdstat, FdStatFail)
+{
+    int r;
+    vfs_fdstat_t stat;
+
+    r = TRY_DRV(&virt, FdStat, 0, NULL);
+    TEST_ASSERT_EQUAL(-EINVAL, r);
+
+    r = TRY_DRV(&virt, FdStat, 1, &stat);
+    TEST_ASSERT_EQUAL(-EBADF, r);
+
+    r = TRY_DRV(&virt, Open, "a", 0);
+    TEST_ASSERT_EQUAL(1, r);
+
+    r = TRY_DRV(&virt, FdStat, r, &stat);
+    TEST_ASSERT_EQUAL(-EPERM, r);
+}
+
+TEST(vfs_virtual_fdstat, FdStatOk)
+{
+    int r;
+    vfs_fdstat_t stat;
+
+    r = TRY_DRV(&virt, Open, "dir", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL(1, r);
+
+    r = TRY_DRV(&virt, FdStat, r, &stat);
+    TEST_ASSERT_EQUAL(0, r);
+    TEST_ASSERT_EQUAL(VFS_FILETYPE_DIRECTORY, stat.filetype);
+    TEST_ASSERT_EQUAL(VFS_O_WRONLY, stat.flags);
+}
+
+TEST_GROUP_RUNNER(vfs_virtual_fdstat)
+{
+    RUN_TEST_CASE(vfs_virtual_fdstat, FdStatFail);
+    RUN_TEST_CASE(vfs_virtual_fdstat, FdStatOk);
 }
 
 /***************************************/

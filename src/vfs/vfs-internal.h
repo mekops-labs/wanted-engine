@@ -21,6 +21,7 @@ typedef struct vfs_fildes_t {
     int             drv_fd;
     vfs_driver_t    *drv;
     bool            opened;
+    int             flags;
 } vfs_fildes_t;
 
 struct vfs_ctx_t {
