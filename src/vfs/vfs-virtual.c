@@ -31,7 +31,7 @@ static inline
 bool CheckFd(vfs_driver_ctx_t d, int fd)
 {
     if (fd >= MAX_OPEN) return false;
-    if (d && d->entries[fd].drv == NULL) return false;
+    if (d && d->fildes[fd].drv == NULL) return false;
 
     return true;
 }
@@ -80,6 +80,10 @@ int VfsVirtualInit(vfs_driver_t *driver)
     driver->ctx->entries[0].drv = driver;
     driver->ctx->entries[0].name[0] = '/';
     driver->ctx->cnt++;
+
+    driver->ctx->fildes[0].drv_fd = 0;
+    driver->ctx->fildes[0].drv = driver;
+    driver->ctx->fildes[0].opened = true;
 
     return 0;
 }

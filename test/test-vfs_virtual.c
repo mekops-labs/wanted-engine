@@ -387,8 +387,8 @@ TEST(vfs_virtual_open, OpenFail)
     r = TRY_DRV(&virt, OpenAt, 0, "dir/../x", 0);
     TEST_ASSERT_EQUAL(-ENOENT, r);
 
-    r = TRY_DRV(&virt, OpenAt, 6, "dir", 0);
-    TEST_ASSERT_EQUAL(-ENOENT, r);
+    r = TRY_DRV(&virt, OpenAt, 1, "dir", 0);
+    TEST_ASSERT_EQUAL(-EBADF, r);
 }
 
 TEST(vfs_virtual_open, OpenSimple)
@@ -396,27 +396,27 @@ TEST(vfs_virtual_open, OpenSimple)
     int r;
 
     r = TRY_DRV(&virt, Open, "/", 0);
-    TEST_ASSERT_EQUAL(0, r);
-
-    r = TRY_DRV(&virt, Open, ".", 0);
     TEST_ASSERT_EQUAL(1, r);
 
-    r = TRY_DRV(&virt, Open, "a", 0);
+    r = TRY_DRV(&virt, Open, ".", 0);
     TEST_ASSERT_EQUAL(2, r);
+
+    r = TRY_DRV(&virt, Open, "a", 0);
+    TEST_ASSERT_EQUAL(3, r);
     TEST_ASSERT_EQUAL(1, dummyOpened);
 
     r = TRY_DRV(&virt, Open, "a/", 0);
-    TEST_ASSERT_EQUAL(3, r);
+    TEST_ASSERT_EQUAL(4, r);
     TEST_ASSERT_EQUAL(2, dummyOpened);
 
     r = TRY_DRV(&virt, Open, "dir", 0);
-    TEST_ASSERT_EQUAL(4, r);
-
-    r = TRY_DRV(&virt, Open, ".dotfile", 0);
     TEST_ASSERT_EQUAL(5, r);
 
-    r = TRY_DRV(&virt, Open, "/.dotfile", 0);
+    r = TRY_DRV(&virt, Open, ".dotfile", 0);
     TEST_ASSERT_EQUAL(6, r);
+
+    r = TRY_DRV(&virt, Open, "/.dotfile", 0);
+    TEST_ASSERT_EQUAL(7, r);
 
     TEST_ASSERT_EQUAL(4, dummyOpened);
 }
@@ -426,16 +426,16 @@ TEST(vfs_virtual_open, OpenAdvanced)
     int r;
 
     r = TRY_DRV(&virt, Open, "dir/xyz", 0);
-    TEST_ASSERT_EQUAL(0, r);
-
-    r = TRY_DRV(&virt, Open, "dir/../dev", 0);
     TEST_ASSERT_EQUAL(1, r);
 
-    r = TRY_DRV(&virt, Open, "/./////dir///../dev/////", 0);
+    r = TRY_DRV(&virt, Open, "dir/../dev", 0);
     TEST_ASSERT_EQUAL(2, r);
 
-     r = TRY_DRV(&virt, Open, "dir/../dev/xyz", 0);
+    r = TRY_DRV(&virt, Open, "/./////dir///../dev/////", 0);
     TEST_ASSERT_EQUAL(3, r);
+
+     r = TRY_DRV(&virt, Open, "dir/../dev/xyz", 0);
+    TEST_ASSERT_EQUAL(4, r);
 
     TEST_ASSERT_EQUAL(2, dummyOpened);
 }
