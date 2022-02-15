@@ -135,11 +135,11 @@ static int _Register(vfs_driver_ctx_t d, const char *path, vfs_driver_t *driver)
     const char *pathLeft;
     struct cwk_segment seg;
 
-    if (!cwk_path_get_first_segment(path, &seg)) {
+    if (memcmp(".", path, 2) == 0 || memcmp("..", path, 3) == 0) {
         return -EINVAL;
     }
 
-    if (memcmp(".", path, 2) == 0 || memcmp("..", path, 3) == 0) {
+    if (!cwk_path_get_first_segment(path, &seg)) {
         return -EINVAL;
     }
 
