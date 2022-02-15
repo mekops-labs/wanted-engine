@@ -484,16 +484,25 @@ TEST(vfs_virtual_close, CloseFail)
 {
     int r;
 
-    r = TRY_DRV(&virt, Close, 1);
+    r = TRY_DRV(&virt, Close, 0);
+    TEST_ASSERT_EQUAL(-EBADF, r);
+
+    r = TRY_DRV(&virt, Open, "a", 0);
+    TEST_ASSERT_EQUAL(1, r);
+
+    r = TRY_DRV(&virt, Close, r+1);
+    TEST_ASSERT_EQUAL(-EBADF, r);
+
+    r = TRY_DRV(&virt, Open, "a", 0);
+    TEST_ASSERT_EQUAL(2, r);
+
+    r = TRY_DRV(&virt, Close, 0);
     TEST_ASSERT_EQUAL(-EBADF, r);
 }
 
 TEST(vfs_virtual_close, CloseOk)
 {
     int r;
-
-    r = TRY_DRV(&virt, Close, 0);
-    TEST_ASSERT_EQUAL(0, r);
 
     r = TRY_DRV(&virt, Open, "dir", 0);
     TEST_ASSERT_EQUAL(1, r);

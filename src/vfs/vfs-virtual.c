@@ -36,6 +36,12 @@ bool CheckFd(vfs_driver_ctx_t d, int fd)
     return true;
 }
 
+static inline
+bool CheckSameDriver(vfs_driver_ctx_t d, int fd)
+{
+    return (d->fildes[fd].drv->ctx == d);
+}
+
 static
 int FindFirstClosedFd(vfs_driver_ctx_t d)
 {
@@ -77,14 +83,14 @@ int VfsVirtualInit(vfs_driver_t *driver)
     driver->Tell            = NULL;
     driver->ReadDir         = _ReadDir;
 
-    driver->ctx->entries[0].drv = driver;
-    driver->ctx->entries[0].name[0] = '/';
+    driver->ctx->entries[0].drv         = driver;
+    driver->ctx->entries[0].name[0]     = '/';
     driver->ctx->cnt++;
 
-    driver->ctx->fildes[0].drv_fd = 0;
-    driver->ctx->fildes[0].drv = driver;
-    driver->ctx->fildes[0].opened = true;
-    driver->ctx->fildes[0].flags = VFS_O_RDWR;
+    driver->ctx->fildes[0].drv_fd       = 0;
+    driver->ctx->fildes[0].drv          = driver;
+    driver->ctx->fildes[0].opened       = true;
+    driver->ctx->fildes[0].flags        = VFS_O_RDONLY;
 
     return 0;
 }
@@ -247,16 +253,18 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
 
 static int _Close(vfs_driver_ctx_t d, int fd)
 {
+    int r;
     if (!CheckFd(d, fd)) { return -EBADF; }
 
-    /* try to close this (virtual) driver's fd ==  nothing to do */
-    if (d->fildes[fd].drv->ctx == d) {
-        return 0;
+    if (CheckSameDriver(d, fd)) {
+        if (fd == 0) { return -EBADF; }
+        r = 0;
+    } else {
+        r = TRY_DRV(d->fildes[fd].drv, Close, d->fildes[fd].drv_fd);
     }
 
     d->fildes[fd].opened = false;
-
-    return TRY_DRV(d->fildes[fd].drv, Close, d->fildes[fd].drv_fd);
+    return r;
 }
 
 static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat)
@@ -264,7 +272,7 @@ static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat)
     if (!CheckFd(d, fd)) { return -EBADF; }
     if (!stat) { return -EINVAL; }
 
-    if (d->fildes[fd].drv->ctx == d) {
+    if (CheckSameDriver(d, fd)) {
         stat->filetype = d->fildes[fd].drv->filetype;
         stat->flags    = d->fildes[fd].flags;
         return 0;
