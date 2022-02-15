@@ -13,6 +13,7 @@
 #include "external_symbols.h"
 
 static int dummyOpened;
+static int dummyClosed;
 
 static int _DummyOpen(vfs_driver_ctx_t d, const char *path, int flags) {
     if (memcmp("/", path, 2) != 0) {
@@ -22,10 +23,16 @@ static int _DummyOpen(vfs_driver_ctx_t d, const char *path, int flags) {
     return 0;
 }
 
+static int _DummyClose(vfs_driver_ctx_t d, int fd) {
+    dummyClosed++;
+    return 0;
+}
+
 static vfs_driver_t virt, virt2;
 
 static vfs_driver_t dummy_test = {
     .Open = _DummyOpen,
+    .Close = _DummyClose,
 };
 
 /***************************************/
@@ -389,6 +396,11 @@ TEST(vfs_virtual_open, OpenFail)
 
     r = TRY_DRV(&virt, OpenAt, 1, "dir", 0);
     TEST_ASSERT_EQUAL(-EBADF, r);
+
+    for (int i = 0; i < MAX_OPEN; i++) {
+        r = TRY_DRV(&virt, Open, "dir/xyz", 0);
+    }
+    TEST_ASSERT_EQUAL(-EMFILE, r);
 }
 
 TEST(vfs_virtual_open, OpenSimple)
@@ -447,6 +459,71 @@ TEST_GROUP_RUNNER(vfs_virtual_open)
     RUN_TEST_CASE(vfs_virtual_open, OpenAdvanced);
 }
 
+
+/***************************************/
+TEST_GROUP(vfs_virtual_close);
+/***************************************/
+
+TEST_SETUP(vfs_virtual_close)
+{
+    dummyClosed = 0;
+    VfsVirtualInit(&virt);
+    VfsVirtualInit(&virt2);
+    TRY_DRV(&virt, Register, "a", &dummy_test);
+    TRY_DRV(&virt, Register, "dir", &virt2);
+    TRY_DRV(&virt, Register, "dir/a", &dummy_test);
+}
+
+TEST_TEAR_DOWN(vfs_virtual_close)
+{
+    VfsVirtualDestroy(&virt2);
+    VfsVirtualDestroy(&virt);
+}
+
+TEST(vfs_virtual_close, CloseFail)
+{
+    int r;
+
+    r = TRY_DRV(&virt, Close, 1);
+    TEST_ASSERT_EQUAL(-EBADF, r);
+}
+
+TEST(vfs_virtual_close, CloseOk)
+{
+    int r;
+
+    r = TRY_DRV(&virt, Close, 0);
+    TEST_ASSERT_EQUAL(0, r);
+
+    r = TRY_DRV(&virt, Open, "dir", 0);
+    TEST_ASSERT_EQUAL(1, r);
+
+    r = TRY_DRV(&virt, Close, r);
+    TEST_ASSERT_EQUAL(0, r);
+
+    r = TRY_DRV(&virt, Open, "dir", 0);
+    TEST_ASSERT_EQUAL(1, r);
+
+    r = TRY_DRV(&virt, Close, r);
+    TEST_ASSERT_EQUAL(0, r);
+
+    r = TRY_DRV(&virt, Open, "dir/a", 0);
+    TEST_ASSERT_EQUAL(1, r);
+
+    r = TRY_DRV(&virt, Close, r);
+    TEST_ASSERT_EQUAL(0, r);
+
+    r = TRY_DRV(&virt, Open, "dir/a", 0);
+    TEST_ASSERT_EQUAL(1, r);
+
+    TEST_ASSERT_EQUAL(1, dummyClosed);
+}
+
+TEST_GROUP_RUNNER(vfs_virtual_close)
+{
+    RUN_TEST_CASE(vfs_virtual_close, CloseFail);
+    RUN_TEST_CASE(vfs_virtual_close, CloseOk);
+}
 
 /***************************************/
 TEST_GROUP(vfs_virtual_statat);

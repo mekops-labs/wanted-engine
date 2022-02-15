@@ -203,6 +203,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
 {
     char normalized[MAX_PATH_LEN];
     const char *pathLeft;
+    int f, newFd;
 
     DEBUG_TRACE("%d: %s (0x%x)", fd, path, flags);
 
@@ -216,7 +217,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
         return -ENAMETOOLONG;
     }
 
-    int f = VfsFindEntryAt(fd, normalized, d->entries, &pathLeft);
+    f = VfsFindEntryAt(fd, normalized, d->entries, &pathLeft);
     if (f < 0) return f;
 
     fd = FindFirstClosedFd(d);
@@ -228,12 +229,14 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
         pathLeft = "/";
     }
 
+    newFd = f;
+
     if (d->entries[f].drv->ctx != d) {
-        f = TRY_DRV(d->entries[f].drv, Open, pathLeft, flags);
-        if (f < 0) { return f; }
+        newFd = TRY_DRV(d->entries[f].drv, Open, pathLeft, flags);
+        if (newFd < 0) { return newFd; }
     }
 
-    d->fildes[fd].drv_fd = f;
+    d->fildes[fd].drv_fd = newFd;
     d->fildes[fd].drv = d->entries[f].drv;
     d->fildes[fd].opened = true;
 
@@ -245,10 +248,13 @@ static int _Close(vfs_driver_ctx_t d, int fd)
     if (!CheckFd(d, fd)) { return -EBADF; }
 
     /* try to close this (virtual) driver's fd ==  nothing to do */
-    if (d->entries[fd].drv->ctx == d) {
+    if (d->fildes[fd].drv->ctx == d) {
         return 0;
     }
-    return TRY_DRV(d->entries[fd].drv, Close, fd);
+
+    d->fildes[fd].opened = false;
+
+    return TRY_DRV(d->fildes[fd].drv, Close, d->fildes[fd].drv_fd);
 }
 
 static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat)
