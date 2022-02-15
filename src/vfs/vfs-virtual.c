@@ -12,6 +12,8 @@
 
 #include "vfs-virtual.h"
 
+#include <assert.h>
+
 const char id[] = { 'V', 'i', 'r', 't' };
 
 static int _Open(vfs_driver_ctx_t d, const char *path, int flags);
@@ -24,6 +26,29 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 static int _Register(vfs_driver_ctx_t d, const char *path, vfs_driver_t *driver);
+
+static inline
+bool CheckFd(vfs_driver_ctx_t d, int fd)
+{
+    if (fd >= MAX_OPEN) return false;
+    if (d && d->entries[fd].drv == NULL) return false;
+
+    return true;
+}
+
+static
+int FindFirstClosedFd(vfs_driver_ctx_t d)
+{
+    if (!d) return -EINVAL;
+
+    for (int i = 0; i < MAX_OPEN; i++) {
+        if (!d->fildes[i].opened) {
+            return i;
+        }
+    }
+    return -EMFILE;
+}
+
 
 int VfsVirtualInit(vfs_driver_t *driver)
 {
@@ -174,7 +199,10 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
 {
     char normalized[MAX_PATH_LEN];
     const char *pathLeft;
+
     DEBUG_TRACE("%d: %s (0x%x)", fd, path, flags);
+
+    if (!CheckFd(d, fd)) { return -EBADF; }
 
     if (NULL == path || *path == '\0') {
         return -EINVAL;
@@ -187,22 +215,48 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
     int f = VfsFindEntryAt(fd, normalized, d->entries, &pathLeft);
     if (f < 0) return f;
 
-    if (pathLeft && NULL != d->entries[f].drv) {
-        f = TRY_DRV(d->entries[f].drv, Open, pathLeft, flags);
-        if (f < 0) return f;
+    fd = FindFirstClosedFd(d);
+    if (fd < 0) return fd;
+
+    assert(d->entries[f].drv != NULL);
+
+    if (!pathLeft) {
+        pathLeft = "/";
     }
 
-    return f;
+    if (d->entries[f].drv->ctx != d) {
+        f = TRY_DRV(d->entries[f].drv, Open, pathLeft, flags);
+        if (f < 0) { return f; }
+    }
+
+    d->fildes[fd].drv_fd = f;
+    d->fildes[fd].drv = d->entries[f].drv;
+    d->fildes[fd].opened = true;
+
+    return fd;
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd)
 {
-    return 0;
+    if (!CheckFd(d, fd)) { return -EBADF; }
+
+    /* try to close this (virtual) driver's fd ==  nothing to do */
+    if (d->entries[fd].drv->ctx == d) {
+        return 0;
+    }
+    return TRY_DRV(d->entries[fd].drv, Close, fd);
 }
 
 static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat)
 {
-    return 0;
+    if (!CheckFd(d, fd)) { return -EBADF; }
+
+    if (d->entries[fd].drv->ctx == d) {
+
+        return 0;
+    }
+
+    return TRY_DRV(d->entries[fd].drv, FdStat, fd, stat);
 }
 
 static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat)
@@ -212,6 +266,8 @@ static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filesta
     const char *pathLeft;
 
     DEBUG_TRACE("%d: %s", fd, path);
+
+    if (!CheckFd(d, fd)) { return -EBADF; }
 
     if (NULL == path || *path == '\0' || NULL == stat) {
         return -EINVAL;

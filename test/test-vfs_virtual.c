@@ -12,8 +12,21 @@
 
 #include "external_symbols.h"
 
+static int dummyOpened;
+
+static int _DummyOpen(vfs_driver_ctx_t d, const char *path, int flags) {
+    if (memcmp("/", path, 2) != 0) {
+        return -EPERM;
+    }
+    dummyOpened++;
+    return 0;
+}
+
 static vfs_driver_t virt, virt2;
-static vfs_driver_t dummy_test;
+
+static vfs_driver_t dummy_test = {
+    .Open = _DummyOpen,
+};
 
 /***************************************/
 TEST_GROUP(vfs_virtual_init);
@@ -316,6 +329,7 @@ TEST_GROUP(vfs_virtual_open);
 
 TEST_SETUP(vfs_virtual_open)
 {
+    dummyOpened = 0;
     VfsVirtualInit(&virt);
     VfsVirtualInit(&virt2);
     TRY_DRV(&virt, Register, "a", &dummy_test);
@@ -385,16 +399,26 @@ TEST(vfs_virtual_open, OpenSimple)
     TEST_ASSERT_EQUAL(0, r);
 
     r = TRY_DRV(&virt, Open, ".", 0);
-    TEST_ASSERT_EQUAL(0, r);
-
-    r = TRY_DRV(&virt, Open, "a", 0);
     TEST_ASSERT_EQUAL(1, r);
 
+    r = TRY_DRV(&virt, Open, "a", 0);
+    TEST_ASSERT_EQUAL(2, r);
+    TEST_ASSERT_EQUAL(1, dummyOpened);
+
+    r = TRY_DRV(&virt, Open, "a/", 0);
+    TEST_ASSERT_EQUAL(3, r);
+    TEST_ASSERT_EQUAL(2, dummyOpened);
+
     r = TRY_DRV(&virt, Open, "dir", 0);
-    TEST_ASSERT_EQUAL(5, r);
+    TEST_ASSERT_EQUAL(4, r);
 
     r = TRY_DRV(&virt, Open, ".dotfile", 0);
-    TEST_ASSERT_EQUAL(7, r);
+    TEST_ASSERT_EQUAL(5, r);
+
+    r = TRY_DRV(&virt, Open, "/.dotfile", 0);
+    TEST_ASSERT_EQUAL(6, r);
+
+    TEST_ASSERT_EQUAL(4, dummyOpened);
 }
 
 TEST(vfs_virtual_open, OpenAdvanced)
@@ -402,16 +426,18 @@ TEST(vfs_virtual_open, OpenAdvanced)
     int r;
 
     r = TRY_DRV(&virt, Open, "dir/xyz", 0);
-    TEST_ASSERT_EQUAL(1, r);
+    TEST_ASSERT_EQUAL(0, r);
 
     r = TRY_DRV(&virt, Open, "dir/../dev", 0);
-    TEST_ASSERT_EQUAL(6, r);
+    TEST_ASSERT_EQUAL(1, r);
 
     r = TRY_DRV(&virt, Open, "/./////dir///../dev/////", 0);
-    TEST_ASSERT_EQUAL(6, r);
+    TEST_ASSERT_EQUAL(2, r);
 
      r = TRY_DRV(&virt, Open, "dir/../dev/xyz", 0);
-    TEST_ASSERT_EQUAL(1, r);
+    TEST_ASSERT_EQUAL(3, r);
+
+    TEST_ASSERT_EQUAL(2, dummyOpened);
 }
 
 TEST_GROUP_RUNNER(vfs_virtual_open)
