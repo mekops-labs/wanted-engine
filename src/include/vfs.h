@@ -53,7 +53,7 @@ typedef struct vfs_dirent_t {
     uint64_t d_next;            // The offset of the next directory entry stored in this directory.
     uint64_t d_ino;             // The serial number of the file referred to by this directory entry.
     uint32_t d_namlen;          // The length of the name of the directory entry.
-    vfs_filetype_t d_type;      // The type of the file referred to by this directory entry.
+    uint32_t d_type;      // The type of the file referred to by this directory entry.
 } vfs_dirent_t;
 
 typedef struct vfs_driver_ctx_t *vfs_driver_ctx_t;
