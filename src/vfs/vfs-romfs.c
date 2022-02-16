@@ -92,15 +92,13 @@ static vfs_filetype_t convertFiletype(uint8_t t)
     }
 }
 
-static int _Start(vfs_driver_ctx_t d) {
-    return _Open(d, d->rootPath, 0);
-}
-
 static int _Open(vfs_driver_ctx_t d, const char *path, int flags)
 {
     char normalized[MAX_PATH_LEN];
 
-    cwk_path_normalize(path, normalized, sizeof(normalized));
+    cwk_path_change_root(path, d->rootPath, normalized, sizeof(normalized));
+    cwk_path_normalize(normalized, normalized, sizeof(normalized));
+
     return RomfsOpenRoot(d->romfs, normalized, flags);
 }
 
@@ -108,7 +106,8 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
 {
     char normalized[MAX_PATH_LEN];
 
-    cwk_path_normalize(path, normalized, sizeof(normalized));
+    cwk_path_change_root(path, d->rootPath, normalized, sizeof(normalized));
+    cwk_path_normalize(normalized, normalized, sizeof(normalized));
     return RomfsOpenAt(d->romfs, fd, normalized, flags);
 }
 
@@ -141,7 +140,8 @@ static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filesta
 
     if (NULL == stat) return -EINVAL;
 
-    cwk_path_normalize(path, normalized, sizeof(normalized));
+    cwk_path_change_root(path, d->rootPath, normalized, sizeof(normalized));
+    cwk_path_normalize(normalized, normalized, sizeof(normalized));
     ret = RomfsFdStatAt(d->romfs, fd, normalized, &romfsStat);
     if (ret < 0) return ret;
 
