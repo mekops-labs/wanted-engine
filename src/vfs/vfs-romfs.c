@@ -15,8 +15,8 @@ static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat);
 static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat);
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
+static int _Tell(vfs_driver_ctx_t d, int fd, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
-
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     return -EROFS;
 }
@@ -29,7 +29,6 @@ struct vfs_driver_ctx_t {
 vfs_driver_t vfs_romfs_drv = {
     .id         = { 'R', 'o', 'm', 'f' },
     .filetype   = VFS_FILETYPE_DIRECTORY,
-//    .Start      = _Start,
     .Open       = _Open,
     .OpenAt     = _OpenAt,
     .Close      = _Close,
@@ -38,6 +37,7 @@ vfs_driver_t vfs_romfs_drv = {
     .Read       = _Read,
     .Write      = _Write,
     .Seek       = _Seek,
+    .Tell       = _Tell,
     .ReadDir    = _ReadDir,
 };
 
@@ -164,6 +164,11 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos)
 {
     return RomfsSeek(d->romfs, fd, off, (romfs_seek_t)whence);
+}
+
+static int _Tell(vfs_driver_ctx_t d, int fd, long *pos)
+{
+    return RomfsTell(d->romfs, fd, pos);
 }
 
 #define DIR_BUF_LEN 10
