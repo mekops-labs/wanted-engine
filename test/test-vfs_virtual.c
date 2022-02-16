@@ -245,28 +245,28 @@ TEST(vfs_virtual_find, findFileNotFound)
     vfs_entry_t *fs = virt.ctx->entries;
     const char *pathLeft;
 
-    i = VfsFindEntryAt(0, "..", fs, NULL);
+    i = VfsFindEntry("..", fs, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindEntryAt(0, "not_a_file", fs, NULL);
+    i = VfsFindEntry("not_a_file", fs, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindEntryAt(0, "/not_a_file", fs, NULL);
+    i = VfsFindEntry("/not_a_file", fs, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindEntryAt(0, "/n", fs, NULL);
+    i = VfsFindEntry("/n", fs, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindEntryAt(0, "n", fs, NULL);
+    i = VfsFindEntry("n", fs, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindEntryAt(0, "aa", fs, NULL);
+    i = VfsFindEntry("aa", fs, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindEntryAt(0, "dir/xyz", fs, NULL);
+    i = VfsFindEntry("dir/xyz", fs, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindEntryAt(0, "../dev/xyz", fs, &pathLeft);
+    i = VfsFindEntry("../dev/xyz", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 }
 
@@ -274,19 +274,19 @@ TEST(vfs_virtual_find, findFileRoot)
 {
     vfs_entry_t *fs = virt.ctx->entries;
 
-    int i = VfsFindEntryAt(0, "/", fs, NULL);
+    int i = VfsFindEntry("/", fs, NULL);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindEntryAt(0, ".", fs, NULL);
+    i = VfsFindEntry(".", fs, NULL);
     TEST_ASSERT_EQUAL_INT(0, i);
 
-    i = VfsFindEntryAt(0, ".dotfile", fs, NULL);
+    i = VfsFindEntry(".dotfile", fs, NULL);
     TEST_ASSERT_EQUAL_INT(7, i);
 
-    i = VfsFindEntryAt(0, "/c", fs, NULL);
+    i = VfsFindEntry("/c", fs, NULL);
     TEST_ASSERT_EQUAL_INT(3, i);
 
-    i = VfsFindEntryAt(0, "c", fs, NULL);
+    i = VfsFindEntry("c", fs, NULL);
     TEST_ASSERT_EQUAL_INT(3, i);
 }
 
@@ -296,31 +296,31 @@ TEST(vfs_virtual_find, findFileDir)
     vfs_entry_t *fs2 = virt2.ctx->entries;
     const char *pathLeft;
 
-    int i = VfsFindEntryAt(1, "c", fs, NULL);
+    int i = VfsFindEntry("c", fs, NULL);
     TEST_ASSERT_EQUAL_INT(3, i);
 
-    i = VfsFindEntryAt(0, "dir/xyz", fs, &pathLeft);
+    i = VfsFindEntry("dir/xyz", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(5, i);
 
-    i = VfsFindEntryAt(0, pathLeft, fs2, NULL);
+    i = VfsFindEntry(pathLeft, fs2, NULL);
     TEST_ASSERT_EQUAL_INT(1, i);
 
-    i = VfsFindEntryAt(0, "dir/a", fs, &pathLeft);
+    i = VfsFindEntry("dir/a", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(5, i);
 
-    i = VfsFindEntryAt(0, pathLeft, fs2, NULL);
+    i = VfsFindEntry(pathLeft, fs2, NULL);
     TEST_ASSERT_EQUAL_INT(2, i);
 
-     i = VfsFindEntryAt(0, "dev/a", fs, &pathLeft);
+     i = VfsFindEntry("dev/a", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(6, i);
 
-    i = VfsFindEntryAt(0, pathLeft, fs2, NULL);
+    i = VfsFindEntry(pathLeft, fs2, NULL);
     TEST_ASSERT_EQUAL_INT(2, i);
 
-    i = VfsFindEntryAt(0, "dev/aa", fs, &pathLeft);
+    i = VfsFindEntry("dev/aa", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(6, i);
 
-    i = VfsFindEntryAt(0, pathLeft, fs2, NULL);
+    i = VfsFindEntry(pathLeft, fs2, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 }
 
@@ -330,7 +330,7 @@ TEST(vfs_virtual_find, findFileDriver)
 
     const char *drvPath = NULL;
 
-    int i = VfsFindEntryAt(0, "/dev/a", fs, &drvPath);
+    int i = VfsFindEntry("/dev/a", fs, &drvPath);
     TEST_ASSERT_NOT_NULL(drvPath);
     TEST_ASSERT_EQUAL_INT(6, i);
     TEST_ASSERT_EQUAL_STRING("a", drvPath);
@@ -338,7 +338,7 @@ TEST(vfs_virtual_find, findFileDriver)
 
     drvPath = NULL;
 
-    i = VfsFindEntryAt(0, "/dev/.", fs, &drvPath);
+    i = VfsFindEntry("/dev/.", fs, &drvPath);
     TEST_ASSERT_NOT_NULL(drvPath);
     TEST_ASSERT_EQUAL_INT(6, i);
     TEST_ASSERT_EQUAL_STRING(".", drvPath);
@@ -346,7 +346,7 @@ TEST(vfs_virtual_find, findFileDriver)
 
     drvPath = NULL;
 
-    i = VfsFindEntryAt(0, "/dir/x/y/z", fs, &drvPath);
+    i = VfsFindEntry("/dir/x/y/z", fs, &drvPath);
     TEST_ASSERT_NOT_NULL(drvPath);
     TEST_ASSERT_EQUAL_INT(5, i);
     TEST_ASSERT_EQUAL_STRING("x/y/z", drvPath);

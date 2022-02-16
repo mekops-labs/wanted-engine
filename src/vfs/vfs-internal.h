@@ -28,4 +28,4 @@ struct vfs_ctx_t {
     vfs_fildes_t fildes[MAX_OPEN];
 };
 
-int VfsFindEntryAt(int fd, const char *path, vfs_entry_t *files, const char **pathLeft);
+int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft);

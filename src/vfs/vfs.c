@@ -14,7 +14,7 @@
 static inline
 bool CheckFd(struct vfs_ctx_t *c, int fd)
 {
-    if (fd >= MAX_OPEN) return false;
+    if (fd >= MAX_OPEN || fd < 0) return false;
     if (c && c->fildes[fd].drv == NULL) return false;
 
     return true;
@@ -54,6 +54,8 @@ void VfsDestroy(vfs_ctx_t *c)
 
 int VfsRegister(vfs_ctx_t c, const char *path, vfs_driver_t *driver)
 {
+    DEBUG_TRACE("%s (%.4s)", path, driver->id);
+
     if (NULL == driver || NULL == c) {
         return -EINVAL;
     }
@@ -62,11 +64,6 @@ int VfsRegister(vfs_ctx_t c, const char *path, vfs_driver_t *driver)
 
     if (memcmp("/", path, 2) == 0) {
         c->fildes[ROOT_FD].drv = driver;
-        c->fildes[ROOT_FD].drv_fd = TRY_DRV(driver, Open, "/", 0);
-        if (c->fildes[ROOT_FD].drv_fd < 0) {
-            return c->fildes[ROOT_FD].drv_fd;
-        }
-        c->fildes[ROOT_FD].opened = true;
     } else if (memcmp("<stdin>", path, 8) == 0) {
         c->fildes[VFS_STDIN].drv = driver;
         c->fildes[VFS_STDIN].drv_fd = VFS_STDIN;
@@ -80,7 +77,7 @@ int VfsRegister(vfs_ctx_t c, const char *path, vfs_driver_t *driver)
         c->fildes[VFS_STDERR].drv_fd = VFS_STDERR;
         c->fildes[VFS_STDERR].opened = true;
     } else {
-        if (!c->fildes[ROOT_FD].opened) {
+        if (!c->fildes[ROOT_FD].drv) {
             return -EINVAL;
         }
 
@@ -102,52 +99,122 @@ int VfsOpen(vfs_ctx_t c, const char *path, int flags)
 
 int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, int flags)
 {
+    DEBUG_TRACE("%d, %s (0x%x)", fd, path, flags);
+
     if (!CheckFd(c, fd)) return -EBADF;
+
+    if (NULL == path || *path == '\0') {
+        return -EINVAL;
+    }
+
+    int f = FindFirstClosedFd(c);
+    if (f < 0) return f;
+
+    int newFd = TRY_DRV(c->fildes[fd].drv, OpenAt, c->fildes[fd].drv_fd, path, flags);
+    if (newFd < 0) { return newFd; }
+
+    c->fildes[f].drv    = c->fildes[fd].drv;
+    c->fildes[f].drv_fd = newFd;
+    c->fildes[f].flags  = flags;
+    c->fildes[f].opened = true;
+
+    return f;
 }
 
 int VfsClose(vfs_ctx_t c, int fd)
 {
+    DEBUG_TRACE("%d", fd);
 
-    return 0;
+    if (!CheckFd(c, fd)) return -EBADF;
+
+    c->fildes[fd].opened = false;
+
+    return TRY_DRV(c->fildes[fd].drv, Close, c->fildes[fd].drv_fd);
 }
 
 int VfsFdStat(vfs_ctx_t c, int fd, vfs_fdstat_t *stat)
 {
+    DEBUG_TRACE("%d", fd);
 
-    return 0;
+    if (!CheckFd(c, fd)) return -EBADF;
+
+    return TRY_DRV(c->fildes[fd].drv, FdStat, c->fildes[fd].drv_fd, stat);
 }
 
 int VfsFileStatAt(vfs_ctx_t c, int fd, const char *path, vfs_filestat_t *stat)
 {
+    DEBUG_TRACE("%d, %s", fd, path);
 
-    return 0;
+    if (!CheckFd(c, fd)) return -EBADF;
+
+    if (NULL == path || *path == '\0') {
+        return -EINVAL;
+    }
+
+    return TRY_DRV(c->fildes[fd].drv, FileStatAt, c->fildes[fd].drv_fd, path, stat);
 }
 
 int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte)
 {
+    DEBUG_TRACE("%d, %d", fd, nbyte);
 
-    return 0;
+    if (!CheckFd(c, fd)) return -EBADF;
+
+    if (NULL == buf) {
+        return -EINVAL;
+    }
+
+    return TRY_DRV(c->fildes[fd].drv, Read, c->fildes[fd].drv_fd, buf, nbyte);
 }
 
 int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte)
 {
+    DEBUG_TRACE("%d, %d", fd, nbyte);
 
-    return 0;
+    if (!CheckFd(c, fd)) return -EBADF;
+
+    if (NULL == buf) {
+        return -EINVAL;
+    }
+
+    return TRY_DRV(c->fildes[fd].drv, Write, c->fildes[fd].drv_fd, buf, nbyte);
 }
 
 int VfsSeek(vfs_ctx_t c, int fd, long off, int whence, long *pos)
 {
+    DEBUG_TRACE("%d, %d, %d", fd, off, whence);
 
-    return 0;
+    if (!CheckFd(c, fd)) return -EBADF;
+
+    if (NULL == pos) {
+        return -EINVAL;
+    }
+
+    return TRY_DRV(c->fildes[fd].drv, Seek, c->fildes[fd].drv_fd, off, whence, pos);
 }
 
 int VfsTell(vfs_ctx_t c, int fd, long *pos)
 {
+    DEBUG_TRACE("%d", fd);
 
-    return 0;
+    if (!CheckFd(c, fd)) return -EBADF;
+
+    if (NULL == pos) {
+        return -EINVAL;
+    }
+
+    return TRY_DRV(c->fildes[fd].drv, Tell, c->fildes[fd].drv_fd, pos);
 }
 
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
 {
-    return 0;
+    DEBUG_TRACE("%d (%d) %d", fd, bufLen, *cookie);
+
+    if (!CheckFd(c, fd)) return -EBADF;
+
+    if (NULL == buf || NULL == cookie || NULL == bufUsed) {
+        return -EINVAL;
+    }
+
+    return TRY_DRV(c->fildes[fd].drv, ReadDir, c->fildes[fd].drv_fd, buf, bufLen, cookie, bufUsed);
 }

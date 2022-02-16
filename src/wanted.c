@@ -12,6 +12,8 @@
 #include <vfs.h>
 #include <vfs-drivers.h>
 
+extern vfs_driver_t vfs_linux_drv;
+
 #define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return -1; }
 
 static int LoadWasmFromRomfs(const char* wasmName, uint8_t *img, size_t imgLen, wapp_t *wasm)
@@ -48,6 +50,7 @@ int RunWapp(data_t *ctx)
     IM3Function f;
     m3_wasi_context_t *wasiCtx;
     wapp_t wasm;
+    vfs_driver_t rootDrv;
     vfs_driver_t romfsDrv;
     int ret;
 
@@ -74,11 +77,17 @@ int RunWapp(data_t *ctx)
     LinkWantedApi(mod);
     m3_LinkLibC(mod);
 
+    ret = VfsVirtualInit(&rootDrv);
+    if (ret < 0) FATAL("VfsVirtualInit: can't load virt driver (%d)", ret);
 
-    ret = VfsRomfsInit(&romfsDrv, "dir", ctx->wapp->img, ctx->wapp->img_len);
+    ret = VfsRomfsInit(&romfsDrv, "dir/", ctx->wapp->img, ctx->wapp->img_len);
     if (ret < 0) FATAL("VfsRomfsInit: can't load romfs (%d)", ret);
 
-    VfsRegister(c, "", &romfsDrv);
+    VfsRegister(c, "<stdin>", &vfs_linux_drv);
+    VfsRegister(c, "<stdout>", &vfs_linux_drv);
+    VfsRegister(c, "<stderr>", &vfs_linux_drv);
+    VfsRegister(c, "/", &rootDrv);
+    VfsRegister(c, "/rom", &romfsDrv);
 
     status = m3_FindFunction (&f, rt, "entry");
     if (status) {

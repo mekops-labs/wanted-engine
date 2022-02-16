@@ -108,34 +108,18 @@ void VfsVirtualDestroy(vfs_driver_t *driver)
     driver->ctx = NULL;
 }
 
-int VfsFindEntryAt(int fd, const char *path, vfs_entry_t *files, const char **pathLeft)
+int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft)
 {
     struct cwk_segment seg;
-    int f;
+    int f = 0;
     bool found = false;
 
     if (pathLeft) {
         *pathLeft = NULL;
     }
 
-    if (fd >= MAX_ENTRIES) {
-        return -EBADF;
-    }
-
-    f = fd;
-
-    if (cwk_path_is_absolute(path)) {
-        while (*path == '/') {
-            path++;
-        }
-        fd = 0;
-    }
-
-    cwk_path_get_first_segment(path, &seg);
-
-    if (seg.size == 0) {
-        // probably could only happen when initial path was /
-        return fd;
+    if (!cwk_path_get_first_segment(path, &seg)) {
+        return 0;
     }
 
     do {
@@ -147,7 +131,7 @@ int VfsFindEntryAt(int fd, const char *path, vfs_entry_t *files, const char **pa
             continue;
         }
 
-        for (f = fd; files[f].name[0] != '\0'; f++) {
+        for (f = 0; files[f].name[0] != '\0'; f++) {
             if (strncmp(files[f].name, seg.begin, MAX(seg.size, strlen(files[f].name))) == 0) {
                 found = true;
                 break;
@@ -155,7 +139,6 @@ int VfsFindEntryAt(int fd, const char *path, vfs_entry_t *files, const char **pa
         }
         if (!found) break;
 
-        fd = f;
     } while (files[f].drv == NULL && cwk_path_get_next_segment(&seg));
 
     if (!found) {
@@ -190,7 +173,7 @@ static int _Register(vfs_driver_ctx_t d, const char *path, vfs_driver_t *driver)
         return -EINVAL;
     }
 
-    int entry = VfsFindEntryAt(0, seg.begin, d->entries, &pathLeft);
+    int entry = VfsFindEntry(seg.begin, d->entries, &pathLeft);
 
     if (entry == -ENOENT) {
         if (d->cnt >= MAX_ENTRIES) {
@@ -231,7 +214,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
         return -ENAMETOOLONG;
     }
 
-    f = VfsFindEntryAt(fd, normalized, d->entries, &pathLeft);
+    f = VfsFindEntry(normalized, d->entries, &pathLeft);
     if (f < 0) return f;
 
     fd = FindFirstClosedFd(d);
@@ -306,7 +289,7 @@ static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filesta
         return -ENAMETOOLONG;
     }
 
-    f = VfsFindEntryAt(fd, normalized, d->entries, &pathLeft);
+    f = VfsFindEntry(normalized, d->entries, &pathLeft);
     if (f < 0) return f;
 
     if (pathLeft && NULL != d->entries[f].drv) {
@@ -334,7 +317,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
     if (NULL == buf) { return -EINVAL; }
     if (CheckSameDriver(d, fd)) { return -EISDIR; }
 
-    return TRY_DRV(d->fildes[fd].drv, Read, fd, buf, nbyte);
+    return TRY_DRV(d->fildes[fd].drv, Read, d->fildes[fd].drv_fd, buf, nbyte);
 }
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
@@ -343,7 +326,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     if (NULL == buf) { return -EINVAL; }
     if (CheckSameDriver(d, fd)) { return -EISDIR; }
 
-    return TRY_DRV(d->fildes[fd].drv, Write, fd, buf, nbyte);
+    return TRY_DRV(d->fildes[fd].drv, Write, d->fildes[fd].drv_fd, buf, nbyte);
 }
 
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos)
@@ -356,7 +339,7 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos)
         return -EISDIR;
     }
 
-    return TRY_DRV(d->fildes[fd].drv, Seek, fd, off, whence, pos);
+    return TRY_DRV(d->fildes[fd].drv, Seek, d->fildes[fd].drv_fd, off, whence, pos);
 }
 
 static int _Tell(vfs_driver_ctx_t d, int fd, long *pos)
@@ -368,7 +351,7 @@ static int _Tell(vfs_driver_ctx_t d, int fd, long *pos)
         return -EISDIR;
     }
 
-    return TRY_DRV(d->fildes[fd].drv, Tell, fd, pos);
+    return TRY_DRV(d->fildes[fd].drv, Tell, d->fildes[fd].drv_fd, pos);
 }
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
