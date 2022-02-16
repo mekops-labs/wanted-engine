@@ -14,7 +14,7 @@
 
 #include <assert.h>
 
-const char id[] = { 'V', 'i', 'r', 't' };
+static const char id[] = { 'V', 'i', 'r', 't' };
 
 static int _Open(vfs_driver_ctx_t d, const char *path, int flags);
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags);

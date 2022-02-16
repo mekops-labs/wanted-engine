@@ -7,6 +7,8 @@
 #include <vfs.h>
 #include <cwalk.h>
 
+static const char id[] = { 'R', 'o', 'm', 'f' };
+
 static int _Start(vfs_driver_ctx_t d);
 static int _Open(vfs_driver_ctx_t d, const char *path, int flags);
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags);
@@ -26,21 +28,6 @@ struct vfs_driver_ctx_t {
     romfs_t     romfs;
 };
 
-vfs_driver_t vfs_romfs_drv = {
-    .id         = { 'R', 'o', 'm', 'f' },
-    .filetype   = VFS_FILETYPE_DIRECTORY,
-    .Open       = _Open,
-    .OpenAt     = _OpenAt,
-    .Close      = _Close,
-    .FdStat     = _FdStat,
-    .FileStatAt = _FileStatAt,
-    .Read       = _Read,
-    .Write      = _Write,
-    .Seek       = _Seek,
-    .Tell       = _Tell,
-    .ReadDir    = _ReadDir,
-};
-
 int VfsRomfsInit(vfs_driver_t *driver, const char *root, uint8_t *RomfsImg, size_t RomfsImgLen)
 {
     int ret;
@@ -55,18 +42,19 @@ int VfsRomfsInit(vfs_driver_t *driver, const char *root, uint8_t *RomfsImg, size
     ret = RomfsLoad(RomfsImg, RomfsImgLen, &(driver->ctx->romfs));
     if (ret < 0) { WantedFree(driver->ctx); return ret; }
 
-    driver->bytesId         = vfs_romfs_drv.bytesId;
-    driver->filetype        = vfs_romfs_drv.filetype;
+    driver->bytesId         = *(uint32_t*)(id);
+    driver->filetype        = VFS_FILETYPE_DIRECTORY;
     driver->ctx->rootPath   = root;
-    driver->Open            = vfs_romfs_drv.Open;
-    driver->OpenAt          = vfs_romfs_drv.OpenAt;
-    driver->Close           = vfs_romfs_drv.Close;
-    driver->FdStat          = vfs_romfs_drv.FdStat;
-    driver->FileStatAt      = vfs_romfs_drv.FileStatAt;
-    driver->Read            = vfs_romfs_drv.Read;
-    driver->Write           = vfs_romfs_drv.Write;
-    driver->Seek            = vfs_romfs_drv.Seek;
-    driver->ReadDir         = vfs_romfs_drv.ReadDir;
+    driver->Open            = _Open;
+    driver->OpenAt          = _OpenAt;
+    driver->Close           = _Close;
+    driver->FdStat          = _FdStat;
+    driver->FileStatAt      = _FileStatAt;
+    driver->Read            = _Read;
+    driver->Write           = _Write;
+    driver->Seek            = _Seek;
+    driver->Tell            = _Tell;
+    driver->ReadDir         = _ReadDir;
 
     return 0;
 }
@@ -148,7 +136,7 @@ static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filesta
     stat->atim = 0;
     stat->mtim = 0;
     stat->ctim = 0;
-    stat->dev = *((uint32_t *)vfs_romfs_drv.id);
+    stat->dev = *(uint32_t *)id;
     stat->ino = romfsStat.ino;
     stat->size = romfsStat.size;
     stat->filetype = convertFiletype(romfsStat.mode);

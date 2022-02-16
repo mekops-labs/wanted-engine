@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include <vfs.h>
+
 typedef uint32_t plat_clk_id_t;
 
 #define PLAT_CLOCKID_REALTIME           0U
@@ -17,3 +19,6 @@ int PlatformClockGetRes(plat_clk_id_t clk_id, uint64_t *resolution);
 int PlatformClockGetTime(plat_clk_id_t clk_id, plat_timestamp_t *time);
 int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout, plat_clk_flags_t flags);
 int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len);
+
+int VfsPlatformInit(vfs_driver_t *driver);
+void VfsPlatformDestroy(vfs_driver_t *driver);

@@ -12,6 +12,8 @@
 #include <vfs.h>
 #include <vfs-drivers.h>
 
+#include <platform.h>
+
 extern vfs_driver_t vfs_linux_drv;
 
 #define FATAL(msg, ...) { printf("Fatal: " msg "\n", ##__VA_ARGS__); return -1; }
@@ -50,6 +52,8 @@ int RunWapp(data_t *ctx)
     IM3Function f;
     m3_wasi_context_t *wasiCtx;
     wapp_t wasm;
+
+    vfs_driver_t platDrv;
     vfs_driver_t rootDrv;
     vfs_driver_t romfsDrv;
     int ret;
@@ -67,6 +71,7 @@ int RunWapp(data_t *ctx)
 
     printf("getting context\n");
     wasiCtx = GetWasiContext();
+
     vfs_ctx_t c = VfsInit();
 
     wasiCtx->argc = 0;
@@ -80,14 +85,18 @@ int RunWapp(data_t *ctx)
     ret = VfsVirtualInit(&rootDrv);
     if (ret < 0) FATAL("VfsVirtualInit: can't load virt driver (%d)", ret);
 
-    ret = VfsRomfsInit(&romfsDrv, "dir/", ctx->wapp->img, ctx->wapp->img_len);
+    ret = VfsRomfsInit(&romfsDrv, "", ctx->wapp->img, ctx->wapp->img_len);
     if (ret < 0) FATAL("VfsRomfsInit: can't load romfs (%d)", ret);
 
-    VfsRegister(c, "<stdin>", &vfs_linux_drv);
-    VfsRegister(c, "<stdout>", &vfs_linux_drv);
-    VfsRegister(c, "<stderr>", &vfs_linux_drv);
+    ret = VfsPlatformInit(&platDrv);
+    if (ret < 0) FATAL("VfsPlatformInit: can't load platform driver (%d)", ret);
+
+    VfsRegister(c, "<stdin>", &platDrv);
+    VfsRegister(c, "<stdout>", &platDrv);
+    VfsRegister(c, "<stderr>", &platDrv);
     VfsRegister(c, "/", &rootDrv);
     VfsRegister(c, "/rom", &romfsDrv);
+    VfsRegister(c, "/data", &platDrv);
 
     status = m3_FindFunction (&f, rt, "entry");
     if (status) {
@@ -104,6 +113,9 @@ int RunWapp(data_t *ctx)
     }
 
     VfsRomfsDestroy(&romfsDrv);
+    VfsPlatformDestroy(&platDrv);
+    VfsVirtualDestroy(&rootDrv);
+    VfsDestroy(&c);
 
     return 0;
 }

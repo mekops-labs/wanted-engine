@@ -8,7 +8,10 @@
 #include <dirent.h>
 
 #include <vfs.h>
+#include <wanted_malloc.h>
+#include <cwalk.h>
 
+static const char id[] = { 'L', 'i', 'n', 'u' };
 
 static int _Start(vfs_driver_ctx_t d);
 static int _Open(vfs_driver_ctx_t d, const char *path, int flags);
@@ -22,20 +25,42 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
 static int _Tell(vfs_driver_ctx_t d, int fd, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
-vfs_driver_t vfs_linux_drv = {
-    .id = { 'L', 'i', 'n', 'u' },
-    .filetype    = VFS_FILETYPE_DIRECTORY,
-    .Open        = _Open,
-    .OpenAt      = _OpenAt,
-    .Close       = _Close,
-    .FdStat      = _FdStat,
-    .FileStatAt  = _FileStatAt,
-    .Read        = _Read,
-    .Write       = _Write,
-    .Seek        = _Seek,
-    .Tell        = _Tell,
-    .ReadDir     = _ReadDir,
+struct vfs_driver_ctx_t {
+    const char* rootPath;
 };
+
+int VfsLinuxInit(vfs_driver_t *driver, const char *root)
+{
+    int ret;
+
+    if (NULL == root || NULL == driver) {
+        return -EINVAL;
+    }
+
+    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
+    if (NULL == driver->ctx) return -ENOMEM;
+
+    driver->bytesId         = *(uint32_t*)(id);
+    driver->filetype        = VFS_FILETYPE_DIRECTORY;
+    driver->ctx->rootPath   = root;
+    driver->Open            = _Open;
+    driver->OpenAt          = _OpenAt;
+    driver->Close           = _Close;
+    driver->FdStat          = _FdStat;
+    driver->FileStatAt      = _FileStatAt;
+    driver->Read            = _Read;
+    driver->Write           = _Write;
+    driver->Seek            = _Seek;
+    driver->Tell            = _Tell;
+    driver->ReadDir         = _ReadDir;
+
+    return 0;
+}
+
+void VfsLinuxDestroy(vfs_driver_t *driver)
+{
+    WantedFree(driver->ctx);
+}
 
 static inline vfs_filetype_t convertFiletype(uint32_t t)
 {
@@ -74,16 +99,22 @@ static int _Start(vfs_driver_ctx_t d)
 
 static int _Open(vfs_driver_ctx_t d, const char *path, int flags)
 {
+    char joined[PATH_MAX];
+    cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
+
     int mode = 0644;
-    int fd = open(path, flags, mode);
+    int fd = open(joined, flags, mode);
     if (fd < 0) return -errno;
     return fd;
 }
 
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
 {
+    char joined[PATH_MAX];
+    cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
+
     int mode = 0644;
-    int ret = openat(fd, path, flags, mode);
+    int ret = openat(fd, joined, flags, mode);
     if (ret < 0) return -errno;
     return ret;
 }
@@ -126,12 +157,15 @@ static inline uint64_t convertTimespec(const struct timespec *ts)
 static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *s)
 {
     struct stat statbuf;
+    char joined[PATH_MAX];
 
-    int ret = fstatat(fd, path, &statbuf, 0);
+    cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
+
+    int ret = fstatat(fd, joined, &statbuf, 0);
     if (ret < 0) return -errno;
 
     s->filetype = convertFiletype(statbuf.st_mode);
-    s->dev = *((uint32_t *)vfs_linux_drv.id); //statbuf.st_dev;
+    s->dev = *(uint32_t*)(id);
     s->ino = statbuf.st_ino;
     s->nlink = statbuf.st_nlink;
     s->size = statbuf.st_size;
