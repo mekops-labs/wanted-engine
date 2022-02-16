@@ -125,12 +125,14 @@ TEST(vfs_openclose, OpenFail)
 
 TEST(vfs_openclose, OpenThenClose)
 {
-    int i = VfsOpen(vfs, "/", 0);
+    int i;
+
+    i = VfsOpen(vfs, "/rom", 0);
     TEST_ASSERT_EQUAL_INT(3, i);
     TEST_ASSERT_TRUE(vfs->fildes[3].opened);
     TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[3].drv);
 
-    i = VfsOpen(vfs, "/rom", 0);
+    i = VfsOpen(vfs, "/", 0);
     TEST_ASSERT_EQUAL_INT(4, i);
     TEST_ASSERT_TRUE(vfs->fildes[4].opened);
     TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[4].drv);
@@ -143,6 +145,7 @@ TEST(vfs_openclose, OpenThenClose)
     i = VfsClose(vfs, 3);
     TEST_ASSERT_EQUAL_INT(0, i);
     TEST_ASSERT_FALSE(vfs->fildes[3].opened);
+    TEST_ASSERT_TRUE(vfs->fildes[4].opened);
 
     i = VfsClose(vfs, 4);
     TEST_ASSERT_EQUAL_INT(0, i);
@@ -150,7 +153,7 @@ TEST(vfs_openclose, OpenThenClose)
 
     i = VfsClose(vfs, 5);
     TEST_ASSERT_EQUAL_INT(0, i);
-    TEST_ASSERT_FALSE(vfs->fildes[4].opened);
+    TEST_ASSERT_FALSE(vfs->fildes[5].opened);
 }
 
 TEST_GROUP_RUNNER(vfs_openclose)
