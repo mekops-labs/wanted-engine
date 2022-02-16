@@ -96,27 +96,31 @@ TEST_GROUP(vfs_openclose);
 
 TEST_SETUP(vfs_openclose)
 {
-    VfsInit();
+    vfs = VfsInit();
+    VfsVirtualInit(&virt1);
     VfsRomfsInit(&romfs, "/", test_wasi_romfs, test_wasi_romfs_len);
+    VfsRegister(vfs, "/", &virt1);
     VfsRegister(vfs, "rom", &romfs);
 }
 
 TEST_TEAR_DOWN(vfs_openclose)
 {
     VfsRomfsDestroy(&romfs);
+    VfsVirtualDestroy(&virt1);
+    VfsDestroy(&vfs);
 }
 
 TEST(vfs_openclose, OpenFail)
 {
     int i = VfsOpen(vfs, "xxx", 0);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
-    TEST_ASSERT_FALSE( vfs->fildes[3].opened);
-    TEST_ASSERT_EQUAL_PTR(NULL,  vfs->fildes[3].drv);
+    TEST_ASSERT_FALSE( vfs->fildes[4].opened);
+    TEST_ASSERT_EQUAL_PTR(NULL,  vfs->fildes[4].drv);
 
     i = VfsOpen(vfs, "/roms", 0);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
-    TEST_ASSERT_FALSE(vfs->fildes[3].opened);
-    TEST_ASSERT_EQUAL_PTR(NULL,  vfs->fildes[3].drv);
+    TEST_ASSERT_FALSE(vfs->fildes[4].opened);
+    TEST_ASSERT_EQUAL_PTR(NULL,  vfs->fildes[4].drv);
 }
 
 TEST(vfs_openclose, OpenThenClose)
@@ -124,26 +128,33 @@ TEST(vfs_openclose, OpenThenClose)
     int i = VfsOpen(vfs, "/", 0);
     TEST_ASSERT_EQUAL_INT(3, i);
     TEST_ASSERT_TRUE(vfs->fildes[3].opened);
-    TEST_ASSERT_NULL(vfs->fildes[3].drv);
+    TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[3].drv);
 
     i = VfsOpen(vfs, "/rom", 0);
     TEST_ASSERT_EQUAL_INT(4, i);
     TEST_ASSERT_TRUE(vfs->fildes[4].opened);
-    TEST_ASSERT_EQUAL_PTR(&romfs, vfs->fildes[4].drv);
+    TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[4].drv);
+
+    i = VfsOpen(vfs, "/rom/app.wasm", 0);
+    TEST_ASSERT_EQUAL_INT(5, i);
+    TEST_ASSERT_TRUE(vfs->fildes[5].opened);
+    TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[5].drv);
 
     i = VfsClose(vfs, 3);
     TEST_ASSERT_EQUAL_INT(0, i);
     TEST_ASSERT_FALSE(vfs->fildes[3].opened);
-    TEST_ASSERT_NULL(vfs->fildes[3].drv);
 
     i = VfsClose(vfs, 4);
     TEST_ASSERT_EQUAL_INT(0, i);
     TEST_ASSERT_FALSE(vfs->fildes[4].opened);
-    TEST_ASSERT_NULL(vfs->fildes[4].drv);
+
+    i = VfsClose(vfs, 5);
+    TEST_ASSERT_EQUAL_INT(0, i);
+    TEST_ASSERT_FALSE(vfs->fildes[4].opened);
 }
 
 TEST_GROUP_RUNNER(vfs_openclose)
 {
-    // RUN_TEST_CASE(vfs_openclose, OpenFail);
-    // RUN_TEST_CASE(vfs_openclose, OpenThenClose);
+    RUN_TEST_CASE(vfs_openclose, OpenFail);
+    RUN_TEST_CASE(vfs_openclose, OpenThenClose);
 }

@@ -25,7 +25,7 @@ int FindFirstClosedFd(struct vfs_ctx_t *c)
 {
     if (!c) return -EINVAL;
 
-    for (int i = 0; i < MAX_OPEN; i++) {
+    for (int i = ROOT_FD; i < MAX_OPEN; i++) {
         if (!c->fildes[i].opened) {
             return i;
         }
