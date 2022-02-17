@@ -40,6 +40,8 @@ vfs_ctx_t VfsInit()
     struct vfs_ctx_t *c;
 
     c = (struct vfs_ctx_t *)WantedMalloc(sizeof(*c));
+    if (!c) return c;
+
     memset(c, 0, sizeof(*c));
 
     return c;

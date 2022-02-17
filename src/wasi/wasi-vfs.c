@@ -616,6 +616,11 @@ m3_wasi_context_t* InitWasiContext()
     return ctx;
 }
 
+void FreeWasiContext(m3_wasi_context_t *c)
+{
+    m3_Free(c);
+}
+
 M3Result  LinkWASI  (IM3Module module, m3_wasi_context_t* ctx)
 {
     M3Result result = m3Err_none;
