@@ -28,6 +28,8 @@ int loadWapp(const char *filename, wapp_t * wapp) {
     FILE *f;
     uint8_t *img;
 
+    printf("Opening: %s\n", filename);
+
     f = fopen(filename, "rb");
     if (NULL == f) FATAL("can't open %s", filename);
 

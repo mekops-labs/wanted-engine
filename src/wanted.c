@@ -70,7 +70,7 @@ int RunWapp(data_t *ctx)
     if (status) FATAL("m3_LoadModule[%d]: %s", ctx->id, status);
 
     printf("getting context\n");
-    wasiCtx = GetWasiContext();
+    wasiCtx = InitWasiContext();
 
     vfs_ctx_t c = VfsInit();
 
@@ -78,7 +78,7 @@ int RunWapp(data_t *ctx)
     wasiCtx->argv = NULL;
     wasiCtx->vfsCtx = c;
 
-    LinkWASI(mod);
+    LinkWASI(mod, wasiCtx);
     LinkWantedApi(mod);
     m3_LinkLibC(mod);
 
@@ -104,7 +104,7 @@ int RunWapp(data_t *ctx)
         if (status) FATAL("m3_FindFunction[%d]: %s", ctx->id, status);
     }
 
-    //printf("starting wapp: %d\n", ctx->id);
+    printf("starting wapp: %d\n", ctx->id);
     status = m3_CallV (f, (int32_t)ctx->id);
     if (status) {
         M3ErrorInfo info;
