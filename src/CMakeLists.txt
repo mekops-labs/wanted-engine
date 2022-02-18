@@ -34,7 +34,7 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
 option(M3_DEBUG_TRACES "Enable wasm3 tracing" OFF)
 if (M3_DEBUG_TRACES)
     message("Trace for WASM3 enabled")
-    target_compile_definitions(m3 PRIVATE d_m3EnableStrace=1 DEBUG=1)
+    target_compile_definitions(m3 PRIVATE d_m3EnableStrace=1 DEBUG=1 d_m3LogHeapOps=0)
 endif()
 
 # Set flags for m3, disable harmless wanings

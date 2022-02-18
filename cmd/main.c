@@ -47,13 +47,25 @@ int loadWapp(const char *filename, wapp_t * wapp) {
     return 0;
 }
 
-void *WA_thread( void *ptr )
+void WA_threadEnd(void *ptr)
 {
-    RunWapp((data_t *)ptr);
-    return NULL;
+    StopWapp((data_t *)ptr);
 }
 
-int main(int argc, char* argv[]) {
+void *WA_thread(void *ptr)
+{
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+    pthread_cleanup_push(WA_threadEnd, ptr);
+
+    RunWapp((data_t *)ptr);
+
+    pthread_cleanup_pop(0);
+
+    pthread_exit(NULL);
+}
+
+int main(int argc, char* argv[])
+{
     wapp_t wapp;
     const char *defFile = "default";
 
@@ -74,6 +86,12 @@ int main(int argc, char* argv[]) {
 
         pthread_create( &config.threads[i].t, NULL, WA_thread, (void*) &config.threads[i].data);
     }
+
+    sleep(3);
+    pthread_cancel(config.threads[0].t);
+    sleep(1);
+
+    pthread_create( &config.threads[0].t, NULL, WA_thread, (void*) &config.threads[0].data);
 
     for (int i = 0; i < config.n; i++) {
         pthread_join( config.threads[i].t, NULL);
