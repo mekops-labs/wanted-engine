@@ -51,6 +51,13 @@ static int _DummySeek(vfs_driver_ctx_t d, int fd, long off, int whence, long *po
     return 0;
 }
 
+static int _DummyStat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s)
+{
+    s->filetype = VFS_FILETYPE_REGULAR_FILE;
+    s->dev = 1234;
+    s->ino = 1;
+}
+
 static vfs_driver_t virt, virt2;
 
 static vfs_driver_t dummy_test = {
@@ -568,15 +575,14 @@ TEST_GROUP_RUNNER(vfs_virtual_close)
 }
 
 /***************************************/
-TEST_GROUP(vfs_virtual_fdstat);
+TEST_GROUP(vfs_virtual_stat);
 /***************************************/
 
-TEST_SETUP(vfs_virtual_fdstat)
+TEST_SETUP(vfs_virtual_stat)
 {
     VfsVirtualInit(&virt);
     VfsVirtualInit(&virt2);
-    dummy_test.filetype = 0;
-    dummy_test.bytesId = 0;
+    dummy_test.Stat = _DummyStat;
     TRY_DRV(&virt, Register, "a", &dummy_test);
     TRY_DRV(&virt, Register, "b", &dummy_test);
     TRY_DRV(&virt, Register, "c", &dummy_test);
@@ -588,179 +594,55 @@ TEST_SETUP(vfs_virtual_fdstat)
     TRY_DRV(&virt, Register, ".dotfile", &dummy_test);
 }
 
-TEST_TEAR_DOWN(vfs_virtual_fdstat)
+TEST_TEAR_DOWN(vfs_virtual_stat)
 {
     VfsVirtualDestroy(&virt2);
     VfsVirtualDestroy(&virt);
 }
 
-TEST(vfs_virtual_fdstat, FdStatFail)
+TEST(vfs_virtual_stat, StatFail)
 {
     int r;
-    vfs_fdstat_t stat;
+    vfs_stat_t stat;
 
-    r = TRY_DRV(&virt, FdStat, 0, NULL);
+    r = TRY_DRV(&virt, Stat, 0, NULL);
     TEST_ASSERT_EQUAL(-EINVAL, r);
 
-    r = TRY_DRV(&virt, FdStat, 1, &stat);
+    r = TRY_DRV(&virt, Stat, 1, &stat);
     TEST_ASSERT_EQUAL(-EBADF, r);
 
     r = TRY_DRV(&virt, Open, "a", 0);
     TEST_ASSERT_EQUAL(1, r);
-
-    r = TRY_DRV(&virt, FdStat, r, &stat);
-    TEST_ASSERT_EQUAL(-EPERM, r);
 }
 
-TEST(vfs_virtual_fdstat, FdStatOk)
+TEST(vfs_virtual_stat, StatOk)
 {
     int r;
-    vfs_fdstat_t stat;
+    vfs_stat_t stat;
 
     r = TRY_DRV(&virt, Open, "dir", VFS_O_WRONLY);
     TEST_ASSERT_EQUAL(1, r);
 
-    r = TRY_DRV(&virt, FdStat, r, &stat);
+    r = TRY_DRV(&virt, Stat, r, &stat);
     TEST_ASSERT_EQUAL(0, r);
     TEST_ASSERT_EQUAL(VFS_FILETYPE_DIRECTORY, stat.filetype);
-    TEST_ASSERT_EQUAL(VFS_O_WRONLY, stat.flags);
+    TEST_ASSERT_EQUAL(VFS_O_WRONLY, stat.oflags);
+    TEST_ASSERT_EQUAL_MEMORY("Virt", &stat.dev, 4);
+    TEST_ASSERT_EQUAL(0, stat.ino);
+
+    r = TRY_DRV(&virt, Open, "a", VFS_O_APPEND);
+    TEST_ASSERT_EQUAL(2, r);
+
+    r = TRY_DRV(&virt, Stat, r, &stat);
+    TEST_ASSERT_EQUAL(VFS_FILETYPE_REGULAR_FILE, stat.filetype);
+    TEST_ASSERT_EQUAL(1234, stat.dev);
+    TEST_ASSERT_EQUAL(1, stat.ino);
 }
 
-TEST_GROUP_RUNNER(vfs_virtual_fdstat)
+TEST_GROUP_RUNNER(vfs_virtual_stat)
 {
-    RUN_TEST_CASE(vfs_virtual_fdstat, FdStatFail);
-    RUN_TEST_CASE(vfs_virtual_fdstat, FdStatOk);
-}
-
-/***************************************/
-TEST_GROUP(vfs_virtual_statat);
-/***************************************/
-
-TEST_SETUP(vfs_virtual_statat)
-{
-    VfsVirtualInit(&virt);
-    VfsVirtualInit(&virt2);
-    dummy_test.filetype = 0;
-    dummy_test.bytesId = 0;
-    TRY_DRV(&virt, Register, "a", &dummy_test);
-    TRY_DRV(&virt, Register, "b", &dummy_test);
-    TRY_DRV(&virt, Register, "c", &dummy_test);
-    TRY_DRV(&virt, Register, "net", &dummy_test);
-    TRY_DRV(&virt, Register, "dir", &virt2);
-    TRY_DRV(&virt, Register, "dir/xyz", &dummy_test);
-    TRY_DRV(&virt, Register, "dev", &virt2);
-    TRY_DRV(&virt, Register, "dev/a", &dummy_test);
-    TRY_DRV(&virt, Register, ".dotfile", &dummy_test);
-}
-
-TEST_TEAR_DOWN(vfs_virtual_statat)
-{
-    VfsVirtualDestroy(&virt2);
-    VfsVirtualDestroy(&virt);
-}
-
-TEST(vfs_virtual_statat, StatAtFail)
-{
-    int r;
-    vfs_filestat_t s;
-    char path_too_long[MAX_PATH_LEN+1];
-
-    r = TRY_DRV(&virt, FileStatAt, 0, NULL, &s);
-    TEST_ASSERT_EQUAL(-EINVAL, r);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "", &s);
-    TEST_ASSERT_EQUAL(-EINVAL, r);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "a", NULL);
-    TEST_ASSERT_EQUAL(-EINVAL, r);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "x", &s);
-    TEST_ASSERT_EQUAL(-ENOENT, r);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "/dir/aa", &s);
-    TEST_ASSERT_EQUAL(-ENOENT, r);
-
-    memset(path_too_long, 'a', sizeof(path_too_long));
-    path_too_long[MAX_PATH_LEN] = '\0';
-
-    r = TRY_DRV(&virt, FileStatAt, 0, path_too_long, &s);
-    TEST_ASSERT_EQUAL(-ENAMETOOLONG, r);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "a/b", &s);
-    TEST_ASSERT_EQUAL(-EPERM, r);
-}
-
-TEST(vfs_virtual_statat, StatAtSimple)
-{
-    int r;
-    vfs_filestat_t s;
-
-    dummy_test.filetype = VFS_FILETYPE_REGULAR_FILE;
-    dummy_test.bytesId = 1234;
-
-    r = TRY_DRV(&virt, FileStatAt, 0, ".", &s);
-    TEST_ASSERT_EQUAL(0, r);
-    TEST_ASSERT_EQUAL(VFS_FILETYPE_DIRECTORY, s.filetype);
-    TEST_ASSERT_EQUAL_MEMORY("Virt", &s.dev, 4);
-    TEST_ASSERT_EQUAL(0, s.ino);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "/", &s);
-    TEST_ASSERT_EQUAL(0, r);
-    TEST_ASSERT_EQUAL(VFS_FILETYPE_DIRECTORY, s.filetype);
-    TEST_ASSERT_EQUAL_MEMORY("Virt", &s.dev, 4);
-    TEST_ASSERT_EQUAL(0, s.ino);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "//////.", &s);
-    TEST_ASSERT_EQUAL(0, r);
-    TEST_ASSERT_EQUAL(VFS_FILETYPE_DIRECTORY, s.filetype);
-    TEST_ASSERT_EQUAL_MEMORY("Virt", &s.dev, 4);
-    TEST_ASSERT_EQUAL(0, s.ino);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "a", &s);
-    TEST_ASSERT_EQUAL(0, r);
-    TEST_ASSERT_EQUAL(VFS_FILETYPE_REGULAR_FILE, s.filetype);
-    TEST_ASSERT_EQUAL(1234, s.dev);
-    TEST_ASSERT_EQUAL(1, s.ino);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "dir", &s);
-    TEST_ASSERT_EQUAL(0, r);
-    TEST_ASSERT_EQUAL(VFS_FILETYPE_DIRECTORY, s.filetype);
-    TEST_ASSERT_EQUAL_MEMORY("Virt", &s.dev, 4);
-    TEST_ASSERT_EQUAL(5, s.ino);
-}
-
-TEST(vfs_virtual_statat, StatAtAdvanced)
-{
-    int r;
-    vfs_filestat_t s;
-
-    dummy_test.filetype = VFS_FILETYPE_REGULAR_FILE;
-    dummy_test.bytesId = 1234;
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "dir/xyz", &s);
-    TEST_ASSERT_EQUAL(0, r);
-    TEST_ASSERT_EQUAL(VFS_FILETYPE_REGULAR_FILE, s.filetype);
-    TEST_ASSERT_EQUAL(1234, s.dev);
-    TEST_ASSERT_EQUAL(1, s.ino);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "dir/..", &s);
-    TEST_ASSERT_EQUAL(0, r);
-    TEST_ASSERT_EQUAL(VFS_FILETYPE_DIRECTORY, s.filetype);
-    TEST_ASSERT_EQUAL_MEMORY("Virt", &s.dev, 4);
-    TEST_ASSERT_EQUAL(0, s.ino);
-
-    r = TRY_DRV(&virt, FileStatAt, 0, "/dir/../dev/../dir/a", &s);
-    TEST_ASSERT_EQUAL(0, r);
-    TEST_ASSERT_EQUAL(VFS_FILETYPE_REGULAR_FILE, s.filetype);
-    TEST_ASSERT_EQUAL(1234, s.dev);
-    TEST_ASSERT_EQUAL(2, s.ino);
-}
-
-TEST_GROUP_RUNNER(vfs_virtual_statat)
-{
-    RUN_TEST_CASE(vfs_virtual_statat, StatAtFail);
-    RUN_TEST_CASE(vfs_virtual_statat, StatAtSimple);
-    RUN_TEST_CASE(vfs_virtual_statat, StatAtAdvanced);
+    RUN_TEST_CASE(vfs_virtual_stat, StatFail);
+    RUN_TEST_CASE(vfs_virtual_stat, StatOk);
 }
 
 /***************************************/

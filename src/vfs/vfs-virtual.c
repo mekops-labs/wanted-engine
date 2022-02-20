@@ -19,8 +19,7 @@ static const char id[] = { 'V', 'i', 'r', 't' };
 static int _Open(vfs_driver_ctx_t d, const char *path, int flags);
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags);
 static int _Close(vfs_driver_ctx_t d, int fd);
-static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat);
-static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat);
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
@@ -81,8 +80,7 @@ int VfsVirtualInit(vfs_driver_t *driver)
     driver->Open            = _Open;
     driver->OpenAt          = _OpenAt;
     driver->Close           = _Close;
-    driver->FdStat          = _FdStat;
-    driver->FileStatAt      = _FileStatAt;
+    driver->Stat            = _Stat;
     driver->Read            = _Read;
     driver->Write           = _Write;
     driver->Seek            = _Seek;
@@ -255,58 +253,25 @@ static int _Close(vfs_driver_ctx_t d, int fd)
     return r;
 }
 
-static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat)
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
 {
     if (!CheckOpened(d, fd)) { return -EBADF; }
     if (!stat) { return -EINVAL; }
 
     if (CheckSameDriver(d, fd)) {
+        stat->dev = d->fildes[fd].drv->bytesId;
+        stat->ino = d->fildes[fd].drv_fd;
         stat->filetype = d->fildes[fd].drv->filetype;
-        stat->flags    = d->fildes[fd].flags;
-        return 0;
-    }
-
-    return TRY_DRV(d->fildes[fd].drv, FdStat, d->fildes[fd].drv_fd, stat);
-}
-
-static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat)
-{
-    int f, ret = 0;
-    char normalized[MAX_PATH_LEN];
-    const char *pathLeft;
-
-    DEBUG_TRACE("%d: %s", fd, path);
-
-    if (!CheckOpened(d, fd)) { return -EBADF; }
-
-    if (NULL == path || *path == '\0' || NULL == stat) {
-        return -EINVAL;
-    }
-
-    if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
-        return -ENAMETOOLONG;
-    }
-
-    f = VfsFindEntry(normalized, d->entries, &pathLeft);
-    if (f < 0) return f;
-
-    if (pathLeft && NULL != d->entries[f].drv) {
-        fd = TRY_DRV(d->entries[f].drv, Open, "/", 0);
-        ret = TRY_DRV(d->entries[f].drv, FileStatAt, fd, pathLeft, stat);
-        TRY_DRV(d->entries[f].drv, Close, fd);
-        if (ret < 0) return ret;
-    } else {
+        stat->nlink = 0;
+        stat->size = 0;
         stat->atim = 0;
         stat->ctim = 0;
         stat->mtim = 0;
-        stat->dev = (d->entries[f].drv != NULL) ? d->entries[f].drv->bytesId : 0;
-        stat->ino = f;
-        stat->filetype = (d->entries[f].drv != NULL) ? d->entries[f].drv->filetype : VFS_FILETYPE_DIRECTORY;
-        stat->nlink = 0;
-        stat->size = 0;
+        stat->oflags = d->fildes[fd].flags;
+        return 0;
     }
 
-    return 0;
+    return TRY_DRV(d->fildes[fd].drv, Stat, d->fildes[fd].drv_fd, stat);
 }
 
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)

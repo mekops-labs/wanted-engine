@@ -134,26 +134,13 @@ int VfsClose(vfs_ctx_t c, int fd)
     return TRY_DRV(c->fildes[fd].drv, Close, c->fildes[fd].drv_fd);
 }
 
-int VfsFdStat(vfs_ctx_t c, int fd, vfs_fdstat_t *stat)
+int VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat)
 {
     DEBUG_TRACE("%d", fd);
 
     if (!CheckFd(c, fd)) return -EBADF;
 
-    return TRY_DRV(c->fildes[fd].drv, FdStat, c->fildes[fd].drv_fd, stat);
-}
-
-int VfsFileStatAt(vfs_ctx_t c, int fd, const char *path, vfs_filestat_t *stat)
-{
-    DEBUG_TRACE("%d, %s", fd, path);
-
-    if (!CheckFd(c, fd)) return -EBADF;
-
-    if (NULL == path || *path == '\0') {
-        return -EINVAL;
-    }
-
-    return TRY_DRV(c->fildes[fd].drv, FileStatAt, c->fildes[fd].drv_fd, path, stat);
+    return TRY_DRV(c->fildes[fd].drv, Stat, c->fildes[fd].drv_fd, stat);
 }
 
 int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte)

@@ -7,6 +7,7 @@
 
 /* wanted includes */
 #include <wasi.h>
+#include <vfs.h>
 #include <platform.h>
 
 typedef struct wasi_iovec_t
@@ -203,16 +204,15 @@ m3ApiRawFunction(m3_wasi_generic_fd_fdstat_get)
 
     m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
 
-    vfs_fdstat_t stat;
+    vfs_stat_t stat;
 
-    int ret = VfsFdStat(context->vfsCtx, fd, &stat);
+    int ret = VfsStat(context->vfsCtx, fd, &stat);
     if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
 
     fdstat->fs_filetype = stat.filetype;
+    m3ApiWriteMem16(&fdstat->fs_flags, stat.oflags); // no flags supported
 
-    m3ApiWriteMem16(&fdstat->fs_flags, 0); // no flags supported
     fdstat->fs_rights_base = (uint64_t)-1; // all rights
-
     fdstat->fs_rights_inheriting = fdstat->fs_rights_base; // all rights
 
     // Make descriptors 0,1,2 look like a TTY
@@ -312,11 +312,16 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
     memcpy (host_path, path, path_len);
     host_path[path_len] = '\0'; // NULL terminator
 
-    vfs_filestat_t statbuf;
+    vfs_stat_t statbuf;
     __wasi_filestat_t stat;
 
-    int ret = VfsFileStatAt(context->vfsCtx, fd, host_path, &statbuf);
+    int f = VfsOpenAt(context->vfsCtx, fd, host_path, 0);
+    if (f < 0) { m3ApiReturn(errno_to_wasi(f)); }
+
+    int ret = VfsStat(context->vfsCtx, f, &statbuf);
     if (ret < 0) { m3ApiReturn(errno_to_wasi(ret)); }
+
+    VfsClose(context->vfsCtx, f);
 
     stat.filetype = statbuf.filetype;
     stat.dev      = statbuf.dev;

@@ -74,8 +74,9 @@ TEST(vfs_register, RootAndSingleVirtualDir)
     VfsRegister(vfs, "/dir", &virt2);
 
     TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[3].drv);
-    vfs_filestat_t stat;
-    int f = TRY_DRV(&virt1, FileStatAt, 0, "dir", &stat);
+    vfs_stat_t stat;
+    int f = TRY_DRV(&virt1, Open, "dir", 0);
+    f = TRY_DRV(&virt1, Stat, f, &stat);
     TEST_ASSERT_EQUAL(0, f);
     TEST_ASSERT_EQUAL(virt2.bytesId, stat.dev);
 

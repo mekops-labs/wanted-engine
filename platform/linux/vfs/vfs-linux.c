@@ -17,8 +17,7 @@ static int _Start(vfs_driver_ctx_t d);
 static int _Open(vfs_driver_ctx_t d, const char *path, int flags);
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags);
 static int _Close(vfs_driver_ctx_t d, int fd);
-static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat);
-static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat);
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
@@ -45,8 +44,7 @@ int VfsLinuxInit(vfs_driver_t *driver, const char *root)
     driver->Open            = _Open;
     driver->OpenAt          = _OpenAt;
     driver->Close           = _Close;
-    driver->FdStat          = _FdStat;
-    driver->FileStatAt      = _FileStatAt;
+    driver->Stat            = _Stat;
     driver->Read            = _Read;
     driver->Write           = _Write;
     driver->Seek            = _Seek;
@@ -90,6 +88,15 @@ static inline vfs_filetype_t convertDirtype(uint8_t t)
     }
 }
 
+static inline uint64_t convertTimespec(const struct timespec *ts)
+{
+    if (ts->tv_sec < 0)
+        return 0;
+    if ((uint64_t)ts->tv_sec >= UINT64_MAX / 1000000000ULL)
+        return UINT64_MAX;
+    return (uint64_t)ts->tv_sec * 1000000000ULL + ts->tv_nsec;
+}
+
 static int _Start(vfs_driver_ctx_t d)
 {
     return 0;
@@ -124,42 +131,15 @@ static int _Close(vfs_driver_ctx_t d, int fd)
     return ret;
 }
 
-static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *s)
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s)
 {
-    struct stat fd_stat;
+    int ret, fl;
+    struct stat statbuf;
 
-    int fl = fcntl(fd, F_GETFL);
+    fl = fcntl(fd, F_GETFL);
     if (fl < 0) return -errno;
 
-    fstat(fd, &fd_stat);
-    int mode = fd_stat.st_mode;
-    s->filetype = convertFiletype(mode);
-    s->flags = ((fl & O_APPEND)    ? VFS_O_APPEND    : 0) |
-               ((fl & O_DSYNC)     ? VFS_O_DSYNC     : 0) |
-               ((fl & O_NONBLOCK)  ? VFS_O_NONBLOCK  : 0) |
-               ((fl & O_RSYNC)     ? VFS_O_RSYNC     : 0) |
-               ((fl & O_SYNC)      ? VFS_O_SYNC      : 0);
-
-    return 0;
-}
-
-static inline uint64_t convertTimespec(const struct timespec *ts)
-{
-    if (ts->tv_sec < 0)
-        return 0;
-    if ((uint64_t)ts->tv_sec >= UINT64_MAX / 1000000000ULL)
-        return UINT64_MAX;
-    return (uint64_t)ts->tv_sec * 1000000000ULL + ts->tv_nsec;
-}
-
-static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *s)
-{
-    struct stat statbuf;
-    char joined[PATH_MAX];
-
-    cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
-
-    int ret = fstatat(fd, joined, &statbuf, 0);
+    ret = fstat(fd, &statbuf);
     if (ret < 0) return -errno;
 
     s->filetype = convertFiletype(statbuf.st_mode);
@@ -170,6 +150,11 @@ static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filesta
     s->atim = convertTimespec(&statbuf.st_atim);
     s->mtim = convertTimespec(&statbuf.st_mtim);
     s->ctim = convertTimespec(&statbuf.st_ctim);
+    s->oflags = ((fl & O_APPEND)    ? VFS_O_APPEND    : 0) |
+                ((fl & O_DSYNC)     ? VFS_O_DSYNC     : 0) |
+                ((fl & O_NONBLOCK)  ? VFS_O_NONBLOCK  : 0) |
+                ((fl & O_RSYNC)     ? VFS_O_RSYNC     : 0) |
+                ((fl & O_SYNC)      ? VFS_O_SYNC      : 0);
 
     return 0;
 }

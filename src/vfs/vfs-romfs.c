@@ -13,8 +13,7 @@ static int _Start(vfs_driver_ctx_t d);
 static int _Open(vfs_driver_ctx_t d, const char *path, int flags);
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags);
 static int _Close(vfs_driver_ctx_t d, int fd);
-static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat);
-static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat);
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
@@ -47,8 +46,7 @@ int VfsRomfsInit(vfs_driver_t *driver, const char *root, uint8_t *RomfsImg, size
     driver->Open            = _Open;
     driver->OpenAt          = _OpenAt;
     driver->Close           = _Close;
-    driver->FdStat          = _FdStat;
-    driver->FileStatAt      = _FileStatAt;
+    driver->Stat            = _Stat;
     driver->Read            = _Read;
     driver->Write           = _Write;
     driver->Seek            = _Seek;
@@ -102,7 +100,7 @@ static int _Close(vfs_driver_ctx_t d, int fd)
     return RomfsClose(d->romfs, fd);
 }
 
-static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat)
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
 {
     int ret;
     romfs_stat_t romfsStat;
@@ -112,32 +110,14 @@ static int _FdStat(vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat)
     ret = RomfsFdStat(d->romfs, fd, &romfsStat);
     if (ret < 0) return ret;
 
+    stat->dev = *(uint32_t *)id;
+    stat->ino = romfsStat.ino;
     stat->filetype = convertFiletype(romfsStat.mode);
-    stat->flags = 0;
-
-    return 0;
-}
-
-static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat)
-{
-    int ret;
-    romfs_stat_t romfsStat;
-    char normalized[MAX_PATH_LEN];
-
-    if (NULL == stat) return -EINVAL;
-
-    cwk_path_change_root(path, d->rootPath, normalized, sizeof(normalized));
-    cwk_path_normalize(normalized, normalized, sizeof(normalized));
-    ret = RomfsFdStatAt(d->romfs, fd, normalized, &romfsStat);
-    if (ret < 0) return ret;
-
+    stat->size = romfsStat.size;
     stat->atim = 0;
     stat->mtim = 0;
     stat->ctim = 0;
-    stat->dev = *(uint32_t *)id;
-    stat->ino = romfsStat.ino;
-    stat->size = romfsStat.size;
-    stat->filetype = convertFiletype(romfsStat.mode);
+    stat->oflags = 0;
 
     return 0;
 }

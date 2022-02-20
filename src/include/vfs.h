@@ -33,7 +33,7 @@ typedef uint8_t vfs_filetype_t;
 #define VFS_SEEK_CUR    1
 #define VFS_SEEK_END    2
 
-typedef struct vfs_filestat_t {
+typedef struct vfs_stat_t {
     uint32_t dev;               // Device/driver id containing the file.
     uint32_t ino;               // File serial number.
     vfs_filetype_t filetype;    // File type.
@@ -42,12 +42,8 @@ typedef struct vfs_filestat_t {
     uint64_t atim;              // Last access time
     uint64_t mtim;              // Last modification time
     uint64_t ctim;              // Last file status change
-} vfs_filestat_t;
-
-typedef struct vfs_fdstat_t {
-    vfs_filetype_t filetype;    // File type.
-    uint16_t       flags;       // Oflags
-} vfs_fdstat_t;
+    int      oflags;            // Oflags
+} vfs_stat_t;
 
 typedef struct vfs_dirent_t {
     uint64_t d_next;            // The offset of the next directory entry stored in this directory.
@@ -67,17 +63,15 @@ typedef struct vfs_driver_t {
     vfs_filetype_t      filetype;
     vfs_driver_ctx_t    ctx;
 
+    int  (*Register)    (vfs_driver_ctx_t d, const char *path, struct vfs_driver_t *driver);
     int  (*Open)        (vfs_driver_ctx_t d, const char *path, int flags);
     int  (*OpenAt)      (vfs_driver_ctx_t d, int fd, const char *path, int flags);
     int  (*Close)       (vfs_driver_ctx_t d, int fd);
-    int  (*FdStat)      (vfs_driver_ctx_t d, int fd, vfs_fdstat_t *stat);
-    int  (*FileStatAt)  (vfs_driver_ctx_t d, int fd, const char *path, vfs_filestat_t *stat);
+    int  (*Stat)        (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
     int  (*Read)        (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
     int  (*Write)       (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
     int  (*Seek)        (vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
     int  (*ReadDir)     (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
-
-    int  (*Register)    (vfs_driver_ctx_t d, const char *path, struct vfs_driver_t *driver);
 } vfs_driver_t;
 
 #define VFS_STDIN   0
@@ -92,8 +86,7 @@ int  VfsRegister(vfs_ctx_t c, const char *path, vfs_driver_t *driver);
 int  VfsOpen(vfs_ctx_t c, const char *path, int flags);
 int  VfsOpenAt(vfs_ctx_t c, int fd, const char *path, int flags);
 int  VfsClose(vfs_ctx_t c, int fd);
-int  VfsFdStat(vfs_ctx_t c, int fd, vfs_fdstat_t *stat);
-int  VfsFileStatAt(vfs_ctx_t c, int fd, const char *path, vfs_filestat_t *stat);
+int  VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat);
 int  VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte);
 int  VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte);
 int  VfsSeek(vfs_ctx_t c, int fd, long off, int whence, long *pos);
