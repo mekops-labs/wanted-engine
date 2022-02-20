@@ -14,13 +14,13 @@
 static const char id[] = { 'L', 'i', 'n', 'u' };
 
 static int _Start(vfs_driver_ctx_t d);
-static int _Open(vfs_driver_ctx_t d, const char *path, int flags);
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags);
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close(vfs_driver_ctx_t d, int fd);
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
+static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
 struct vfs_driver_ctx_t {
@@ -102,7 +102,7 @@ static int _Start(vfs_driver_ctx_t d)
     return 0;
 }
 
-static int _Open(vfs_driver_ctx_t d, const char *path, int flags)
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
     char joined[PATH_MAX];
     cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
@@ -113,7 +113,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, int flags)
     return fd;
 }
 
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags)
 {
     char joined[PATH_MAX];
     cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
@@ -173,7 +173,7 @@ static int  _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     return ret;
 }
 
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos)
+static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
 {
     if (pos == NULL) return -EINVAL;
 

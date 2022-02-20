@@ -92,14 +92,14 @@ int VfsRegister(vfs_ctx_t c, const char *path, vfs_driver_t *driver)
     return 0;
 }
 
-int VfsOpen(vfs_ctx_t c, const char *path, int flags)
+int VfsOpen(vfs_ctx_t c, const char *path, vfs_oflags_t flags)
 {
     DEBUG_TRACE("%s (0x%x)", path, flags);
 
     return VfsOpenAt(c, ROOT_FD, path, flags);
 }
 
-int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, int flags)
+int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags)
 {
     DEBUG_TRACE("%d, %s (0x%x)", fd, path, flags);
 
@@ -169,7 +169,7 @@ int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte)
     return TRY_DRV(c->fildes[fd].drv, Write, c->fildes[fd].drv_fd, buf, nbyte);
 }
 
-int VfsSeek(vfs_ctx_t c, int fd, long off, int whence, long *pos)
+int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos)
 {
     DEBUG_TRACE("%d, %d, %d", fd, off, whence);
 

@@ -18,7 +18,7 @@ static int dummyRead;
 static int dummyWrite;
 static int dummySeek;
 
-static int _DummyOpen(vfs_driver_ctx_t d, const char *path, int flags)
+static int _DummyOpen(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
     if (memcmp("/", path, 2) != 0) {
         return -EPERM;
@@ -45,7 +45,7 @@ static int _DummyWrite(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte
     return 0;
 }
 
-static int _DummySeek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos)
+static int _DummySeek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
 {
     dummySeek++;
     return 0;

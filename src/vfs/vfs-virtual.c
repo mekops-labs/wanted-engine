@@ -16,13 +16,13 @@
 
 static const char id[] = { 'V', 'i', 'r', 't' };
 
-static int _Open(vfs_driver_ctx_t d, const char *path, int flags);
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags);
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close(vfs_driver_ctx_t d, int fd);
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
+static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 static int _Register(vfs_driver_ctx_t d, const char *path, vfs_driver_t *driver);
 
@@ -187,12 +187,12 @@ static int _Register(vfs_driver_ctx_t d, const char *path, vfs_driver_t *driver)
     return entry;
 }
 
-static int _Open(vfs_driver_ctx_t d, const char *path, int flags)
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
     return _OpenAt(d, 0, path, flags);
 }
 
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, int flags)
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags)
 {
     char normalized[MAX_PATH_LEN];
     const char *pathLeft;
@@ -292,7 +292,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     return TRY_DRV(d->fildes[fd].drv, Write, d->fildes[fd].drv_fd, buf, nbyte);
 }
 
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos)
+static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
 {
     if (!CheckOpened(d, fd)) { return -EBADF; }
     if (NULL == pos) { return -EINVAL; }
