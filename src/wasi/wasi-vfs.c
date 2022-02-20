@@ -597,6 +597,63 @@ m3ApiRawFunction(m3_wasi_generic_proc_exit)
     m3ApiTrap(m3Err_trapExit);
 }
 
+m3ApiRawFunction(m3_wasi_vfs_socket_accept)
+{
+    m3ApiReturnType  (uint32_t)
+    m3ApiGetArg      (__wasi_fd_t          , fd)
+    m3ApiGetArg      (__wasi_fdflags_t     , flags)
+    m3ApiGetArgMem   (__wasi_fd_t *        , fd_new)
+
+    m3ApiCheckMem(fd_new,   sizeof(__wasi_fd_t));
+
+    m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
+
+}
+
+m3ApiRawFunction(m3_wasi_vfs_socket_recv)
+{
+    m3ApiReturnType  (uint32_t)
+    m3ApiGetArg      (__wasi_fd_t          , fd)
+    m3ApiGetArgMem   (wasi_iovec_t *       , ri_data)
+    m3ApiGetArg      (__wasi_size_t        , ri_data_len)
+    m3ApiGetArg      (__wasi_riflags_t     , ri_flags)
+    m3ApiGetArgMem   (__wasi_size_t *      , size)
+    m3ApiGetArgMem   (__wasi_roflags_t *   , ro_flags)
+
+    m3ApiCheckMem(ri_data,    ri_data_len * sizeof(wasi_iovec_t));
+    m3ApiCheckMem(size,  sizeof(__wasi_size_t));
+    m3ApiCheckMem(ro_flags,  sizeof(__wasi_roflags_t));
+
+    m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
+
+}
+
+m3ApiRawFunction(m3_wasi_vfs_socket_send)
+{
+    m3ApiReturnType  (uint32_t)
+    m3ApiGetArg      (__wasi_fd_t          , fd)
+    m3ApiGetArgMem   (wasi_iovec_t *       , si_data)
+    m3ApiGetArg      (__wasi_size_t        , si_data_len)
+    m3ApiGetArg      (__wasi_siflags_t     , si_flags)
+    m3ApiGetArgMem   (__wasi_size_t *      , size)
+
+    m3ApiCheckMem(si_data,    si_data_len * sizeof(wasi_iovec_t));
+    m3ApiCheckMem(size,  sizeof(__wasi_size_t));
+
+    m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
+
+}
+
+m3ApiRawFunction(m3_wasi_vfs_socket_shutdown)
+{
+    m3ApiReturnType  (uint32_t)
+    m3ApiGetArg      (__wasi_fd_t          , fd)
+    m3ApiGetArg      (__wasi_sdflags_t     , how)
+
+    m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
+
+}
+
 
 static
 M3Result SuppressLookupFailure(M3Result i_result)
@@ -680,10 +737,10 @@ _       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "proc_exit",
 _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "random_get",           "i(*i)",   &m3_wasi_generic_random_get)));
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sched_yield",          "i()",     )));
 
-//_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sock_accept",          "i(ii*)",           )));
-//_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sock_recv",            "i(i*ii**)",        )));
-//_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sock_send",            "i(i*ii*)",         )));
-//_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "sock_shutdown",        "i(ii)",            )));
+_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "sock_accept",        "i(ii*)",    &m3_wasi_vfs_socket_accept, ctx)));
+_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "sock_recv",          "i(i*ii**)", &m3_wasi_vfs_socket_recv, ctx)));
+_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "sock_send",          "i(i*ii*)",  &m3_wasi_vfs_socket_send, ctx)));
+_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "sock_shutdown",      "i(ii)",     &m3_wasi_vfs_socket_shutdown, ctx)));
     }
 
 _catch:
