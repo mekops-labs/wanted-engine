@@ -84,17 +84,11 @@ int main(int argc, char* argv[])
         config.threads[i].data.id   = i;
         config.threads[i].data.wapp = &config.wapps[i];
 
-        pthread_create( &config.threads[i].t, NULL, WA_thread, (void*) &config.threads[i].data);
+        pthread_create(&config.threads[i].t, NULL, WA_thread, (void*) &config.threads[i].data);
     }
 
-    sleep(3);
-    pthread_cancel(config.threads[0].t);
-    sleep(1);
-
-    pthread_create( &config.threads[0].t, NULL, WA_thread, (void*) &config.threads[0].data);
-
     for (int i = 0; i < config.n; i++) {
-        pthread_join( config.threads[i].t, NULL);
+        pthread_join(config.threads[i].t, NULL);
     }
 
     return 0;
