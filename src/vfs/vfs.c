@@ -194,3 +194,23 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, 
 
     return TRY_DRV(c->fildes[fd].drv, ReadDir, c->fildes[fd].drv_fd, buf, bufLen, cookie, bufUsed);
 }
+
+int  VfsSockAccept  (vfs_ctx_t c, int fd, vfs_oflags_t flags, int *newFd)
+{
+    return -EPERM;
+}
+
+int  VfsSockRecv    (vfs_ctx_t c, int fd, const void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags)
+{
+    return -EPERM;
+}
+
+int  VfsSockSend    (vfs_ctx_t c, int fd, const void *buf, size_t nbyte, vfs_sdflags_t flags)
+{
+    return -EPERM;
+}
+
+int  VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags)
+{
+    return -EPERM;
+}

@@ -36,6 +36,19 @@ typedef uint8_t vfs_whence_t;
 #define VFS_SEEK_CUR    1
 #define VFS_SEEK_END    2
 
+typedef uint8_t vfs_riflags_t;
+#define VFS_RIFLAGS_RECV_PEEK    1
+#define VFS_RIFLAGS_RECV_WAITALL 2
+
+typedef uint8_t vfs_roflags_t;
+#define VFS_ROFLAGS_RECV_DATA_TRUNCATED     1
+
+typedef uint8_t vfs_siflags_t;
+
+typedef uint8_t vfs_sdflags_t;
+#define VFS_SDFLAGS_RD 1
+#define VFS_SDFLAGS_WR 2
+
 typedef struct vfs_stat_t {
     uint32_t dev;               // Device/driver id containing the file.
     uint32_t ino;               // File serial number.
@@ -75,6 +88,11 @@ typedef struct vfs_driver_t {
     int  (*Write)       (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
     int  (*Seek)        (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
     int  (*ReadDir)     (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+
+    int  (*SockAccept)  (vfs_driver_ctx_t d, int fd, vfs_oflags_t flags, int *newFd);
+    int  (*SockRecv)    (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags);
+    int  (*SockSend)    (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte, vfs_sdflags_t flags);
+    int  (*SockShutdown)(vfs_driver_ctx_t d, int fd, vfs_sdflags_t flags);
 } vfs_driver_t;
 
 #define VFS_STDIN   0
@@ -94,3 +112,9 @@ int  VfsRead        (vfs_ctx_t c, int fd, void *buf, size_t nbyte);
 int  VfsWrite       (vfs_ctx_t c, int fd, const void *buf, size_t nbyte);
 int  VfsSeek        (vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos);
 int  VfsReadDir     (vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+
+
+int  VfsSockAccept  (vfs_ctx_t c, int fd, vfs_oflags_t flags, int *newFd);
+int  VfsSockRecv    (vfs_ctx_t c, int fd, const void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags);
+int  VfsSockSend    (vfs_ctx_t c, int fd, const void *buf, size_t nbyte, vfs_sdflags_t flags);
+int  VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags);

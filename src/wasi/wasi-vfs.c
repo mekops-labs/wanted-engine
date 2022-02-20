@@ -609,6 +609,15 @@ m3ApiRawFunction(m3_wasi_vfs_socket_accept)
 
     m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
 
+    int f;
+    vfs_oflags_t fl = flags;
+
+    int ret = VfsSockAccept(context->vfsCtx, fd, fl, &f);
+    if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
+
+    m3ApiWriteMem32(fd_new, f);
+
+    m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
 m3ApiRawFunction(m3_wasi_vfs_socket_recv)
@@ -627,6 +636,23 @@ m3ApiRawFunction(m3_wasi_vfs_socket_recv)
 
     m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
 
+    ssize_t res = 0;
+    vfs_riflags_t i_flags = ri_flags;
+    vfs_roflags_t o_flags;
+    for (__wasi_size_t i = 0; i < ri_data_len; i++) {
+        void* addr = m3ApiOffsetToPtr(m3ApiReadMem32(&ri_data[i].buf));
+        size_t len = m3ApiReadMem32(&ri_data[i].buf_len);
+        if (len == 0) continue;
+
+        int ret = VfsSockRecv(context->vfsCtx, fd, addr, len, i_flags, &o_flags);
+        if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
+        res += ret;
+        if ((size_t)ret < len) break;
+    }
+    m3ApiWriteMem32(size, res);
+    m3ApiWriteMem32(ro_flags, o_flags);
+
+    m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
 m3ApiRawFunction(m3_wasi_vfs_socket_send)
@@ -643,6 +669,20 @@ m3ApiRawFunction(m3_wasi_vfs_socket_send)
 
     m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
 
+    vfs_siflags_t i_flags = si_flags;
+    ssize_t res = 0;
+    for (__wasi_size_t i = 0; i < si_data_len; i++) {
+        void* addr = m3ApiOffsetToPtr(m3ApiReadMem32(&si_data[i].buf));
+        size_t len = m3ApiReadMem32(&si_data[i].buf_len);
+        if (len == 0) continue;
+
+        int ret = VfsSockSend(context->vfsCtx, fd, addr, len, i_flags);
+        if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
+        res += ret;
+        if ((size_t)ret < len) break;
+    }
+    m3ApiWriteMem32(size, res);
+    m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
 m3ApiRawFunction(m3_wasi_vfs_socket_shutdown)
@@ -653,6 +693,12 @@ m3ApiRawFunction(m3_wasi_vfs_socket_shutdown)
 
     m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
 
+    vfs_sdflags_t flags = how;
+
+    int ret = VfsSockShutdown(context->vfsCtx, fd, flags);
+    if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
+
+    m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
 
