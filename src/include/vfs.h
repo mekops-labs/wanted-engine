@@ -75,7 +75,6 @@ typedef struct vfs_driver_t {
     int  (*Read)        (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
     int  (*Write)       (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
     int  (*Seek)        (vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
-    int  (*Tell)        (vfs_driver_ctx_t d, int fd, long *pos);
     int  (*ReadDir)     (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
     int  (*Register)    (vfs_driver_ctx_t d, const char *path, struct vfs_driver_t *driver);
@@ -98,5 +97,4 @@ int  VfsFileStatAt(vfs_ctx_t c, int fd, const char *path, vfs_filestat_t *stat);
 int  VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte);
 int  VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte);
 int  VfsSeek(vfs_ctx_t c, int fd, long off, int whence, long *pos);
-int  VfsTell(vfs_ctx_t c, int fd, long *pos);
 int  VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);

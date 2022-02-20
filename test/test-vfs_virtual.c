@@ -17,7 +17,6 @@ static int dummyClosed;
 static int dummyRead;
 static int dummyWrite;
 static int dummySeek;
-static int dummyTell;
 
 static int _DummyOpen(vfs_driver_ctx_t d, const char *path, int flags)
 {
@@ -52,12 +51,6 @@ static int _DummySeek(vfs_driver_ctx_t d, int fd, long off, int whence, long *po
     return 0;
 }
 
-static int _DummyTell(vfs_driver_ctx_t d, int fd, long *pos)
-{
-    dummyTell++;
-    return 0;
-}
-
 static vfs_driver_t virt, virt2;
 
 static vfs_driver_t dummy_test = {
@@ -66,7 +59,6 @@ static vfs_driver_t dummy_test = {
     .Read  = _DummyRead,
     .Write = _DummyWrite,
     .Seek  = _DummySeek,
-    .Tell  = _DummyTell,
 };
 
 /***************************************/
@@ -772,15 +764,14 @@ TEST_GROUP_RUNNER(vfs_virtual_statat)
 }
 
 /***************************************/
-TEST_GROUP(vfs_virtual_read_write_seek_tell);
+TEST_GROUP(vfs_virtual_read_write_seek);
 /***************************************/
 
-TEST_SETUP(vfs_virtual_read_write_seek_tell)
+TEST_SETUP(vfs_virtual_read_write_seek)
 {
     dummyRead = 0;
     dummyWrite = 0;
     dummySeek = 0;
-    dummyTell = 0;
     VfsVirtualInit(&virt);
     VfsVirtualInit(&virt2);
     TRY_DRV(&virt, Register, "a", &dummy_test);
@@ -788,13 +779,13 @@ TEST_SETUP(vfs_virtual_read_write_seek_tell)
     TRY_DRV(&virt, Register, "dir/b", &dummy_test);
 }
 
-TEST_TEAR_DOWN(vfs_virtual_read_write_seek_tell)
+TEST_TEAR_DOWN(vfs_virtual_read_write_seek)
 {
     VfsVirtualDestroy(&virt2);
     VfsVirtualDestroy(&virt);
 }
 
-TEST(vfs_virtual_read_write_seek_tell, ReadWriteSeekTellFail)
+TEST(vfs_virtual_read_write_seek, ReadWriteSeekFail)
 {
     int r;
     uint8_t buf[1];
@@ -831,18 +822,9 @@ TEST(vfs_virtual_read_write_seek_tell, ReadWriteSeekTellFail)
 
     r = TRY_DRV(&virt, Seek, 0, 0, 0, &pos);
     TEST_ASSERT_EQUAL(-EISDIR, r);
-
-    r = TRY_DRV(&virt, Tell, 0, NULL);
-    TEST_ASSERT_EQUAL(-EINVAL, r);
-
-    r = TRY_DRV(&virt, Tell, f+1, &pos);
-    TEST_ASSERT_EQUAL(-EBADF, r);
-
-    r = TRY_DRV(&virt, Tell, 0, &pos);
-    TEST_ASSERT_EQUAL(-EISDIR, r);
 }
 
-TEST(vfs_virtual_read_write_seek_tell, ReadWriteSeekTellOk)
+TEST(vfs_virtual_read_write_seek, ReadWriteSeekOk)
 {
     int r;
     uint8_t buf[1];
@@ -859,19 +841,15 @@ TEST(vfs_virtual_read_write_seek_tell, ReadWriteSeekTellOk)
     r = TRY_DRV(&virt, Seek, f, 0, 0, &pos);
     TEST_ASSERT_EQUAL(0, r);
 
-    r = TRY_DRV(&virt, Tell, f, &pos);
-    TEST_ASSERT_EQUAL(0, r);
-
     TEST_ASSERT_EQUAL(1, dummyRead);
     TEST_ASSERT_EQUAL(1, dummyWrite);
     TEST_ASSERT_EQUAL(1, dummySeek);
-    TEST_ASSERT_EQUAL(1, dummyTell);
 }
 
-TEST_GROUP_RUNNER(vfs_virtual_read_write_seek_tell)
+TEST_GROUP_RUNNER(vfs_virtual_read_write_seek)
 {
-    RUN_TEST_CASE(vfs_virtual_read_write_seek_tell, ReadWriteSeekTellFail);
-    RUN_TEST_CASE(vfs_virtual_read_write_seek_tell, ReadWriteSeekTellOk);
+    RUN_TEST_CASE(vfs_virtual_read_write_seek, ReadWriteSeekFail);
+    RUN_TEST_CASE(vfs_virtual_read_write_seek, ReadWriteSeekOk);
 }
 
 /***************************************/

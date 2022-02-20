@@ -195,19 +195,6 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, int whence, long *pos)
     return TRY_DRV(c->fildes[fd].drv, Seek, c->fildes[fd].drv_fd, off, whence, pos);
 }
 
-int VfsTell(vfs_ctx_t c, int fd, long *pos)
-{
-    DEBUG_TRACE("%d", fd);
-
-    if (!CheckFd(c, fd)) return -EBADF;
-
-    if (NULL == pos) {
-        return -EINVAL;
-    }
-
-    return TRY_DRV(c->fildes[fd].drv, Tell, c->fildes[fd].drv_fd, pos);
-}
-
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
 {
     DEBUG_TRACE("%d (%d) %d", fd, bufLen, *cookie);

@@ -22,7 +22,6 @@ static int _FileStatAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_filesta
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos);
-static int _Tell(vfs_driver_ctx_t d, int fd, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
 struct vfs_driver_ctx_t {
@@ -51,7 +50,6 @@ int VfsLinuxInit(vfs_driver_t *driver, const char *root)
     driver->Read            = _Read;
     driver->Write           = _Write;
     driver->Seek            = _Seek;
-    driver->Tell            = _Tell;
     driver->ReadDir         = _ReadDir;
 
     return 0;
@@ -196,17 +194,6 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, int whence, long *pos)
 
     errno = 0;
     *pos = lseek(fd, off, whence);
-    if (errno) return -errno;
-
-    return 0;
-}
-
-static int _Tell(vfs_driver_ctx_t d, int fd, long *pos)
-{
-    if (pos == NULL) return -EINVAL;
-
-    errno = 0;
-    *pos = lseek(fd, 0, SEEK_CUR);
     if (errno) return -errno;
 
     return 0;
