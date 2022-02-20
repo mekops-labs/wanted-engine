@@ -441,10 +441,6 @@ m3ApiRawFunction(m3_wasi_generic_fd_write)
 
     m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
 
-    if (fd > 2) {
-        m3ApiReturn(__WASI_ERRNO_ROFS)
-    }
-
     ssize_t res = 0;
     for (__wasi_size_t i = 0; i < iovs_len; i++) {
         void* addr = m3ApiOffsetToPtr(m3ApiReadMem32(&wasi_iovs[i].buf));
