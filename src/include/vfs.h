@@ -65,21 +65,26 @@ typedef struct vfs_dirent_t {
     uint64_t d_next;            // The offset of the next directory entry stored in this directory.
     uint64_t d_ino;             // The serial number of the file referred to by this directory entry.
     uint32_t d_namlen;          // The length of the name of the directory entry.
-    uint32_t d_type;      // The type of the file referred to by this directory entry.
+    uint32_t d_type;            // The type of the file referred to by this directory entry.
 } vfs_dirent_t;
 
 typedef struct vfs_driver_ctx_t *vfs_driver_ctx_t;
 
 typedef struct vfs_driver_t {
+    /* driver ID magic number */
     union {
         const char          id[4];
         uint32_t            bytesId;
     };
 
-    vfs_filetype_t      filetype;
-    vfs_driver_ctx_t    ctx;
+    vfs_driver_ctx_t    ctx;        // Driver's internal data
+    vfs_filetype_t      filetype;   // Driver's type
 
+    /* Register sub-driver */
     int  (*Register)    (vfs_driver_ctx_t d, const char *path, struct vfs_driver_t *driver);
+
+    /* FS operations */
+
     int  (*Open)        (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
     int  (*OpenAt)      (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
     int  (*Close)       (vfs_driver_ctx_t d, int fd);
@@ -89,8 +94,10 @@ typedef struct vfs_driver_t {
     int  (*Seek)        (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
     int  (*ReadDir)     (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
+    /* Network operations */
+
     int  (*SockAccept)  (vfs_driver_ctx_t d, int fd, vfs_oflags_t flags, int *newFd);
-    int  (*SockRecv)    (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags);
+    int  (*SockRecv)    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags);
     int  (*SockSend)    (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte, vfs_sdflags_t flags);
     int  (*SockShutdown)(vfs_driver_ctx_t d, int fd, vfs_sdflags_t flags);
 } vfs_driver_t;
@@ -104,17 +111,18 @@ typedef struct vfs_ctx_t *vfs_ctx_t;
 vfs_ctx_t VfsInit();
 void VfsDestroy     (vfs_ctx_t *c);
 int  VfsRegister    (vfs_ctx_t c, const char *path, vfs_driver_t *driver);
+
 int  VfsOpen        (vfs_ctx_t c, const char *path, vfs_oflags_t flags);
 int  VfsOpenAt      (vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags);
 int  VfsClose       (vfs_ctx_t c, int fd);
 int  VfsStat        (vfs_ctx_t c, int fd, vfs_stat_t *stat);
+//int  VfsStatSet     (vfs_ctx_t c, int fd, vfs_stat_t *stat);  <--------- to implement
 int  VfsRead        (vfs_ctx_t c, int fd, void *buf, size_t nbyte);
 int  VfsWrite       (vfs_ctx_t c, int fd, const void *buf, size_t nbyte);
 int  VfsSeek        (vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos);
 int  VfsReadDir     (vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
-
 int  VfsSockAccept  (vfs_ctx_t c, int fd, vfs_oflags_t flags, int *newFd);
-int  VfsSockRecv    (vfs_ctx_t c, int fd, const void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags);
+int  VfsSockRecv    (vfs_ctx_t c, int fd, void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags);
 int  VfsSockSend    (vfs_ctx_t c, int fd, const void *buf, size_t nbyte, vfs_sdflags_t flags);
 int  VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags);

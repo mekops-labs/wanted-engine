@@ -197,20 +197,36 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, 
 
 int  VfsSockAccept  (vfs_ctx_t c, int fd, vfs_oflags_t flags, int *newFd)
 {
-    return -EPERM;
+    DEBUG_TRACE("%d (0x%x)", fd, flags);
+
+    if (!CheckFd(c, fd)) {return -EBADF; }
+
+    return TRY_DRV(c->fildes[fd].drv, SockAccept, c->fildes[fd].drv_fd, flags, newFd);
 }
 
-int  VfsSockRecv    (vfs_ctx_t c, int fd, const void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags)
+int  VfsSockRecv    (vfs_ctx_t c, int fd, void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags)
 {
-    return -EPERM;
+    DEBUG_TRACE("%d (0x%x) %d", fd, iflags, nbyte);
+
+    if (!CheckFd(c, fd)) {return -EBADF; }
+
+    return TRY_DRV(c->fildes[fd].drv, SockRecv, c->fildes[fd].drv_fd, buf, nbyte, iflags, oflags);
 }
 
 int  VfsSockSend    (vfs_ctx_t c, int fd, const void *buf, size_t nbyte, vfs_sdflags_t flags)
 {
-    return -EPERM;
+    DEBUG_TRACE("%d (0x%x) %d", fd, flags, nbyte);
+
+    if (!CheckFd(c, fd)) {return -EBADF; }
+
+    return TRY_DRV(c->fildes[fd].drv, SockSend, c->fildes[fd].drv_fd, buf, nbyte, flags);
 }
 
 int  VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags)
 {
-    return -EPERM;
+    DEBUG_TRACE("%d (0x%x)", fd, flags);
+
+    if (!CheckFd(c, fd)) {return -EBADF; }
+
+    return TRY_DRV(c->fildes[fd].drv, SockShutdown, c->fildes[fd].drv_fd, flags);
 }
