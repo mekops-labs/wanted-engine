@@ -89,6 +89,7 @@ typedef struct vfs_driver_t {
     int  (*OpenAt)      (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
     int  (*Close)       (vfs_driver_ctx_t d, int fd);
     int  (*Stat)        (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
+    int  (*StatSet)     (vfs_driver_ctx_t d, int fd, vfs_stat_t stat);
     int  (*Read)        (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
     int  (*Write)       (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
     int  (*Seek)        (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
@@ -116,7 +117,7 @@ int  VfsOpen        (vfs_ctx_t c, const char *path, vfs_oflags_t flags);
 int  VfsOpenAt      (vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags);
 int  VfsClose       (vfs_ctx_t c, int fd);
 int  VfsStat        (vfs_ctx_t c, int fd, vfs_stat_t *stat);
-//int  VfsStatSet     (vfs_ctx_t c, int fd, vfs_stat_t *stat);  <--------- to implement
+int  VfsStatSet     (vfs_ctx_t c, int fd, vfs_stat_t stat);
 int  VfsRead        (vfs_ctx_t c, int fd, void *buf, size_t nbyte);
 int  VfsWrite       (vfs_ctx_t c, int fd, const void *buf, size_t nbyte);
 int  VfsSeek        (vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos);

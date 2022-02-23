@@ -143,6 +143,15 @@ int VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat)
     return TRY_DRV(c->fildes[fd].drv, Stat, c->fildes[fd].drv_fd, stat);
 }
 
+int VfsStatSet(vfs_ctx_t c, int fd, vfs_stat_t stat)
+{
+    DEBUG_TRACE("%d", fd);
+
+    if (!CheckFd(c, fd)) return -EBADF;
+
+    return TRY_DRV(c->fildes[fd].drv, StatSet, c->fildes[fd].drv_fd, stat);
+}
+
 int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte)
 {
     DEBUG_TRACE("%d, %d", fd, nbyte);
