@@ -150,12 +150,19 @@ int RunWapp(data_t *ctx)
         goto _freeVfs;
     }
 
+    ret = VfsSocketInit(&ctx->vfs.drivers[3], VFS_SKT_TCP, "127.0.0.1", 8888);
+    if (ret < 0) {
+        DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
+        goto _freeVfs;
+    }
+
     VfsRegister(ctx->vfs.main, "<stdin>", &ctx->vfs.drivers[2]);
     VfsRegister(ctx->vfs.main, "<stdout>", &ctx->vfs.drivers[2]);
     VfsRegister(ctx->vfs.main, "<stderr>", &ctx->vfs.drivers[2]);
     VfsRegister(ctx->vfs.main, "/", &ctx->vfs.drivers[0]);
     VfsRegister(ctx->vfs.main, "/rom", &ctx->vfs.drivers[1]);
     VfsRegister(ctx->vfs.main, "/data", &ctx->vfs.drivers[2]);
+    VfsRegister(ctx->vfs.main, "/skt", &ctx->vfs.drivers[3]);
 
     status = m3_FindFunction (&f, ctx->m3->rt, "entry");
     if (status) {

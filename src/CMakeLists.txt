@@ -8,6 +8,7 @@ set(vfs-srcs
     "vfs/vfs-virtual.c"
     "vfs/vfs-romfs.c"
     "vfs/vfs-dummy.c"
+    "vfs/vfs-socket.c"
     )
 
 set(wasi-src
