@@ -5,11 +5,11 @@
 #include <wanted_malloc.h>
 #include <romfs.h>
 #include <vfs.h>
+#include <vfs-drivers.h>
 #include <cwalk.h>
 
 static const char id[] = { 'R', 'o', 'm', 'f' };
 
-static int _Start(vfs_driver_ctx_t d);
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close(vfs_driver_ctx_t d, int fd);
