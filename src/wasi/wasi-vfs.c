@@ -68,6 +68,9 @@ __wasi_errno_t errno_to_wasi(int errnum) {
     CASE_RET( EDOM        , __WASI_ERRNO_DOM          );
     CASE_RET( ERANGE      , __WASI_ERRNO_RANGE        );
     CASE_RET( ENAMETOOLONG, __WASI_ERRNO_NAMETOOLONG  );
+    CASE_RET( ECONNREFUSED, __WASI_ERRNO_CONNREFUSED  );
+    CASE_RET( ECONNABORTED, __WASI_ERRNO_CONNABORTED  );
+    CASE_RET( ECONNRESET  , __WASI_ERRNO_CONNRESET    );
     }
     return __WASI_ERRNO_INVAL;
 }
