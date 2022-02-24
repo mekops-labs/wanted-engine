@@ -13,9 +13,10 @@
 static const char id[] = { 'S', 'o', 'c', 'k' };
 
 struct vfs_driver_ctx_t {
-    uint8_t     type;
-    const char  addr[MAX_ADDR_LEN];
-    uint16_t    port;
+    uint8_t         type;
+    const char      addr[MAX_ADDR_LEN];
+    uint16_t        port;
+    vfs_oflags_t    flags;
 };
 
 static int _Open        (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
@@ -23,6 +24,7 @@ static int _OpenAt      (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflag
 static int _Close       (vfs_driver_ctx_t d, int fd);
 static int _Read        (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write       (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+static int _Stat        (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _SockAccept  (vfs_driver_ctx_t d, int fd, vfs_oflags_t flags, int *newFd);
 static int _SockRecv    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags);
 static int _SockSend    (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte, vfs_sdflags_t flags);
@@ -62,6 +64,7 @@ int VfsSocketInit(vfs_driver_t *driver, uint8_t type, char *addr, uint16_t port)
     driver->Close           = _Close;
     driver->Read            = _Read;
     driver->Write           = _Write;
+    driver->Stat            = _Stat;
     driver->SockAccept      = _SockAccept;
     driver->SockRecv        = _SockRecv;
     driver->SockSend        = _SockSend;
@@ -111,6 +114,8 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
         return -errno;
     }
 
+    d->flags = flags;
+
     return sock;
 }
 
@@ -142,6 +147,23 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     }
 
     return ret;
+}
+
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
+{
+    int ret;
+    if (NULL == stat) return -EINVAL;
+
+    stat->dev = *(uint32_t *)id;
+    stat->ino = d->port;
+    stat->filetype = convertSocketType(d->type);
+    stat->size = 0;
+    stat->atim = 0;
+    stat->mtim = 0;
+    stat->ctim = 0;
+    stat->oflags = d->flags;
+
+    return 0;
 }
 
 static int _SockAccept  (vfs_driver_ctx_t d, int fd, vfs_oflags_t flags, int *newFd)
