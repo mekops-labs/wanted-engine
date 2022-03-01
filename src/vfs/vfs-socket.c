@@ -82,10 +82,6 @@ void VfsSocketDestroy(vfs_driver_t *driver)
 
 static int ConnectSocket(vfs_driver_ctx_t d, int sock)
 {
-    if (d->type != VFS_SKT_TCP) {
-        return 0;
-    }
-
     if (d->connected) {
         return 0;
     }
@@ -109,6 +105,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
         break;
     case VFS_SKT_UDP:
         socket_type = SOCK_DGRAM;
+        break;
     default:
         return -ESOCKTNOSUPPORT;
         break;
