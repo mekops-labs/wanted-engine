@@ -13,8 +13,9 @@
 #define ROOT_FD             3
 
 typedef struct vfs_entry_t {
-    char      name[MAX_ENTRY_NAME_LEN];
+    char            name[MAX_ENTRY_NAME_LEN];
     vfs_driver_t    *drv;
+    vfs_filetype_t  type;
 } vfs_entry_t;
 
 typedef struct vfs_fildes_t {

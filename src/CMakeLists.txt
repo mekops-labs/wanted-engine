@@ -7,7 +7,7 @@ set(vfs-srcs
     "vfs/vfs.c"
     "vfs/vfs-virtual.c"
     "vfs/vfs-romfs.c"
-    "vfs/vfs-dummy.c"
+    "vfs/vfs-wanted.c"
     "vfs/vfs-socket.c"
     )
 

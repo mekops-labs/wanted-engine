@@ -144,13 +144,25 @@ int RunWapp(data_t *ctx)
         goto _freeVfs;
     }
 
-    ret = VfsPlatformInit(&ctx->vfs.drivers[2]);
+    ret = VfsPlatformFsInit(&ctx->vfs.drivers[2]);
     if (ret < 0) {
         DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
         goto _freeVfs;
     }
 
     ret = VfsSocketInit(&ctx->vfs.drivers[3], VFS_SKT_TCP, "127.0.0.1", 8888);
+    if (ret < 0) {
+        DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
+        goto _freeVfs;
+    }
+
+    ret = VfsPlatformRegistryInit(&ctx->vfs.drivers[4]);
+    if (ret < 0) {
+        DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
+        goto _freeVfs;
+    }
+
+    ret = VfsWantedInit(&ctx->vfs.drivers[5], &ctx->vfs.drivers[4]);
     if (ret < 0) {
         DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
         goto _freeVfs;
@@ -163,6 +175,7 @@ int RunWapp(data_t *ctx)
     VfsRegister(ctx->vfs.main, "/rom", &ctx->vfs.drivers[1]);
     VfsRegister(ctx->vfs.main, "/data", &ctx->vfs.drivers[2]);
     VfsRegister(ctx->vfs.main, "/skt", &ctx->vfs.drivers[3]);
+    VfsRegister(ctx->vfs.main, "/wanted", &ctx->vfs.drivers[5]);
 
     status = m3_FindFunction (&f, ctx->m3->rt, "entry");
     if (status) {
@@ -184,7 +197,10 @@ int RunWapp(data_t *ctx)
     DEBUG_TRACE("normal exit");
 
 _freeVfs:
-    VfsPlatformDestroy(&ctx->vfs.drivers[2]);
+    VfsWantedDestroy(&ctx->vfs.drivers[5]);
+    VfsPlatformRegistryDestroy(&ctx->vfs.drivers[4]);
+    VfsSocketDestroy(&ctx->vfs.drivers[3]);
+    VfsPlatformFsDestroy(&ctx->vfs.drivers[2]);
     VfsRomfsDestroy(&ctx->vfs.drivers[1]);
     VfsVirtualDestroy(&ctx->vfs.drivers[0]);
     VfsDestroy(&ctx->vfs.main);
@@ -204,7 +220,10 @@ void StopWapp(data_t *ctx)
 {
     DEBUG_TRACE("start");
 
-    VfsPlatformDestroy(&ctx->vfs.drivers[2]);
+    VfsWantedDestroy(&ctx->vfs.drivers[5]);
+    VfsPlatformRegistryDestroy(&ctx->vfs.drivers[4]);
+    VfsSocketDestroy(&ctx->vfs.drivers[3]);
+    VfsPlatformFsDestroy(&ctx->vfs.drivers[2]);
     VfsRomfsDestroy(&ctx->vfs.drivers[1]);
     VfsVirtualDestroy(&ctx->vfs.drivers[0]);
     VfsDestroy(&ctx->vfs.main);

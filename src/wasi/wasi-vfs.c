@@ -319,13 +319,8 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get)
     vfs_stat_t statbuf;
     __wasi_filestat_t stat;
 
-    int f = VfsOpenAt(context->vfsCtx, fd, host_path, 0);
-    if (f < 0) { m3ApiReturn(errno_to_wasi(f)); }
-
-    int ret = VfsStat(context->vfsCtx, f, &statbuf);
+    int ret = VfsStatAt(context->vfsCtx, fd, host_path, &statbuf);
     if (ret < 0) { m3ApiReturn(errno_to_wasi(ret)); }
-
-    VfsClose(context->vfsCtx, f);
 
     stat.filetype = statbuf.filetype;
     stat.dev      = statbuf.dev;

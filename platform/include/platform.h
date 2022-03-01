@@ -20,5 +20,8 @@ int PlatformClockGetTime(plat_clk_id_t clk_id, plat_timestamp_t *time);
 int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout, plat_clk_flags_t flags);
 int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len);
 
-int VfsPlatformInit(vfs_driver_t *driver);
-void VfsPlatformDestroy(vfs_driver_t *driver);
+int VfsPlatformFsInit(vfs_driver_t *driver);
+void VfsPlatformFsDestroy(vfs_driver_t *driver);
+
+int VfsPlatformRegistryInit(vfs_driver_t *driver);
+void VfsPlatformRegistryDestroy(vfs_driver_t *driver);

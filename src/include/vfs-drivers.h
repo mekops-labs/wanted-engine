@@ -16,3 +16,6 @@ void VfsRomfsDestroy(vfs_driver_t *driver);
 
 int VfsSocketInit(vfs_driver_t *driver, uint8_t type, char *addr, uint16_t port);
 void VfsSocketDestroy(vfs_driver_t *driver);
+
+int VfsWantedInit(vfs_driver_t *driver, vfs_driver_t *fileDriver);
+void VfsWantedDestroy(vfs_driver_t *driver);
