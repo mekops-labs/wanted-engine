@@ -210,7 +210,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t fl
         return -ENAMETOOLONG;
     }
 
-    f = VfsFindEntry(path, d->entries, &pathLeft);
+    f = VfsFindEntry(normalized, d->entries, &pathLeft);
     if (f < 0) return f;
 
     fd = FindFirstClosedFd(d);
