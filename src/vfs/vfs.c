@@ -136,19 +136,19 @@ int VfsClose(vfs_ctx_t c, int fd)
 
 int VfsStatAt(vfs_ctx_t c, int fd, const char *path, vfs_stat_t *stat)
 {
-    int ret;
+    int ret, f;
 
     DEBUG_TRACE("%d", fd);
 
     if (!CheckFd(c, fd)) return -EBADF;
 
-    fd = TRY_DRV(c->fildes[fd].drv, OpenAt, c->fildes[fd].drv_fd, path, 0);
-    if (fd < 0) { return fd; }
+    f = TRY_DRV(c->fildes[fd].drv, OpenAt, c->fildes[fd].drv_fd, path, 0);
+    if (f < 0) { return f; }
 
-    ret = TRY_DRV(c->fildes[fd].drv, Stat, fd, stat);
+    ret = TRY_DRV(c->fildes[fd].drv, Stat, f, stat);
     if (ret < 0) { return ret; }
 
-    ret = TRY_DRV(c->fildes[fd].drv, Close, fd);
+    ret = TRY_DRV(c->fildes[fd].drv, Close, f);
 
     return ret;
 }
