@@ -118,40 +118,31 @@ int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft)
         return 0;
     }
 
-    do {
-        DEBUG_TRACE("segment: %.*s (%d)", seg.size, seg.begin, seg.size);
-        found = false;
+    DEBUG_TRACE("segment: %.*s (%d)", seg.size, seg.begin, seg.size);
+    found = false;
 
-        if (memcmp(".", seg.begin, seg.size) == 0) {
-            found = true;
-            continue;
-        }
-
+    if (memcmp(".", seg.begin, seg.size) == 0) {
+        found = true;
+    } else {
         for (f = 0; files[f].name[0] != '\0'; f++) {
             if (strncmp(files[f].name, seg.begin, MAX(seg.size, strlen(files[f].name))) == 0) {
                 found = true;
                 break;
             }
         }
-        if (!found) break;
-
-    } while (files[f].drv == NULL && cwk_path_get_next_segment(&seg));
+    }
 
     if (!found) {
         return -ENOENT;
     }
 
-    if (cwk_path_get_next_segment(&seg)) {
-        if (pathLeft) {
-            if (files[f].drv == NULL) {
-                *pathLeft = NULL;
-            } else {
-                *pathLeft = seg.begin;
-            }
-            DEBUG_TRACE("pathLeft: %s", *pathLeft);
+    if (pathLeft) {
+        if (cwk_path_get_next_segment(&seg)) {
+            *pathLeft = seg.begin;
         } else {
-            f = -ENOENT;
+            *pathLeft = NULL;
         }
+        DEBUG_TRACE("pathLeft: %s", *pathLeft);
     }
 
     return f;

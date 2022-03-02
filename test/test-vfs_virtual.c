@@ -262,9 +262,6 @@ TEST(vfs_virtual_find, findFileNotFound)
     i = VfsFindEntry("aa", fs, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 
-    i = VfsFindEntry("dir/xyz", fs, NULL);
-    TEST_ASSERT_EQUAL_INT(-ENOENT, i);
-
     i = VfsFindEntry("../dev/xyz", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 }
@@ -300,24 +297,28 @@ TEST(vfs_virtual_find, findFileDir)
 
     i = VfsFindEntry("dir/xyz", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(5, i);
+    TEST_ASSERT_EQUAL_STRING("xyz", pathLeft);
 
     i = VfsFindEntry(pathLeft, fs2, NULL);
     TEST_ASSERT_EQUAL_INT(1, i);
 
     i = VfsFindEntry("dir/a", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(5, i);
+    TEST_ASSERT_EQUAL_STRING("a", pathLeft);
 
     i = VfsFindEntry(pathLeft, fs2, NULL);
     TEST_ASSERT_EQUAL_INT(2, i);
 
      i = VfsFindEntry("dev/a", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(6, i);
+    TEST_ASSERT_EQUAL_STRING("a", pathLeft);
 
     i = VfsFindEntry(pathLeft, fs2, NULL);
     TEST_ASSERT_EQUAL_INT(2, i);
 
     i = VfsFindEntry("dev/aa", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(6, i);
+    TEST_ASSERT_EQUAL_STRING("aa", pathLeft);
 
     i = VfsFindEntry(pathLeft, fs2, NULL);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);

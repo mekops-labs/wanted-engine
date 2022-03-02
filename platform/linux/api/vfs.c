@@ -2,7 +2,7 @@
 #include "../include/vfs-linux.h"
 
 #define DEFAULT_ROOT "./"
-#define REGISTRY_ROOT "./wapps"
+#define REGISTRY_ROOT "./wapps/"
 
 int VfsPlatformFsInit(vfs_driver_t *driver) {
     return VfsLinuxInit(driver, DEFAULT_ROOT);

@@ -105,7 +105,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t fl
         pathLeft = "/";
     }
 
-    if (f == FILES_CNT-1) {
+    if (f == FILES_CNT-1) { // last entry is directory of the registry, TODO: this is a little dirty w/a
         fd = TRY_DRV(d->fsDrv, Open, pathLeft, flags);
         if (fd < 0) { return fd; }
         fd += FILES_CNT;

@@ -199,6 +199,9 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
 
         while ((ep = readdir (dp)))
         {
+            if (memcmp(".", ep->d_name, 2) == 0 || memcmp("..", ep->d_name, 3) == 0) {
+                continue;
+            }
             dir.d_ino       = ep->d_ino;
             dir.d_namlen    = strnlen(ep->d_name, 256);
             dir.d_type      = convertDirtype(ep->d_type);
