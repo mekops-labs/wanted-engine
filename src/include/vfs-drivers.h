@@ -19,3 +19,6 @@ void VfsSocketDestroy(vfs_driver_t *driver);
 
 int VfsWantedInit(vfs_driver_t *driver, vfs_driver_t *fileDriver);
 void VfsWantedDestroy(vfs_driver_t *driver);
+
+extern const vfs_driver_t WantedConfigDriver;
+extern const vfs_driver_t WantedControlDriver;

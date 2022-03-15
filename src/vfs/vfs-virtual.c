@@ -24,7 +24,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
-static int _Register(vfs_driver_ctx_t d, const char *path, vfs_driver_t *driver);
+static int _Register(vfs_driver_ctx_t d, const char *path, const vfs_driver_t *driver);
 
 static inline
 bool CheckFd(vfs_driver_ctx_t d, int fd)
@@ -148,7 +148,7 @@ int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft)
     return f;
 }
 
-static int _Register(vfs_driver_ctx_t d, const char *path, vfs_driver_t *driver) {
+static int _Register(vfs_driver_ctx_t d, const char *path, const vfs_driver_t *driver) {
     const char *pathLeft;
     struct cwk_segment seg;
 

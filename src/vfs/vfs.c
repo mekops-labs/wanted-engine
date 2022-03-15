@@ -54,7 +54,7 @@ void VfsDestroy(vfs_ctx_t *c)
     *c = NULL;
 }
 
-int VfsRegister(vfs_ctx_t c, const char *path, vfs_driver_t *driver)
+int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver)
 {
     DEBUG_TRACE("%s (%.4s)", path, driver->id);
 

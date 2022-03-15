@@ -81,7 +81,7 @@ typedef struct vfs_driver_t {
     vfs_filetype_t      filetype;   // Driver's type
 
     /* Register sub-driver */
-    int  (*Register)    (vfs_driver_ctx_t d, const char *path, struct vfs_driver_t *driver);
+    int  (*Register)    (vfs_driver_ctx_t d, const char *path, const struct vfs_driver_t *driver);
 
     /* FS operations */
 
@@ -111,11 +111,12 @@ typedef struct vfs_ctx_t *vfs_ctx_t;
 
 vfs_ctx_t VfsInit();
 void VfsDestroy     (vfs_ctx_t *c);
-int  VfsRegister    (vfs_ctx_t c, const char *path, vfs_driver_t *driver);
+int  VfsRegister    (vfs_ctx_t c, const char *path, const vfs_driver_t *driver);
 
 int  VfsOpen        (vfs_ctx_t c, const char *path, vfs_oflags_t flags);
 int  VfsOpenAt      (vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags);
 int  VfsClose       (vfs_ctx_t c, int fd);
+int  VfsStatAt      (vfs_ctx_t c, int fd, const char *path, vfs_stat_t *stat);
 int  VfsStat        (vfs_ctx_t c, int fd, vfs_stat_t *stat);
 int  VfsStatSet     (vfs_ctx_t c, int fd, vfs_stat_t stat);
 int  VfsRead        (vfs_ctx_t c, int fd, void *buf, size_t nbyte);
