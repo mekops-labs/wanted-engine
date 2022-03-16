@@ -2,6 +2,7 @@
 #include <stddef.h>
 
 #include <vfs.h>
+#include <wanted-api.h>
 
 typedef uint32_t plat_clk_id_t;
 
@@ -25,3 +26,7 @@ void VfsPlatformFsDestroy(vfs_driver_t *driver);
 
 int VfsPlatformRegistryInit(vfs_driver_t *driver);
 void VfsPlatformRegistryDestroy(vfs_driver_t *driver);
+
+int LoadWapp(const char *name, wapp_t * wapp);
+int StartWapp(wapp_t *app);
+void WaitForWapps();

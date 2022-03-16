@@ -5,6 +5,7 @@
 #include <vfs.h>
 #include <vfs-drivers.h>
 
+#include <wanted-vfs-api.h>
 
 #define ID  {'W', 'c', 'f', 'g'}
 
@@ -68,16 +69,14 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
         return read;
     }
 
-    strcpy(buf, "Hello world\n");
-
-    read = strlen(buf);
+    read = WantedGetConfig(buf, nbyte);
 
     return read;
 }
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 {
-    return 0;
+    return -EROFS;
 }
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
 {

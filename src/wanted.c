@@ -11,9 +11,12 @@
 #include <debug_trace.h>
 
 #include <wanted.h>
+#include <wanted-api.h>
 #include <romfs.h>
 #include <vfs.h>
 #include <vfs-drivers.h>
+
+#include <supervisor.h>
 
 #include <platform.h>
 
@@ -238,4 +241,18 @@ void StopWapp(data_t *ctx)
     WantedFree(ctx->m3);
 
     DEBUG_TRACE("end");
+}
+
+int StartWanted(wantedConfig_t cfg)
+{
+    wapp_t wapp;
+
+    wapp.img        = supervisor;
+    wapp.img_len    = supervisor_len;
+
+    WantedSetConfig(cfg);
+
+    StartWapp(&wapp);
+
+    WaitForWapps();
 }

@@ -3,7 +3,7 @@
 #include <errno.h>
 #include <string.h>
 
-#include <wanted.h>
+#include <wanted-api.h>
 
 #include "external_symbols.h"
 
@@ -37,5 +37,5 @@ TEST(wanted_api, runSimpleWasm)
 
 TEST_GROUP_RUNNER(wanted_api)
 {
-//    RUN_TEST_CASE(wanted_api, runSimpleWasm);
+    RUN_TEST_CASE(wanted_api, runSimpleWasm);
 }

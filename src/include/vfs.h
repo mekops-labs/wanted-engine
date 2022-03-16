@@ -90,9 +90,11 @@ typedef struct vfs_driver_t {
     int  (*Close)       (vfs_driver_ctx_t d, int fd);
     int  (*Stat)        (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
     int  (*StatSet)     (vfs_driver_ctx_t d, int fd, vfs_stat_t stat);
+
     int  (*Read)        (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
     int  (*Write)       (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
     int  (*Seek)        (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
+
     int  (*ReadDir)     (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
     /* Network operations */

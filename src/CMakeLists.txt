@@ -1,6 +1,7 @@
 set(sources
     "wanted.c"
     "wanted_wasm_api.c"
+    "wanted-vfs-api.c"
 )
 
 set(vfs-srcs
@@ -53,6 +54,7 @@ add_library(${project} STATIC
 target_include_directories(${project}
     PUBLIC ${CMAKE_SOURCE_DIR}/include
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/wasm
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     )
 

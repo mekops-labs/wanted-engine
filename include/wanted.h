@@ -2,26 +2,13 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include <vfs.h>
 
-typedef struct m3Data_t *im3Data_t;
-
-typedef struct {
-    uint8_t *img;
-    size_t img_len;
-} wapp_t;
+#define MAX_WAPPS 3
+#define WAPP_MAX_NAME_LEN 15
 
 typedef struct {
-    vfs_ctx_t main;
-    vfs_driver_t drivers[10];
-} vfs_ctxs_t;
+    char    wappsToRun[MAX_WAPPS][WAPP_MAX_NAME_LEN];
+    int     nWapps;
+} wantedConfig_t;
 
-typedef struct {
-    uint8_t id;
-    wapp_t *wapp;
-    vfs_ctxs_t vfs;
-    im3Data_t m3;
-} data_t;
-
-int  RunWapp(data_t *ctx);
-void StopWapp(data_t *ctx);
+int StartWanted(wantedConfig_t cfg);
