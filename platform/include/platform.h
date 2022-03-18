@@ -31,7 +31,7 @@ int VfsPlatformFsInit(vfs_driver_t *driver);
 void VfsPlatformFsDestroy(vfs_driver_t *driver);
 
 int LoadWapp(const char *name, wapp_t * wapp);
-int StartWapp(wapp_t *app);
+int StartWapp(wapp_t app);
 void WaitForWapps();
 
 int PlatformReadRegistry(reg_entry_t *registryList, size_t len);

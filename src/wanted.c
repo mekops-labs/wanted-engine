@@ -82,7 +82,7 @@ int RunWapp(data_t *ctx)
 
     DEBUG_TRACE("entering thread: %d", ctx->id);
 
-    ret = LoadWasmFromRomfs("app.wasm", ctx->wapp->img, ctx->wapp->img_len, &wasm);
+    ret = LoadWasmFromRomfs("app.wasm", ctx->wapp.img, ctx->wapp.img_len, &wasm);
     if (ret < 0) {
         DEBUG_TRACE("Can't load from romfs: %d", ret);
         return -1;
@@ -142,7 +142,7 @@ int RunWapp(data_t *ctx)
         goto _freeVfs;
     }
 
-    ret = VfsRomfsInit(&ctx->vfs.drivers[1], "", ctx->wapp->img, ctx->wapp->img_len);
+    ret = VfsRomfsInit(&ctx->vfs.drivers[1], "", ctx->wapp.img, ctx->wapp.img_len);
     if (ret < 0) {
         DEBUG_TRACE("VfsRomfsInit: can't load romfs (%d)", ret);
         goto _freeVfs;
@@ -245,7 +245,7 @@ int StartWanted(wantedConfig_t cfg)
 
     WantedSetConfig(cfg);
 
-    StartWapp(&wapp);
+    StartWapp(wapp);
 
     WaitForWapps();
 }

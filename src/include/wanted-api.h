@@ -18,7 +18,7 @@ typedef struct {
 
 typedef struct {
     uint8_t id;
-    wapp_t *wapp;
+    wapp_t wapp;
     vfs_ctxs_t vfs;
     im3Data_t m3;
 } data_t;

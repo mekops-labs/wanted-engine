@@ -29,7 +29,7 @@ TEST(wanted_api, runSimpleWasm)
     int ret;
 
     ctx.id = 0;
-    ctx.wapp = &w;
+    ctx.wapp = w;
 
     ret = RunWapp(&ctx);
     TEST_ASSERT_EQUAL_INT(0, ret);

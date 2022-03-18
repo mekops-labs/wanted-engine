@@ -5,6 +5,8 @@
 #include <vfs.h>
 #include <vfs-drivers.h>
 
+#include <platform.h>
+
 
 #define ID  {'W', 'c', 't', 'l'}
 
@@ -58,27 +60,27 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
 }
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 {
-    if (buf == NULL) return -EINVAL;
-
-    if (!opened) return -EBADF;
-
-    static int read = 0;
-    if (read > 0) {
-        read = 0;
-        return read;
-    }
-
-    strcpy(buf, "Hello ctrl\n");
-
-    read = strlen(buf);
-
-    return read;
+    return 0;
 }
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 {
-    return 0;
+    wapp_t wapp;
+    int ret;
+
+    ret = LoadWapp(buf, &wapp);
+    if (ret < 0) {
+        return ret;
+    }
+
+    ret = StartWapp(wapp);
+    if (ret == 0) {
+        return nbyte;
+    }
+
+    return ret;
 }
+
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
 {
     return 0;

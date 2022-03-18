@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <wanted.h>
 
 /*
@@ -14,5 +15,9 @@ wantedConfig_t cfg = {
 
 int main(int argc, char* argv[])
 {
-    return StartWanted(cfg);
+    StartWanted(cfg);
+
+    printf("\nAll wapps ended, done...\n");
+
+    return 0;
 }
