@@ -12,6 +12,7 @@
 
 #include <wanted.h>
 #include <wanted-api.h>
+#include <wanted-vfs-api.h>
 #include <romfs.h>
 #include <vfs.h>
 #include <vfs-drivers.h>
@@ -159,12 +160,6 @@ int RunWapp(data_t *ctx)
         goto _freeVfs;
     }
 
-    ret = VfsPlatformRegistryInit(&ctx->vfs.drivers[4]);
-    if (ret < 0) {
-        DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
-        goto _freeVfs;
-    }
-
     ret = VfsVirtualInit(&ctx->vfs.drivers[5]);
     if (ret < 0) {
         DEBUG_TRACE("VfsVirtualInit: can't load driver (%d)", ret);
@@ -183,7 +178,7 @@ int RunWapp(data_t *ctx)
 
     VfsRegister(ctx->vfs.main, "/wanted/config", &WantedConfigDriver);
     VfsRegister(ctx->vfs.main, "/wanted/ctrl",   &WantedControlDriver);
-    VfsRegister(ctx->vfs.main, "/wanted/reg", &ctx->vfs.drivers[4]);
+    VfsRegister(ctx->vfs.main, "/wanted/reg", &WantedRegistryDriver);
 
     status = m3_FindFunction (&f, ctx->m3->rt, "entry");
     if (status) {
@@ -206,7 +201,6 @@ int RunWapp(data_t *ctx)
 
 _freeVfs:
     VfsVirtualDestroy(&ctx->vfs.drivers[5]);
-    VfsPlatformRegistryDestroy(&ctx->vfs.drivers[4]);
     VfsSocketDestroy(&ctx->vfs.drivers[3]);
     VfsPlatformFsDestroy(&ctx->vfs.drivers[2]);
     VfsRomfsDestroy(&ctx->vfs.drivers[1]);
@@ -229,7 +223,6 @@ void StopWapp(data_t *ctx)
     DEBUG_TRACE("start");
 
     VfsVirtualDestroy(&ctx->vfs.drivers[5]);
-    VfsPlatformRegistryDestroy(&ctx->vfs.drivers[4]);
     VfsSocketDestroy(&ctx->vfs.drivers[3]);
     VfsPlatformFsDestroy(&ctx->vfs.drivers[2]);
     VfsRomfsDestroy(&ctx->vfs.drivers[1]);

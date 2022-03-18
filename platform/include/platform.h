@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include <wanted.h>
 #include <vfs.h>
 #include <wanted-api.h>
 
@@ -16,6 +17,11 @@ typedef uint16_t plat_clk_flags_t;
 
 #define PLAT_CLOCK_FLAGS_ABSTIME 1U
 
+typedef struct {
+    char    name[WAPP_MAX_NAME_LEN];
+    size_t  size;
+} reg_entry_t;
+
 int PlatformClockGetRes(plat_clk_id_t clk_id, uint64_t *resolution);
 int PlatformClockGetTime(plat_clk_id_t clk_id, plat_timestamp_t *time);
 int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout, plat_clk_flags_t flags);
@@ -24,9 +30,8 @@ int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len);
 int VfsPlatformFsInit(vfs_driver_t *driver);
 void VfsPlatformFsDestroy(vfs_driver_t *driver);
 
-int VfsPlatformRegistryInit(vfs_driver_t *driver);
-void VfsPlatformRegistryDestroy(vfs_driver_t *driver);
-
 int LoadWapp(const char *name, wapp_t * wapp);
 int StartWapp(wapp_t *app);
 void WaitForWapps();
+
+int PlatformReadRegistry(reg_entry_t *registryList, size_t len);

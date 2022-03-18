@@ -22,3 +22,4 @@ void VfsWantedDestroy(vfs_driver_t *driver);
 
 extern const vfs_driver_t WantedConfigDriver;
 extern const vfs_driver_t WantedControlDriver;
+extern const vfs_driver_t WantedRegistryDriver;
