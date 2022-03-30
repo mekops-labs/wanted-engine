@@ -9,7 +9,11 @@ execute_process(
              ${CMAKE_CURRENT_BINARY_DIR}/runner.c
 )
 
-add_executable(tests ${test_src} ${CMAKE_CURRENT_BINARY_DIR}/runner.c)
+set(tiny_json_src
+    ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c
+)
+
+add_executable(tests ${test_src} ${tiny_json_src} ${CMAKE_CURRENT_BINARY_DIR}/runner.c)
 target_link_libraries(tests unity ${project})
 
 execute_process(
@@ -32,3 +36,4 @@ target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src/include)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/romfs-lib/include)
+target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/tiny-json)
