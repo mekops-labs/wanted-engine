@@ -15,19 +15,10 @@ pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 #define FATAL(msg, ...) { fprintf(stderr, "Fatal: " msg "\n", ##__VA_ARGS__); return -1; }
 
-
-typedef enum {
-    FREE,
-    STARTING,
-    RUNNING,
-    EXITED,
-    FAILURE,
-} status_t;
-
 typedef struct {
     pthread_t t;
     status_t status;
-    data_t data;
+    wapp_data_t data;
 } thread_data_t;
 
 volatile struct {
@@ -37,13 +28,13 @@ volatile struct {
 
 void WA_threadEnd(void *ptr)
 {
-    StopWapp((data_t *)ptr);
+    StopWapp((wapp_data_t *)ptr);
 }
 
 void *WA_thread(void *ptr)
 {
     int ret;
-    data_t *d = (data_t *)ptr;
+    wapp_data_t *d = (wapp_data_t *)ptr;
 
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
     pthread_cleanup_push(WA_threadEnd, ptr);
@@ -94,6 +85,13 @@ int LoadWapp(const char *name, wapp_t * wapp) {
 
     wapp->img = img;
     wapp->img_len = filesize;
+    strncpy(wapp->name, name, WAPP_MAX_NAME_LEN);
+    wapp->name[WAPP_MAX_NAME_LEN-1] = 0;
+
+    /* TODO: read version from romfs */
+    wapp->version.major = 1;
+    wapp->version.minor = 0;
+    wapp->version.patch = 0;
 
     fclose(f);
     return 0;
@@ -109,7 +107,7 @@ int StartWapp(wapp_t app) {
     }
 
     for (slot = 0; slot < MAX_WAPPS; slot++) {
-        if (state.threads[slot].status == FREE || state.threads[slot].status == EXITED || state.threads[slot].status == FAILURE)
+        if (state.threads[slot].status == NOT_STARTED || state.threads[slot].status == EXITED || state.threads[slot].status == FAILURE)
             break;
     }
 
@@ -134,5 +132,21 @@ void WaitForWapps() {
     }
 }
 
+int  GetState(wapp_state_t *wapps, size_t appsLen)
+{
+    int i, r;
+
+    for (i = 0, r = 0; i < MAX_WAPPS && r < appsLen; i++) {
+            if (state.threads[i].data.wapp.img == NULL) continue;
+
+            strncpy(wapps[r].name, (const char *)state.threads[i].data.wapp.name, WAPP_MAX_NAME_LEN);
+            wapps[r].name[WAPP_MAX_NAME_LEN-1] = '\0';
+            wapps[r].status = state.threads[i].status;
+            wapps[r].version = state.threads[i].data.wapp.version;
+            r++;
+    }
+
+    return r;
+}
 
 

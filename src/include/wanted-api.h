@@ -35,7 +35,22 @@ typedef struct {
     wapp_t wapp;
     vfs_ctxs_t vfs;
     im3Data_t m3;
-} data_t;
+} wapp_data_t;
 
-int  RunWapp(data_t *ctx);
-void StopWapp(data_t *ctx);
+typedef enum {
+    NOT_STARTED,
+    STARTING,
+    RUNNING,
+    EXITED,
+    FAILURE,
+} status_t;
+
+typedef struct {
+    char name[WAPP_MAX_NAME_LEN];
+    wapp_version_t version;
+    status_t status;
+} wapp_state_t;
+
+int  RunWapp(wapp_data_t *ctx);
+void StopWapp(wapp_data_t *ctx);
+int  GetState(wapp_state_t *apps, size_t appsLen);

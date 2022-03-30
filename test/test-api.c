@@ -21,7 +21,7 @@ TEST_TEAR_DOWN(wanted_api)
 
 TEST(wanted_api, runSimpleWasm)
 {
-    data_t ctx;
+    wapp_data_t ctx;
     wapp_t w = {
         .img = test_wasi_romfs,
         .img_len = test_wasi_romfs_len

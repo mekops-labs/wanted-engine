@@ -7,6 +7,8 @@
 
 #include <platform.h>
 
+#include <wanted-vfs-api.h>
+
 
 #define ID  {'W', 'c', 't', 'l'}
 
@@ -60,7 +62,19 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
 }
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 {
-    return 0;
+    if (buf == NULL) return -EINVAL;
+
+    if (!opened) return -EBADF;
+
+    static int read = 0;
+    if (read > 0) {
+        read = 0;
+        return read;
+    }
+
+    read = WantedReadState(buf, nbyte);
+
+    return read;
 }
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)

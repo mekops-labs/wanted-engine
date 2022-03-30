@@ -67,7 +67,7 @@ _exit:
     return ret;
 }
 
-int RunWapp(data_t *ctx)
+int RunWapp(wapp_data_t *ctx)
 {
     M3Result status;
     IM3Module mod;
@@ -218,7 +218,7 @@ _freeM3:
     return 0;
 }
 
-void StopWapp(data_t *ctx)
+void StopWapp(wapp_data_t *ctx)
 {
     DEBUG_TRACE("start");
 
@@ -240,6 +240,8 @@ int StartWanted(wantedConfig_t cfg)
 {
     wapp_t wapp;
 
+    strncpy(wapp.name, "supervisor", WAPP_MAX_NAME_LEN);
+    wapp.version    = supervisor_ver;
     wapp.img        = supervisor;
     wapp.img_len    = supervisor_len;
 
