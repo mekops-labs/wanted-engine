@@ -3,10 +3,24 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <vfs.h>
+#include <wanted.h>
 
 typedef struct m3Data_t *im3Data_t;
 
 typedef struct {
+    union {
+        struct {
+            uint8_t major;
+            uint8_t minor;
+            uint8_t patch;
+        };
+        char v[3];
+    };
+} wapp_version_t;
+
+typedef struct {
+    char name[WAPP_MAX_NAME_LEN];
+    wapp_version_t version;
     uint8_t *img;
     size_t img_len;
 } wapp_t;

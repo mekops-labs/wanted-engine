@@ -1,4 +1,6 @@
-const char supervisor_ver[] = "0.0.1";
+#include <wanted-api.h>
+
+const wapp_version_t supervisor_ver = { .v = {0, 0 ,1} };
 
 unsigned char supervisor[] = {
   0x2d, 0x72, 0x6f, 0x6d, 0x31, 0x66, 0x73, 0x2d, 0x00, 0x00, 0x89, 0xe0,
