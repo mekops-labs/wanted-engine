@@ -72,8 +72,9 @@ int LoadWapp(const char *name, wapp_t * wapp) {
 
     f = fopen(filename, "rb");
     free(filename);
+
     if (NULL == f) {
-        FATAL("can't open %s", filename);
+        FATAL("can't open wapp: %s", name);
     }
 
     fseek(f, 0L, SEEK_END);
