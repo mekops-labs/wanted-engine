@@ -13,3 +13,6 @@
 [submodule "vendor/cwalk"]
 	path = vendor/cwalk
 	url = https://github.com/likle/cwalk
+[submodule "vendor/microtojson"]
+	path = vendor/microtojson
+	url = https://github.com/rkta/microtojson.git
