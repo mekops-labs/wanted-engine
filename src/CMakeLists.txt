@@ -35,7 +35,6 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/ro
 target_compile_definitions(romfs PRIVATE ROMFS_CUSTOM_MALLOC=1)
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
-add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/json-maker/src ${CMAKE_BINARY_DIR}/json-maker)
 
 # WAMS3 related things
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
