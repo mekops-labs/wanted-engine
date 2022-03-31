@@ -24,6 +24,9 @@ set(tiny-json-src
     ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c
 )
 
+set(microtojson-src
+    ${CMAKE_SOURCE_DIR}/vendor/microtojson/mtojson.c)
+
 add_subdirectory(${CMAKE_SOURCE_DIR}/platform ${CMAKE_BINARY_DIR}/platform)
 
 set(CUSTOM_MALLOC_IMPL ${CMAKE_CURRENT_SOURCE_DIR}/romfs_malloc.c)
@@ -50,6 +53,7 @@ add_library(${project} STATIC
     ${vfs-srcs}
     ${wasi-src}
     ${tiny-json-src}
+    ${microtojson-src}
 )
 
 target_include_directories(${project}
@@ -57,6 +61,7 @@ target_include_directories(${project}
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/wasm
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
+    PRIVATE ${CMAKE_SOURCE_DIR}/vendor/microtojson
     )
 
 target_link_libraries(${project}
