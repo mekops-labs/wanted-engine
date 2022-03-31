@@ -14,7 +14,7 @@ typedef struct {
             uint8_t minor;
             uint8_t patch;
         };
-        char v[3];
+        uint8_t v[3];
     };
 } wapp_version_t;
 

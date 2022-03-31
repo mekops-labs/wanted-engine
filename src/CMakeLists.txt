@@ -24,8 +24,9 @@ set(tiny-json-src
     ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c
 )
 
-set(microtojson-src
-    ${CMAKE_SOURCE_DIR}/vendor/microtojson/mtojson.c)
+set(json-maker-src
+    ${CMAKE_SOURCE_DIR}/vendor/json-maker/src/json-maker.c
+)
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/platform ${CMAKE_BINARY_DIR}/platform)
 
@@ -33,8 +34,8 @@ set(CUSTOM_MALLOC_IMPL ${CMAKE_CURRENT_SOURCE_DIR}/romfs_malloc.c)
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/romfs)
 target_compile_definitions(romfs PRIVATE ROMFS_CUSTOM_MALLOC=1)
 
-
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
+add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/json-maker/src ${CMAKE_BINARY_DIR}/json-maker)
 
 # WAMS3 related things
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
@@ -53,7 +54,7 @@ add_library(${project} STATIC
     ${vfs-srcs}
     ${wasi-src}
     ${tiny-json-src}
-    ${microtojson-src}
+    ${json-maker-src}
 )
 
 target_include_directories(${project}
@@ -61,7 +62,7 @@ target_include_directories(${project}
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/wasm
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
-    PRIVATE ${CMAKE_SOURCE_DIR}/vendor/microtojson
+    PRIVATE ${CMAKE_SOURCE_DIR}/vendor/json-maker/src/include
     )
 
 target_link_libraries(${project}

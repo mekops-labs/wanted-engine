@@ -5,7 +5,7 @@
 #include <platform.h>
 
 #include <wanted_malloc.h>
-#include <mtojson.h>
+#include <json-maker/json-maker.h>
 
 static wantedConfig_t currentConfig;
 
@@ -14,68 +14,39 @@ static wantedConfig_t currentConfig;
 
 static size_t ConfigToJson(const wantedConfig_t *cfg, uint8_t *buf, size_t bufLen)
 {
-    size_t len = cfg->nWapps;
+    char *p = buf;
+    size_t left = bufLen;
 
-    struct to_json *wappsArray = WantedMalloc((len+1) * sizeof(*wappsArray));
-    memset(wappsArray, 0, sizeof(*wappsArray) * (len+1));
-
-    for (int i = 0; i < len; i++) {
-        wappsArray[i].value = cfg->wappsToRun[i];
-        wappsArray[i].vtype = t_to_string;
+    p = json_objOpen(p, NULL, &left);
+    p = json_arrOpen(p, "wapps", &left);
+    for (int i = 0; i < cfg->nWapps; i++) {
+        p = json_str(p, NULL, cfg->wappsToRun[i], &left);
     }
+    p = json_arrClose(p, &left);
+    p = json_objClose(p, &left);
+    p = json_end(p, &left);
 
-    const struct to_json json[] = {
-        {
-            .name = "wapps",
-            .value = wappsArray,
-            .vtype = t_to_array,
-            .stype = t_to_object
-        },
-        { NULL }
-    };
-
-    len = json_generate(buf, json, bufLen);
-
-    WantedFree(wappsArray);
-
-    return len;
+    return bufLen - left;
 }
 
 static size_t RegistryToJson(const reg_entry_t *reg, size_t regLen, uint8_t *buf, size_t bufLen)
 {
-    size_t len = regLen;
-    size_t subElemLen = 3;
+    char *p = buf;
+    size_t left = bufLen;
 
-    struct to_json *wappsArray = WantedMalloc((subElemLen * len) * sizeof(*wappsArray));
-    memset(wappsArray, 0, sizeof(*wappsArray) * (subElemLen * len));
-
-    wappsArray[0].stype = t_to_array;
-    for (int i = 0; i < len; i++) {
-        wappsArray[i*subElemLen].name = "name";
-        wappsArray[i*subElemLen].value = reg[i].name;
-        wappsArray[i*subElemLen].vtype = t_to_string;
-        wappsArray[i*subElemLen+1].name = "size";
-        wappsArray[i*subElemLen+1].value = &reg[i].size;
-        wappsArray[i*subElemLen+1].vtype = t_to_int;
+    p = json_objOpen(p, NULL, &left);
+    p = json_arrOpen(p, "wapps", &left);
+    for (int i = 0; i < regLen; i++) {
+        p = json_objOpen(p, NULL, &left);
+        p = json_str(p, "name", reg[i].name, &left);
+        p = json_int(p, "size", reg[i].size, &left);
+        p = json_objClose(p, &left);
     }
+    p = json_arrClose(p, &left);
+    p = json_objClose(p, &left);
+    p = json_end(p, &left);
 
-    size_t a = 3;
-    const struct to_json json[] = {
-        {
-            .name = "wapps",
-            .value = wappsArray,
-            .count = &a,
-            .vtype = t_to_object,
-            .stype = t_to_object
-        },
-        { NULL }
-    };
-
-    len = json_generate(buf, json, bufLen);
-
-    WantedFree(wappsArray);
-
-    return len;
+    return bufLen - left;
 }
 
 const char *statusToString(status_t state)
@@ -91,42 +62,26 @@ const char *statusToString(status_t state)
 
 static size_t StateToJson(const wapp_state_t *stateList, size_t stateLen, uint8_t *buf, size_t bufLen)
 {
-    size_t len = stateLen;
-    size_t subElemLen = 4;
+    char *p = buf;
+    size_t left = bufLen;
+    char ver[9];
 
-    struct to_json *wappsArray = WantedMalloc((subElemLen * len) * sizeof(*wappsArray));
-    memset(wappsArray, 0, sizeof(*wappsArray) * (subElemLen * len));
+    p = json_objOpen(p, NULL, &left);
+    p = json_arrOpen(p, "wapps", &left);
+    for (int i = 0; i < stateLen; i++) {
+        p = json_objOpen(p, NULL, &left);
+        p = json_str(p, "name", stateList[i].name, &left);
+        p = json_str(p, "size", statusToString(stateList[i].status), &left);
+        const uint8_t *v = stateList[i].version.v;
+        snprintf(ver, 9, "%X.%X.%X", v[0], v[1], v[2]);
+        p = json_nstr(p, "version", ver, 9, &left);
+        p = json_objClose(p, &left);
+    }
+    p = json_arrClose(p, &left);
+    p = json_objClose(p, &left);
+    p = json_end(p, &left);
 
-    wappsArray[0].stype = t_to_array;
-    for (int j = 0; j < subElemLen; j++)
-        for (int i = 0; i < len; i++) {
-            wappsArray[i*3].name    = "name";
-            wappsArray[i*3].value   = stateList[i].name;
-            wappsArray[i*3].vtype   = t_to_string;
-            wappsArray[i*3+1].name  = "status";
-            wappsArray[i*3+1].value = statusToString(stateList[i].status);
-            wappsArray[i*3+1].vtype = t_to_string;
-            wappsArray[i*3+2].name  = "version";
-            wappsArray[i*3+2].value = stateList[i].version.v;
-            wappsArray[i*3+2].vtype = t_to_hex_u32;
-        }
-
-    const struct to_json json[] = {
-        {
-            .name = "wapps",
-            .value = wappsArray,
-            .count = &len,
-            .vtype = t_to_object,
-            .stype = t_to_object
-        },
-        { NULL }
-    };
-
-    len = json_generate(buf, json, bufLen);
-
-    WantedFree(wappsArray);
-
-    return len;
+    return bufLen - left;
 }
 
 int WantedSetConfig(wantedConfig_t cfg)
