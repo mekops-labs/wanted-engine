@@ -87,12 +87,7 @@ int LoadWapp(const char *name, wapp_t * wapp) {
     wapp->img = img;
     wapp->img_len = filesize;
     strncpy(wapp->name, name, WAPP_MAX_NAME_LEN);
-    wapp->name[WAPP_MAX_NAME_LEN-1] = 0;
-
-    /* TODO: read version from romfs */
-    wapp->version.major = 1;
-    wapp->version.minor = 0;
-    wapp->version.patch = 0;
+    memset(wapp->version.v, -1, 3);
 
     fclose(f);
     return 0;

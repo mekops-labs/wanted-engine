@@ -1,0 +1,36 @@
+{
+    "name": "@WAPP_NAME@",
+    "version": [ @VERSION_MAJOR@, @VERSION_MINOR@, @VERSION_PATCH@ ],
+    "chksum": "@SHA256_SUM",
+    "package": @WAPP_PACKAGE_NUMBER@,
+    "drivers": [
+        {
+            "path": "stdin",
+            "driver": null
+        },
+        {
+            "path": "stdout",
+            "driver": null
+        },
+        {
+            "path": "stderr",
+            "driver": null
+        },
+        {
+            "path": "/rom",
+            "driver": null
+        },
+        {
+            "path": "/data",
+            "driver": null
+        },
+        {
+            "path": "/wanted",
+            "driver": null
+        },
+        {
+            "path": "/skt",
+            "driver": null
+        }
+    ]
+}

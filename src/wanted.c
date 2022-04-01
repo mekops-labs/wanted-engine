@@ -27,34 +27,34 @@ struct m3Data_t {
     m3_wasi_context_t *wasiCtx;
 };
 
-static int LoadWasmFromRomfs(const char* wasmName, uint8_t *img, size_t imgLen, wapp_t *wasm)
+static int LoadFileFromRomfs(const char* name, uint8_t *img, size_t imgLen, wapp_t *wasm)
 {
     int ret, fd;
     romfs_t r;
 
-    if (wasmName == NULL || img == NULL || wasm == NULL) {
-        DEBUG_TRACE("LoadWasmFromRomfs: invalid paramter\n");
+    if (name == NULL || img == NULL || wasm == NULL) {
+        DEBUG_TRACE("invalid paramter\n");
         return -1;
     }
 
     ret = RomfsLoad(img, imgLen, &r);
     if (ret < 0) {
-        DEBUG_TRACE("LoadWasmFromRomfs: RomfsLoad returned %d\n", ret);
+        DEBUG_TRACE("RomfsLoad returned %d\n", ret);
         return -1;
     }
 
-    ret = RomfsFdStatAt(r, 3, wasmName, NULL);
+    ret = RomfsFdStatAt(r, 3, name, NULL);
     if (ret < 0) {
-        DEBUG_TRACE("LoadWasmFromRomfs: RomfsFdStatAt returned %d\n", ret);
+        DEBUG_TRACE("RomfsFdStatAt returned %d\n", ret);
         goto _exit;
     } else if (!IS_FILE(ret)) {
-        DEBUG_TRACE("LoadWasmFromRomfs: %s is not correct file\n", wasmName);
+        DEBUG_TRACE("%s is not correct file\n", name);
         goto _exit;
     }
 
-    fd = RomfsOpenAt(r, 3, wasmName, 0);
+    fd = RomfsOpenAt(r, 3, name, 0);
     if (fd < 0) {
-        DEBUG_TRACE("LoadWasmFromRomfs: open returned %d\n", ret);
+        DEBUG_TRACE("open returned %d\n", ret);
         goto _exit;
     }
 
@@ -67,12 +67,60 @@ _exit:
     return ret;
 }
 
+static int ParseWappManifest(wapp_t *w, const uint8_t *manifest, size_t len) {
+    int ret = 0;
+    json_t mem[32];
+
+    char *buf = WantedMalloc(len);
+    if (buf == NULL) {
+        DEBUG_TRACE("Can't allocate mem for manifest json buffer");
+        return -1;
+    }
+    memcpy(buf, manifest, len);
+
+    json_t const* json = json_create(buf, mem, sizeof mem / sizeof *mem );
+    if ( !json ) {
+        DEBUG_TRACE("Error json create.");
+        ret = -1;
+        goto _exit;
+    }
+
+    json_t const* name = json_getProperty( json, "name" );
+    if ( !name || JSON_TEXT != json_getType( name ) ) {
+        DEBUG_TRACE("Error, the name property is not found.");
+        ret = -1;
+        goto _exit;
+    }
+    strncpy(w->name, json_getValue(name), WAPP_MAX_NAME_LEN);
+
+    json_t const* varsionArr = json_getProperty( json, "version" );
+    if ( !varsionArr || JSON_ARRAY != json_getType( varsionArr ) ) {
+        DEBUG_TRACE("Error, the version property is not found.");
+        ret = -1;
+        goto _exit;
+    }
+
+    json_t const* version;
+    int i;
+    for( i = 0, version = json_getChild( varsionArr ); i < 3 && version != 0; i++, version = json_getSibling( version ) ) {
+        if ( JSON_INTEGER == json_getType( version ) ) {
+            w->version.v[i] = (uint8_t)json_getInteger(version);
+        }
+    }
+
+_exit:
+    WantedFree(buf);
+
+    return ret;
+}
+
 int RunWapp(wapp_data_t *ctx)
 {
     M3Result status;
     IM3Module mod;
     IM3Function f;
-    wapp_t wasm;
+    wapp_t manifest, wasm;
+    wapp_t *wapp = &ctx->wapp;
     int ret;
 
     if (ctx == NULL) {
@@ -82,9 +130,21 @@ int RunWapp(wapp_data_t *ctx)
 
     DEBUG_TRACE("entering thread: %d", ctx->id);
 
-    ret = LoadWasmFromRomfs("app.wasm", ctx->wapp.img, ctx->wapp.img_len, &wasm);
+    ret = LoadFileFromRomfs("manifest.json", wapp->img, wapp->img_len, &manifest);
     if (ret < 0) {
-        DEBUG_TRACE("Can't load from romfs: %d", ret);
+        DEBUG_TRACE("Can't load manifest from wapp image: %d", ret);
+        return -1;
+    }
+
+    ret = ParseWappManifest(wapp, manifest.img, manifest.img_len);
+    if (ret < 0) {
+        DEBUG_TRACE("Can't parse wapp manifest: %d", ret);
+        return -1;
+    }
+
+    ret = LoadFileFromRomfs("app.wasm", wapp->img, wapp->img_len, &wasm);
+    if (ret < 0) {
+        DEBUG_TRACE("Can't load application from wapp image: %d", ret);
         return -1;
     }
 
@@ -240,13 +300,11 @@ int StartWanted(wantedConfig_t cfg)
 {
     wapp_t wapp;
 
-    strncpy(wapp.name, "supervisor", WAPP_MAX_NAME_LEN);
-    wapp.version    = supervisor_ver;
+    /* first run only built-in supervisor */
     wapp.img        = supervisor;
     wapp.img_len    = supervisor_len;
 
     WantedSetConfig(cfg);
-
     StartWapp(wapp);
 
     WaitForWapps();
