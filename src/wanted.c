@@ -305,7 +305,7 @@ int StartWanted(wantedConfig_t cfg)
     wapp.img_len    = supervisor_len;
 
     WantedSetConfig(cfg);
-    StartWapp(wapp);
+    PlatformWappStart(wapp);
 
-    WaitForWapps();
+    PlatformWappLoop();
 }

@@ -45,7 +45,7 @@ static int NameLenWithoutExt(const char *name) {
 }
 
 
-int PlatformReadRegistry(reg_entry_t *registryList, size_t len)
+int PlatformRegistryRead(reg_entry_t *registryList, size_t len)
 {
     struct dirent **namelist;
     struct stat s;

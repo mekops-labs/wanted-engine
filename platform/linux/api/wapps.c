@@ -59,7 +59,7 @@ void *WA_thread(void *ptr)
     pthread_exit(NULL);
 }
 
-int LoadWapp(const char *name, wapp_t * wapp) {
+int PlatformWappLoad(const char *name, wapp_t * wapp) {
     long filesize;
     FILE *f;
     uint8_t *img;
@@ -93,7 +93,7 @@ int LoadWapp(const char *name, wapp_t * wapp) {
     return 0;
 }
 
-int StartWapp(wapp_t app) {
+int PlatformWappStart(wapp_t app) {
     int slot;
 
     pthread_mutex_lock(&state_mtx);
@@ -120,7 +120,7 @@ int StartWapp(wapp_t app) {
     return 0;
 }
 
-void WaitForWapps() {
+void PlatformWappLoop() {
     for (;;) {
         if (!state.n) {
             return;

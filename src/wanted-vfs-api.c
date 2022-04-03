@@ -104,7 +104,7 @@ int WantedReadRegistry(uint8_t *buf, size_t bufLen)
 
     if (buf == NULL) return -1;
 
-    n = PlatformReadRegistry(entries, MAX_WAPPS);
+    n = PlatformRegistryRead(entries, MAX_WAPPS);
     if (n < 0) return n;
 
     return RegistryToJson((const reg_entry_t *)&entries, n, buf, bufLen);

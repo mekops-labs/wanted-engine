@@ -82,12 +82,12 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     wapp_t wapp;
     int ret;
 
-    ret = LoadWapp(buf, &wapp);
+    ret = PlatformWappLoad(buf, &wapp);
     if (ret < 0) {
         return ret;
     }
 
-    ret = StartWapp(wapp);
+    ret = PlatformWappStart(wapp);
     if (ret == 0) {
         return nbyte;
     }
