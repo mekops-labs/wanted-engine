@@ -11,9 +11,11 @@
 #include <wanted-api.h>
 #include <config-linux.h>
 
+#include <debug_trace.h>
+
 pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
 
-#define FATAL(msg, ...) { fprintf(stderr, "Fatal: " msg "\n", ##__VA_ARGS__); return -1; }
+#define FATAL(err, msg, ...) { DEBUG_TRACE("Fatal: " msg, ##__VA_ARGS__); return err; }
 
 typedef struct {
     pthread_t t;
@@ -69,13 +71,13 @@ int PlatformWappLoad(const char *name, wapp_t * wapp)
 
     snprintf(filename, filenameLen, "%s/%s%s", REGISTRY_ROOT, name, REGISTRY_EXT);
 
-    printf("Opening: %s\n", filename);
+    DEBUG_TRACE("Opening: %s\n", filename);
 
     f = fopen(filename, "rb");
     free(filename);
 
     if (NULL == f) {
-        FATAL("can't open wapp: %s", name);
+        FATAL(-errno, "can't open wapp: %s", name);
     }
 
     fseek(f, 0L, SEEK_END);
@@ -83,7 +85,8 @@ int PlatformWappLoad(const char *name, wapp_t * wapp)
     rewind(f);
 
     img = (uint8_t *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fileno(f), 0);
-    if (img == MAP_FAILED) FATAL("can't map file");
+    if (img == MAP_FAILED)
+        FATAL(-errno, "can't map file");
 
     wapp->img = img;
     wapp->img_len = filesize;
@@ -91,6 +94,13 @@ int PlatformWappLoad(const char *name, wapp_t * wapp)
     memset(wapp->version.v, -1, 3);
 
     fclose(f);
+    return 0;
+}
+
+int PlatformWappUnload(const wapp_t *wapp)
+{
+    if (munmap(wapp->img, wapp->img_len) < 0)
+        FATAL(-errno, "can't unmap file");
     return 0;
 }
 

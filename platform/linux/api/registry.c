@@ -88,3 +88,71 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len)
 
     return n;
 }
+
+int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes)
+{
+    static FILE *f;
+    static char tempName[NAME_MAX];
+    static char targetName[NAME_MAX];
+
+    int written = 0;
+    int ret = 0;
+    wapp_t w;
+
+    switch (s)
+    {
+    case START_WRITE:
+        if (buf == NULL || nbytes == 0) return -EINVAL;
+        snprintf(tempName, NAME_MAX, "%s/%s%s", REGISTRY_ROOT, "_temp", REGISTRY_EXT);
+        f = fopen(tempName, "w");
+        if (f == NULL) return -errno;
+
+        /* write first chunk */
+        written = fwrite(buf, 1, nbytes, f);
+        break;
+    case CONTINUE_WRITE:
+        if (buf == NULL || nbytes == 0) return -EINVAL;
+        if (f == NULL) return -EBADF;
+        written = fwrite(buf, 1, nbytes, f);
+        break;
+    case FINISH_WRITE:
+        if (f == NULL) return -EBADF;
+        fclose(f);
+        f = NULL;
+
+        ret = PlatformWappLoad("_temp", &w);
+        if (ret < 0) {
+            remove(tempName);
+            return ret;
+        }
+
+        ret = WantedWappParseManifest(&w);
+        if (ret < 0) {
+            remove(tempName);
+            return ret;
+        }
+
+        snprintf(targetName, NAME_MAX, "%s/%s%s", REGISTRY_ROOT, w.name, REGISTRY_EXT);
+        if (rename(tempName, targetName) < 0) {
+            remove(tempName);
+            written = -errno;
+        }
+
+        ret = PlatformWappUnload(&w);
+        if (ret < 0) return ret;
+
+        break;
+    case ABORT_WRITE:
+        if (f == NULL) return -EBADF;
+        fclose(f);
+        f = NULL;
+        remove(tempName);
+        break;
+    default:
+        return -EINVAL;
+        break;
+    }
+
+    return written;
+}
+

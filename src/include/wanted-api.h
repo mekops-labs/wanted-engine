@@ -53,4 +53,5 @@ typedef struct {
 
 int  WantedWappRun(wapp_data_t *ctx);
 void WantedWappStop(wapp_data_t *ctx);
+int  WantedWappParseManifest(wapp_t *w);
 

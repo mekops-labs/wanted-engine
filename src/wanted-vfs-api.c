@@ -4,6 +4,8 @@
 #include <wanted-vfs-api.h>
 #include <platform.h>
 
+#include <romfs.h>
+
 #include <wanted_malloc.h>
 #include <json-maker/json-maker.h>
 
@@ -108,6 +110,23 @@ int WantedReadRegistry(uint8_t *buf, size_t bufLen)
     if (n < 0) return n;
 
     return RegistryToJson((const reg_entry_t *)&entries, n, buf, bufLen);
+}
+
+int WantedWriteRegistry(bool *cont, const uint8_t *buf, size_t bufLen)
+{
+    if (buf == NULL) return -1;
+
+    if (*cont == false) {
+        *cont = true;
+        return PlatformRegistryWrite(START_WRITE, buf, bufLen);
+    }
+
+    return PlatformRegistryWrite(CONTINUE_WRITE, buf, bufLen);
+}
+
+int WantedCloseRegistry()
+{
+    return PlatformRegistryWrite(FINISH_WRITE, NULL, 0);
 }
 
 int WantedReadState(uint8_t *buf, size_t bufLen)

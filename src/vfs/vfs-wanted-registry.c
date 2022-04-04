@@ -28,11 +28,13 @@ const vfs_driver_t WantedRegistryDriver = {
 };
 
 static bool opened = false;
+static bool startedWriting = false;
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
     if (opened) return -EBUSY;
     opened = true;
+    startedWriting = false;
 
     return 0;
 }
@@ -40,6 +42,12 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 static int _Close(vfs_driver_ctx_t d, int fd)
 {
     opened = false;
+
+    if (startedWriting) {
+        startedWriting = false;
+        return WantedCloseRegistry();
+    }
+
     return 0;
 }
 
@@ -76,8 +84,16 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 {
-    return -EROFS;
+    int ret;
+
+    if (buf == NULL) return -EINVAL;
+    if (!opened) return -EBADF;
+
+    ret = WantedWriteRegistry(&startedWriting, buf, nbyte);
+
+    return ret;
 }
+
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
 {
     return 0;

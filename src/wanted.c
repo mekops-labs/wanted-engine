@@ -21,18 +21,21 @@
 
 #include <platform.h>
 
+static const char* manifestName = "manifest.json";
+static const char* appName      = "app.wasm";
+
 struct m3Data_t {
     IM3Runtime rt;
     IM3Environment env;
     m3_wasi_context_t *wasiCtx;
 };
 
-static int LoadFileFromRomfs(const char* name, uint8_t *img, size_t imgLen, wapp_t *wasm)
+static int LoadFile(const char* name, uint8_t *img, size_t imgLen, wapp_t *file)
 {
     int ret, fd;
     romfs_t r;
 
-    if (name == NULL || img == NULL || wasm == NULL) {
+    if (name == NULL || img == NULL || file == NULL) {
         DEBUG_TRACE("invalid paramter\n");
         return -1;
     }
@@ -58,7 +61,7 @@ static int LoadFileFromRomfs(const char* name, uint8_t *img, size_t imgLen, wapp
         goto _exit;
     }
 
-    ret = RomfsMapFile(r, (void **)&wasm->img, &wasm->img_len, fd, 0);
+    ret = RomfsMapFile(r, (void **)&file->img, &file->img_len, fd, 0);
 
 _exit:
     RomfsClose(r, fd);
@@ -67,16 +70,23 @@ _exit:
     return ret;
 }
 
-static int ParseWappManifest(wapp_t *w, const uint8_t *manifest, size_t len) {
+int WantedWappParseManifest(wapp_t *w) {
     int ret = 0;
     json_t mem[32];
+    wapp_t m;
 
-    char *buf = WantedMalloc(len);
+    ret = LoadFile(manifestName, w->img, w->img_len, &m);
+    if (ret < 0) {
+        DEBUG_TRACE("Can't load manifest from wapp image: %d", ret);
+        return -1;
+    }
+
+    char *buf = WantedMalloc(m.img_len);
     if (buf == NULL) {
         DEBUG_TRACE("Can't allocate mem for manifest json buffer");
         return -1;
     }
-    memcpy(buf, manifest, len);
+    memcpy(buf, m.img, m.img_len);
 
     json_t const* json = json_create(buf, mem, sizeof mem / sizeof *mem );
     if ( !json ) {
@@ -130,19 +140,15 @@ int WantedWappRun(wapp_data_t *ctx)
 
     DEBUG_TRACE("entering thread: %d", ctx->id);
 
-    ret = LoadFileFromRomfs("manifest.json", wapp->img, wapp->img_len, &manifest);
-    if (ret < 0) {
-        DEBUG_TRACE("Can't load manifest from wapp image: %d", ret);
-        return -1;
-    }
 
-    ret = ParseWappManifest(wapp, manifest.img, manifest.img_len);
+
+    ret = WantedWappParseManifest(wapp);
     if (ret < 0) {
         DEBUG_TRACE("Can't parse wapp manifest: %d", ret);
         return -1;
     }
 
-    ret = LoadFileFromRomfs("app.wasm", wapp->img, wapp->img_len, &wasm);
+    ret = LoadFile(appName, wapp->img, wapp->img_len, &wasm);
     if (ret < 0) {
         DEBUG_TRACE("Can't load application from wapp image: %d", ret);
         return -1;
