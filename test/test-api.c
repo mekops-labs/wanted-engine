@@ -23,8 +23,8 @@ TEST(wanted_api, runSimpleWasm)
 {
     wapp_data_t ctx;
     wapp_t w = {
-        .img = test_wasi_romfs,
-        .img_len = test_wasi_romfs_len
+        .img = test_wasi,
+        .img_len = test_wasi_len
     };
     int ret;
 

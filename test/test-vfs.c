@@ -99,7 +99,7 @@ TEST_SETUP(vfs_openclose)
 {
     vfs = VfsInit();
     VfsVirtualInit(&virt1);
-    VfsRomfsInit(&romfs, "/", test_wasi_romfs, test_wasi_romfs_len);
+    VfsRomfsInit(&romfs, "/", test_wasi, test_wasi_len);
     VfsRegister(vfs, "/", &virt1);
     VfsRegister(vfs, "rom", &romfs);
 }
