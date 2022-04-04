@@ -73,6 +73,7 @@ static size_t StateToJson(const wapp_state_t *stateList, size_t stateLen, uint8_
     for (int i = 0; i < stateLen; i++) {
         p = json_objOpen(p, NULL, &left);
         p = json_str(p, "name", stateList[i].name, &left);
+        p = json_int(p, "id", stateList[i].id, &left);
         p = json_str(p, "state", statusToString(stateList[i].status), &left);
         const uint8_t *v = stateList[i].version.v;
         snprintf(ver, 9, "%X.%X.%X", v[0], v[1], v[2]);

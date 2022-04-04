@@ -28,9 +28,24 @@ volatile struct {
     thread_data_t threads[MAX_WAPPS];
 } state;
 
+static void updateState(uint8_t id, int ret) {
+    pthread_mutex_lock(&state_mtx);
+    if (ret == 0) {
+        state.threads[id].status = EXITED;
+    } else {
+        state.threads[id].status = FAILURE;
+    }
+    state.n--;
+    pthread_mutex_unlock(&state_mtx);
+}
+
 void WA_threadEnd(void *ptr)
 {
-    WantedWappStop((wapp_data_t *)ptr);
+    wapp_data_t *d = (wapp_data_t *)ptr;
+
+    WantedWappStop(d);
+
+    updateState(d->id, d->lastStatus);
 }
 
 void *WA_thread(void *ptr)
@@ -45,18 +60,10 @@ void *WA_thread(void *ptr)
     state.threads[d->id].status = RUNNING;
     pthread_mutex_unlock(&state_mtx);
 
-    ret = WantedWappRun(d);
+    d->lastStatus = 0;
+    d->lastStatus = WantedWappRun(d);
 
-    pthread_cleanup_pop(0);
-
-    pthread_mutex_lock(&state_mtx);
-    if (ret == 0) {
-        state.threads[d->id].status = EXITED;
-    } else {
-        state.threads[d->id].status = FAILURE;
-    }
-    state.n--;
-    pthread_mutex_unlock(&state_mtx);
+    pthread_cleanup_pop(1);
 
     pthread_exit(NULL);
 }
@@ -132,11 +139,46 @@ int PlatformWappStart(wapp_t app)
     return 0;
 }
 
+int PlatformWappStop(uint8_t id)
+{
+    int slot;
+
+    for (slot = 0; slot < MAX_WAPPS; slot++) {
+        if (state.threads[slot].data.id == id &&
+            state.threads[slot].status == RUNNING) break;
+    }
+
+    if (slot == MAX_WAPPS) {
+        return -ENOENT;
+    }
+
+    return pthread_cancel(state.threads[slot].t);
+}
+
 void PlatformWappLoop()
 {
+    uint8_t supervisorOk;
+
     for (;;) {
+        sleep(1);
+
         if (!state.n) {
+            /* when only supervisor was running and it ended, let's exit */
+            /* TODO: maybe this needs to be removed */
             return;
+        }
+
+        supervisorOk = 0;
+        for (int i = 0; i < MAX_WAPPS; i++) {
+            /* at least 1 supervisor needs to be running */
+            if (strncmp((const char*)state.threads[i].data.wapp.name, "supervisor", strlen("supervisor")) == 0 &&
+                state.threads[i].status == RUNNING) {
+                supervisorOk++;
+            }
+        }
+
+        if (!supervisorOk) {
+            PlatformWappStart(WantedGetCurrentSupervisor());
         }
     }
 }
@@ -152,6 +194,7 @@ int  PlatformWappGetState(wapp_state_t *wapps, size_t appsLen)
             wapps[r].name[WAPP_MAX_NAME_LEN-1] = '\0';
             wapps[r].status = state.threads[i].status;
             wapps[r].version = state.threads[i].data.wapp.version;
+            wapps[r].id = state.threads[i].data.id;
             r++;
     }
 

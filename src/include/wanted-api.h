@@ -35,6 +35,7 @@ typedef struct {
     wapp_t wapp;
     vfs_ctxs_t vfs;
     im3Data_t m3;
+    int lastStatus;
 } wapp_data_t;
 
 typedef enum {
@@ -47,6 +48,7 @@ typedef enum {
 
 typedef struct {
     char name[WAPP_MAX_NAME_LEN];
+    uint8_t id;
     wapp_version_t version;
     status_t status;
 } wapp_state_t;
@@ -54,4 +56,5 @@ typedef struct {
 int  WantedWappRun(wapp_data_t *ctx);
 void WantedWappStop(wapp_data_t *ctx);
 int  WantedWappParseManifest(wapp_t *w);
+wapp_t WantedGetCurrentSupervisor();
 

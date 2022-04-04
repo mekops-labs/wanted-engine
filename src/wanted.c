@@ -140,8 +140,6 @@ int WantedWappRun(wapp_data_t *ctx)
 
     DEBUG_TRACE("entering thread: %d", ctx->id);
 
-
-
     ret = WantedWappParseManifest(wapp);
     if (ret < 0) {
         DEBUG_TRACE("Can't parse wapp manifest: %d", ret);
@@ -171,7 +169,6 @@ int WantedWappRun(wapp_data_t *ctx)
         DEBUG_TRACE("Can't allocate data for m3 rt");
         return -1;
     }
-
 
     DEBUG_TRACE("parsing wasm: %p (%ld)", wasm.img, wasm.img_len);
     status = m3_ParseModule(ctx->m3->env, &mod, wasm.img, wasm.img_len);
@@ -265,6 +262,8 @@ int WantedWappRun(wapp_data_t *ctx)
 
     DEBUG_TRACE("normal exit");
 
+    return 0;
+
 _freeVfs:
     VfsVirtualDestroy(&ctx->vfs.drivers[5]);
     VfsSocketDestroy(&ctx->vfs.drivers[3]);
@@ -281,11 +280,18 @@ _freeM3:
 
     DEBUG_TRACE("end");
 
-    return 0;
+    return -1;
 }
 
 void WantedWappStop(wapp_data_t *ctx)
 {
+    /* TODO: hack because this is static driver, we need to close static drivers manuallay */
+    WantedConfigDriver.Close(NULL, 0);
+    WantedControlDriver.Close(NULL, 0);
+    WantedRegistryDriver.Close(NULL, 0);
+
+    if (ctx->lastStatus != 0) return;
+
     DEBUG_TRACE("start");
 
     VfsVirtualDestroy(&ctx->vfs.drivers[5]);
@@ -302,16 +308,24 @@ void WantedWappStop(wapp_data_t *ctx)
     DEBUG_TRACE("end");
 }
 
+wapp_t WantedGetCurrentSupervisor()
+{
+    /* TODO: in the future we need to update the image if downloaded new version */
+    /* now we're using only factory version */
+
+    wapp_t w;
+    w.img = supervisor;
+    w.img_len = supervisor_len;
+
+    return w;
+}
+
 int WantedStart(wantedConfig_t cfg)
 {
     wapp_t wapp;
 
-    /* first run only built-in supervisor */
-    wapp.img        = supervisor;
-    wapp.img_len    = supervisor_len;
-
     WantedSetConfig(cfg);
-    PlatformWappStart(wapp);
+    PlatformWappStart(WantedGetCurrentSupervisor());
 
     PlatformWappLoop();
 }

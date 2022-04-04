@@ -40,6 +40,7 @@ void VfsPlatformFsDestroy(vfs_driver_t *driver);
 int PlatformWappLoad(const char *name, wapp_t * wapp);
 int PlatformWappUnload(const wapp_t *wapp);
 int PlatformWappStart(wapp_t app);
+int PlatformWappStop(uint8_t id);
 void PlatformWappLoop();
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
 
