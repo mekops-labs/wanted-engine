@@ -114,7 +114,7 @@ int WantedReadState(uint8_t *buf, size_t bufLen)
 {
     wapp_state_t wapps[MAX_WAPPS];
 
-    int ret = GetState(wapps, MAX_WAPPS);
+    int ret = PlatformWappGetState(wapps, MAX_WAPPS);
     if (ret < 0) return ret;
 
     return StateToJson(wapps, ret, buf, bufLen);

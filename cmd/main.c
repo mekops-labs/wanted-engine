@@ -4,7 +4,7 @@
 /*
 
 - load config
-- StartWanted
+- WantedStart
 
 */
 
@@ -15,7 +15,7 @@ wantedConfig_t cfg = {
 
 int main(int argc, char* argv[])
 {
-    StartWanted(cfg);
+    WantedStart(cfg);
 
     printf("\nAll wapps ended, done...\n");
 

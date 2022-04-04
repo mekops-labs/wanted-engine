@@ -114,7 +114,7 @@ _exit:
     return ret;
 }
 
-int RunWapp(wapp_data_t *ctx)
+int WantedWappRun(wapp_data_t *ctx)
 {
     M3Result status;
     IM3Module mod;
@@ -278,7 +278,7 @@ _freeM3:
     return 0;
 }
 
-void StopWapp(wapp_data_t *ctx)
+void WantedWappStop(wapp_data_t *ctx)
 {
     DEBUG_TRACE("start");
 
@@ -296,7 +296,7 @@ void StopWapp(wapp_data_t *ctx)
     DEBUG_TRACE("end");
 }
 
-int StartWanted(wantedConfig_t cfg)
+int WantedStart(wantedConfig_t cfg)
 {
     wapp_t wapp;
 

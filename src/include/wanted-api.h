@@ -51,6 +51,6 @@ typedef struct {
     status_t status;
 } wapp_state_t;
 
-int  RunWapp(wapp_data_t *ctx);
-void StopWapp(wapp_data_t *ctx);
-int  GetState(wapp_state_t *apps, size_t appsLen);
+int  WantedWappRun(wapp_data_t *ctx);
+void WantedWappStop(wapp_data_t *ctx);
+

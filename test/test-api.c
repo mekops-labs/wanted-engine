@@ -31,7 +31,7 @@ TEST(wanted_api, runSimpleWasm)
     ctx.id = 0;
     ctx.wapp = w;
 
-    ret = RunWapp(&ctx);
+    ret = WantedWappRun(&ctx);
     TEST_ASSERT_EQUAL_INT(0, ret);
 }
 

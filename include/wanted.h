@@ -11,4 +11,4 @@ typedef struct {
     int     nWapps;
 } wantedConfig_t;
 
-int StartWanted(wantedConfig_t cfg);
+int WantedStart(wantedConfig_t cfg);

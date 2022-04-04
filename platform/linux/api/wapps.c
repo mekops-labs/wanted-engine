@@ -28,7 +28,7 @@ volatile struct {
 
 void WA_threadEnd(void *ptr)
 {
-    StopWapp((wapp_data_t *)ptr);
+    WantedWappStop((wapp_data_t *)ptr);
 }
 
 void *WA_thread(void *ptr)
@@ -43,7 +43,7 @@ void *WA_thread(void *ptr)
     state.threads[d->id].status = RUNNING;
     pthread_mutex_unlock(&state_mtx);
 
-    ret = RunWapp(d);
+    ret = WantedWappRun(d);
 
     pthread_cleanup_pop(0);
 
@@ -59,7 +59,8 @@ void *WA_thread(void *ptr)
     pthread_exit(NULL);
 }
 
-int PlatformWappLoad(const char *name, wapp_t * wapp) {
+int PlatformWappLoad(const char *name, wapp_t * wapp)
+{
     long filesize;
     FILE *f;
     uint8_t *img;
@@ -93,7 +94,8 @@ int PlatformWappLoad(const char *name, wapp_t * wapp) {
     return 0;
 }
 
-int PlatformWappStart(wapp_t app) {
+int PlatformWappStart(wapp_t app)
+{
     int slot;
 
     pthread_mutex_lock(&state_mtx);
@@ -120,7 +122,8 @@ int PlatformWappStart(wapp_t app) {
     return 0;
 }
 
-void PlatformWappLoop() {
+void PlatformWappLoop()
+{
     for (;;) {
         if (!state.n) {
             return;
@@ -128,7 +131,7 @@ void PlatformWappLoop() {
     }
 }
 
-int  GetState(wapp_state_t *wapps, size_t appsLen)
+int  PlatformWappGetState(wapp_state_t *wapps, size_t appsLen)
 {
     int i, r;
 
