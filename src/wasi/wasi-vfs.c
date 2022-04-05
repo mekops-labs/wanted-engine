@@ -399,6 +399,27 @@ m3ApiRawFunction(m3_wasi_generic_path_open)
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
+m3ApiRawFunction(m3_wasi_generic_path_unlink_file)
+{
+    m3ApiReturnType  (uint32_t)
+    m3ApiGetArg      (__wasi_fd_t          , fd)
+    m3ApiGetArgMem   (const char *         , path)
+    m3ApiGetArg      (__wasi_size_t        , path_len)
+
+    m3ApiCheckMem(path, path_len);
+
+    char host_path[path_len+1];
+    memcpy (host_path, path, path_len);
+    host_path[path_len] = '\0'; // NULL terminator
+
+    m3_wasi_context_t* context = (m3_wasi_context_t*)(_ctx->userdata);
+
+    int ret = VfsUnlink(context->vfsCtx, fd, host_path);
+    if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
+
+    m3ApiReturn(__WASI_ERRNO_SUCCESS);
+}
+
 m3ApiRawFunction(m3_wasi_generic_fd_read)
 {
     m3ApiReturnType  (uint32_t)
@@ -775,7 +796,7 @@ _       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "path_open",
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "path_remove_directory",    "i(i*i)",       )));
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "path_rename",              "i(i*ii*i)",    )));
 //_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "path_symlink",             "i(*ii*i)",     )));
-//_     (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "path_unlink_file",         "i(i*i)",       )));
+_       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "path_unlink_file",         "i(i*i)", &m3_wasi_generic_path_unlink_file, ctx)));
 
 _       (SuppressLookupFailure (m3_LinkRawFunction (module, wasi, "poll_oneoff",          "i(**i*)", &m3_wasi_generic_poll_oneoff)));
 _       (SuppressLookupFailure (m3_LinkRawFunctionEx (module, wasi, "proc_exit",          "v(i)",    &m3_wasi_generic_proc_exit, ctx)));

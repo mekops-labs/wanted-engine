@@ -90,6 +90,7 @@ typedef struct vfs_driver_t {
     int  (*Close)       (vfs_driver_ctx_t d, int fd);
     int  (*Stat)        (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
     int  (*StatSet)     (vfs_driver_ctx_t d, int fd, vfs_stat_t stat);
+    int  (*Unlink)      (vfs_driver_ctx_t d, int fd, const char *path);
 
     int  (*Read)        (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
     int  (*Write)       (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
@@ -125,6 +126,7 @@ int  VfsRead        (vfs_ctx_t c, int fd, void *buf, size_t nbyte);
 int  VfsWrite       (vfs_ctx_t c, int fd, const void *buf, size_t nbyte);
 int  VfsSeek        (vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos);
 int  VfsReadDir     (vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+int  VfsUnlink      (vfs_ctx_t c, int fd, const char *path);
 
 int  VfsSockAccept  (vfs_ctx_t c, int fd, vfs_oflags_t flags, int *newFd);
 int  VfsSockRecv    (vfs_ctx_t c, int fd, void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags);

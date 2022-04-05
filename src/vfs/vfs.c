@@ -223,6 +223,19 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, 
     return TRY_DRV(c->fildes[fd].drv, ReadDir, c->fildes[fd].drv_fd, buf, bufLen, cookie, bufUsed);
 }
 
+int VfsUnlink(vfs_ctx_t c, int fd, const char *path)
+{
+    DEBUG_TRACE("%d (%s)", fd, path);
+
+    if (!CheckFd(c, fd)) return -EBADF;
+
+    if (NULL == path) {
+        return -EINVAL;
+    }
+
+    return TRY_DRV(c->fildes[fd].drv, Unlink, c->fildes[fd].drv_fd, path);
+}
+
 int  VfsSockAccept  (vfs_ctx_t c, int fd, vfs_oflags_t flags, int *newFd)
 {
     DEBUG_TRACE("%d (0x%x)", fd, flags);

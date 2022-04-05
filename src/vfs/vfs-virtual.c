@@ -24,6 +24,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 static int _Register(vfs_driver_ctx_t d, const char *path, const vfs_driver_t *driver);
 
 static inline
@@ -85,6 +86,7 @@ int VfsVirtualInit(vfs_driver_t *driver)
     driver->Write           = _Write;
     driver->Seek            = _Seek;
     driver->ReadDir         = _ReadDir;
+    driver->Unlink          = _Unlink;
 
     driver->ctx->entries[0].drv         = driver;
     driver->ctx->entries[0].name[0]     = '/';
@@ -338,4 +340,24 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
     *cookie = dir.d_next; // last found directory entry
 
     return 0;
+}
+
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path)
+{
+    char normalized[MAX_PATH_LEN];
+    const char *pathLeft;
+    int f;
+
+    if (NULL == path || *path == '\0') {
+        return -EINVAL;
+    }
+
+    if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
+        return -ENAMETOOLONG;
+    }
+
+    f = VfsFindEntry(normalized, d->entries, &pathLeft);
+    if (f < 0) return f;
+
+    return TRY_DRV(d->entries[f].drv, Unlink, fd, pathLeft);
 }
