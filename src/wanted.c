@@ -286,9 +286,9 @@ _freeM3:
 void WantedWappStop(wapp_data_t *ctx)
 {
     /* TODO: hack because this is static driver, we need to close static drivers manuallay */
-    WantedConfigDriver.Close(NULL, 0);
-    WantedControlDriver.Close(NULL, 0);
-    WantedRegistryDriver.Close(NULL, 0);
+    WantedConfigDriver.Close(WantedConfigDriver.ctx, 0);
+    WantedControlDriver.Close(WantedControlDriver.ctx, 0);
+    WantedRegistryDriver.Close(WantedRegistryDriver.ctx, 0);
 
     if (ctx->lastStatus != 0) return;
 
