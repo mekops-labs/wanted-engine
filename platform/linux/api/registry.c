@@ -156,3 +156,14 @@ int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes)
     return written;
 }
 
+int PlatformRegistryRemove(const char *name)
+{
+    char targetName[NAME_MAX];
+
+    snprintf(targetName, NAME_MAX, "%s/%s%s", REGISTRY_ROOT, name, REGISTRY_EXT);
+    if (remove(targetName) != 0) {
+        return -errno;
+    }
+
+    return 0;
+}

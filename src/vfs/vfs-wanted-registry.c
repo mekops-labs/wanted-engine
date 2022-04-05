@@ -28,6 +28,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 
 const vfs_driver_t WantedRegistryDriver = {
     .id              = ID,
@@ -39,6 +40,7 @@ const vfs_driver_t WantedRegistryDriver = {
     .Read            = _Read,
     .Write           = _Write,
     .ReadDir         = _ReadDir,
+    .Unlink          = _Unlink,
 };
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
@@ -158,4 +160,9 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
     *cookie = dir.d_next; // last found directory entry
 
     return 0;
+}
+
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path)
+{
+    return WantedRegistryRemove(path);
 }

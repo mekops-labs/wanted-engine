@@ -125,6 +125,13 @@ int WantedWriteRegistry(bool *cont, const uint8_t *buf, size_t bufLen)
     return PlatformRegistryWrite(CONTINUE_WRITE, buf, bufLen);
 }
 
+int WantedRegistryRemove(const char *name)
+{
+    if (name == NULL) return -1;
+
+    return PlatformRegistryRemove(name);
+}
+
 int WantedCloseRegistry()
 {
     return PlatformRegistryWrite(FINISH_WRITE, NULL, 0);

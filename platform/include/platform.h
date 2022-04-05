@@ -46,3 +46,4 @@ int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len);
 int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes);
+int PlatformRegistryRemove(const char *name);
