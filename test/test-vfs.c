@@ -60,9 +60,7 @@ TEST(vfs_register, SingleRoot)
     VfsVirtualInit(&virt1);
     VfsRegister(vfs, "/", &virt1);
 
-    TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[3].drv);
-
-    VfsVirtualDestroy(&virt1);
+    TEST_ASSERT_EQUAL_PTR(&vfs->drivers[0], vfs->fildes[3].drv);
 }
 
 TEST(vfs_register, RootAndSingleVirtualDir)
@@ -73,15 +71,12 @@ TEST(vfs_register, RootAndSingleVirtualDir)
     VfsRegister(vfs, "/", &virt1);
     VfsRegister(vfs, "/dir", &virt2);
 
-    TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[3].drv);
+    TEST_ASSERT_EQUAL_PTR(&vfs->drivers[0], vfs->fildes[3].drv);
     vfs_stat_t stat;
     int f = TRY_DRV(&virt1, Open, "dir", 0);
     f = TRY_DRV(&virt1, Stat, f, &stat);
     TEST_ASSERT_EQUAL(0, f);
     TEST_ASSERT_EQUAL(virt2.bytesId, stat.dev);
-
-    VfsVirtualDestroy(&virt1);
-    VfsVirtualDestroy(&virt2);
 }
 
 TEST_GROUP_RUNNER(vfs_register)
@@ -106,8 +101,6 @@ TEST_SETUP(vfs_openclose)
 
 TEST_TEAR_DOWN(vfs_openclose)
 {
-    VfsRomfsDestroy(&romfs);
-    VfsVirtualDestroy(&virt1);
     VfsDestroy(&vfs);
 }
 
@@ -128,20 +121,31 @@ TEST(vfs_openclose, OpenThenClose)
 {
     int i;
 
-    i = VfsOpen(vfs, "/rom", 0);
+    i = VfsOpen(vfs, "/", 0);
     TEST_ASSERT_EQUAL_INT(3, i);
     TEST_ASSERT_TRUE(vfs->fildes[3].opened);
-    TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[3].drv);
+    TEST_ASSERT_EQUAL_PTR(&vfs->drivers[0], vfs->fildes[3].drv);
 
-    i = VfsOpen(vfs, "/", 0);
+    i = VfsOpen(vfs, "/rom", 0);
     TEST_ASSERT_EQUAL_INT(4, i);
     TEST_ASSERT_TRUE(vfs->fildes[4].opened);
-    TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[4].drv);
+    TEST_ASSERT_EQUAL_PTR(&vfs->drivers[0], vfs->fildes[4].drv);
 
-    i = VfsOpen(vfs, "/rom/app.wasm", 0);
+    /* this should work for app.wasm */
+    i = VfsOpenAt(vfs, i, "/rom/app.wasm", 0);
     TEST_ASSERT_EQUAL_INT(5, i);
     TEST_ASSERT_TRUE(vfs->fildes[5].opened);
-    TEST_ASSERT_EQUAL_PTR(&virt1, vfs->fildes[5].drv);
+    TEST_ASSERT_EQUAL_PTR(&vfs->drivers[0], vfs->fildes[5].drv);
+
+    i = VfsOpen(vfs, "/", 0);
+    TEST_ASSERT_EQUAL_INT(6, i);
+    TEST_ASSERT_TRUE(vfs->fildes[6].opened);
+    TEST_ASSERT_EQUAL_PTR(&vfs->drivers[0], vfs->fildes[6].drv);
+
+    i = VfsOpen(vfs, "/rom/app.wasm", 0);
+    TEST_ASSERT_EQUAL_INT(7, i);
+    TEST_ASSERT_TRUE(vfs->fildes[7].opened);
+    TEST_ASSERT_EQUAL_PTR(&vfs->drivers[0], vfs->fildes[7].drv);
 
     i = VfsClose(vfs, 3);
     TEST_ASSERT_EQUAL_INT(0, i);
@@ -153,6 +157,14 @@ TEST(vfs_openclose, OpenThenClose)
     TEST_ASSERT_FALSE(vfs->fildes[4].opened);
 
     i = VfsClose(vfs, 5);
+    TEST_ASSERT_EQUAL_INT(0, i);
+    TEST_ASSERT_FALSE(vfs->fildes[5].opened);
+
+    i = VfsClose(vfs, 6);
+    TEST_ASSERT_EQUAL_INT(0, i);
+    TEST_ASSERT_FALSE(vfs->fildes[5].opened);
+
+    i = VfsClose(vfs, 7);
     TEST_ASSERT_EQUAL_INT(0, i);
     TEST_ASSERT_FALSE(vfs->fildes[5].opened);
 }

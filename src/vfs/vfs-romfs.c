@@ -10,14 +10,15 @@
 
 static const char id[] = { 'R', 'o', 'm', 'f' };
 
-static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
-static int _Close(vfs_driver_ctx_t d, int fd);
-static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
-static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
-static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
-static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
+static int _Destroy (vfs_driver_ctx_t *d);
+static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
+static int _Close   (vfs_driver_ctx_t d, int fd);
+static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
+static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int _Seek    (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
+static int _ReadDir (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     return -EROFS;
 }
 
@@ -43,6 +44,7 @@ int VfsRomfsInit(vfs_driver_t *driver, const char *root, uint8_t *RomfsImg, size
     driver->bytesId         = *(uint32_t*)(id);
     driver->filetype        = VFS_FILETYPE_DIRECTORY;
     driver->ctx->rootPath   = root;
+    driver->Destroy         = _Destroy;
     driver->Open            = _Open;
     driver->OpenAt          = _OpenAt;
     driver->Close           = _Close;
@@ -55,10 +57,13 @@ int VfsRomfsInit(vfs_driver_t *driver, const char *root, uint8_t *RomfsImg, size
     return 0;
 }
 
-void VfsRomfsDestroy(vfs_driver_t *driver)
+static int _Destroy(vfs_driver_ctx_t *c)
 {
-    RomfsUnload(&(driver->ctx->romfs));
-    WantedFree(driver->ctx);
+    RomfsUnload(&((*c)->romfs));
+    WantedFree(*c);
+    *c = NULL;
+
+    return 0;
 }
 
 static vfs_filetype_t convertFiletype(uint8_t t)

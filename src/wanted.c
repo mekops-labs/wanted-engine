@@ -25,9 +25,9 @@ static const char* manifestName = "manifest.json";
 static const char* appName      = "app.wasm";
 
 struct m3Data_t {
+    m3_wasi_context_t *wasiCtx;
     IM3Runtime rt;
     IM3Environment env;
-    m3_wasi_context_t *wasiCtx;
 };
 
 static int LoadFile(const char* name, uint8_t *img, size_t imgLen, wapp_t *file)
@@ -131,7 +131,7 @@ int WantedWappRun(wapp_data_t *ctx)
     IM3Function f;
     wapp_t manifest, wasm;
     wapp_t *wapp = &ctx->wapp;
-    int ret;
+    int ret = 0;
 
     if (ctx == NULL) {
         DEBUG_TRACE("ctx is NULL");
@@ -185,63 +185,31 @@ int WantedWappRun(wapp_data_t *ctx)
         goto _freeM3;
     }
 
-    ctx->vfs.main = VfsInit();
-    if (!ctx->vfs.main) {
+    ctx->vfs = VfsInit();
+    if (!ctx->vfs) {
         DEBUG_TRACE("VfsInit: can't allocate");
         goto _freeCtx;
     }
 
     ctx->m3->wasiCtx->argc = 0;
     ctx->m3->wasiCtx->argv = NULL;
-    ctx->m3->wasiCtx->vfsCtx = ctx->vfs.main;
+    ctx->m3->wasiCtx->vfsCtx = ctx->vfs;
 
     LinkWASI(mod, ctx->m3->wasiCtx);
     LinkWantedApi(mod);
     m3_LinkLibC(mod);
 
-    ret = VfsVirtualInit(&ctx->vfs.drivers[0]);
+    ret = WantedInstallDriver(ctx->vfs, wapp,  "platform",   "<stdin>", NULL);
+    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stdout>", NULL);
+    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stderr>", NULL);
+    ret += WantedInstallDriver(ctx->vfs, wapp, "virt",       "/", NULL);
+    ret += WantedInstallDriver(ctx->vfs, wapp, "rom",        "/rom", "");
+    ret += WantedInstallDriver(ctx->vfs, wapp, "socket",     "/skt", "t 127.0.0.1 8888");
+    ret += WantedInstallDriver(ctx->vfs, wapp, "wanted",     "/w", NULL);
     if (ret < 0) {
-        DEBUG_TRACE("VfsVirtualInit: can't load virt driver (%d)", ret);
+        DEBUG_TRACE("error installing drivers");
         goto _freeVfs;
     }
-
-    ret = VfsRomfsInit(&ctx->vfs.drivers[1], "", ctx->wapp.img, ctx->wapp.img_len);
-    if (ret < 0) {
-        DEBUG_TRACE("VfsRomfsInit: can't load romfs (%d)", ret);
-        goto _freeVfs;
-    }
-
-    ret = VfsPlatformFsInit(&ctx->vfs.drivers[2]);
-    if (ret < 0) {
-        DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
-        goto _freeVfs;
-    }
-
-    ret = VfsSocketInit(&ctx->vfs.drivers[3], VFS_SKT_TCP, "127.0.0.1", 8888);
-    if (ret < 0) {
-        DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
-        goto _freeVfs;
-    }
-
-    ret = VfsVirtualInit(&ctx->vfs.drivers[5]);
-    if (ret < 0) {
-        DEBUG_TRACE("VfsVirtualInit: can't load driver (%d)", ret);
-        goto _freeVfs;
-    }
-
-    VfsRegister(ctx->vfs.main, "<stdin>", &ctx->vfs.drivers[2]);
-    VfsRegister(ctx->vfs.main, "<stdout>", &ctx->vfs.drivers[2]);
-    VfsRegister(ctx->vfs.main, "<stderr>", &ctx->vfs.drivers[2]);
-    VfsRegister(ctx->vfs.main, "/", &ctx->vfs.drivers[0]);
-    VfsRegister(ctx->vfs.main, "/rom", &ctx->vfs.drivers[1]);
-    VfsRegister(ctx->vfs.main, "/data", &ctx->vfs.drivers[2]);
-    VfsRegister(ctx->vfs.main, "/skt", &ctx->vfs.drivers[3]);
-    VfsRegister(ctx->vfs.main, "/wanted", &ctx->vfs.drivers[5]);
-
-
-    VfsRegister(ctx->vfs.main, "/wanted/config", &WantedConfigDriver);
-    VfsRegister(ctx->vfs.main, "/wanted/ctrl",   &WantedControlDriver);
-    VfsRegister(ctx->vfs.main, "/wanted/reg", &WantedRegistryDriver);
 
     status = m3_FindFunction (&f, ctx->m3->rt, "entry");
     if (status) {
@@ -265,12 +233,7 @@ int WantedWappRun(wapp_data_t *ctx)
     return 0;
 
 _freeVfs:
-    VfsVirtualDestroy(&ctx->vfs.drivers[5]);
-    VfsSocketDestroy(&ctx->vfs.drivers[3]);
-    VfsPlatformFsDestroy(&ctx->vfs.drivers[2]);
-    VfsRomfsDestroy(&ctx->vfs.drivers[1]);
-    VfsVirtualDestroy(&ctx->vfs.drivers[0]);
-    VfsDestroy(&ctx->vfs.main);
+    VfsDestroy(&ctx->vfs);
 _freeCtx:
     FreeWasiContext(ctx->m3->wasiCtx);
 _freeM3:
@@ -285,21 +248,11 @@ _freeM3:
 
 void WantedWappStop(wapp_data_t *ctx)
 {
-    /* TODO: hack because this is static driver, we need to close static drivers manuallay */
-    WantedConfigDriver.Close(WantedConfigDriver.ctx, 0);
-    WantedControlDriver.Close(WantedControlDriver.ctx, 0);
-    WantedRegistryDriver.Close(WantedRegistryDriver.ctx, 0);
-
     if (ctx->lastStatus != 0) return;
 
     DEBUG_TRACE("start");
 
-    VfsVirtualDestroy(&ctx->vfs.drivers[5]);
-    VfsSocketDestroy(&ctx->vfs.drivers[3]);
-    VfsPlatformFsDestroy(&ctx->vfs.drivers[2]);
-    VfsRomfsDestroy(&ctx->vfs.drivers[1]);
-    VfsVirtualDestroy(&ctx->vfs.drivers[0]);
-    VfsDestroy(&ctx->vfs.main);
+    VfsDestroy(&ctx->vfs);
     FreeWasiContext(ctx->m3->wasiCtx);
     m3_FreeRuntime(ctx->m3->rt);
     m3_FreeEnvironment(ctx->m3->env);

@@ -35,7 +35,6 @@ int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout, plat_
 int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len);
 
 int VfsPlatformFsInit(vfs_driver_t *driver);
-void VfsPlatformFsDestroy(vfs_driver_t *driver);
 
 int PlatformWappLoad(const char *name, wapp_t * wapp);
 int PlatformWappUnload(const wapp_t *wapp);

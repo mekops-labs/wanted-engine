@@ -13,6 +13,7 @@
 
 static const char id[] = { 'L', 'i', 'n', 'u' };
 
+static int _Destroy(vfs_driver_ctx_t *d);
 static int _Start(vfs_driver_ctx_t d);
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
@@ -41,6 +42,7 @@ int VfsLinuxInit(vfs_driver_t *driver, const char *root)
     driver->bytesId         = *(uint32_t*)(id);
     driver->filetype        = VFS_FILETYPE_DIRECTORY;
     driver->ctx->rootPath   = root;
+    driver->Destroy         = _Destroy;
     driver->Open            = _Open;
     driver->OpenAt          = _OpenAt;
     driver->Close           = _Close;
@@ -53,9 +55,9 @@ int VfsLinuxInit(vfs_driver_t *driver, const char *root)
     return 0;
 }
 
-void VfsLinuxDestroy(vfs_driver_t *driver)
+static int _Destroy(vfs_driver_ctx_t *d)
 {
-    WantedFree(driver->ctx);
+    WantedFree(*d);
 }
 
 static inline vfs_filetype_t convertFiletype(uint32_t t)

@@ -26,14 +26,9 @@ typedef struct {
 } wapp_t;
 
 typedef struct {
-    vfs_ctx_t main;
-    vfs_driver_t drivers[10];
-} vfs_ctxs_t;
-
-typedef struct {
     uint8_t id;
     wapp_t wapp;
-    vfs_ctxs_t vfs;
+    vfs_ctx_t vfs;
     im3Data_t m3;
     int lastStatus;
 } wapp_data_t;

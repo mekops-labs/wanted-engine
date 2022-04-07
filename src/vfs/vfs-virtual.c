@@ -16,16 +16,17 @@
 
 static const char id[] = { 'V', 'i', 'r', 't' };
 
-static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
-static int _Close(vfs_driver_ctx_t d, int fd);
-static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
-static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
-static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
-static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
-static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
-static int _Register(vfs_driver_ctx_t d, const char *path, const vfs_driver_t *driver);
+static int _Register    (vfs_driver_ctx_t d, const char *path, const vfs_driver_t *driver);
+static int _Destroy     (vfs_driver_ctx_t *d);
+static int _Open        (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _OpenAt      (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
+static int _Close       (vfs_driver_ctx_t d, int fd);
+static int _Stat        (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
+static int _Read        (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int _Write       (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+static int _Seek        (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
+static int _ReadDir     (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+static int _Unlink      (vfs_driver_ctx_t d, int fd, const char *path);
 
 static inline
 bool CheckFd(vfs_driver_ctx_t d, int fd)
@@ -70,7 +71,9 @@ int VfsVirtualInit(vfs_driver_t *driver)
         return -EINVAL;
     }
 
-    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
+    size_t s = sizeof(struct vfs_driver_ctx_t);
+
+    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(s);
     if (NULL == driver->ctx) return -ENOMEM;
 
     memset(driver->ctx, 0, sizeof(struct vfs_driver_ctx_t));
@@ -78,6 +81,7 @@ int VfsVirtualInit(vfs_driver_t *driver)
     driver->bytesId         = *(uint32_t*)(id);
     driver->filetype        = VFS_FILETYPE_DIRECTORY;
     driver->Register        = _Register;
+    driver->Destroy         = _Destroy;
     driver->Open            = _Open;
     driver->OpenAt          = _OpenAt;
     driver->Close           = _Close;
@@ -88,22 +92,15 @@ int VfsVirtualInit(vfs_driver_t *driver)
     driver->ReadDir         = _ReadDir;
     driver->Unlink          = _Unlink;
 
-    driver->ctx->entries[0].drv         = driver;
-    driver->ctx->entries[0].name[0]     = '/';
-    driver->ctx->cnt++;
-
-    driver->ctx->fildes[0].drv_fd       = 0;
-    driver->ctx->fildes[0].drv          = driver;
-    driver->ctx->fildes[0].opened       = true;
-    driver->ctx->fildes[0].flags        = VFS_O_RDONLY;
-
     return 0;
 }
 
-void VfsVirtualDestroy(vfs_driver_t *driver)
+static int _Destroy(vfs_driver_ctx_t *c)
 {
-    WantedFree(driver->ctx);
-    driver->ctx = NULL;
+    WantedFree(*c);
+    *c = NULL;
+
+    return 0;
 }
 
 int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft)
@@ -156,6 +153,18 @@ static int _Register(vfs_driver_ctx_t d, const char *path, const vfs_driver_t *d
 
     if (memcmp(".", path, 2) == 0 || memcmp("..", path, 3) == 0) {
         return -EINVAL;
+    }
+
+    if (memcmp("/", path, 2) == 0) {
+        d->entries[0].drv         = driver;
+        d->entries[0].name[0]     = '/';
+        d->cnt++;
+        d->fildes[0].drv_fd       = 0;
+        d->fildes[0].drv          = driver;
+        d->fildes[0].opened       = true;
+        d->fildes[0].flags        = VFS_O_RDONLY;
+
+        return 0;
     }
 
     if (!cwk_path_get_first_segment(path, &seg)) {

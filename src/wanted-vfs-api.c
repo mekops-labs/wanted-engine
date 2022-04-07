@@ -1,12 +1,13 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <errno.h>
 
+#include <debug_trace.h>
 #include <wanted-vfs-api.h>
 #include <platform.h>
+#include <vfs-drivers.h>
 
-#include <romfs.h>
-
-#include <wanted_malloc.h>
 #include <json-maker/json-maker.h>
 
 static wantedConfig_t currentConfig;
@@ -145,4 +146,90 @@ int WantedReadState(uint8_t *buf, size_t bufLen)
     if (ret < 0) return ret;
 
     return StateToJson(wapps, ret, buf, bufLen);
+}
+
+int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, const char *path, const char *options)
+{
+    int ret = 0;
+    vfs_driver_t drv = { 0 };
+
+    if (c == NULL || w == NULL || name == NULL || path == NULL) {
+        return -EINVAL;
+    }
+
+    if (memcmp("virt", name, 5) == 0) {
+        ret = VfsVirtualInit(&drv);
+        if (ret < 0) {
+            DEBUG_TRACE("VfsVirtualInit: can't load virt driver (%d)", ret);
+            return ret;
+        }
+    } else if (memcmp("rom", name, 4) == 0) {
+        if (options == NULL) {
+            return -EINVAL;
+        }
+        ret = VfsRomfsInit(&drv, options, w->img, w->img_len);
+        if (ret < 0) {
+            DEBUG_TRACE("VfsRomfsInit: can't load romfs (%d)", ret);
+            return ret;
+        }
+    } else if (memcmp("platform", name, 9) == 0) {
+        ret = VfsPlatformFsInit(&drv);
+        if (ret < 0) {
+            DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
+            return ret;
+        }
+    } else if (memcmp("socket", name, 7) == 0) {
+        if (options == NULL) {
+            return -EINVAL;
+        }
+        char t;
+        char host[strlen(options)];
+        uint16_t port;
+        ret = sscanf(options, "%c %s %d", &t, host, &port);
+        if (ret < 3) {
+            DEBUG_TRACE("VfsSocketInit: bad options");
+            return -EINVAL;
+        }
+
+        uint8_t type;
+        switch (t) {
+            case 't': type = VFS_SKT_TCP; break;
+            case 'u': type = VFS_SKT_UDP; break;
+            case 'b': type = VFS_SKT_BUS; break;
+            default: return -EINVAL;
+        }
+
+        ret = VfsSocketInit(&drv, type, host, port);
+        if (ret < 0) {
+            DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
+            return ret;
+        }
+    } else if (memcmp("wanted", name, 7) == 0) {
+        ret = VfsVirtualInit(&drv);
+        if (ret < 0) {
+            DEBUG_TRACE("VfsWantedInit: can't load driver (%d)", ret);
+            return ret;
+        }
+        ret = drv.Register(drv.ctx, "config", &WantedConfigDriver);
+        if (ret < 0) {
+            DEBUG_TRACE("VfsWantedInit: can't register config (%d)", ret);
+            return ret;
+        }
+        ret = drv.Register(drv.ctx, "ctrl", &WantedControlDriver);
+        if (ret < 0) {
+            DEBUG_TRACE("VfsWantedInit: can't register ctrl (%d)", ret);
+            return ret;
+        }
+        ret = drv.Register(drv.ctx, "reg", &WantedRegistryDriver);
+        if (ret < 0) {
+            DEBUG_TRACE("VfsWantedInit: can't register reg (%d)", ret);
+            return ret;
+        }
+    } else {
+        return -EINVAL;
+    }
+
+    ret = VfsRegister(c, path, &drv);
+
+    return ret;
 }

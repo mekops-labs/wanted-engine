@@ -95,7 +95,7 @@ TEST(vfs_virtual_init, InitAndDestroy)
     TEST_ASSERT_EQUAL_PTR(&v, fs[0].drv);
     TEST_ASSERT_EQUAL_STRING("/", fs[0].name);
 
-    VfsVirtualDestroy(&v);
+    v.Destroy(&v.ctx);
     TEST_ASSERT_NULL(v.ctx);
 }
 
@@ -115,7 +115,7 @@ TEST_SETUP(vfs_virtual_register)
 
 TEST_TEAR_DOWN(vfs_virtual_register)
 {
-    VfsVirtualDestroy(&virt);
+    virt.Destroy(&virt.ctx);
 }
 
 TEST(vfs_virtual_register, RegisterFail)
@@ -201,7 +201,7 @@ TEST(vfs_virtual_register, RegisterTree)
     ret = TRY_DRV(&virt, Register, "a/b/c", &dummy);
     TEST_ASSERT_EQUAL(-EPERM, ret);
 
-    VfsVirtualDestroy(&virt2);
+    virt2.Destroy(&virt2.ctx);
 }
 
 TEST_GROUP_RUNNER(vfs_virtual_register)
@@ -234,8 +234,8 @@ TEST_SETUP(vfs_virtual_find)
 
 TEST_TEAR_DOWN(vfs_virtual_find)
 {
-    VfsVirtualDestroy(&virt2);
-    VfsVirtualDestroy(&virt);
+    virt2.Destroy(&virt2.ctx);
+    virt.Destroy(&virt.ctx);
 }
 
 TEST(vfs_virtual_find, findFileNotFound)
@@ -386,8 +386,8 @@ TEST_SETUP(vfs_virtual_open)
 
 TEST_TEAR_DOWN(vfs_virtual_open)
 {
-    VfsVirtualDestroy(&virt2);
-    VfsVirtualDestroy(&virt);
+    virt2.Destroy(&virt2.ctx);
+    virt.Destroy(&virt.ctx);
 }
 
 TEST(vfs_virtual_open, OpenFail)
@@ -510,8 +510,8 @@ TEST_SETUP(vfs_virtual_close)
 
 TEST_TEAR_DOWN(vfs_virtual_close)
 {
-    VfsVirtualDestroy(&virt2);
-    VfsVirtualDestroy(&virt);
+    virt2.Destroy(&virt2.ctx);
+    virt.Destroy(&virt.ctx);
 }
 
 TEST(vfs_virtual_close, CloseFail)
@@ -597,8 +597,8 @@ TEST_SETUP(vfs_virtual_stat)
 
 TEST_TEAR_DOWN(vfs_virtual_stat)
 {
-    VfsVirtualDestroy(&virt2);
-    VfsVirtualDestroy(&virt);
+    virt2.Destroy(&virt2.ctx);
+    virt.Destroy(&virt.ctx);
 }
 
 TEST(vfs_virtual_stat, StatFail)
@@ -664,8 +664,8 @@ TEST_SETUP(vfs_virtual_read_write_seek)
 
 TEST_TEAR_DOWN(vfs_virtual_read_write_seek)
 {
-    VfsVirtualDestroy(&virt2);
-    VfsVirtualDestroy(&virt);
+    virt2.Destroy(&virt2.ctx);
+    virt.Destroy(&virt.ctx);
 }
 
 TEST(vfs_virtual_read_write_seek, ReadWriteSeekFail)
@@ -752,8 +752,8 @@ TEST_SETUP(vfs_virtual_readdir)
 
 TEST_TEAR_DOWN(vfs_virtual_readdir)
 {
-    VfsVirtualDestroy(&virt2);
-    VfsVirtualDestroy(&virt);
+    virt2.Destroy(&virt2.ctx);
+    virt.Destroy(&virt.ctx);
 }
 
 #define BUF_LEN 256

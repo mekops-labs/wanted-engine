@@ -4,7 +4,9 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <wanted.h>
+#include <wanted-api.h>
 
+int WantedInstallDriver(vfs_ctx_t c, const wapp_t *w, const char *name, const char *path, const char *options);
 
 int WantedSetConfig(wantedConfig_t cfg);
 int WantedGetConfig(uint8_t *buf, size_t bufLen);

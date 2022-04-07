@@ -47,25 +47,44 @@ vfs_ctx_t VfsInit()
     return c;
 }
 
+static void DestroyDrivers(vfs_ctx_t c) {
+    for (int i = 0; i < c->nDrivers; i++) {
+        if (c->drivers[i].Destroy != NULL) c->drivers[i].Destroy(&c->drivers[i].ctx);
+    }
+    c->nDrivers = 0;
+}
+
 void VfsDestroy(vfs_ctx_t *c)
 {
     if (NULL == c || NULL == *c) return;
+    DestroyDrivers(*c);
     WantedFree(*c);
     *c = NULL;
 }
 
 int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver)
 {
+    int ret = 0;
     DEBUG_TRACE("%s (%.4s)", path, driver->id);
+
+    if (c->nDrivers >= MAX_DRIVERS) {
+        return -ENOSPC;
+    }
 
     if (NULL == driver || NULL == c) {
         return -EINVAL;
     }
 
+    memcpy(&(c->drivers[c->nDrivers]), driver, sizeof(vfs_driver_t));
+
+    driver = &(c->drivers[c->nDrivers]);
+
     struct cwk_segment seg;
 
     if (memcmp("/", path, 2) == 0) {
         c->fildes[ROOT_FD].drv = driver;
+        ret = TRY_DRV(c->fildes[ROOT_FD].drv, Register, path, driver);
+        if (ret < 0) return ret;
     } else if (memcmp("<stdin>", path, 8) == 0) {
         c->fildes[VFS_STDIN].drv = driver;
         c->fildes[VFS_STDIN].drv_fd = VFS_STDIN;
@@ -87,9 +106,13 @@ int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver)
             return -EINVAL;
         }
 
-        return TRY_DRV(c->fildes[ROOT_FD].drv, Register, seg.begin, driver);
+        ret = TRY_DRV(c->fildes[ROOT_FD].drv, Register, seg.begin, driver);
+        if (ret < 0) return ret;
     }
-    return 0;
+
+    c->nDrivers++;
+
+    return ret;
 }
 
 int VfsOpen(vfs_ctx_t c, const char *path, vfs_oflags_t flags)

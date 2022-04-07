@@ -20,20 +20,22 @@ static struct vfs_driver_ctx_t {
     reg_entry_t entries[MAX_WAPPS];
 } ctx;
 
-static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
-static int _Close(vfs_driver_ctx_t d, int fd);
-static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
-static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
-static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
-static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
-static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
+static int _Destroy (vfs_driver_ctx_t *d);
+static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
+static int _Close   (vfs_driver_ctx_t d, int fd);
+static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
+static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+static int _Seek    (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
+static int _ReadDir (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+static int _Unlink  (vfs_driver_ctx_t d, int fd, const char *path);
 
 const vfs_driver_t WantedRegistryDriver = {
     .id              = ID,
     .filetype        = VFS_FILETYPE_DIRECTORY,
     .ctx             = &ctx,
+    .Destroy         = _Destroy,
     .Open            = _Open,
     .Close           = _Close,
     .Stat            = _Stat,
@@ -42,6 +44,11 @@ const vfs_driver_t WantedRegistryDriver = {
     .ReadDir         = _ReadDir,
     .Unlink          = _Unlink,
 };
+
+static int _Destroy (vfs_driver_ctx_t *d)
+{
+    memset(*d, 0, sizeof(ctx));
+}
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {

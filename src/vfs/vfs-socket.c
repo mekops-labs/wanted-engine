@@ -22,6 +22,7 @@ struct vfs_driver_ctx_t {
     struct sockaddr_in serv_addr;
 };
 
+static int _Destroy     (vfs_driver_ctx_t *d);
 static int _Open        (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
 static int _OpenAt      (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close       (vfs_driver_ctx_t d, int fd);
@@ -62,6 +63,7 @@ int VfsSocketInit(vfs_driver_t *driver, uint8_t type, char *addr, uint16_t port)
     driver->ctx->type       = type;
     strncpy((char *)driver->ctx->addr, addr, MAX_ADDR_LEN);
     driver->ctx->port       = port;
+    driver->Destroy         = _Destroy;
     driver->Open            = _Open;
     driver->OpenAt          = _OpenAt;
     driver->Close           = _Close;
@@ -75,9 +77,12 @@ int VfsSocketInit(vfs_driver_t *driver, uint8_t type, char *addr, uint16_t port)
     return 0;
 }
 
-void VfsSocketDestroy(vfs_driver_t *driver)
+static int _Destroy(vfs_driver_ctx_t *c)
 {
-    WantedFree(driver->ctx);
+    WantedFree(*c);
+    *c = NULL;
+
+    return 0;
 }
 
 static int ConnectSocket(vfs_driver_ctx_t d, int sock)

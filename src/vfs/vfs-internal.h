@@ -13,6 +13,7 @@
 #define MAX_ENTRY_NAME_LEN  32
 #define MAX_OPEN            20
 #define ROOT_FD             3
+#define MAX_DRIVERS         10
 
 typedef struct vfs_entry_t {
     char                name[MAX_ENTRY_NAME_LEN];
@@ -29,6 +30,8 @@ typedef struct vfs_fildes_t {
 
 struct vfs_ctx_t {
     vfs_fildes_t fildes[MAX_OPEN];
+    vfs_driver_t drivers[MAX_DRIVERS];
+    size_t nDrivers;
 };
 
 int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft);

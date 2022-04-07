@@ -13,17 +13,19 @@
 
 #define ID  {'W', 'c', 't', 'l'}
 
-static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
-static int _Close(vfs_driver_ctx_t d, int fd);
-static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
-static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
-static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
+static int _Destroy (vfs_driver_ctx_t *d);
+static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
+static int _Close   (vfs_driver_ctx_t d, int fd);
+static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
+static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+static int _Seek    (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
 
 const vfs_driver_t WantedControlDriver = {
     .id              = ID,
     .filetype        = VFS_FILETYPE_CHARACTER_DEVICE,
+    .Destroy         = _Destroy,
     .Open            = _Open,
     .Close           = _Close,
     .Stat            = _Stat,
@@ -32,6 +34,11 @@ const vfs_driver_t WantedControlDriver = {
 };
 
 static bool opened = false;
+
+static int _Destroy (vfs_driver_ctx_t *d)
+{
+    opened = false;
+}
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
