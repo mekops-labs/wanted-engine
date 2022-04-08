@@ -17,7 +17,7 @@
 static const char id[] = { 'V', 'i', 'r', 't' };
 
 static int _Register    (vfs_driver_ctx_t d, const char *path, const vfs_driver_t *driver);
-static int _Destroy     (vfs_driver_ctx_t *d);
+static int _Destroy     (struct vfs_driver_t *d);
 static int _Open        (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
 static int _OpenAt      (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close       (vfs_driver_ctx_t d, int fd);
@@ -63,18 +63,20 @@ int FindFirstClosedFd(vfs_driver_ctx_t d)
 }
 
 
-int VfsVirtualInit(vfs_driver_t *driver)
+vfs_driver_t *VfsVirtualInit()
 {
-    int ret;
+    vfs_driver_t *driver;
 
+    driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
     if (NULL == driver) {
-        return -EINVAL;
+        return NULL;
     }
 
-    size_t s = sizeof(struct vfs_driver_ctx_t);
-
-    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(s);
-    if (NULL == driver->ctx) return -ENOMEM;
+    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
+    if (NULL == driver->ctx) {
+        WantedFree(driver);
+        return NULL;
+    }
 
     memset(driver->ctx, 0, sizeof(struct vfs_driver_ctx_t));
 
@@ -92,13 +94,21 @@ int VfsVirtualInit(vfs_driver_t *driver)
     driver->ReadDir         = _ReadDir;
     driver->Unlink          = _Unlink;
 
-    return 0;
+    driver->ctx->entries[0].drv         = driver;
+    driver->ctx->entries[0].name[0]     = '/';
+    driver->ctx->cnt++;
+    driver->ctx->fildes[0].drv_fd       = 0;
+    driver->ctx->fildes[0].drv          = driver;
+    driver->ctx->fildes[0].opened       = true;
+    driver->ctx->fildes[0].flags        = VFS_O_RDONLY;
+
+    return driver;
 }
 
-static int _Destroy(vfs_driver_ctx_t *c)
+static int _Destroy(struct vfs_driver_t *d)
 {
-    WantedFree(*c);
-    *c = NULL;
+    WantedFree(d->ctx);
+    WantedFree(d);
 
     return 0;
 }
@@ -156,14 +166,6 @@ static int _Register(vfs_driver_ctx_t d, const char *path, const vfs_driver_t *d
     }
 
     if (memcmp("/", path, 2) == 0) {
-        d->entries[0].drv         = driver;
-        d->entries[0].name[0]     = '/';
-        d->cnt++;
-        d->fildes[0].drv_fd       = 0;
-        d->fildes[0].drv          = driver;
-        d->fildes[0].opened       = true;
-        d->fildes[0].flags        = VFS_O_RDONLY;
-
         return 0;
     }
 

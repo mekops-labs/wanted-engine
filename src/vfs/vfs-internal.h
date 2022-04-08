@@ -30,7 +30,7 @@ typedef struct vfs_fildes_t {
 
 struct vfs_ctx_t {
     vfs_fildes_t fildes[MAX_OPEN];
-    vfs_driver_t drivers[MAX_DRIVERS];
+    const vfs_driver_t *drivers[MAX_DRIVERS];
     size_t nDrivers;
 };
 

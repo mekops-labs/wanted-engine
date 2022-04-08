@@ -84,7 +84,7 @@ typedef struct vfs_driver_t {
     int  (*Register)    (vfs_driver_ctx_t d, const char *path, const struct vfs_driver_t *driver);
 
     /* Destroy this driver */
-    int  (*Destroy)     (vfs_driver_ctx_t *d);
+    int  (*Destroy)     (struct vfs_driver_t *d);
 
     /* FS operations */
 

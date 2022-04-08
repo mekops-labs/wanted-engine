@@ -9,7 +9,7 @@
 
 #define ID  {'W', 'c', 'f', 'g'}
 
-static int _Destroy (vfs_driver_ctx_t *d);
+static int _Destroy (struct vfs_driver_t *d);
 static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
 static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close   (vfs_driver_ctx_t d, int fd);
@@ -31,7 +31,7 @@ const vfs_driver_t WantedConfigDriver = {
 
 static bool opened = false;
 
-static int _Destroy (vfs_driver_ctx_t *d)
+static int _Destroy (struct vfs_driver_t *d)
 {
     opened = false;
 }

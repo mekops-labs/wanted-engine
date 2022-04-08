@@ -13,31 +13,40 @@
 
 static const char id[] = { 'L', 'i', 'n', 'u' };
 
-static int _Destroy(vfs_driver_ctx_t *d);
-static int _Start(vfs_driver_ctx_t d);
-static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
-static int _Close(vfs_driver_ctx_t d, int fd);
-static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
-static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
-static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
-static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+static int _Destroy (struct vfs_driver_t *d);
+static int _Start   (vfs_driver_ctx_t d);
+static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
+static int _Close   (vfs_driver_ctx_t d, int fd);
+static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
+static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+static int _Seek    (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
+static int _ReadDir (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
 struct vfs_driver_ctx_t {
     const char* rootPath;
 };
 
-int VfsLinuxInit(vfs_driver_t *driver, const char *root)
+vfs_driver_t *VfsLinuxInit(const char *root)
 {
     int ret;
+    vfs_driver_t *driver;
 
-    if (NULL == root || NULL == driver) {
-        return -EINVAL;
+    if (NULL == root) {
+        return NULL;
+    }
+
+    driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
+    if (NULL == driver) {
+        return NULL;
     }
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
-    if (NULL == driver->ctx) return -ENOMEM;
+    if (NULL == driver->ctx) {
+        WantedFree(driver);
+        return NULL;
+    }
 
     driver->bytesId         = *(uint32_t*)(id);
     driver->filetype        = VFS_FILETYPE_DIRECTORY;
@@ -52,12 +61,13 @@ int VfsLinuxInit(vfs_driver_t *driver, const char *root)
     driver->Seek            = _Seek;
     driver->ReadDir         = _ReadDir;
 
-    return 0;
+    return driver;
 }
 
-static int _Destroy(vfs_driver_ctx_t *d)
+static int _Destroy (struct vfs_driver_t *d)
 {
-    WantedFree(*d);
+    WantedFree(d->ctx);
+    WantedFree(d);
 }
 
 static inline vfs_filetype_t convertFiletype(uint32_t t)
@@ -106,6 +116,11 @@ static int _Start(vfs_driver_ctx_t d)
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
+    /* TODO: ugly hack to make driver generic */
+    if (memcmp(path, "<stdin>", 8) == 0) return VFS_STDIN;
+    if (memcmp(path, "<stdout>", 9) == 0) return VFS_STDOUT;
+    if (memcmp(path, "<stderr>", 9) == 0) return VFS_STDERR;
+
     char joined[PATH_MAX];
     cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
 

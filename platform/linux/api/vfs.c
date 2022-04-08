@@ -2,6 +2,7 @@
 #include <vfs-linux.h>
 #include <config-linux.h>
 
-int VfsPlatformFsInit(vfs_driver_t *driver) {
-    return VfsLinuxInit(driver, DEFAULT_ROOT);
+vfs_driver_t *VfsPlatformFsInit()
+{
+    return VfsLinuxInit(DEFAULT_ROOT);
 }

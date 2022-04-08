@@ -151,32 +151,32 @@ int WantedReadState(uint8_t *buf, size_t bufLen)
 int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, const char *path, const char *options)
 {
     int ret = 0;
-    vfs_driver_t drv = { 0 };
+    vfs_driver_t *drv = NULL;
 
     if (c == NULL || w == NULL || name == NULL || path == NULL) {
         return -EINVAL;
     }
 
     if (memcmp("virt", name, 5) == 0) {
-        ret = VfsVirtualInit(&drv);
-        if (ret < 0) {
+        drv = VfsVirtualInit();
+        if (NULL == drv) {
             DEBUG_TRACE("VfsVirtualInit: can't load virt driver (%d)", ret);
-            return ret;
+            return -ENOMEM;
         }
     } else if (memcmp("rom", name, 4) == 0) {
         if (options == NULL) {
             return -EINVAL;
         }
-        ret = VfsRomfsInit(&drv, options, w->img, w->img_len);
-        if (ret < 0) {
+        drv = VfsRomfsInit(options, w->img, w->img_len);
+        if (NULL == drv) {
             DEBUG_TRACE("VfsRomfsInit: can't load romfs (%d)", ret);
-            return ret;
+            return -ENOMEM;
         }
     } else if (memcmp("platform", name, 9) == 0) {
-        ret = VfsPlatformFsInit(&drv);
-        if (ret < 0) {
+        drv = VfsPlatformFsInit();
+        if (NULL == drv) {
             DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
-            return ret;
+            return -ENOMEM;
         }
     } else if (memcmp("socket", name, 7) == 0) {
         if (options == NULL) {
@@ -199,28 +199,28 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
             default: return -EINVAL;
         }
 
-        ret = VfsSocketInit(&drv, type, host, port);
-        if (ret < 0) {
+        drv = VfsSocketInit(type, host, port);
+        if (NULL == drv) {
             DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
-            return ret;
+            return -ENOMEM;
         }
     } else if (memcmp("wanted", name, 7) == 0) {
-        ret = VfsVirtualInit(&drv);
-        if (ret < 0) {
+        drv = VfsVirtualInit();
+        if (NULL == drv) {
             DEBUG_TRACE("VfsWantedInit: can't load driver (%d)", ret);
-            return ret;
+            return -ENOMEM;
         }
-        ret = drv.Register(drv.ctx, "config", &WantedConfigDriver);
+        ret = drv->Register(drv->ctx, "config", &WantedConfigDriver);
         if (ret < 0) {
             DEBUG_TRACE("VfsWantedInit: can't register config (%d)", ret);
             return ret;
         }
-        ret = drv.Register(drv.ctx, "ctrl", &WantedControlDriver);
+        ret = drv->Register(drv->ctx, "ctrl", &WantedControlDriver);
         if (ret < 0) {
             DEBUG_TRACE("VfsWantedInit: can't register ctrl (%d)", ret);
             return ret;
         }
-        ret = drv.Register(drv.ctx, "reg", &WantedRegistryDriver);
+        ret = drv->Register(drv->ctx, "reg", &WantedRegistryDriver);
         if (ret < 0) {
             DEBUG_TRACE("VfsWantedInit: can't register reg (%d)", ret);
             return ret;
@@ -229,7 +229,7 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
         return -EINVAL;
     }
 
-    ret = VfsRegister(c, path, &drv);
+    ret = VfsRegister(c, path, drv);
 
     return ret;
 }

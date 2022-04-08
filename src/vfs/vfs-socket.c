@@ -13,6 +13,7 @@
 
 static const char id[] = { 'S', 'o', 'c', 'k' };
 
+/* TODO: support many connections */
 struct vfs_driver_ctx_t {
     uint8_t         type;
     const char      addr[MAX_ADDR_LEN];
@@ -22,7 +23,7 @@ struct vfs_driver_ctx_t {
     struct sockaddr_in serv_addr;
 };
 
-static int _Destroy     (vfs_driver_ctx_t *d);
+static int _Destroy     (struct vfs_driver_t *d);
 static int _Open        (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
 static int _OpenAt      (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close       (vfs_driver_ctx_t d, int fd);
@@ -47,16 +48,25 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
     }
 }
 
-int VfsSocketInit(vfs_driver_t *driver, uint8_t type, char *addr, uint16_t port)
+vfs_driver_t *VfsSocketInit(uint8_t type, char *addr, uint16_t port)
 {
     int ret;
+    vfs_driver_t *driver;
 
-    if (NULL == driver || NULL == addr) {
-        return -EINVAL;
+    if ( NULL == addr) {
+        return NULL;
+    }
+
+    driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
+    if (NULL == driver) {
+        return NULL;
     }
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
-    if (NULL == driver->ctx) return -ENOMEM;
+    if (NULL == driver->ctx) {
+        WantedFree(driver);
+        return NULL;
+    }
 
     driver->bytesId         = *(uint32_t*)(id);
     driver->filetype        = convertSocketType(type);
@@ -74,13 +84,14 @@ int VfsSocketInit(vfs_driver_t *driver, uint8_t type, char *addr, uint16_t port)
     driver->SockRecv        = _SockRecv;
     driver->SockSend        = _SockSend;
     driver->SockShutdown    = _SockShutdown;
-    return 0;
+
+    return driver;
 }
 
-static int _Destroy(vfs_driver_ctx_t *c)
+static int _Destroy (struct vfs_driver_t *d)
 {
-    WantedFree(*c);
-    *c = NULL;
+    WantedFree(d->ctx);
+    WantedFree(d);
 
     return 0;
 }
@@ -102,6 +113,10 @@ static int ConnectSocket(vfs_driver_ctx_t d, int sock)
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
     int sock = 0, ret, socket_type;
+
+    if (d->connected) {
+        return -EISCONN;
+    }
 
     switch (d->type)
     {

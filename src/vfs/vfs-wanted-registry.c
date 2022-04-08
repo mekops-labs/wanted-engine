@@ -20,7 +20,7 @@ static struct vfs_driver_ctx_t {
     reg_entry_t entries[MAX_WAPPS];
 } ctx;
 
-static int _Destroy (vfs_driver_ctx_t *d);
+static int _Destroy (struct vfs_driver_t *d);
 static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
 static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close   (vfs_driver_ctx_t d, int fd);
@@ -45,9 +45,9 @@ const vfs_driver_t WantedRegistryDriver = {
     .Unlink          = _Unlink,
 };
 
-static int _Destroy (vfs_driver_ctx_t *d)
+static int _Destroy (struct vfs_driver_t *d)
 {
-    memset(*d, 0, sizeof(ctx));
+    memset(d->ctx, 0, sizeof(ctx));
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)

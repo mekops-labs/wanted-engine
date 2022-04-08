@@ -10,7 +10,7 @@
 
 static const char id[] = { 'R', 'o', 'm', 'f' };
 
-static int _Destroy (vfs_driver_ctx_t *d);
+static int _Destroy (struct vfs_driver_t *d);
 static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
 static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close   (vfs_driver_ctx_t d, int fd);
@@ -27,23 +27,49 @@ struct vfs_driver_ctx_t {
     romfs_t     romfs;
 };
 
-int VfsRomfsInit(vfs_driver_t *driver, const char *root, uint8_t *RomfsImg, size_t RomfsImgLen)
+vfs_driver_t *VfsRomfsInit(const char *root, uint8_t *RomfsImg, size_t RomfsImgLen)
 {
     int ret;
+    vfs_driver_t *driver;
+    romfs_t r;
 
-    if (NULL == root || NULL == RomfsImg || NULL == driver) {
-        return -EINVAL;
+    if (NULL == root || NULL == RomfsImg) {
+        return NULL;
+    }
+
+    ret = RomfsLoad(RomfsImg, RomfsImgLen, &r);
+    if (ret < 0) {
+        return NULL;
+    }
+
+    driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
+    if (NULL == driver) {
+        return NULL;
     }
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
-    if (NULL == driver->ctx) return -ENOMEM;
+    if (NULL == driver->ctx) {
+        WantedFree(driver);
+        return NULL;
+    }
 
-    ret = RomfsLoad(RomfsImg, RomfsImgLen, &(driver->ctx->romfs));
-    if (ret < 0) { WantedFree(driver->ctx); return ret; }
+    size_t rootLen = strnlen(root, MAX_PATH_LEN);
+    driver->ctx->rootPath = (char *)WantedMalloc(rootLen+1);
+    if (NULL == driver->ctx->rootPath) {
+        WantedFree(driver->ctx);
+        WantedFree(driver);
+        return NULL;
+    }
+
+    char nullChar = '\0';
+    if (rootLen > 0) {
+        memcpy((char *)driver->ctx->rootPath, root, rootLen);
+    }
+    memcpy((char *)&driver->ctx->rootPath[rootLen], &nullChar, 1);
+    driver->ctx->romfs      = r;
 
     driver->bytesId         = *(uint32_t*)(id);
     driver->filetype        = VFS_FILETYPE_DIRECTORY;
-    driver->ctx->rootPath   = root;
     driver->Destroy         = _Destroy;
     driver->Open            = _Open;
     driver->OpenAt          = _OpenAt;
@@ -54,14 +80,16 @@ int VfsRomfsInit(vfs_driver_t *driver, const char *root, uint8_t *RomfsImg, size
     driver->Seek            = _Seek;
     driver->ReadDir         = _ReadDir;
 
-    return 0;
+    return driver;
 }
 
-static int _Destroy(vfs_driver_ctx_t *c)
+static int _Destroy(struct vfs_driver_t *d)
 {
-    RomfsUnload(&((*c)->romfs));
-    WantedFree(*c);
-    *c = NULL;
+    RomfsUnload(&(d->ctx->romfs));
+
+    WantedFree((void *)d->ctx->rootPath);
+    WantedFree(d->ctx);
+    WantedFree(d);
 
     return 0;
 }
