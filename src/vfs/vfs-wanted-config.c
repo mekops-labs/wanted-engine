@@ -34,6 +34,8 @@ static bool opened = false;
 static int _Destroy (struct vfs_driver_t *d)
 {
     opened = false;
+
+    return 0;
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)

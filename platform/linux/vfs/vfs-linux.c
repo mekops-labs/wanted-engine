@@ -68,6 +68,8 @@ static int _Destroy (struct vfs_driver_t *d)
 {
     WantedFree(d->ctx);
     WantedFree(d);
+
+    return 0;
 }
 
 static inline vfs_filetype_t convertFiletype(uint32_t t)

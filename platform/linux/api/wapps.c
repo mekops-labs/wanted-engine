@@ -69,7 +69,7 @@ void thread_sigHandler(int sig)
     }
     if (i == MAX_WAPPS) return;
 
-    WA_threadEnd(&state.threads[i].data);
+    WA_threadEnd((void *)&state.threads[i].data);
 
     pthread_exit(NULL);
 }

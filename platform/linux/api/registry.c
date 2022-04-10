@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <limits.h>
 
 #include <platform.h>
 #include <config-linux.h>

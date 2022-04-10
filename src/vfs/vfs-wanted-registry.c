@@ -48,6 +48,8 @@ const vfs_driver_t WantedRegistryDriver = {
 static int _Destroy (struct vfs_driver_t *d)
 {
     memset(d->ctx, 0, sizeof(ctx));
+
+    return 0;
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)

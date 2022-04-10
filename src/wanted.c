@@ -282,4 +282,6 @@ int WantedStart(wantedConfig_t cfg)
     PlatformWappStart(WantedGetCurrentSupervisor());
 
     PlatformWappLoop();
+
+    return 0;
 }

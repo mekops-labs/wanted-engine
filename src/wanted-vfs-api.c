@@ -17,7 +17,7 @@ static wantedConfig_t currentConfig;
 
 static size_t ConfigToJson(const wantedConfig_t *cfg, uint8_t *buf, size_t bufLen)
 {
-    char *p = buf;
+    char *p = (char *)buf;
     size_t left = bufLen;
 
     p = json_objOpen(p, NULL, &left);
@@ -34,7 +34,7 @@ static size_t ConfigToJson(const wantedConfig_t *cfg, uint8_t *buf, size_t bufLe
 
 static size_t RegistryToJson(const reg_entry_t *reg, size_t regLen, uint8_t *buf, size_t bufLen)
 {
-    char *p = buf;
+    char *p = (char *)buf;
     size_t left = bufLen;
 
     p = json_objOpen(p, NULL, &left);
@@ -65,7 +65,7 @@ const char *statusToString(status_t state)
 
 static size_t StateToJson(const wapp_state_t *stateList, size_t stateLen, uint8_t *buf, size_t bufLen)
 {
-    char *p = buf;
+    char *p = (char *)buf;
     size_t left = bufLen;
     char ver[9];
 
@@ -185,7 +185,7 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
         char t;
         char host[strlen(options)];
         uint16_t port;
-        ret = sscanf(options, "%c %s %d", &t, host, &port);
+        ret = sscanf(options, "%c %s %hd", &t, host, &port);
         if (ret < 3) {
             DEBUG_TRACE("VfsSocketInit: bad options");
             return -EINVAL;
