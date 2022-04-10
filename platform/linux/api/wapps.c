@@ -13,6 +13,12 @@
 
 #include <debug_trace.h>
 
+#ifdef __ANDROID__
+#   define GNU_SOURCE
+#   include <signal.h>
+#endif
+
+
 pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 #define FATAL(err, msg, ...) { DEBUG_TRACE("Fatal: " msg, ##__VA_ARGS__); return err; }
@@ -48,12 +54,43 @@ void WA_threadEnd(void *ptr)
     updateState(d->id, d->lastStatus);
 }
 
+#ifdef __ANDROID__
+void thread_sigHandler(int sig)
+{
+    int i;
+    if (sig != SIGUSR1) {
+        return;
+    }
+
+    pthread_t t = pthread_self();
+
+    for (i = 0; i < MAX_WAPPS; i++) {
+        if (state.threads[i].t == t) break;
+    }
+    if (i == MAX_WAPPS) return;
+
+    WA_threadEnd(&state.threads[i].data);
+
+    pthread_exit(NULL);
+}
+#endif
+
 void *WA_thread(void *ptr)
 {
     int ret;
     wapp_data_t *d = (wapp_data_t *)ptr;
 
+#ifndef __ANDROID__
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+#else
+    struct sigaction actions;
+    memset(&actions, 0, sizeof(actions));
+    sigemptyset(&actions.sa_mask);
+    actions.sa_flags = 0;
+    actions.sa_handler = thread_sigHandler;
+    sigaction(SIGUSR1, &actions, NULL);
+#endif
+
     pthread_cleanup_push(WA_threadEnd, ptr);
 
     pthread_mutex_lock(&state_mtx);
@@ -152,7 +189,11 @@ int PlatformWappStop(uint8_t id)
         return -ENOENT;
     }
 
-    return pthread_cancel(state.threads[slot].t);
+#ifndef __ANDROID__
+    return -pthread_cancel(state.threads[slot].t);
+#else
+    return -pthread_kill(state.threads[slot].t, SIGUSR1);
+#endif
 }
 
 void PlatformWappLoop()
