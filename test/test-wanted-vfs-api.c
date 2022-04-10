@@ -48,7 +48,7 @@ TEST(wanted_vfs_api, WantedGetConfigTest)
     TEST_ASSERT_EQUAL(26, ret);
 
     /* check that the json is valid */
-    json_t const* json = json_create(buf, m, sizeof m / sizeof *m);
+    json_t const* json = json_create((char *)buf, m, sizeof m / sizeof *m);
     TEST_ASSERT_NOT_NULL(json);
 
     json_t const* wapps = json_getProperty(json, "wapps");
@@ -76,7 +76,7 @@ TEST(wanted_vfs_api, WantedReadRegistryTest)
 
     return ;
     /* check that the json is valid */
-    json_t const* json = json_create(buf, m, sizeof m / sizeof *m);
+    json_t const* json = json_create((char *)buf, m, sizeof m / sizeof *m);
     TEST_ASSERT_NOT_NULL(json);
 
     json_t const* wapps = json_getProperty(json, "wapps");

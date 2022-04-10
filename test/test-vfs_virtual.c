@@ -56,6 +56,8 @@ static int _DummyStat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s)
     s->filetype = VFS_FILETYPE_REGULAR_FILE;
     s->dev = 1234;
     s->ino = 1;
+
+    return 0;
 }
 
 static vfs_driver_t *virt;
