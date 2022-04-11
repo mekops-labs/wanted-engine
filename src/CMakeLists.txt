@@ -8,7 +8,7 @@ set(vfs-srcs
     "vfs/vfs.c"
     "vfs/vfs-virtual.c"
     "vfs/vfs-romfs.c"
-#    "vfs/vfs-wanted.c"
+    "vfs/vfs-wanted.c"
     "vfs/vfs-wanted-config.c"
     "vfs/vfs-wanted-ctrl.c"
     "vfs/vfs-wanted-registry.c"

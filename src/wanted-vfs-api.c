@@ -205,25 +205,10 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
             return -ENOMEM;
         }
     } else if (memcmp("wanted", name, 7) == 0) {
-        drv = VfsVirtualInit();
+        drv = VfsWantedInit();
         if (NULL == drv) {
-            DEBUG_TRACE("VfsWantedInit: can't load driver (%d)", ret);
+            DEBUG_TRACE("VfsWantedInit: can't load wanted driver (%d)", ret);
             return -ENOMEM;
-        }
-        ret = drv->Register(drv->ctx, "config", &WantedConfigDriver);
-        if (ret < 0) {
-            DEBUG_TRACE("VfsWantedInit: can't register config (%d)", ret);
-            return ret;
-        }
-        ret = drv->Register(drv->ctx, "ctrl", &WantedControlDriver);
-        if (ret < 0) {
-            DEBUG_TRACE("VfsWantedInit: can't register ctrl (%d)", ret);
-            return ret;
-        }
-        ret = drv->Register(drv->ctx, "reg", &WantedRegistryDriver);
-        if (ret < 0) {
-            DEBUG_TRACE("VfsWantedInit: can't register reg (%d)", ret);
-            return ret;
         }
     } else {
         return -EINVAL;
