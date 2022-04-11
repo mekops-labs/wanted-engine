@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <unistd.h>
 
 #include <platform.h>
 #include <config-linux.h>
@@ -56,6 +57,14 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len)
 
     d = open(REGISTRY_ROOT, O_DIRECTORY | O_RDONLY);
     if (d < 0) {
+        if (ENOENT == errno) {
+            ret = mkdir(REGISTRY_ROOT, 0755);
+            if (ret < 0) {
+                return -errno;
+            }
+
+            return 0;
+        }
         return -errno;
     }
 
@@ -86,6 +95,8 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len)
     }
 
     free(namelist);
+
+    close(d);
 
     return n;
 }
