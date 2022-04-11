@@ -2,6 +2,7 @@
 #include <string.h>
 #include <errno.h>
 
+#include <debug_trace.h>
 #include <wanted_malloc.h>
 #include <romfs.h>
 #include <vfs.h>
@@ -27,28 +28,35 @@ struct vfs_driver_ctx_t {
     romfs_t     romfs;
 };
 
-vfs_driver_t *VfsRomfsInit(const char *root, uint8_t *RomfsImg, size_t RomfsImgLen)
+vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, uint8_t argc, const char *args[])
 {
     int ret;
+    const char *root;
     vfs_driver_t *driver;
     romfs_t r;
 
-    if (NULL == root || NULL == RomfsImg) {
+    if (NULL == wapp || argc < 1 || NULL == args || NULL == args[0]) {
+        DEBUG_TRACE("bad arguments");
         return NULL;
     }
 
-    ret = RomfsLoad(RomfsImg, RomfsImgLen, &r);
+    root = args[0];
+
+    ret = RomfsLoad(wapp->img, wapp->img_len, &r);
     if (ret < 0) {
+        DEBUG_TRACE("can't load romfs");
         return NULL;
     }
 
     driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
     if (NULL == driver) {
+        DEBUG_TRACE("can't allocate memory");
         return NULL;
     }
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
     if (NULL == driver->ctx) {
+        DEBUG_TRACE("can't allocate memory");
         WantedFree(driver);
         return NULL;
     }
@@ -56,6 +64,7 @@ vfs_driver_t *VfsRomfsInit(const char *root, uint8_t *RomfsImg, size_t RomfsImgL
     size_t rootLen = strnlen(root, MAX_PATH_LEN);
     driver->ctx->rootPath = (char *)WantedMalloc(rootLen+1);
     if (NULL == driver->ctx->rootPath) {
+        DEBUG_TRACE("can't allocate memory");
         WantedFree(driver->ctx);
         WantedFree(driver);
         return NULL;

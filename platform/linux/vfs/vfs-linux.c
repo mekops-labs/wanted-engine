@@ -6,10 +6,13 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <limits.h>
 
+#include <debug_trace.h>
 #include <vfs.h>
 #include <wanted_malloc.h>
 #include <cwalk.h>
+#include <wanted-api.h>
 
 static const char id[] = { 'L', 'i', 'n', 'u' };
 
@@ -28,29 +31,49 @@ struct vfs_driver_ctx_t {
     const char* rootPath;
 };
 
-vfs_driver_t *VfsLinuxInit(const char *root)
+vfs_driver_t *VfsLinuxInit(const wapp_t *wapp, uint8_t argc, const char *args[])
 {
     int ret;
+    const char *root;
     vfs_driver_t *driver;
 
-    if (NULL == root) {
+    if (argc < 1 || NULL == args || NULL == args[0] ) {
+        DEBUG_TRACE("invalid arguments");
         return NULL;
     }
 
+    root = args[0];
+
     driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
     if (NULL == driver) {
+        DEBUG_TRACE("can't allocate memory");
         return NULL;
     }
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
     if (NULL == driver->ctx) {
+        DEBUG_TRACE("can't allocate memory");
         WantedFree(driver);
         return NULL;
     }
 
+    size_t rootLen = strnlen(root, PATH_MAX);
+    driver->ctx->rootPath = (char *)WantedMalloc(rootLen+1);
+    if (NULL == driver->ctx->rootPath) {
+        DEBUG_TRACE("can't allocate memory");
+        WantedFree(driver->ctx);
+        WantedFree(driver);
+        return NULL;
+    }
+
+    char nullChar = '\0';
+    if (rootLen > 0) {
+        memcpy((char *)driver->ctx->rootPath, root, rootLen);
+    }
+    memcpy((char *)&driver->ctx->rootPath[rootLen], &nullChar, 1);
+
     driver->bytesId         = *(uint32_t*)(id);
     driver->filetype        = VFS_FILETYPE_DIRECTORY;
-    driver->ctx->rootPath   = root;
     driver->Destroy         = _Destroy;
     driver->Open            = _Open;
     driver->OpenAt          = _OpenAt;
@@ -66,6 +89,7 @@ vfs_driver_t *VfsLinuxInit(const char *root)
 
 static int _Destroy (struct vfs_driver_t *d)
 {
+    WantedFree((void *)d->ctx->rootPath);
     WantedFree(d->ctx);
     WantedFree(d);
 

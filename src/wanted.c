@@ -199,12 +199,12 @@ int WantedWappRun(wapp_data_t *ctx)
     LinkWantedApi(mod);
     m3_LinkLibC(mod);
 
-    ret =  WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stdin>",  NULL);
-    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stdout>", NULL);
-    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stderr>", NULL);
+    ret =  WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stdin>",  "./");
+    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stdout>", "./");
+    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stderr>", "./");
     ret += WantedInstallDriver(ctx->vfs, wapp, "virt",       "/", NULL);
     ret += WantedInstallDriver(ctx->vfs, wapp, "rom",        "/rom", "");
-    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "/data", "");
+    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "/data", "./");
     ret += WantedInstallDriver(ctx->vfs, wapp, "socket",     "/skt", "t 127.0.0.1 8888");
     ret += WantedInstallDriver(ctx->vfs, wapp, "wanted",     "/w", NULL);
     if (ret < 0) {

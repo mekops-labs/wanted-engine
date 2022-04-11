@@ -97,7 +97,7 @@ int WantedSetConfig(wantedConfig_t cfg)
 
 int WantedGetConfig(uint8_t *buf, size_t bufLen)
 {
-    if (buf == NULL) return -1;
+    if (buf == NULL) return -EINVAL;
     return ConfigToJson(&currentConfig, buf, bufLen);
 }
 
@@ -106,7 +106,7 @@ int WantedReadRegistry(uint8_t *buf, size_t bufLen)
     reg_entry_t entries[MAX_WAPPS];
     int n;
 
-    if (buf == NULL) return -1;
+    if (buf == NULL) return -EINVAL;
 
     n = PlatformRegistryRead(entries, MAX_WAPPS);
     if (n < 0) return n;
@@ -116,7 +116,7 @@ int WantedReadRegistry(uint8_t *buf, size_t bufLen)
 
 int WantedWriteRegistry(bool *cont, const uint8_t *buf, size_t bufLen)
 {
-    if (buf == NULL) return -1;
+    if (buf == NULL) return -EINVAL;
 
     if (*cont == false) {
         *cont = true;
@@ -128,7 +128,7 @@ int WantedWriteRegistry(bool *cont, const uint8_t *buf, size_t bufLen)
 
 int WantedRegistryRemove(const char *name)
 {
-    if (name == NULL) return -1;
+    if (name == NULL) return -EINVAL;
 
     return PlatformRegistryRemove(name);
 }
@@ -158,57 +158,45 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
     }
 
     if (memcmp("virt", name, 5) == 0) {
-        drv = VfsVirtualInit();
+        drv = VfsVirtualInit(w, 0, NULL);
         if (NULL == drv) {
             DEBUG_TRACE("VfsVirtualInit: can't load virt driver (%d)", ret);
-            return -ENOMEM;
+            return -EINVAL;
         }
     } else if (memcmp("rom", name, 4) == 0) {
         if (options == NULL) {
             return -EINVAL;
         }
-        drv = VfsRomfsInit(options, w->img, w->img_len);
+        drv = VfsRomfsInit(w, 1, &options);
         if (NULL == drv) {
             DEBUG_TRACE("VfsRomfsInit: can't load romfs (%d)", ret);
-            return -ENOMEM;
+            return -EINVAL;
         }
     } else if (memcmp("platform", name, 9) == 0) {
-        drv = VfsPlatformFsInit();
+        if (options == NULL) {
+            return -EINVAL;
+        }
+
+        drv = VfsPlatformFsInit(w, 1, &options);
         if (NULL == drv) {
             DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
-            return -ENOMEM;
+            return -EINVAL;
         }
     } else if (memcmp("socket", name, 7) == 0) {
         if (options == NULL) {
             return -EINVAL;
         }
-        char t;
-        char host[strlen(options)];
-        uint16_t port;
-        ret = sscanf(options, "%c %s %hd", &t, host, &port);
-        if (ret < 3) {
-            DEBUG_TRACE("VfsSocketInit: bad options");
-            return -EINVAL;
-        }
 
-        uint8_t type;
-        switch (t) {
-            case 't': type = VFS_SKT_TCP; break;
-            case 'u': type = VFS_SKT_UDP; break;
-            case 'b': type = VFS_SKT_BUS; break;
-            default: return -EINVAL;
-        }
-
-        drv = VfsSocketInit(type, host, port);
+        drv = VfsSocketInit(w, 1, &options);
         if (NULL == drv) {
             DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
-            return -ENOMEM;
+            return -EINVAL;
         }
     } else if (memcmp("wanted", name, 7) == 0) {
-        drv = VfsWantedInit();
+        drv = VfsWantedInit(w, 0, NULL);
         if (NULL == drv) {
             DEBUG_TRACE("VfsWantedInit: can't load wanted driver (%d)", ret);
-            return -ENOMEM;
+            return -EINVAL;
         }
     } else {
         return -EINVAL;

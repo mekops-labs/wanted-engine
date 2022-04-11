@@ -1,13 +1,14 @@
-#include <vfs-drivers.h>
-#include <wanted_malloc.h>
-
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <string.h>
 #include <stdbool.h>
-
+#include <stdio.h>
 #include <errno.h>
+
+#include <vfs-drivers.h>
+#include <wanted_malloc.h>
+#include <debug_trace.h>
 
 #define MAX_ADDR_LEN 32
 
@@ -48,22 +49,45 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
     }
 }
 
-vfs_driver_t *VfsSocketInit(uint8_t type, char *addr, uint16_t port)
+vfs_driver_t *VfsSocketInit(const wapp_t *wapp, uint8_t argc, const char *args[])
 {
     int ret;
+    char t;
+    const char *options;
+    uint16_t port;
     vfs_driver_t *driver;
 
-    if ( NULL == addr) {
+    if (argc < 1 || args == NULL || args[0] == NULL) {
+        DEBUG_TRACE("bad options");
         return NULL;
+    }
+
+    options = args[0];
+    char addr[strnlen(options, MAX_ADDR_LEN)];
+
+    ret = sscanf(options, "%c %s %hd", &t, addr, &port);
+    if (ret < 3) {
+        DEBUG_TRACE("error during parsing options");
+        return NULL;
+    }
+
+    uint8_t type;
+    switch (t) {
+        case 't': type = VFS_SKT_TCP; break;
+        case 'u': type = VFS_SKT_UDP; break;
+        case 'b': type = VFS_SKT_BUS; break;
+        default: DEBUG_TRACE("error during parsing socket type"); return NULL;
     }
 
     driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
     if (NULL == driver) {
+        DEBUG_TRACE("can't allocate memory");
         return NULL;
     }
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
     if (NULL == driver->ctx) {
+        DEBUG_TRACE("can't allocate memory");
         WantedFree(driver);
         return NULL;
     }
