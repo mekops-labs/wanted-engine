@@ -234,7 +234,9 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t fl
     newFd = f;
 
     if (d->entries[f].drv->ctx != d) {
+        DEBUG_TRACE("trying driver: %.4s", d->entries[f].drv->id);
         newFd = TRY_DRV(d->entries[f].drv, Open, pathLeft, flags);
+        DEBUG_TRACE("newFd = %d", newFd);
         if (newFd < 0) { return newFd; }
     }
 

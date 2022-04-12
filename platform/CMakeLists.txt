@@ -25,3 +25,7 @@ target_include_directories(platform
 target_include_directories(platform
     PRIVATE linux/include
 )
+
+if (WANTED_DEBUG_TRACES)
+    target_compile_definitions(platform PRIVATE DEBUG=1)
+endif()

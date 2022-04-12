@@ -116,7 +116,7 @@ int PlatformWappLoad(const char *path, wapp_t * wapp)
     f = fopen(path, "rb");
 
     if (NULL == f) {
-        FATAL(-errno, "can't open wapp: %s", name);
+        FATAL(-errno, "can't open wapp: %s", path);
     }
 
     fseek(f, 0L, SEEK_END);

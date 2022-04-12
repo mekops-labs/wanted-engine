@@ -150,6 +150,8 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     char joined[PATH_MAX];
     cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
 
+    DEBUG_TRACE("flags: %x, path: %s", flags, joined);
+    
     int mode = 0644;
     int fd = open(joined, flags, mode);
     if (fd < 0) return -errno;
@@ -160,10 +162,14 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t fl
 {
     char joined[PATH_MAX];
     cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
+    
+    DEBUG_TRACE("fd: %d, path: %s", fd, joined);
 
     int mode = 0644;
     int ret = openat(fd, joined, flags, mode);
     if (ret < 0) return -errno;
+    
+    DEBUG_TRACE("opened");
     return ret;
 }
 
