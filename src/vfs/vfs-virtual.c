@@ -107,6 +107,11 @@ vfs_driver_t *VfsVirtualInit(const wapp_t *wapp, uint8_t argc, const char *args[
 
 static int _Destroy(struct vfs_driver_t *d)
 {
+    for (int i = 0; i < d->ctx->cnt; i++) {
+        if (!d->ctx->entries[i].drv->Destroy)
+            d->ctx->entries[i].drv->Destroy((vfs_driver_t *)d->ctx->entries[i].drv);
+    }
+
     WantedFree(d->ctx);
     WantedFree(d);
 
