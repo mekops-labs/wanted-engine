@@ -126,6 +126,24 @@ static inline vfs_filetype_t convertDirtype(uint8_t t)
     }
 }
 
+static inline int convertVfsFlagsToLinux(vfs_oflags_t f)
+{
+    int flags = ((f & VFS_O_CREAT)       ? O_CREAT : 0) |
+                ((f & VFS_O_DIRECTORY)   ? O_DIRECTORY : 0) |
+                ((f & VFS_O_EXCL)        ? O_EXCL : 0) |
+                ((f & VFS_O_TRUNC)       ? O_TRUNC : 0) |
+                ((f & VFS_O_APPEND)      ? O_APPEND : 0) |
+                ((f & VFS_O_NONBLOCK)    ? O_NONBLOCK : 0) |
+                ((f & VFS_O_DSYNC)       ? O_DSYNC : 0) |
+                ((f & VFS_O_SYNC)        ? O_SYNC : 0) |
+                ((f & VFS_O_RSYNC)       ? O_RSYNC : 0) |
+                ((f & VFS_O_RDWR)        ? O_RDWR : 0) |
+                ((f & VFS_O_WRONLY)      ? O_WRONLY : 0) |
+                ((f & VFS_O_RDONLY)      ? O_RDONLY : 0);
+
+    return flags;
+}
+
 static inline uint64_t convertTimespec(const struct timespec *ts)
 {
     if (ts->tv_sec < 0)
@@ -150,10 +168,11 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     char joined[PATH_MAX];
     cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
 
-    DEBUG_TRACE("flags: %x, path: %s", flags, joined);
-    
+    int fl = convertVfsFlagsToLinux(flags);
+
+    DEBUG_TRACE("flags: %x, path: %s", fl, joined);
     int mode = 0644;
-    int fd = open(joined, flags, mode);
+    int fd = open(joined, fl, mode);
     if (fd < 0) return -errno;
     return fd;
 }
@@ -162,14 +181,15 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t fl
 {
     char joined[PATH_MAX];
     cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
-    
-    DEBUG_TRACE("fd: %d, path: %s", fd, joined);
+
+    int fl = convertVfsFlagsToLinux(flags);
+
+    DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, joined);
 
     int mode = 0644;
-    int ret = openat(fd, joined, flags, mode);
+    int ret = openat(fd, joined, fl, mode);
     if (ret < 0) return -errno;
-    
-    DEBUG_TRACE("opened");
+
     return ret;
 }
 
