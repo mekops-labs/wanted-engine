@@ -14,6 +14,7 @@ int WantedGetConfig(uint8_t *buf, size_t bufLen);
 int WantedReadRegistry(uint8_t *buf, size_t bufLen);
 int WantedWriteRegistry(bool *cont, const uint8_t *buf, size_t bufLen);
 int WantedCloseRegistry();
-int WantedRegistryRemove(const char *name);
+int WantedRegistryRemove(const reg_entry_t *entry);
+int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen);
 
 int WantedReadState(uint8_t *buf, size_t bufLen);

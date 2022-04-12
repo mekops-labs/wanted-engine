@@ -13,8 +13,9 @@ typedef struct {
             uint8_t major;
             uint8_t minor;
             uint8_t patch;
+            uint8_t package;
         };
-        uint8_t v[3];
+        uint8_t v[4];
     };
 } wapp_version_t;
 
@@ -48,8 +49,15 @@ typedef struct {
     status_t status;
 } wapp_state_t;
 
+typedef struct {
+    char    name[WAPP_MAX_NAME_LEN];
+    char    version[WAPP_MAX_VERSION_LEN];
+    size_t  size;
+} reg_entry_t;
+
 int  WantedWappRun(wapp_data_t *ctx);
 void WantedWappStop(wapp_data_t *ctx);
 int  WantedWappParseManifest(wapp_t *w);
+int  WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen);
 wapp_t WantedGetCurrentSupervisor();
 

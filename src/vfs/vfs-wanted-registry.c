@@ -13,11 +13,14 @@
 
 #define ID  {'W', 'r', 'e', 'g'}
 
+#define MAX_REG_ENTRIES 50
+static const char VERSION_SEPARATOR = ':';
+
 static struct vfs_driver_ctx_t {
     bool opened;
     bool startedWriting;
     size_t nEntries;
-    reg_entry_t entries[MAX_WAPPS];
+    reg_entry_t entries[MAX_REG_ENTRIES];
 } ctx;
 
 static int _Destroy (struct vfs_driver_t *d);
@@ -63,13 +66,23 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     d->startedWriting = false;
 
     if (path[0] == '/' && path[1] == '\0') {
-        ret = PlatformRegistryRead(d->entries, MAX_WAPPS);
+        ret = PlatformRegistryRead(d->entries, MAX_REG_ENTRIES);
         if (ret < 0) return ret;
         d->nEntries = ret;
     } else {
         for (int i = 0; i < d->nEntries; i++) {
-            if (strncmp(path, d->entries[i].name, WAPP_MAX_NAME_LEN) == 0) {
-                return i+1;
+            const char *ver = strchr(path, (int)VERSION_SEPARATOR);
+            if (ver != NULL) {
+                ver += 1;
+                if (strncmp(path, d->entries[i].name, strnlen(d->entries[i].name, WAPP_MAX_NAME_LEN)) == 0) {
+                    if (ver == NULL || strncmp(ver, d->entries[i].version, WAPP_MAX_VERSION_LEN) == 0) {
+                        return i+1;
+                    }
+                }
+            } else {
+                if (strncmp(path, d->entries[i].name, WAPP_MAX_NAME_LEN) == 0) {
+                    return i+1;
+                }
             }
         }
         return -ENOENT;
@@ -110,6 +123,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 {
     if (buf == NULL) return -EINVAL;
+    if (fd > d->nEntries) return -EINVAL;
 
     if (!d->opened) return -EBADF;
 
@@ -119,7 +133,11 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
         return read;
     }
 
-    read = WantedReadRegistry(buf, nbyte);
+    if (fd == 0) {
+        read = WantedReadRegistry(buf, nbyte);
+    } else {
+        read = WantedReadManifest(&d->entries[fd-1], buf, nbyte);
+    }
 
     return read;
 }
@@ -130,6 +148,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 
     if (buf == NULL) return -EINVAL;
     if (!d->opened) return -EBADF;
+    if (fd > 0) return -EROFS;
 
     ret = WantedWriteRegistry(&d->startedWriting, buf, nbyte);
 
@@ -145,13 +164,17 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
 {
     vfs_dirent_t dir;
     size_t used = 0;
+    wapp_t w;
 
     if (buf == NULL) return -EINVAL;
     if (!d->opened) return -EBADF;
 
     for (int i = *cookie; i < d->nEntries; i++) {
+        size_t nameLen = strnlen(d->entries[i].name, WAPP_MAX_NAME_LEN);
+        size_t verLen = strnlen(d->entries[i].version, WAPP_MAX_VERSION_LEN);
+
         dir.d_ino       = i;
-        dir.d_namlen    = strnlen(d->entries[i].name, WAPP_MAX_NAME_LEN);
+        dir.d_namlen    = nameLen + 1 + verLen;
         dir.d_type      = VFS_FILETYPE_REGULAR_FILE;
         dir.d_next      = i+1;
 
@@ -160,9 +183,13 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
             break;
         }
         memcpy(buf + used, &dir, sizeof(dir));
-        memcpy(buf + sizeof(dir) + used, d->entries[i].name, dir.d_namlen);
-
-        used += sizeof(dir) + dir.d_namlen;
+        used += sizeof(dir);
+        memcpy(buf + used, d->entries[i].name, nameLen);
+        used += nameLen;
+        memcpy(buf + used, &VERSION_SEPARATOR, 1);
+        used += 1;
+        memcpy(buf + used, d->entries[i].version, verLen);
+        used += verLen;
     }
 
     *bufUsed = used;
@@ -173,5 +200,27 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
 
 static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path)
 {
-    return WantedRegistryRemove(path);
+    int i;
+
+    for (i = 0; i < d->nEntries; i++) {
+        const char *ver = strchr(path, (int)VERSION_SEPARATOR);
+        if (ver != NULL) {
+            ver += 1;
+            if (strncmp(path, d->entries[i].name, strnlen(d->entries[i].name, WAPP_MAX_NAME_LEN)) == 0) {
+                if (ver == NULL || strncmp(ver, d->entries[i].version, WAPP_MAX_VERSION_LEN) == 0) {
+                    break;
+                }
+            }
+        } else {
+            if (strncmp(path, d->entries[i].name, WAPP_MAX_NAME_LEN) == 0) {
+                break;
+            }
+        }
+    }
+
+    if (i < d->nEntries) {
+        return WantedRegistryRemove(&d->entries[i]);
+    }
+
+    return -ENOENT;
 }

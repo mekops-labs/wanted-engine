@@ -105,20 +105,15 @@ void *WA_thread(void *ptr)
     pthread_exit(NULL);
 }
 
-int PlatformWappLoad(const char *name, wapp_t * wapp)
+int PlatformWappLoad(const char *path, wapp_t * wapp)
 {
     long filesize;
     FILE *f;
     uint8_t *img;
-    size_t filenameLen = strlen(REGISTRY_ROOT) + 1 + strlen(name) + strlen(REGISTRY_EXT) + 1;
-    char *filename = malloc(filenameLen);
 
-    snprintf(filename, filenameLen, "%s/%s%s", REGISTRY_ROOT, name, REGISTRY_EXT);
+    DEBUG_TRACE("Opening: %s\n", path);
 
-    DEBUG_TRACE("Opening: %s\n", filename);
-
-    f = fopen(filename, "rb");
-    free(filename);
+    f = fopen(path, "rb");
 
     if (NULL == f) {
         FATAL(-errno, "can't open wapp: %s", name);
@@ -134,8 +129,6 @@ int PlatformWappLoad(const char *name, wapp_t * wapp)
 
     wapp->img = img;
     wapp->img_len = filesize;
-    strncpy(wapp->name, name, WAPP_MAX_NAME_LEN);
-    memset(wapp->version.v, -1, 3);
 
     fclose(f);
     return 0;

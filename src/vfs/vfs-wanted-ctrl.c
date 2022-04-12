@@ -89,15 +89,40 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 {
     wapp_t wapp;
+    reg_entry_t e;
     int ret;
+    const char *p = buf;
 
     if (buf == NULL) return -EINVAL;
     if (!opened) return -EBADF;
 
-    if (strncmp(buf, "start", 5) == 0) {
-        buf += 6;
 
-        ret = PlatformWappLoad(buf, &wapp);
+
+    /* TODO: need to give more parameters, like what drivers need to be enabled. JSON? */
+    if (strncmp(p, "start", 5) == 0) {
+        p += 6;
+
+        const char *ver = strchr(p, ':');
+        if (ver != NULL) {
+            ver += 1;
+            size_t nameLen = ver - p > WAPP_MAX_NAME_LEN ? WAPP_MAX_NAME_LEN : ver - p;
+            size_t verLen = strnlen(ver, WAPP_MAX_VERSION_LEN);
+            strncpy(e.name, p, nameLen);
+            e.name[nameLen-1] = '\0';
+
+            strncpy(e.version, ver, verLen);
+            e.version[verLen] = '\0';
+        } else {
+            strncpy(e.name, p, WAPP_MAX_NAME_LEN);
+            e.version[0] = '\0';
+        }
+
+        ret = PlatformRegistryWappLoad(&e, &wapp);
+        if (ret < 0) {
+            return ret;
+        }
+
+        ret = WantedWappParseManifest(&wapp);
         if (ret < 0) {
             return ret;
         }

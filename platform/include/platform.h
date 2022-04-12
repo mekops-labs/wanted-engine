@@ -17,11 +17,6 @@ typedef uint16_t plat_clk_flags_t;
 
 #define PLAT_CLOCK_FLAGS_ABSTIME 1U
 
-typedef struct {
-    char    name[WAPP_MAX_NAME_LEN];
-    size_t  size;
-} reg_entry_t;
-
 typedef enum {
     START_WRITE,
     CONTINUE_WRITE,
@@ -43,4 +38,5 @@ int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len);
 int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes);
-int PlatformRegistryRemove(const char *name);
+int PlatformRegistryRemove(const reg_entry_t *entry);
+int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);

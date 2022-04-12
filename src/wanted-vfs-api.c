@@ -12,8 +12,6 @@
 
 static wantedConfig_t currentConfig;
 
-#define SUBTRACT_OR_ZERO(a,b) ((a) > (b) ? (a) - (b) : 0)
-
 
 static size_t ConfigToJson(const wantedConfig_t *cfg, uint8_t *buf, size_t bufLen)
 {
@@ -42,6 +40,7 @@ static size_t RegistryToJson(const reg_entry_t *reg, size_t regLen, uint8_t *buf
     for (int i = 0; i < regLen; i++) {
         p = json_objOpen(p, NULL, &left);
         p = json_str(p, "name", reg[i].name, &left);
+        p = json_str(p, "version", reg[i].version, &left);
         p = json_int(p, "size", reg[i].size, &left);
         p = json_objClose(p, &left);
     }
@@ -104,7 +103,7 @@ int WantedGetConfig(uint8_t *buf, size_t bufLen)
 int WantedReadRegistry(uint8_t *buf, size_t bufLen)
 {
     reg_entry_t entries[MAX_WAPPS];
-    int n;
+    int n, ret;
 
     if (buf == NULL) return -EINVAL;
 
@@ -126,11 +125,11 @@ int WantedWriteRegistry(bool *cont, const uint8_t *buf, size_t bufLen)
     return PlatformRegistryWrite(CONTINUE_WRITE, buf, bufLen);
 }
 
-int WantedRegistryRemove(const char *name)
+int WantedRegistryRemove(const reg_entry_t *entry)
 {
-    if (name == NULL) return -EINVAL;
+    if (entry == NULL) return -EINVAL;
 
-    return PlatformRegistryRemove(name);
+    return PlatformRegistryRemove(entry);
 }
 
 int WantedCloseRegistry()
@@ -146,6 +145,34 @@ int WantedReadState(uint8_t *buf, size_t bufLen)
     if (ret < 0) return ret;
 
     return StateToJson(wapps, ret, buf, bufLen);
+}
+
+int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen)
+{
+    int ret;
+    wapp_t w;
+    uint8_t *m;
+    size_t mLen;
+
+    if (buf == NULL) return -EINVAL;
+
+    ret = PlatformRegistryWappLoad(entry, &w);
+    if (ret < 0) {
+        return ret;
+    }
+
+    ret = WantedWappLoadManifest(&w, &m, &mLen);
+    if (ret < 0) {
+        return -EINVAL;
+    }
+
+    size_t n = mLen < bufLen ? mLen : bufLen;
+
+    memcpy(buf, m, n);
+
+    PlatformWappUnload(&w);
+
+    return (int)n;
 }
 
 int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, const char *path, const char *options)

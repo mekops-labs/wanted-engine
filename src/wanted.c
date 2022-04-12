@@ -70,9 +70,9 @@ _exit:
     return ret;
 }
 
-int WantedWappParseManifest(wapp_t *w) {
-    int ret = 0;
-    json_t mem[32];
+int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen)
+{
+    int ret;
     wapp_t m;
 
     ret = LoadFile(manifestName, w->img, w->img_len, &m);
@@ -81,12 +81,31 @@ int WantedWappParseManifest(wapp_t *w) {
         return -1;
     }
 
-    char *buf = WantedMalloc(m.img_len);
+    *img = m.img;
+    *imgLen = m.img_len;
+
+    return 0;
+}
+
+int WantedWappParseManifest(wapp_t *w)
+{
+    int ret = 0;
+    json_t mem[32];
+    uint8_t *manifestImg;
+    size_t manifestLen;
+
+    ret = WantedWappLoadManifest(w, &manifestImg, &manifestLen);
+    if (ret < 0) {
+        DEBUG_TRACE("Can't load manifest");
+        return -1;
+    }
+
+    char *buf = WantedMalloc(manifestLen);
     if (buf == NULL) {
         DEBUG_TRACE("Can't allocate mem for manifest json buffer");
         return -1;
     }
-    memcpy(buf, m.img, m.img_len);
+    memcpy(buf, manifestImg, manifestLen);
 
     json_t const* json = json_create(buf, mem, sizeof mem / sizeof *mem );
     if ( !json ) {
@@ -116,6 +135,14 @@ int WantedWappParseManifest(wapp_t *w) {
         if ( JSON_INTEGER == json_getType( version ) ) {
             w->version.v[i] = (uint8_t)json_getInteger(version);
         }
+    }
+
+    json_t const* pkg = json_getProperty( json, "package" );
+    if ( !pkg || JSON_INTEGER != json_getType( pkg ) ) {
+        DEBUG_TRACE("Warning, the package property is not found.");
+        w->version.package = 0;
+    } else {
+        w->version.package = (uint8_t)json_getInteger(pkg);
     }
 
 _exit:
