@@ -138,7 +138,7 @@ m3ApiRawFunction(m3_wasi_generic_environ_get)
     m3ApiGetArgMem   (uint32_t *           , env)
     m3ApiGetArgMem   (char *               , env_buf)
 
-    // TODO
+    // TODO: m3_wasi_generic_environ_get
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
@@ -151,7 +151,7 @@ m3ApiRawFunction(m3_wasi_generic_environ_sizes_get)
     m3ApiCheckMem(env_count,    sizeof(__wasi_size_t));
     m3ApiCheckMem(env_buf_size, sizeof(__wasi_size_t));
 
-    // TODO
+    // TODO: m3_wasi_generic_environ_sizes_get
     m3ApiWriteMem32(env_count,    0);
     m3ApiWriteMem32(env_buf_size, 0);
 
@@ -233,7 +233,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_fdstat_set_flags)
     m3ApiGetArg      (__wasi_fd_t          , fd)
     m3ApiGetArg      (__wasi_fdflags_t     , flags)
 
-    // TODO
+    // TODO: m3_wasi_generic_fd_fdstat_set_flags
 
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
@@ -521,7 +521,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_datasync)
     m3ApiReturnType  (uint32_t)
     m3ApiGetArg      (__wasi_fd_t, fd)
 
-    // TODO
+    // TODO: m3_wasi_generic_fd_datasync
     m3ApiReturn(__WASI_ERRNO_SUCCESS);
 }
 
@@ -600,7 +600,7 @@ m3ApiRawFunction(m3_wasi_generic_poll_oneoff)
         if (ret < 0) m3ApiReturn(errno_to_wasi(ret));
     }
 
-    //TODO: m3ApiWriteMem
+    //TODO: m3_wasi_generic_poll_oneoff
 
     m3ApiReturn(ret);
 }
