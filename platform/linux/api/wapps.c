@@ -222,14 +222,14 @@ int  PlatformWappGetState(wapp_state_t *wapps, size_t appsLen)
     int i, r;
 
     for (i = 0, r = 0; i < MAX_WAPPS && r < appsLen; i++) {
-            if (state.threads[i].data.wapp.img == NULL) continue;
+        if (state.threads[i].data.wapp.img == NULL) continue;
 
-            strncpy(wapps[r].name, (const char *)state.threads[i].data.wapp.name, WAPP_MAX_NAME_LEN);
-            wapps[r].name[WAPP_MAX_NAME_LEN-1] = '\0';
-            wapps[r].status = state.threads[i].status;
-            wapps[r].version = state.threads[i].data.wapp.version;
-            wapps[r].id = state.threads[i].data.id;
-            r++;
+        strncpy(wapps[r].name, (const char *)state.threads[i].data.wapp.name, WAPP_MAX_NAME_LEN);
+        wapps[r].name[WAPP_MAX_NAME_LEN-1] = '\0';
+        wapps[r].status = state.threads[i].status;
+        wapps[r].version = state.threads[i].data.wapp.version;
+        wapps[r].id = state.threads[i].data.id;
+        r++;
     }
 
     return r;
