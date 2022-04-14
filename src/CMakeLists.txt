@@ -6,6 +6,7 @@ set(sources
 
 set(vfs-srcs
     "vfs/vfs.c"
+    "vfs/vfs-null.c"
     "vfs/vfs-virtual.c"
     "vfs/vfs-romfs.c"
     "vfs/vfs-wanted.c"
