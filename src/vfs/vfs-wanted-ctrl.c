@@ -7,7 +7,7 @@
 #include <vfs-drivers.h>
 
 #include <platform.h>
-
+#include <wanted-api.h>
 #include <wanted-vfs-api.h>
 
 
@@ -103,9 +103,8 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     wapp.driversCnt = ret;
 
     /* TODO: need to give more parameters, like what drivers need to be enabled. JSON? */
-    switch (act)
-    {
-    case WAPP_START:
+    switch (act) {
+    case WAPP_START: {
         const char *ver = strchr(wapp.name, ':');
         if (ver != NULL) {
             ver += 1;
@@ -136,13 +135,14 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
             return ret;
         }
         break;
-    case WAPP_STOP:
+    }
+    case WAPP_STOP: {
         ret = PlatformWappStop(wapp.name);
         if (ret < 0) {
             return ret;
         }
         break;
-
+    }
     default:
         break;
     }
