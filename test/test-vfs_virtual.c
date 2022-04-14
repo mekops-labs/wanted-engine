@@ -124,7 +124,7 @@ TEST_TEAR_DOWN(vfs_virtual_register)
 TEST(vfs_virtual_register, RegisterFail)
 {
     int ret;
-    vfs_driver_t dummy;
+    vfs_driver_t dummy = { 0 };
     vfs_entry_t *fs = virt->ctx->entries;
 
     ret = TRY_DRV(virt, Register, "", &dummy);
@@ -162,8 +162,8 @@ TEST(vfs_virtual_register, RegisterSingle)
 TEST(vfs_virtual_register, RegisterMultiple)
 {
     int ret;
-    vfs_driver_t dummy1;
-    vfs_driver_t dummy2;
+    vfs_driver_t dummy1 = { 0 };
+    vfs_driver_t dummy2 = { 0 };
     vfs_entry_t *fs = virt->ctx->entries;
 
     ret = TRY_DRV(virt, Register, "abc", &dummy1);
@@ -184,7 +184,7 @@ TEST(vfs_virtual_register, RegisterMultiple)
 TEST(vfs_virtual_register, RegisterTree)
 {
     int ret;
-    vfs_driver_t dummy = { .Register = NULL };
+    vfs_driver_t dummy = { 0 };
 
     virt2 = VfsVirtualInit(NULL, 0, NULL);
 
@@ -200,8 +200,6 @@ TEST(vfs_virtual_register, RegisterTree)
 
     ret = TRY_DRV(virt, Register, "a/b/c", &dummy);
     TEST_ASSERT_EQUAL(-EPERM, ret);
-
-    virt2->Destroy(virt2);
 }
 
 TEST_GROUP_RUNNER(vfs_virtual_register)
@@ -233,7 +231,6 @@ TEST_SETUP(vfs_virtual_find)
 
 TEST_TEAR_DOWN(vfs_virtual_find)
 {
-    virt2->Destroy(virt2);
     virt->Destroy(virt);
 }
 
@@ -385,7 +382,6 @@ TEST_SETUP(vfs_virtual_open)
 
 TEST_TEAR_DOWN(vfs_virtual_open)
 {
-    virt2->Destroy(virt2);
     virt->Destroy(virt);
 }
 
@@ -509,7 +505,6 @@ TEST_SETUP(vfs_virtual_close)
 
 TEST_TEAR_DOWN(vfs_virtual_close)
 {
-    virt2->Destroy(virt2);
     virt->Destroy(virt);
 }
 
@@ -596,7 +591,6 @@ TEST_SETUP(vfs_virtual_stat)
 
 TEST_TEAR_DOWN(vfs_virtual_stat)
 {
-    virt2->Destroy(virt2);
     virt->Destroy(virt);
 }
 
@@ -663,7 +657,6 @@ TEST_SETUP(vfs_virtual_read_write_seek)
 
 TEST_TEAR_DOWN(vfs_virtual_read_write_seek)
 {
-    virt2->Destroy(virt2);
     virt->Destroy(virt);
 }
 
@@ -751,7 +744,6 @@ TEST_SETUP(vfs_virtual_readdir)
 
 TEST_TEAR_DOWN(vfs_virtual_readdir)
 {
-    virt2->Destroy(virt2);
     virt->Destroy(virt);
 }
 

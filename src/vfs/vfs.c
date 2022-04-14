@@ -47,17 +47,18 @@ vfs_ctx_t VfsInit()
     return c;
 }
 
-static void DestroyDrivers(vfs_ctx_t c) {
-    for (int i = 0; i < c->nDrivers; i++) {
-        if (c->drivers[i]->Destroy != NULL) c->drivers[i]->Destroy((vfs_driver_t *)c->drivers[i]);
-    }
-    c->nDrivers = 0;
+static void DestroyRootDriver(vfs_ctx_t c) {
+    if (!c->rootDriver) return;
+
+    if (c->rootDriver->Destroy != NULL)
+        c->rootDriver->Destroy(c->rootDriver);
 }
 
 void VfsDestroy(vfs_ctx_t *c)
 {
     if (NULL == c || NULL == *c) return;
-    DestroyDrivers(*c);
+    DestroyRootDriver(*c);
+
     WantedFree(*c);
     *c = NULL;
 }
@@ -66,10 +67,6 @@ int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver)
 {
     int ret = 0;
     DEBUG_TRACE("%s (%.4s)", path, driver->id);
-
-    if (c->nDrivers >= MAX_DRIVERS) {
-        return -ENOSPC;
-    }
 
     if (NULL == driver || NULL == c) {
         return -EINVAL;
@@ -81,6 +78,7 @@ int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver)
         c->fildes[ROOT_FD].drv = driver;
         ret = TRY_DRV(c->fildes[ROOT_FD].drv, Register, path, driver);
         if (ret < 0) return ret;
+        c->rootDriver = driver;
     } else if (memcmp("<stdin>", path, 8) == 0) {
         c->fildes[VFS_STDIN].drv = driver;
         c->fildes[VFS_STDIN].drv_fd = TRY_DRV(driver, Open, path , VFS_O_RDONLY);
@@ -94,7 +92,7 @@ int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver)
         c->fildes[VFS_STDERR].drv_fd = TRY_DRV(driver, Open, path , VFS_O_WRONLY);;
         c->fildes[VFS_STDERR].opened = true;
     } else {
-        if (!c->fildes[ROOT_FD].drv) {
+        if (!c->rootDriver) {
             return -EINVAL;
         }
 
@@ -102,11 +100,9 @@ int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver)
             return -EINVAL;
         }
 
-        ret = TRY_DRV(c->fildes[ROOT_FD].drv, Register, seg.begin, driver);
+        ret = TRY_DRV(c->rootDriver, Register, seg.begin, driver);
         if (ret < 0) return ret;
     }
-
-    c->drivers[c->nDrivers++] = driver;
 
     return ret;
 }

@@ -30,8 +30,7 @@ typedef struct vfs_fildes_t {
 
 struct vfs_ctx_t {
     vfs_fildes_t fildes[MAX_OPEN];
-    const vfs_driver_t *drivers[MAX_DRIVERS];
-    size_t nDrivers;
+    const vfs_driver_t *rootDriver;
 };
 
 int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft);
