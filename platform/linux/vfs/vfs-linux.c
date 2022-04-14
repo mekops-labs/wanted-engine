@@ -13,6 +13,7 @@
 #include <wanted_malloc.h>
 #include <cwalk.h>
 #include <wanted-api.h>
+#include <config-linux.h>
 
 static const char id[] = { 'L', 'i', 'n', 'u' };
 
@@ -37,12 +38,11 @@ vfs_driver_t *VfsLinuxInit(const wapp_t *wapp, uint8_t argc, const char *args[])
     const char *root;
     vfs_driver_t *driver;
 
-    if (argc < 1 || NULL == args || NULL == args[0] ) {
-        DEBUG_TRACE("invalid arguments");
-        return NULL;
+    if (argc < 1 || NULL == args || NULL == args[0] || args[0][0] == '\0') {
+        root = DEFAULT_ROOT;
+    } else {
+        root = args[0];
     }
-
-    root = args[0];
 
     driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
     if (NULL == driver) {
