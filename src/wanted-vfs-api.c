@@ -7,8 +7,10 @@
 #include <wanted-vfs-api.h>
 #include <platform.h>
 #include <vfs-drivers.h>
+#include <wanted-api.h>
 
 #include <json-maker/json-maker.h>
+#include <tiny-json.h>
 
 static wantedConfig_t currentConfig;
 
@@ -184,10 +186,16 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
         return -EINVAL;
     }
 
-    if (memcmp("virt", name, 5) == 0) {
+    if (memcmp("null", name, 5) == 0) {
+        drv = VfsNullInit(w, 0, NULL);
+        if (NULL == drv) {
+            DEBUG_TRACE("can't load null driver (%d)", ret);
+            return -EINVAL;
+        }
+    } else if (memcmp("virt", name, 5) == 0) {
         drv = VfsVirtualInit(w, 0, NULL);
         if (NULL == drv) {
-            DEBUG_TRACE("VfsVirtualInit: can't load virt driver (%d)", ret);
+            DEBUG_TRACE("can't load virt driver (%d)", ret);
             return -EINVAL;
         }
     } else if (memcmp("rom", name, 4) == 0) {
@@ -196,17 +204,18 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
         }
         drv = VfsRomfsInit(w, 1, &options);
         if (NULL == drv) {
-            DEBUG_TRACE("VfsRomfsInit: can't load romfs (%d)", ret);
+            DEBUG_TRACE("can't load romfs (%d)", ret);
             return -EINVAL;
         }
     } else if (memcmp("platform", name, 9) == 0) {
+        uint8_t argc = 1;
         if (options == NULL) {
-            return -EINVAL;
+            argc = 0;
         }
 
-        drv = VfsPlatformFsInit(w, 1, &options);
+        drv = VfsPlatformFsInit(w, argc, &options);
         if (NULL == drv) {
-            DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
+            DEBUG_TRACE("can't load platform driver (%d)", ret);
             return -EINVAL;
         }
     } else if (memcmp("socket", name, 7) == 0) {
@@ -216,13 +225,13 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
 
         drv = VfsSocketInit(w, 1, &options);
         if (NULL == drv) {
-            DEBUG_TRACE("VfsPlatformInit: can't load platform driver (%d)", ret);
+            DEBUG_TRACE("can't load socket driver (%d)", ret);
             return -EINVAL;
         }
     } else if (memcmp("wanted", name, 7) == 0) {
         drv = VfsWantedInit(w, 0, NULL);
         if (NULL == drv) {
-            DEBUG_TRACE("VfsWantedInit: can't load wanted driver (%d)", ret);
+            DEBUG_TRACE("can't load wanted driver (%d)", ret);
             return -EINVAL;
         }
     } else {
@@ -232,4 +241,82 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
     ret = VfsRegister(c, path, drv);
 
     return ret;
+}
+
+int WantedParseCtrlAction(const char *buf, size_t bufLen, char *wappName, wapp_action_t *act, wapp_config_t *cfg)
+{
+    if (NULL == buf || NULL == wappName || NULL == cfg || NULL == act) return -EINVAL;
+
+    int i = 0;
+    json_t m[40];
+    char b[bufLen];
+
+    memcpy(b, buf, bufLen);
+    memset(cfg, 0, sizeof(wapp_config_t));
+
+    json_t const* json = json_create(b, m, sizeof m / sizeof *m);
+    if (!json || JSON_OBJ != json_getType(json)) {
+        DEBUG_TRACE("can't initialize json parser");
+        return -ENOMEM;
+    }
+
+    json_t const* action = json_getProperty(json, "action");
+    if (!action || JSON_TEXT != json_getType(action)) {
+        DEBUG_TRACE(".action property not found in json");
+        return -EINVAL;
+    }
+
+    json_t const* params = json_getProperty(json, "params");
+    if (!params || JSON_OBJ != json_getType(params)) {
+        DEBUG_TRACE(".params property not found in json");
+        return -EINVAL;
+    }
+
+    json_t const* name = json_getProperty(params, "name");
+    if (!name || JSON_TEXT != json_getType(name)) {
+        DEBUG_TRACE(".params.name property not found in json");
+        return -EINVAL;
+    }
+    strcpy(wappName, json_getValue(name));
+
+    if (strcmp("start", json_getValue(action)) == 0) {
+        *act = WAPP_START;
+
+        json_t const* console = json_getProperty(params, "console");
+        if (console && JSON_OBJ == json_getType(console)) {
+            json_t const* in = json_getProperty(console, "in");
+            if (in && JSON_OBJ == json_getType(in)) {
+                strcpy(cfg->console[0].name,    NULL == json_getPropertyValue(in, "name") ? "" : json_getPropertyValue(in, "name"));
+                strcpy(cfg->console[0].options, NULL == json_getPropertyValue(in, "options") ? "" : json_getPropertyValue(in, "options"));
+            }
+
+            json_t const* out = json_getProperty(console, "out");
+            if (out && JSON_OBJ == json_getType(out)) {
+                strcpy(cfg->console[1].name,    NULL == json_getPropertyValue(out, "name") ? "" : json_getPropertyValue(out, "name"));
+                strcpy(cfg->console[1].options, NULL == json_getPropertyValue(out, "options") ? "" : json_getPropertyValue(out, "options"));
+            }
+
+            json_t const* err = json_getProperty(console, "err");
+            if (err && JSON_OBJ == json_getType(err)) {
+                strcpy(cfg->console[2].name,    NULL == json_getPropertyValue(err, "name") ? "" : json_getPropertyValue(err, "name"));
+                strcpy(cfg->console[2].options, NULL == json_getPropertyValue(err, "options") ? "" : json_getPropertyValue(err, "options"));
+            }
+        }
+
+        json_t const* drivers = json_getProperty(params, "drivers");
+        json_t const* drv;
+        if (drivers && JSON_ARRAY == json_getType(drivers)) {
+            for(i = 0, drv = json_getChild(drivers); drv && i < 10; drv = json_getSibling(drv), i++) {
+                if (JSON_OBJ == json_getType(drv)) {
+                    strcpy(cfg->drivers[i].name, NULL == json_getPropertyValue(drv, "name") ? "" : json_getPropertyValue(drv, "name"));
+                    strcpy(cfg->drivers[i].path, NULL == json_getPropertyValue(drv, "path") ? "" : json_getPropertyValue(drv, "path"));
+                    strcpy(cfg->drivers[i].options, NULL == json_getPropertyValue(drv, "options") ? "" : json_getPropertyValue(drv, "options"));
+                }
+            }
+        }
+    } else if (strcmp("stop",  json_getValue(action)) == 0) {
+        *act = WAPP_STOP;
+    }
+
+    return i;
 }

@@ -20,10 +20,28 @@ typedef struct {
 } wapp_version_t;
 
 typedef struct {
+    char name[32];
+    char path[32];
+    char options[32];
+} wapp_driver_t;
+
+typedef struct {
+    wapp_driver_t console[3];
+    wapp_driver_t drivers[10];
+} wapp_config_t;
+
+typedef enum {
+    WAPP_START,
+    WAPP_STOP,
+} wapp_action_t;
+
+typedef struct {
     char name[WAPP_MAX_NAME_LEN];
     wapp_version_t version;
     uint8_t *img;
     size_t img_len;
+    wapp_config_t cfg;
+    size_t driversCnt;
 } wapp_t;
 
 typedef struct {

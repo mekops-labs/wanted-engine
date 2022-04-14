@@ -18,3 +18,5 @@ int WantedRegistryRemove(const reg_entry_t *entry);
 int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen);
 
 int WantedReadState(uint8_t *buf, size_t bufLen);
+
+int WantedParseCtrlAction(const char *buf, size_t bufLen, char *wappName, wapp_action_t *action, wapp_config_t *cfg);

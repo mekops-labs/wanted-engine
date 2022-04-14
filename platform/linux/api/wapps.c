@@ -169,13 +169,14 @@ int PlatformWappStart(wapp_t app)
     return 0;
 }
 
-int PlatformWappStop(uint8_t id)
+int PlatformWappStop(const char* name)
 {
     int slot;
 
     for (slot = 0; slot < MAX_WAPPS; slot++) {
-        if (state.threads[slot].data.id == id &&
-            state.threads[slot].status == RUNNING) break;
+        if ((strcmp((char *)state.threads[slot].data.wapp.name, name) == 0)
+            && state.threads[slot].status == RUNNING)
+            break;
     }
 
     if (slot == MAX_WAPPS) {

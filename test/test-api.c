@@ -22,11 +22,14 @@ TEST_TEAR_DOWN(wanted_api)
 TEST(wanted_api, runSimpleWasm)
 {
     wapp_data_t ctx;
-    wapp_t w = {
-        .img = test_wasi,
-        .img_len = test_wasi_len
-    };
+    wapp_t w = { 0 };
     int ret;
+
+    w.img = test_wasi;
+    w.img_len = test_wasi_len;
+    strcpy(w.cfg.console[0].name, "null");
+    strcpy(w.cfg.console[1].name, "null");
+    strcpy(w.cfg.console[2].name, "null");
 
     ctx.id = 0;
     ctx.wapp = w;

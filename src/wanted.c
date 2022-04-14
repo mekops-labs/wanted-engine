@@ -226,14 +226,19 @@ int WantedWappRun(wapp_data_t *ctx)
     LinkWantedApi(mod);
     m3_LinkLibC(mod);
 
-    ret =  WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stdin>",  "./");
-    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stdout>", "./");
-    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "<stderr>", "./");
+    /* install console */
+    ret =  WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[0].name,   "<stdin>",  wapp->cfg.console[0].options);
+    ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[1].name,   "<stdout>", wapp->cfg.console[1].options);
+    ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[2].name,   "<stderr>", wapp->cfg.console[2].options);
+
+    /* root driver */
     ret += WantedInstallDriver(ctx->vfs, wapp, "virt",       "/", NULL);
-    ret += WantedInstallDriver(ctx->vfs, wapp, "rom",        "/rom", "");
-    ret += WantedInstallDriver(ctx->vfs, wapp, "platform",   "/data", "./");
-    ret += WantedInstallDriver(ctx->vfs, wapp, "socket",     "/skt", "t 127.0.0.1 8888");
-    ret += WantedInstallDriver(ctx->vfs, wapp, "wanted",     "/w", NULL);
+
+    /* fs drivers */
+    for (int i = 0; i < wapp->driversCnt; i++) {
+        ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.drivers[i].name, wapp->cfg.drivers[i].path, wapp->cfg.drivers[i].options);
+    }
+
     if (ret < 0) {
         DEBUG_TRACE("error installing drivers");
         goto _freeVfs;
@@ -297,6 +302,31 @@ wapp_t WantedGetCurrentSupervisor()
     wapp_t w;
     w.img = supervisor;
     w.img_len = supervisor_len;
+
+    strcpy(w.cfg.console[0].name, "platform");
+    strcpy(w.cfg.console[0].options, "./");
+    strcpy(w.cfg.console[1].name, "platform");
+    strcpy(w.cfg.console[1].options, "./");
+    strcpy(w.cfg.console[2].name, "platform");
+    strcpy(w.cfg.console[2].options, "./");
+
+    strcpy(w.cfg.drivers[0].name, "rom");
+    strcpy(w.cfg.drivers[0].path, "/rom");
+    strcpy(w.cfg.drivers[0].options, "");
+
+    strcpy(w.cfg.drivers[1].name, "platform");
+    strcpy(w.cfg.drivers[1].path, "/mnt");
+    strcpy(w.cfg.drivers[1].options, "./");
+
+    strcpy(w.cfg.drivers[2].name, "socket");
+    strcpy(w.cfg.drivers[2].path, "/skt");
+    strcpy(w.cfg.drivers[2].options, "t 127.0.0.1 8888");
+
+    strcpy(w.cfg.drivers[3].name, "wanted");
+    strcpy(w.cfg.drivers[3].path, "/w");
+    strcpy(w.cfg.drivers[3].options, "");
+
+    w.driversCnt = 4;
 
     return w;
 }

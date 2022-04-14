@@ -86,8 +86,27 @@ TEST(wanted_vfs_api, WantedReadRegistryTest)
 
 }
 
+TEST(wanted_vfs_api, WantedParseCtrlActionTest)
+{
+    int ret;
+    const char *buf =
+    #include "ctrl-action.json.h"
+    ;
+
+    char appName[WAPP_MAX_NAME_LEN];
+    wapp_action_t act = WAPP_STOP+1;
+    wapp_config_t cfg;
+
+    ret = WantedParseCtrlAction(buf, strlen(buf), appName, &act, &cfg);
+    TEST_ASSERT_EQUAL(0, ret);
+
+    TEST_ASSERT_EQUAL_STRING("app1", appName);
+    TEST_ASSERT_EQUAL(WAPP_START, act);
+}
+
 TEST_GROUP_RUNNER(wanted_vfs_api)
 {
     RUN_TEST_CASE(wanted_vfs_api, WantedGetConfigTest);
     RUN_TEST_CASE(wanted_vfs_api, WantedReadRegistryTest);
+    RUN_TEST_CASE(wanted_vfs_api, WantedParseCtrlActionTest);
 }

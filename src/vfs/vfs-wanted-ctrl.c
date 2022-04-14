@@ -89,6 +89,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 {
     wapp_t wapp;
+    wapp_action_t act;
     reg_entry_t e;
     int ret;
     const char *p = buf;
@@ -96,13 +97,16 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     if (buf == NULL) return -EINVAL;
     if (!opened) return -EBADF;
 
+    ret = WantedParseCtrlAction(buf, nbyte, wapp.name, &act, &wapp.cfg);
+    if (ret < 0) return ret;
 
+    wapp.driversCnt = ret;
 
     /* TODO: need to give more parameters, like what drivers need to be enabled. JSON? */
-    if (strncmp(p, "start", 5) == 0) {
-        p += 6;
-
-        const char *ver = strchr(p, ':');
+    switch (act)
+    {
+    case WAPP_START:
+        const char *ver = strchr(wapp.name, ':');
         if (ver != NULL) {
             ver += 1;
             size_t nameLen = ver - p > WAPP_MAX_NAME_LEN ? WAPP_MAX_NAME_LEN : ver - p;
@@ -131,15 +135,16 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
         if (ret < 0) {
             return ret;
         }
-    } else if (strncmp(buf, "stop", 4) == 0) {
-        buf += 5;
-
-        ret = PlatformWappStop((uint8_t)atoi(buf));
+        break;
+    case WAPP_STOP:
+        ret = PlatformWappStop(wapp.name);
         if (ret < 0) {
             return ret;
         }
-    } else {
-        return -EINVAL;
+        break;
+
+    default:
+        break;
     }
 
     return nbyte;
