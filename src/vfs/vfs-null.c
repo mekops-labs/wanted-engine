@@ -11,7 +11,7 @@ static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 
-const vfs_driver_t NullDriver = {
+static vfs_driver_t NullDriver = {
     .id              = ID,
     .filetype        = VFS_FILETYPE_REGULAR_FILE,
     .ctx             = NULL,
