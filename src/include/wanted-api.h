@@ -27,6 +27,7 @@ typedef struct {
 
 typedef struct {
     wapp_driver_t console[3];
+    size_t driversCnt;
     wapp_driver_t drivers[10];
 } wapp_config_t;
 
@@ -41,7 +42,6 @@ typedef struct {
     uint8_t *img;
     size_t img_len;
     wapp_config_t cfg;
-    size_t driversCnt;
 } wapp_t;
 
 typedef struct {

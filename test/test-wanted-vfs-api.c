@@ -102,6 +102,7 @@ TEST(wanted_vfs_api, WantedParseCtrlActionTest)
 
     TEST_ASSERT_EQUAL_STRING("app1", appName);
     TEST_ASSERT_EQUAL(WAPP_START, act);
+    TEST_ASSERT_EQUAL(5, cfg.driversCnt);
 }
 
 TEST_GROUP_RUNNER(wanted_vfs_api)

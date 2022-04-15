@@ -313,10 +313,11 @@ int WantedParseCtrlAction(const char *buf, size_t bufLen, char *wappName, wapp_a
                     strcpy(cfg->drivers[i].options, NULL == json_getPropertyValue(drv, "options") ? "" : json_getPropertyValue(drv, "options"));
                 }
             }
+            cfg->driversCnt = i;
         }
     } else if (strcmp("stop",  json_getValue(action)) == 0) {
         *act = WAPP_STOP;
     }
 
-    return i;
+    return 0;
 }

@@ -235,7 +235,7 @@ int WantedWappRun(wapp_data_t *ctx)
     ret += WantedInstallDriver(ctx->vfs, wapp, "virt",       "/", NULL);
 
     /* fs drivers */
-    for (int i = 0; i < wapp->driversCnt; i++) {
+    for (int i = 0; i < wapp->cfg.driversCnt; i++) {
         ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.drivers[i].name, wapp->cfg.drivers[i].path, wapp->cfg.drivers[i].options);
     }
 
@@ -326,7 +326,7 @@ wapp_t WantedGetCurrentSupervisor()
     strcpy(w.cfg.drivers[3].path, "/w");
     strcpy(w.cfg.drivers[3].options, "");
 
-    w.driversCnt = 4;
+    w.cfg.driversCnt = 4;
 
     return w;
 }
