@@ -51,13 +51,21 @@ static void DestroyRootDriver(vfs_ctx_t c) {
     if (!c->rootDriver) return;
 
     if (c->rootDriver->Destroy != NULL)
-        c->rootDriver->Destroy(c->rootDriver);
+        c->rootDriver->Destroy((vfs_driver_t*)c->rootDriver);
+}
+
+static void DestroyFildesDrv(vfs_ctx_t c, unsigned fd) {
+    if (c->fildes[fd].drv && c->fildes[fd].drv->Destroy)
+        c->fildes[fd].drv->Destroy((vfs_driver_t*)c->fildes[fd].drv);
 }
 
 void VfsDestroy(vfs_ctx_t *c)
 {
     if (NULL == c || NULL == *c) return;
     DestroyRootDriver(*c);
+    DestroyFildesDrv(*c, VFS_STDERR);
+    DestroyFildesDrv(*c, VFS_STDOUT);
+    DestroyFildesDrv(*c, VFS_STDIN);
 
     WantedFree(*c);
     *c = NULL;
