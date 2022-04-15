@@ -1,4 +1,5 @@
 set(sources
+    "wanted_malloc.c"
     "wanted.c"
     "wanted_wasm_api.c"
     "wanted-vfs-api.c"
