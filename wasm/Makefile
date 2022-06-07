@@ -7,7 +7,7 @@ WASI_SYSROOT=/usr/share/wasi-sysroot
 
 CLANG_COMMON_FLAGS=-Wl,-export-dynamic -Wl,--initial-memory=65536 -Wl,--max-memory=65536 -z stack-size=4096 -Os -Wl,--strip-all
 ifeq (${WASI}, 1)
-CLANG_FLAGS+=--target=wasm32-unknown-wasi --sysroot=$(WASI_SYSROOT) $(CLANG_COMMON_FLAGS)
+CLANG_FLAGS+=--target=wasm32-wasi --sysroot=$(WASI_SYSROOT) --rtlib=compiler-rt $(CLANG_COMMON_FLAGS)
 else
 CLANG_FLAGS+=--target=wasm32 -nostdlib -Wl,--no-entry $(CLANG_COMMON_FLAGS)
 endif
