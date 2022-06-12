@@ -16,3 +16,6 @@
 [submodule "vendor/json-maker"]
 	path = vendor/json-maker
 	url = https://github.com/rafagafe/json-maker.git
+[submodule "vendor/c9"]
+	path = vendor/c9
+	url = git@github.com:mek-x/c9.git
