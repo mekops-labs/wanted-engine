@@ -186,7 +186,13 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
         return -EINVAL;
     }
 
-    if (memcmp("null", name, 5) == 0) {
+    if (memcmp("9p", name, 3) == 0) {
+        drv = Vfs9PInit(w, 1, &options);
+        if (NULL == drv) {
+            DEBUG_TRACE("can't load 9p driver (%d)", ret);
+            return -EINVAL;
+        }
+    } else if (memcmp("null", name, 5) == 0) {
         drv = VfsNullInit(w, 0, NULL);
         if (NULL == drv) {
             DEBUG_TRACE("can't load null driver (%d)", ret);

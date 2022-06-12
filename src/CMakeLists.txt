@@ -7,6 +7,7 @@ set(sources
 
 set(vfs-srcs
     "vfs/vfs.c"
+    "vfs/vfs-9p.c"
     "vfs/vfs-null.c"
     "vfs/vfs-virtual.c"
     "vfs/vfs-romfs.c"
@@ -27,6 +28,11 @@ set(tiny-json-src
 
 set(json-maker-src
     ${CMAKE_SOURCE_DIR}/vendor/json-maker/src/json-maker.c
+)
+
+# Add c9
+set(c9-src
+    ${CMAKE_SOURCE_DIR}/vendor/c9/c9.c
 )
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/platform ${CMAKE_BINARY_DIR}/platform)
@@ -55,6 +61,7 @@ add_library(${project} STATIC
     ${wasi-src}
     ${tiny-json-src}
     ${json-maker-src}
+    ${c9-src}
 )
 
 target_include_directories(${project}
@@ -63,6 +70,7 @@ target_include_directories(${project}
     PRIVATE ${CMAKE_SOURCE_DIR}/wasm
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/json-maker/src/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/vendor/c9
     )
 
 target_link_libraries(${project}

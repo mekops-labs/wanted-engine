@@ -326,7 +326,11 @@ wapp_t WantedGetCurrentSupervisor()
     strcpy(w.cfg.drivers[3].path, "/w");
     strcpy(w.cfg.drivers[3].options, "");
 
-    w.cfg.driversCnt = 4;
+    strcpy(w.cfg.drivers[4].name, "9p");
+    strcpy(w.cfg.drivers[4].path, "/n");
+    strcpy(w.cfg.drivers[4].options, "");
+
+    w.cfg.driversCnt = 5;
 
     return w;
 }

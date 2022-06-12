@@ -12,6 +12,7 @@
 typedef vfs_driver_t *(*VfsInitFunction_t)(const wapp_t *wapp, uint8_t argc, const char *args[]);
 
 vfs_driver_t *VfsNullInit       (const wapp_t *wapp, uint8_t argc, const char *args[]);
+vfs_driver_t *Vfs9PInit         (const wapp_t *wapp, uint8_t argc, const char *args[]);
 vfs_driver_t *VfsPlatformFsInit (const wapp_t *wapp, uint8_t argc, const char *args[]);
 vfs_driver_t *VfsRomfsInit      (const wapp_t *wapp, uint8_t argc, const char *args[]);
 vfs_driver_t *VfsSocketInit     (const wapp_t *wapp, uint8_t argc, const char *args[]);
