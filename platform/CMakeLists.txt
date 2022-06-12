@@ -1,5 +1,6 @@
 set(sources
     linux/vfs/vfs-linux.c
+    linux/vfs/vfs-socket.c
     linux/api/clock.c
     linux/api/random.c
     linux/api/registry.c
