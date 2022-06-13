@@ -32,285 +32,322 @@ static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _Seek    (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
 static int _ReadDir (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
-#define MSIZE 8192
-#define ERROR    1<<0
-#define ATTACHED   1<<1
-#define DISCONNECTED     1<<2
+#define MSIZE 8192u
+#define ERROR           0x1
+#define ATTACHED        0x2
+#define DISCONNECTED    0x4
 #define ADDRESS "tcp!localhost!5640"
+
+#define MAX_OPENED_FILES 10
 
 typedef struct C9aux {
     int f;
     int flags;
     uint8_t rBuf[MSIZE];
+    size_t rCnt;
     uint8_t wBuf[MSIZE];
     size_t  wOff;
+    C9stat *lastStat;
     C9ctx c;
     C9tag tag;
 } C9aux;
 
+typedef struct file_t {
+    uint8_t opened;
+    size_t currOff;
+} file_t;
+
 struct vfs_driver_ctx_t {
     C9aux aux;
+    file_t fildes[MAX_OPENED_FILES];
 };
+
+static
+int FindFirstClosedFd(vfs_driver_ctx_t d)
+{
+    if (!d) return -EINVAL;
+
+    for (int i = 0; i < MAX_OPENED_FILES; i++) {
+        if (!d->fildes[i].opened) {
+            return i;
+        }
+    }
+    return -EMFILE;
+}
 
 static int
 wrsend(C9aux *a)
 {
-	uint32_t n;
-	int w;
+    uint32_t n;
+    int w;
 
-	for (n = 0; n < a->wOff; n += w) {
-		if ((w = write(a->f, a->wBuf+n, a->wOff-n)) <= 0) {
-			if (errno == EINTR)
-				continue;
-			if (errno != EPIPE) /* remote end closed */
-				perror("write");
-			return -1;
-		}
-	}
-	a->wOff = 0;
+    for (n = 0; n < a->wOff; n += w) {
+        if ((w = write(a->f, a->wBuf+n, a->wOff-n)) <= 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno != EPIPE) /* remote end closed */
+                perror("write");
+            return -1;
+        }
+    }
+    a->wOff = 0;
 
-	return 0;
+    return 0;
 }
 
 static uint8_t *
 ctxbegin(C9ctx *ctx, uint32_t size)
 {
-	uint8_t *b;
-	C9aux *a;
+    uint8_t *b;
+    C9aux *a;
 
-	a = ctx->aux;
-	if (a->wOff + size > sizeof(a->wBuf)) {
-		if (wrsend(a) != 0 || a->wOff + size > sizeof(a->wBuf))
-			return NULL;
-	}
-	b = a->wBuf + a->wOff;
-	a->wOff += size;
+    a = ctx->aux;
+    if (a->wOff + size > sizeof(a->wBuf)) {
+        if (wrsend(a) != 0 || a->wOff + size > sizeof(a->wBuf))
+            return NULL;
+    }
+    b = a->wBuf + a->wOff;
+    a->wOff += size;
 
-	return b;
+    return b;
 }
 
 static int
 ctxend(C9ctx *ctx)
 {
-	(void)ctx;
-	return 0;
+    (void)ctx;
+    return 0;
 }
 
 static uint8_t *
 ctxread(C9ctx *ctx, uint32_t size, int *err)
 {
-	uint32_t n;
-	int r;
-	C9aux *a;
+    uint32_t n;
+    int r;
+    C9aux *a;
 
-	a = ctx->aux;
-	*err = 0;
-	for (n = 0; n < size; n += r) {
-		if ((r = read(a->f, a->rBuf+n, size-n)) <= 0) {
-			if (errno == EINTR)
-				continue;
-			a->flags |= DISCONNECTED;
-			close(a->f);
-			return NULL;
-		}
-	}
+    a = ctx->aux;
+    *err = 0;
+    for (n = 0; n < size; n += r) {
+        if ((r = read(a->f, a->rBuf+n, size-n)) <= 0) {
+            if (errno == EINTR)
+                continue;
+            a->flags |= DISCONNECTED;
+            close(a->f);
+            return NULL;
+        }
+    }
 
-	return a->rBuf;
+    return a->rBuf;
 }
 
 __attribute__ ((format (printf, 1, 2)))
 static void
 ctxerror(const char *fmt, ...)
 {
-	va_list ap;
+    va_list ap;
 
-	va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
-	fprintf(stderr, "\n");
-	va_end(ap);
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    va_end(ap);
 }
 
 static int
 dial(char *s)
 {
-	struct addrinfo *r, *a, hint = {.ai_flags = AI_ADDRCONFIG, .ai_family = AF_UNSPEC, 0};
-	char host[64], *port;
-	int e, f;
+    struct addrinfo *r, *a, hint = {.ai_flags = AI_ADDRCONFIG, .ai_family = AF_UNSPEC, 0};
+    char host[64], *port;
+    int e, f;
 
-	if (strncmp(s, "udp!", 4) == 0) {
-		hint.ai_socktype = SOCK_DGRAM;
-		hint.ai_protocol = IPPROTO_UDP;
-	} else if (strncmp(s, "tcp!", 4) == 0) {
-		hint.ai_socktype = SOCK_STREAM;
-		hint.ai_protocol = IPPROTO_TCP;
-	} else {
-		DEBUG_TRACE("invalid dial string: %s", s);
-		return -1;
-	}
-	if ((port = strchr(s+4, '!')) == NULL) {
-		DEBUG_TRACE("invalid dial string: %s", s);
-		return -1;
-	}
-	if (snprintf(host, sizeof(host), "%.*s", (int)(port-s-4), s+4) >= (int)sizeof(host)) {
-		DEBUG_TRACE("host name too large: %s", s);
-		return -1;
-	}
-	port++;
-	if ((e = getaddrinfo(host, port, &hint, &r)) != 0){
-		DEBUG_TRACE("%s: %s", gai_strerror(e), s);
-		return -1;
-	}
-	f = -1;
-	for (a = r; a != NULL; a = a->ai_next) {
-		if ((f = socket(a->ai_family, a->ai_socktype, a->ai_protocol)) < 0)
-			continue;
-		if (connect(f, a->ai_addr, a->ai_addrlen) == 0)
-			break;
-		close(f);
-		f = -1;
-	}
-	freeaddrinfo(r);
+    if (strncmp(s, "udp!", 4) == 0) {
+        hint.ai_socktype = SOCK_DGRAM;
+        hint.ai_protocol = IPPROTO_UDP;
+    } else if (strncmp(s, "tcp!", 4) == 0) {
+        hint.ai_socktype = SOCK_STREAM;
+        hint.ai_protocol = IPPROTO_TCP;
+    } else {
+        DEBUG_TRACE("invalid dial string: %s", s);
+        return -1;
+    }
+    if ((port = strchr(s+4, '!')) == NULL) {
+        DEBUG_TRACE("invalid dial string: %s", s);
+        return -1;
+    }
+    if (snprintf(host, sizeof(host), "%.*s", (int)(port-s-4), s+4) >= (int)sizeof(host)) {
+        DEBUG_TRACE("host name too large: %s", s);
+        return -1;
+    }
+    port++;
+    if ((e = getaddrinfo(host, port, &hint, &r)) != 0){
+        DEBUG_TRACE("%s: %s", gai_strerror(e), s);
+        return -1;
+    }
+    f = -1;
+    for (a = r; a != NULL; a = a->ai_next) {
+        if ((f = socket(a->ai_family, a->ai_socktype, a->ai_protocol)) < 0)
+            continue;
+        if (connect(f, a->ai_addr, a->ai_addrlen) == 0)
+            break;
+        close(f);
+        f = -1;
+    }
+    freeaddrinfo(r);
 
-	return f;
+    return f;
 }
 
 static void
 ctxprocR(C9ctx *ctx, C9r *r)
 {
-	C9aux *a;
-	C9tag tag;
-	const char *path[2];
-	char buf[64];
+    C9aux *a;
+    C9tag tag;
 
-	a = ctx->aux;
-	switch (r->type) {
-	case Rversion:
+    a = ctx->aux;
+    switch (r->type) {
+    case Rversion:
         DEBUG_TRACE("Rversion");
-		c9attach(ctx, &tag, 0, C9nofid, "none", NULL);
+        c9attach(ctx, &tag, 0, C9nofid, "none", NULL);
         a->tag = tag;
-		break;
+        break;
 
-	case Rattach:
+    case Rattach:
         DEBUG_TRACE("Rattach");
         a->flags = ATTACHED;
-		// path[0] = channel;
-		// path[1] = NULL;
-		// c9walk(ctx, &tag, Rootfid, Chatfid, path);
-		// needopen = 1;
-		break;
-
-	case Rwalk:
-        DEBUG_TRACE("Rwalk");
-		// needopen = needopen && c9open(ctx, &tag, Chatfid, C9rdwr);
-		break;
-
-	case Rread:
-        DEBUG_TRACE("Rread");
-		// if (chatoff >= skipuntil)
-		// 	output(r->read.data, r->read.size);
-		// chatoff += r->read.size;
-		/* fallthrough */
+        // path[0] = channel;
+        // path[1] = NULL;
+        // c9walk(ctx, &tag, Rootfid, Chatfid, path);
+        // needopen = 1;
         break;
-	case Ropen:
+
+    case Rwalk:
+        DEBUG_TRACE("Rwalk");
+        // needopen = needopen && c9open(ctx, &tag, Chatfid, C9rdwr);
+        break;
+
+    case Rread:
+        DEBUG_TRACE("Rread: %u", r->read.size);
+        a->rCnt = r->read.size;
+        break;
+    case Rstat:
+        DEBUG_TRACE("Rstat");
+        a->lastStat = &r->stat;
+        break;
+    case Ropen:
         DEBUG_TRACE("Ropen");
-		// if ((a->flags & Joined) == 0 && printjoin) {
-		// 	c9write(ctx, &tag, Chatfid, 0, buf, snprintf(buf, sizeof(buf), "JOIN %s to chat\n", nick));
-		// 	a->flags |= Joined;
-		// }
-		// c9read(ctx, &tag, Chatfid, chatoff, chatoff < skipuntil ? skipuntil-chatoff : Msize);
-		break;
+        // if ((a->flags & Joined) == 0 && printjoin) {
+        // 	c9write(ctx, &tag, Chatfid, 0, buf, snprintf(buf, sizeof(buf), "JOIN %s to chat\n", nick));
+        // 	a->flags |= Joined;
+        // }
+        // c9read(ctx, &tag, Chatfid, chatoff, chatoff < skipuntil ? skipuntil-chatoff : Msize);
+        break;
 
-	case Rerror:
-		DEBUG_TRACE("Rerror: %s", r->error);
-		a->flags = ERROR;
-		break;
+    case Rclunk:
+        DEBUG_TRACE("Rclunk");
+        break;
 
-	default:
-		break;
-	}
+    case Rerror:
+        DEBUG_TRACE("Rerror: %s", r->error);
+        a->flags = ERROR;
+        break;
+
+    default:
+        break;
+    }
 }
 
 static C9aux *
 srv(char *s, struct vfs_driver_ctx_t *ctx)
 {
-	int f;
+    int f;
     C9aux *c;
 
     c = &ctx->aux;
 
-	if ((f = dial(s)) < 0)
-		return NULL;
+    if ((f = dial(s)) < 0)
+        return NULL;
 
-	c->f = f;
-	c->c.read = ctxread;
-	c->c.begin = ctxbegin;
-	c->c.end = ctxend;
-	c->c.error = ctxerror;
-	c->c.aux = c;
+    c->f = f;
+    c->c.read = ctxread;
+    c->c.begin = ctxbegin;
+    c->c.end = ctxend;
+    c->c.error = ctxerror;
+    c->c.aux = c;
 
-	return c;
+    return c;
 }
 
 static C9aux *
 start(vfs_driver_ctx_t ctx)
 {
-	C9aux *a;
-	C9tag tag;
-	int i;
+    C9aux *a;
+    C9tag tag;
+    int i;
 
-	for (i = 0; i < 10; i++) {
+    for (i = 0; i < 10; i++) {
         if ((a = srv(ADDRESS, ctx)) != NULL) {
             a->c.r = ctxprocR;
             c9version(&a->c, &tag, MSIZE);
             wrsend(a);
             return a;
         }
-		sleep(10);
-	}
+        sleep(10);
+    }
 
-	if (a == NULL)
-		return NULL;
+    if (a == NULL)
+        return NULL;
 
-	return a;
+    return a;
 }
 
 static int
 proc(C9aux *a)
 {
-	struct timeval t;
-	int n, sz, sz0;
-	fd_set r, e;
-	C9tag tag;
-	C9ctx *ctx;
-	char *s;
+    struct timeval t;
+    int n, sz, sz0;
+    fd_set r, e;
+    C9tag tag;
+    C9ctx *ctx;
+    char *s;
 
-	FD_ZERO(&r);
-	FD_SET(a->f, &r);
-	FD_ZERO(&e);
-	FD_SET(a->f, &e);
-	memset(&t, 0, sizeof(t));
-	t.tv_sec = 10;
-	for (;;) {
-		errno = 0;
-		if (select(a->f + 1, &r, NULL, &e, &t) < 0 || FD_ISSET(a->f, &e)) {
-			if (errno == EINTR)
-				continue;
-			return -1;
-		}
-		break;
-	}
+    FD_ZERO(&r);
+    FD_SET(a->f, &r);
+    FD_ZERO(&e);
+    FD_SET(a->f, &e);
+    memset(&t, 0, sizeof(t));
+    t.tv_sec = 10;
+    for (;;) {
+        errno = 0;
+        if (select(a->f + 1, &r, NULL, &e, &t) < 0 || FD_ISSET(a->f, &e)) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        break;
+    }
 
-	ctx = &a->c;
-	if (FD_ISSET(a->f, &r)) {
-		c9proc(ctx);
-	} else {
-		// const char *path[] = {NULL};
-		// c9walk(ctx, &tag, 0, 0, path);
-	}
+    ctx = &a->c;
+    if (FD_ISSET(a->f, &r)) {
+        c9proc(ctx);
+    } else {
+        // const char *path[] = {NULL};
+        // c9walk(ctx, &tag, 0, 0, path);
+    }
 
-	return 0;
+    return 0;
 }
 
+static vfs_filetype_t convert9pFiletype(C9qt t) {
+    if (t & C9qtdir) {
+        return VFS_FILETYPE_DIRECTORY;
+    } else if (t & C9qtfile) {
+        return VFS_FILETYPE_CHARACTER_DEVICE;
+    } else {
+        return VFS_FILETYPE_REGULAR_FILE;
+    }
+
+    return VFS_FILETYPE_UNKNOWN;
+}
 
 
 vfs_driver_t *Vfs9PInit(const wapp_t *wapp, uint8_t argc, const char *args[]) {
@@ -333,6 +370,8 @@ vfs_driver_t *Vfs9PInit(const wapp_t *wapp, uint8_t argc, const char *args[]) {
         return NULL;
     }
 
+    memset(driver->ctx, 0, sizeof(struct vfs_driver_ctx_t));
+
     driver->bytesId         = *(uint32_t*)(id);
     driver->filetype        = VFS_FILETYPE_DIRECTORY;
     driver->Destroy         = _Destroy;
@@ -352,6 +391,13 @@ static int _Destroy (struct vfs_driver_t *d)
 {
     DEBUG_TRACE("9p Destroy");
 
+    C9aux *a = &d->ctx->aux;
+
+    if (a->flags & ATTACHED) {
+        c9clunk(&a->c, &a->tag, 0);
+        wrsend(a);
+    }
+
     WantedFree(d->ctx);
     WantedFree(d);
 
@@ -360,70 +406,183 @@ static int _Destroy (struct vfs_driver_t *d)
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
+    C9aux *a = &d->aux;
+    const char* p[3] = { NULL };
+    char buf[strlen(path)+1];
+    int newFd;
+
+    memcpy(buf, path, strlen(path));
+    buf[strlen(path)] = '\0';
+
+    int i = 0;
+    p[i++] = strtok(buf, "/");
+    while ((p[i++] = strtok(NULL, "/")) != NULL) {};
+
     // version/auth/attach
     DEBUG_TRACE("9p Open: %s", path);
 
-    start(d);
+    if (!(a->flags & ATTACHED)) { 
+        start(d);
 
-    while (proc(&d->aux) == 0 && wrsend(&d->aux) == 0) {
-        if (d->aux.flags &= ATTACHED) {
-            break;
+        while (proc(a) == 0 && wrsend(a) == 0) {
+            if (a->flags & ATTACHED) break;
         }
-    };
+    }
 
-    return 0;
+    if (memcmp(path, "/", 2) == 0) {
+        c9open(&a->c, &a->tag, 0, C9read);
+        wrsend(a);
+        proc(a);
+
+        d->fildes[0].opened = 1;
+        d->fildes[0].currOff = 0;
+
+        return 0;
+    }
+
+    newFd = FindFirstClosedFd(d);
+    if (newFd < 0) return newFd;
+
+    // TODO: error handling    
+    c9walk(&a->c, &a->tag, 0, newFd, p);
+    wrsend(a);
+    proc(a);
+
+    if (a->flags & ERROR) {
+        a->flags &= ~ERROR;
+        return -EIO;
+    }
+
+    C9mode mode;
+    if (flags & VFS_O_RDWR) {
+        mode = C9rdwr;
+    } else if (flags & VFS_O_WRONLY) {
+        mode = C9write;
+    } else {
+        mode = C9read;
+    }
+    
+    c9open(&a->c, &a->tag, newFd, mode);
+    wrsend(a);
+    proc(a);
+
+    if (a->flags & ERROR) {
+        a->flags &= ~ERROR;
+        return -EIO;
+    }
+
+    d->fildes[newFd].opened = 1;
+    d->fildes[newFd].currOff = 0;
+
+    return newFd;
 }
 
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags)
 {
-    // walk
+    // TODO: seems not used
     DEBUG_TRACE("9p OpenAt: %d, %s", fd, path);
     return 0;
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd)
 {
+    C9aux *a = &d->aux;
     // close
     DEBUG_TRACE("9p Close: %d", fd);
 
-/*
-    if (fd == 0) {
-        c9clunk(&d->aux.c, &d->aux.tag, 0);
-        wrsend(&d->aux);
+    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+
+    if (fd != 0) {
+        c9clunk(&a->c, &a->tag, fd);
+        wrsend(a);
+        proc(a);
+        d->fildes[fd].opened = 0;
     }
-    */
+
     return 0;
 }
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
 {
+    C9stat *s;
+    uint8_t *b;
+    C9aux *a = &d->aux;
+    uint32_t sz;
+
     // stat
     DEBUG_TRACE("9p Stat: %d", fd);
 
+    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+
+    c9stat(&a->c, &a->tag, fd);
+    wrsend(a);
+    proc(a);
+    
+    // TODO: error handling
+
+    s = a->lastStat;
+
     stat->dev = *(uint32_t*)(id);
-    stat->ino = 0;
-    stat->filetype = VFS_FILETYPE_DIRECTORY;
+    stat->ino = s->qid.path;
+    stat->filetype = convert9pFiletype(s->qid.type);;
     stat->nlink = 0;
-    stat->size = 0;
-    stat->atim = 0;
+    stat->size = (uint32_t)s->size;
+    stat->atim = s->atime;
     stat->ctim = 0;
-    stat->mtim = 0;
+    stat->mtim = s->mtime;
     stat->oflags = 0;
 
     return 0;
 }
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 {
+    C9aux *a = &d->aux;
+    size_t r;
+    uint8_t *b;
+
     // read
     DEBUG_TRACE("9p Read: %d, %zu", fd, nbyte);
 
-    return 0;
+    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+
+    c9read(&a->c, &a->tag, fd, d->fildes[fd].currOff, nbyte);
+    wrsend(a);
+    proc(a);
+
+    if (a->flags & ERROR) {
+        a->flags &= ~ERROR;
+        return -EIO;
+    }
+
+    r = a->rCnt;
+    b = &a->rBuf[7];
+
+    memcpy(buf, b, r);
+
+    d->fildes[fd].currOff += r;
+
+    return r;
 }
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 {
+    C9aux *a = &d->aux;
+
     // write
     DEBUG_TRACE("9p Write: %d, %zu", fd, nbyte);
+
+    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+
+    c9write(&a->c, &a->tag, fd, d->fildes[fd].currOff, buf, nbyte);
+    wrsend(a);
+    proc(a);
+
+    if (a->flags & ERROR) {
+        a->flags &= ~ERROR;
+        return -EIO;
+    }
+
+    d->fildes[fd].currOff += nbyte;
 
     return nbyte;
 }
@@ -433,13 +592,69 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long
 {
     DEBUG_TRACE("9p Seek: %d, %ld (%u)", fd, off, whence);
 
+    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+
+    switch (whence) {
+        case VFS_SEEK_SET:
+            d->fildes[fd].currOff = off;
+            break;
+        case VFS_SEEK_CUR:
+            d->fildes[fd].currOff += off;
+            break;
+        case VFS_SEEK_END:
+            break;
+        default:
+            return -EINVAL;
+    }
+
+    *pos = d->fildes[fd].currOff;
+
     return 0;
 }
 
+
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
 {
+    C9aux *a = &d->aux;
+    C9stat s = { 0 };
+    uint8_t *b;
+    uint32_t sz;
+    size_t used = 0;
+    uint64_t off = 0;
+    vfs_dirent_t dir;
+
     // read and parse dir entry
     DEBUG_TRACE("9p ReadDir: %d, %zu", fd, bufLen);
+
+    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+
+    do {
+        c9read(&a->c, &a->tag, fd, off, MSIZE - 7);
+        wrsend(a);
+        proc(a);
+        if (a->rCnt < 7) break;
+        off += a->rCnt;
+        b = &a->rBuf[7];
+        sz = a->rCnt;
+        c9parsedir(&a->c, &s, &b, &sz);
+
+        dir.d_ino       = s.qid.path;
+        dir.d_type      = convert9pFiletype(s.qid.type);
+        dir.d_namlen    = strnlen(s.name, MAX_PATH_LEN);
+        dir.d_next      = off;
+
+        if (used + sizeof(dir) + dir.d_namlen > bufLen) {
+            used = bufLen;
+            break;
+        }
+        memcpy(buf + used, &dir, sizeof(dir));
+        memcpy(buf + sizeof(dir) + used, s.name, dir.d_namlen);
+
+        used += sizeof(dir) + dir.d_namlen;
+    } while (a->rCnt != 0);
+
+    *bufUsed = used;
+    *cookie = dir.d_next; // last found directory entry
 
     return 0;
 }
