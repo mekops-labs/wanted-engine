@@ -20,7 +20,6 @@ static int _Close   (vfs_driver_ctx_t d, int fd);
 static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
-static int _Seek    (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
 
 const vfs_driver_t WantedControlDriver = {
     .id              = ID,
@@ -146,9 +145,4 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     }
 
     return nbyte;
-}
-
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
-{
-    return 0;
 }
