@@ -99,7 +99,6 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     ret = WantedParseCtrlAction(buf, nbyte, wapp.name, &act, &wapp.cfg);
     if (ret < 0) return ret;
 
-    /* TODO: need to give more parameters, like what drivers need to be enabled. JSON? */
     switch (act) {
     case WAPP_START: {
         const char *ver = strchr(wapp.name, ':');

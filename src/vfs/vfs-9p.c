@@ -490,7 +490,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags)
 {
-    // TODO: seems not used
+    // TODO: OpenAt seems not used in drivers
     DEBUG_TRACE("9p OpenAt: %d, %s", fd, path);
     return 0;
 }

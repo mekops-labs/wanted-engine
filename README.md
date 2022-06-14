@@ -1,8 +1,22 @@
 # Web Assembly Nanocontainer Technology for Embedded Devices
 
-- uses wasm3 as WA interpreter
+- > [CHANGELOG](CHANGELOG.md)
 
-## Wapp structure
+- uses `wasm3` as WA interpreter
+- runs multiple [wapps](#wapp-overview) at once as separate threads
+- provides isolation through WebAssembly memory model and interaction with outside world is only through VFS drivers
+- implements interface to manage the run state of the wapp
+    - can start, stop wapp, parameters (e.g. mounted drivers) are defined by JSON config file
+
+## General architecture
+
+> TBD
+
+```
+WAPP -> WASI -> VFS -> drivers
+```
+
+## Wapp overview
 
 Wapp is RomFs packaged filesystem. It has few requirements:
 
