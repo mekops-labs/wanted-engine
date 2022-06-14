@@ -36,7 +36,6 @@ static int _ReadDir (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint6
 #define ERROR           0x1
 #define ATTACHED        0x2
 #define DISCONNECTED    0x4
-#define ADDRESS "tcp!localhost!5640"
 
 #define MAX_OPENED_FILES 10
 
@@ -60,6 +59,7 @@ typedef struct file_t {
 struct vfs_driver_ctx_t {
     C9aux aux;
     file_t fildes[MAX_OPENED_FILES];
+    char *conf;
 };
 
 static
@@ -285,7 +285,7 @@ start(vfs_driver_ctx_t ctx)
     int i;
 
     for (i = 0; i < 10; i++) {
-        if ((a = srv(ADDRESS, ctx)) != NULL) {
+        if ((a = srv(ctx->conf, ctx)) != NULL) {
             a->c.r = ctxprocR;
             c9version(&a->c, &tag, MSIZE);
             wrsend(a);
@@ -372,6 +372,16 @@ vfs_driver_t *Vfs9PInit(const wapp_t *wapp, uint8_t argc, const char *args[]) {
 
     memset(driver->ctx, 0, sizeof(struct vfs_driver_ctx_t));
 
+    driver->ctx->conf = (char *)WantedMalloc(strlen(args[0])+1);
+        if (NULL == driver->ctx->conf) {
+        DEBUG_TRACE("can't allocate memory");
+        WantedFree(driver->ctx);
+        WantedFree(driver);
+        return NULL;
+    }
+
+    memcpy(driver->ctx->conf, args[0], strlen(args[0])+1);
+
     driver->bytesId         = *(uint32_t*)(id);
     driver->filetype        = VFS_FILETYPE_DIRECTORY;
     driver->Destroy         = _Destroy;
@@ -398,6 +408,7 @@ static int _Destroy (struct vfs_driver_t *d)
         wrsend(a);
     }
 
+    WantedFree(d->ctx->conf);
     WantedFree(d->ctx);
     WantedFree(d);
 

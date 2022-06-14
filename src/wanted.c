@@ -326,11 +326,15 @@ wapp_t WantedGetCurrentSupervisor()
     strcpy(w.cfg.drivers[3].path, "/w");
     strcpy(w.cfg.drivers[3].options, "");
 
-    strcpy(w.cfg.drivers[4].name, "9p");
+    strcpy(w.cfg.drivers[4].name, "virt");
     strcpy(w.cfg.drivers[4].path, "/n");
     strcpy(w.cfg.drivers[4].options, "");
 
-    w.cfg.driversCnt = 5;
+    strcpy(w.cfg.drivers[5].name, "9p");
+    strcpy(w.cfg.drivers[5].path, "/n/9p");
+    strcpy(w.cfg.drivers[5].options, "tcp!localhost!5640");
+
+    w.cfg.driversCnt = 6;
 
     return w;
 }
