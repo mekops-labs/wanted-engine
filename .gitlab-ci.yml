@@ -1,0 +1,68 @@
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  GIT_FETCH_EXTRA_FLAGS: --tags
+  GIT_DEPTH: none
+
+image:
+  name: registry.gitlab.com/wanted-project/wanted-engine/build
+  entrypoint: [""]
+
+stages:
+  - build
+  - test
+
+
+.build_job_template: &build_defs  # Hidden yaml configuration that defines an anchor named 'job_configuration'
+  stage: build
+  artifacts:
+    paths:
+    - $BUILD_DIR
+    expire_in: 20 minutes
+  script:
+    - echo -n "Building version:"
+    - git describe --tags --abbrev=0
+    - mkdir -p "$BUILD_DIR"
+    - cd "$BUILD_DIR"
+    - cmake -GNinja ..
+    - ninja
+
+.unit_test_job_template: &unit_defs
+  stage: test
+  script:
+    - cd "$BUILD_DIR"
+    - ctest --output-junit rspec.xml
+  artifacts:
+    when: always
+    paths:
+      - "$BUILD_DIR/rspec.xml"
+    reports:
+      junit: "$BUILD_DIR/rspec.xml"
+
+
+build-gcc:
+  <<: *build_defs
+  variables:
+    BUILD_DIR: build-gcc
+    CC: gcc
+
+build-clang:
+  <<: *build_defs
+  variables:
+    BUILD_DIR: build-clang
+    CC: clang
+
+
+unit-test-gcc:
+  <<: *unit_defs
+  dependencies:
+    - build-gcc
+  variables:
+    BUILD_DIR: build-gcc
+
+unit-test-clang:
+  <<: *unit_defs
+  dependencies:
+    - build-clang
+  variables:
+    BUILD_DIR: build-clang
+
