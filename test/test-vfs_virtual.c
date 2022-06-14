@@ -149,7 +149,7 @@ TEST(vfs_virtual_register, RegisterFail)
 TEST(vfs_virtual_register, RegisterSingle)
 {
     int ret;
-    vfs_driver_t dummy;
+    vfs_driver_t dummy = { 0 };
     vfs_entry_t *fs = virt->ctx->entries;
 
     ret = TRY_DRV(virt, Register, "a", &dummy);
