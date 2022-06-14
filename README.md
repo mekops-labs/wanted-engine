@@ -6,13 +6,13 @@
 - runs multiple [wapps](#wapp-overview) at once as separate threads
 - provides isolation through WebAssembly memory model and interaction with outside world is only through VFS drivers
 - implements interface to manage the run state of the wapp
-    - can start, stop wapp, parameters (e.g. mounted drivers) are defined by JSON config file
+  - can start, stop wapp, parameters (e.g. mounted drivers) are defined by JSON config file
 
 ## General architecture
 
 > TBD
 
-```
+```text
 WAPP -> WASI -> VFS -> drivers
 ```
 
