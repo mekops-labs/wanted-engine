@@ -432,7 +432,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     // version/auth/attach
     DEBUG_TRACE("9p Open: %s", path);
 
-    if (!(a->flags & ATTACHED)) { 
+    if (!(a->flags & ATTACHED)) {
         start(d);
 
         while (proc(a) == 0 && wrsend(a) == 0) {
@@ -454,7 +454,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     newFd = FindFirstClosedFd(d);
     if (newFd < 0) return newFd;
 
-    // TODO: error handling    
+    // TODO: error handling
     c9walk(&a->c, &a->tag, 0, newFd, p);
     wrsend(a);
     proc(a);
@@ -472,7 +472,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     } else {
         mode = C9read;
     }
-    
+
     c9open(&a->c, &a->tag, newFd, mode);
     wrsend(a);
     proc(a);
@@ -528,7 +528,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
     c9stat(&a->c, &a->tag, fd);
     wrsend(a);
     proc(a);
-    
+
     // TODO: error handling
 
     s = a->lastStat;
@@ -647,21 +647,22 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
         off += a->rCnt;
         b = &a->rBuf[7];
         sz = a->rCnt;
-        c9parsedir(&a->c, &s, &b, &sz);
 
-        dir.d_ino       = s.qid.path;
-        dir.d_type      = convert9pFiletype(s.qid.type);
-        dir.d_namlen    = strnlen(s.name, MAX_PATH_LEN);
-        dir.d_next      = off;
+        while (sz > 0 && c9parsedir(&a->c, &s, &b, &sz) == 0) {
+            dir.d_ino       = s.qid.path;
+            dir.d_type      = convert9pFiletype(s.qid.type);
+            dir.d_namlen    = strnlen(s.name, MAX_PATH_LEN);
+            dir.d_next      = off;
 
-        if (used + sizeof(dir) + dir.d_namlen > bufLen) {
-            used = bufLen;
-            break;
+            if (used + sizeof(dir) + dir.d_namlen > bufLen) {
+                used = bufLen;
+                break;
+            }
+            memcpy(buf + used, &dir, sizeof(dir));
+            memcpy(buf + sizeof(dir) + used, s.name, dir.d_namlen);
+
+            used += sizeof(dir) + dir.d_namlen;
         }
-        memcpy(buf + used, &dir, sizeof(dir));
-        memcpy(buf + sizeof(dir) + used, s.name, dir.d_namlen);
-
-        used += sizeof(dir) + dir.d_namlen;
     } while (a->rCnt != 0);
 
     *bufUsed = used;
