@@ -1,7 +1,7 @@
 FROM ubuntu:22.04
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.1.0"
+LABEL version="0.1.1"
 
 RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update \
     && export DEBIAN_FRONTEND=noninteractive \
