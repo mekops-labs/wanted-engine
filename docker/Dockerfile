@@ -1,7 +1,7 @@
 FROM ubuntu:22.04
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.1.1"
+LABEL version="0.2.0"
 
 RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update \
     && export DEBIAN_FRONTEND=noninteractive \
@@ -10,10 +10,12 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     clang \
     cmake \
     dumb-init \
+    gcovr \
     git \
     gosu \
     lld-14 \
     ninja-build \
+    python-is-python3 \
     xxd \
     && rm -rf /var/lib/apt/lists/*
 

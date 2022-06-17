@@ -17,6 +17,10 @@ docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t registry.
 
 ## Changelog
 
+### 0.2.0
+
+- add `gcovr` for generating code coverage report in CI
+
 ### 0.1.1
 
 - multiplatform image (amd64, aarch64, armv7)
