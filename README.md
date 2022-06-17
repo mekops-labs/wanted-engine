@@ -1,6 +1,9 @@
 # Web Assembly Nanocontainer Technology for Embedded Devices
 
-- > [CHANGELOG](CHANGELOG.md)
+[![pipeline status](https://gitlab.com/wanted-project/wanted-engine/badges/main/pipeline.svg)](https://gitlab.com/wanted-project/wanted-engine/-/commits/main)
+[![coverage report](https://gitlab.com/wanted-project/wanted-engine/badges/main/coverage.svg)](https://gitlab.com/wanted-project/wanted-engine/-/commits/main)
+
+> [CHANGELOG](CHANGELOG.md)
 
 - uses `wasm3` as WA interpreter
 - runs multiple [wapps](#wapp-overview) at once as separate threads
