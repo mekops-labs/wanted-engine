@@ -1,3 +1,5 @@
+enable_testing()
+
 option(UNITY_EXTENSION_FIXTURE "Compiles Unity with the \"fixture\" extension." ON)
 add_subdirectory(unity)
 
@@ -12,6 +14,19 @@ execute_process(
 set(tiny_json_src
     ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c
 )
+
+if (CMAKE_COMPILER_IS_GNUCC)
+    option(ENABLE_CODE_COVERAGE "Enable build with code coverage analysis." OFF)
+    if(ENABLE_CODE_COVERAGE)
+        message("-- Code coverage build enabled")
+        SET(CMAKE_BUILD_TYPE Debug)
+        include(${CMAKE_SOURCE_DIR}/cmake/CodeCoverage.cmake)
+        SET(CMAKE_CXX_FLAGS "-g -O0 --coverage -fprofile-arcs -ftest-coverage")
+        SET(CMAKE_C_FLAGS "-g -O0 --coverage -fprofile-arcs -ftest-coverage")
+
+        SETUP_TARGET_FOR_COVERAGE_COBERTURA(coverage ctest coverage)
+    endif ()
+endif()
 
 add_executable(tests ${test_src} ${tiny_json_src} ${CMAKE_CURRENT_BINARY_DIR}/runner.c)
 target_link_libraries(tests unity ${project})
