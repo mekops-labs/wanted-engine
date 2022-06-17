@@ -19,12 +19,8 @@ if (CMAKE_COMPILER_IS_GNUCC)
     option(ENABLE_CODE_COVERAGE "Enable build with code coverage analysis." OFF)
     if(ENABLE_CODE_COVERAGE)
         message("-- Code coverage build enabled")
-        SET(CMAKE_BUILD_TYPE Debug)
         include(${CMAKE_SOURCE_DIR}/cmake/CodeCoverage.cmake)
-        SET(CMAKE_CXX_FLAGS "-g -O0 --coverage -fprofile-arcs -ftest-coverage")
-        SET(CMAKE_C_FLAGS "-g -O0 --coverage -fprofile-arcs -ftest-coverage")
-
-        SETUP_TARGET_FOR_COVERAGE_COBERTURA(coverage ctest coverage)
+        SETUP_TARGET_FOR_COVERAGE_COBERTURA(coverage test/tests coverage)
     endif ()
 endif()
 

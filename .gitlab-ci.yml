@@ -23,7 +23,7 @@ stages:
     - git describe --tags --abbrev=0
     - mkdir -p "$BUILD_DIR"
     - cd "$BUILD_DIR"
-    - cmake -GNinja ..
+    - cmake -GNinja $CMAKE_EXTRA_ARGS ..
     - ninja
 
 .unit_test_job_template: &unit_defs
@@ -51,6 +51,12 @@ build-clang:
     BUILD_DIR: build-clang
     CC: clang
 
+build-coverage:
+  <<: *build_defs
+  variables:
+    BUILD_DIR: build
+    CC: gcc
+    CMAKE_EXTRA_ARGS: -DENABLE_CODE_COVERAGE=on -DCMAKE_BUILD_TYPE=Coverage
 
 unit-test-gcc:
   <<: *unit_defs
@@ -66,3 +72,21 @@ unit-test-clang:
   variables:
     BUILD_DIR: build-clang
 
+coverage:
+  stage: test
+  dependencies:
+    - build-coverage
+  variables:
+    BUILD_DIR: build
+  script:
+    - cd "$BUILD_DIR"
+    - ninja coverage
+  coverage: '/lines: \d+\.\d+/'
+  artifacts:
+    name: ${CI_JOB_NAME}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHA}
+    paths:
+      - "$BUILD_DIR/coverage.xml"
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: "$BUILD_DIR/coverage.xml"
