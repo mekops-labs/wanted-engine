@@ -99,9 +99,11 @@ wrsend(C9aux *a)
         if ((w = write(a->f, a->wBuf+n, a->wOff-n)) <= 0) {
             if (errno == EINTR)
                 continue;
-            if (errno != EPIPE) /* remote end closed */
+            if (errno != EPIPE) { /* remote end closed */
                 perror("write");
-            a->flags &= ~ATTACHED;
+                a->flags &= ~ATTACHED;
+                close(a->f);
+            }
             return -1;
         }
     }
@@ -147,8 +149,11 @@ ctxread(C9ctx *ctx, uint32_t size, int *err)
         if ((r = read(a->f, a->rBuf+n, size-n)) <= 0) {
             if (errno == EINTR)
                 continue;
-            a->flags &= ~ATTACHED;
-            close(a->f);
+            if (errno != EPIPE) { /* remote end closed */
+                perror("read");
+                a->flags &= ~ATTACHED;
+                close(a->f);
+            }
             return NULL;
         }
     }
@@ -307,7 +312,7 @@ start(vfs_driver_ctx_t ctx)
             wrsend(a);
             return a;
         }
-        sleep(10);
+        sleep(1);
     }
 
     if (a == NULL)
@@ -439,7 +444,9 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     DEBUG_TRACE("9p Open: %s", path);
 
     if (!(a->flags & ATTACHED)) {
-        start(d);
+        if (start(d) == NULL) {
+            return -EAGAIN;
+        }
 
         while (proc(a) == 0 && wrsend(a) == 0) {
             if (a->flags & ATTACHED) break;
@@ -448,7 +455,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
         d->fildes[0].opened = 0;
     }
 
-    if (memcmp(path, "/", 2) == 0 || !d->fildes[0].opened) {
+    if (!d->fildes[0].opened)  {
         c9open(&a->c, &a->tag, 0, C9read);
         wrsend(a);
         proc(a);
@@ -456,7 +463,9 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
         d->fildes[0].opened = 1;
         d->fildes[0].currOff = 0;
         d->fildes[0].type = convert9pFiletype(a->lastQid.type);
+    }
 
+    if (memcmp(path, "/", 2) == 0) {
         return 0;
     }
 
