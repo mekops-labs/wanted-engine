@@ -47,6 +47,7 @@ typedef struct C9aux {
     uint8_t wBuf[MSIZE];
     size_t  wOff;
     C9stat *lastStat;
+    C9qid lastQid;
     C9ctx c;
     C9tag tag;
 } C9aux;
@@ -54,6 +55,7 @@ typedef struct C9aux {
 typedef struct file_t {
     uint8_t opened;
     size_t currOff;
+    vfs_filetype_t type;
 } file_t;
 
 struct vfs_driver_ctx_t {
@@ -75,6 +77,18 @@ int FindFirstClosedFd(vfs_driver_ctx_t d)
     return -EMFILE;
 }
 
+static vfs_filetype_t convert9pFiletype(C9qt t) {
+    if (t & C9qtdir) {
+        return VFS_FILETYPE_DIRECTORY;
+    } else if (t & C9qtfile) {
+        return VFS_FILETYPE_CHARACTER_DEVICE;
+    } else {
+        return VFS_FILETYPE_REGULAR_FILE;
+    }
+
+    return VFS_FILETYPE_UNKNOWN;
+}
+
 static int
 wrsend(C9aux *a)
 {
@@ -87,6 +101,7 @@ wrsend(C9aux *a)
                 continue;
             if (errno != EPIPE) /* remote end closed */
                 perror("write");
+            a->flags &= ~ATTACHED;
             return -1;
         }
     }
@@ -132,7 +147,7 @@ ctxread(C9ctx *ctx, uint32_t size, int *err)
         if ((r = read(a->f, a->rBuf+n, size-n)) <= 0) {
             if (errno == EINTR)
                 continue;
-            a->flags |= DISCONNECTED;
+            a->flags &= ~ATTACHED;
             close(a->f);
             return NULL;
         }
@@ -235,6 +250,7 @@ ctxprocR(C9ctx *ctx, C9r *r)
         break;
     case Ropen:
         DEBUG_TRACE("Ropen");
+        a->lastQid = r->qid[0];
         // if ((a->flags & Joined) == 0 && printjoin) {
         // 	c9write(ctx, &tag, Chatfid, 0, buf, snprintf(buf, sizeof(buf), "JOIN %s to chat\n", nick));
         // 	a->flags |= Joined;
@@ -337,18 +353,6 @@ proc(C9aux *a)
     return 0;
 }
 
-static vfs_filetype_t convert9pFiletype(C9qt t) {
-    if (t & C9qtdir) {
-        return VFS_FILETYPE_DIRECTORY;
-    } else if (t & C9qtfile) {
-        return VFS_FILETYPE_CHARACTER_DEVICE;
-    } else {
-        return VFS_FILETYPE_REGULAR_FILE;
-    }
-
-    return VFS_FILETYPE_UNKNOWN;
-}
-
 
 vfs_driver_t *Vfs9PInit(const wapp_t *wapp, uint8_t argc, const char *args[]) {
     // Todo:
@@ -406,6 +410,8 @@ static int _Destroy (struct vfs_driver_t *d)
     if (a->flags & ATTACHED) {
         c9clunk(&a->c, &a->tag, 0);
         wrsend(a);
+
+        close(a->f);
     }
 
     WantedFree(d->ctx->conf);
@@ -438,15 +444,18 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
         while (proc(a) == 0 && wrsend(a) == 0) {
             if (a->flags & ATTACHED) break;
         }
+
+        d->fildes[0].opened = 0;
     }
 
-    if (memcmp(path, "/", 2) == 0) {
+    if (memcmp(path, "/", 2) == 0 || !d->fildes[0].opened) {
         c9open(&a->c, &a->tag, 0, C9read);
         wrsend(a);
         proc(a);
 
         d->fildes[0].opened = 1;
         d->fildes[0].currOff = 0;
+        d->fildes[0].type = convert9pFiletype(a->lastQid.type);
 
         return 0;
     }
@@ -484,6 +493,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 
     d->fildes[newFd].opened = 1;
     d->fildes[newFd].currOff = 0;
+    d->fildes[newFd].type = convert9pFiletype(a->lastQid.type);
 
     return newFd;
 }
@@ -556,6 +566,10 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 
     if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
 
+    if (d->fildes[fd].type == VFS_FILETYPE_DIRECTORY) {
+        return -EISDIR;
+    }
+
     c9read(&a->c, &a->tag, fd, d->fildes[fd].currOff, nbyte);
     wrsend(a);
     proc(a);
@@ -583,6 +597,10 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     DEBUG_TRACE("9p Write: %d, %zu", fd, nbyte);
 
     if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+
+    if (d->fildes[fd].type == VFS_FILETYPE_DIRECTORY) {
+        return -EISDIR;
+    }
 
     c9write(&a->c, &a->tag, fd, d->fildes[fd].currOff, buf, nbyte);
     wrsend(a);
