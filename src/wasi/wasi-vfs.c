@@ -61,6 +61,7 @@ __wasi_errno_t errno_to_wasi(int errnum) {
     CASE_RET( ETXTBSY     , __WASI_ERRNO_TXTBSY       );
     CASE_RET( EFBIG       , __WASI_ERRNO_FBIG         );
     CASE_RET( ENOSPC      , __WASI_ERRNO_NOSPC        );
+    CASE_RET( ENOSYS      , __WASI_ERRNO_NOSYS        );
     CASE_RET( ESPIPE      , __WASI_ERRNO_SPIPE        );
     CASE_RET( EROFS       , __WASI_ERRNO_ROFS         );
     CASE_RET( EMLINK      , __WASI_ERRNO_MLINK        );
