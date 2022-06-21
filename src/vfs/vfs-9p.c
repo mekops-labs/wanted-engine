@@ -31,6 +31,8 @@ static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _Seek    (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
 static int _ReadDir (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
+static int _Unlink  (vfs_driver_ctx_t d, int fd, const char *path);
+
 
 #define MSIZE 8192u
 #define ERROR           0x1
@@ -402,6 +404,7 @@ vfs_driver_t *Vfs9PInit(const wapp_t *wapp, uint8_t argc, const char *args[]) {
     driver->Write           = _Write;
     driver->Seek            = _Seek;
     driver->ReadDir         = _ReadDir;
+    driver->Unlink          = _Unlink;
 
     return driver;
 }
@@ -429,6 +432,8 @@ static int _Destroy (struct vfs_driver_t *d)
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
     C9aux *a = &d->aux;
+
+    // TODO: max depth is 3 currently - dirty!
     const char* p[3] = { NULL };
     char buf[strlen(path)+1];
     int newFd;
@@ -694,6 +699,47 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
 
     *bufUsed = used;
     *cookie = dir.d_next; // last found directory entry
+
+    return 0;
+}
+
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path)
+{
+    C9aux *a = &d->aux;
+
+    DEBUG_TRACE("9p Unlink: %d, %s", fd, path);
+
+    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+
+    // TODO: max depth is 3 currently - dirty!
+    const char* p[3] = { NULL };
+    char buf[strlen(path)+1];
+    int newFd = fd;
+
+    memcpy(buf, path, strlen(path));
+    buf[strlen(path)] = '\0';
+
+    int i = 0;
+    p[i++] = strtok(buf, "/");
+    while ((p[i++] = strtok(NULL, "/")) != NULL) {};
+
+    c9walk(&a->c, &a->tag, 0, newFd, p);
+    wrsend(a);
+    proc(a);
+
+    if (a->flags & ERROR) {
+        a->flags &= ~ERROR;
+        return -EIO;
+    }
+
+    c9remove(&a->c, &a->tag, newFd);
+    wrsend(a);
+    proc(a);
+
+    if (a->flags & ERROR) {
+        a->flags &= ~ERROR;
+        return -EIO;
+    }
 
     return 0;
 }
