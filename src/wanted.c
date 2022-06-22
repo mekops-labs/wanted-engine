@@ -334,7 +334,11 @@ wapp_t WantedGetCurrentSupervisor()
     strcpy(w.cfg.drivers[5].path, "/n/9p");
     strcpy(w.cfg.drivers[5].options, "tcp!localhost!5640");
 
-    w.cfg.driversCnt = 6;
+    strcpy(w.cfg.drivers[6].name, "socket");
+    strcpy(w.cfg.drivers[6].path, "/sskt");
+    strcpy(w.cfg.drivers[6].options, "T localhost 8889");
+
+    w.cfg.driversCnt = 7;
 
     return w;
 }

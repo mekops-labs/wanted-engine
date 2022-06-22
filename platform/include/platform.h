@@ -40,3 +40,12 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len);
 int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes);
 int PlatformRegistryRemove(const reg_entry_t *entry);
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);
+
+void *PlatformNetOpen(int socket_type);
+int PlatformNetConnect(void *ctx, const char *hostname, uint16_t port);
+int PlatformNetClose(void *ctx);
+int PlatformNetRecv(void *ctx, void *buf, size_t nbyte, int flags);
+int PlatformNetSend(void *ctx, const void *buf, size_t nbyte, int flags);
+int PlatformNetAccept(void *ctx);
+int PlatformNetShutdown(void *ctx, int how);
+int PlatformNetFree(void *ctx);

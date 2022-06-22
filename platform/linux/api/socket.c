@@ -1,120 +1,209 @@
-/** This is sample code for secure socket
-/* compiles: gcc -Wall -o client socket.c -L/usr/lib -lssl -lcrypto
-/*
-/* This file should provide platform-level functions to create socket connections.
-/* Unencrypted and using TLS (secure socket).
-**/
-
-#include <stdio.h>
-#include <errno.h>
-#include <unistd.h>
 #include <string.h>
+#include <stdbool.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <resolv.h>
 #include <netdb.h>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
+#include <unistd.h>
+#include <errno.h>
 
-#define FAIL    -1
+#include <wanted_malloc.h>
+#include <vfs-drivers.h>
+#include <network.h>
 
-int OpenConnection(const char *hostname, int port)
+struct netCtx {
+    void *ssl;
+    void *sslCtx;
+    bool secure;
+    int socket;
+};
+
+void *PlatformNetOpen(int socket_type)
 {
-    int sd;
+    int sock;
+    int type;
+    int ret;
+
+    struct netCtx *netCtx;
+
+    switch (socket_type)
+    {
+    case VFS_SKT_TCP:
+    case VFS_SKT_STCP:
+        type = SOCK_STREAM;
+        break;
+    case VFS_SKT_UDP:
+    case VFS_SKT_SUDP:
+        type = SOCK_DGRAM;
+        break;
+    default:
+        return NULL;
+        break;
+    }
+
+    if ((sock = socket(AF_INET, type, 0)) < 0) {
+        return NULL;
+    }
+
+    netCtx = WantedMalloc(sizeof(struct netCtx));
+    if (netCtx == NULL) {
+        close(sock);
+        return NULL;
+    }
+    bzero(netCtx, sizeof(struct netCtx));
+
+    netCtx->socket = sock;
+    if (socket_type == VFS_SKT_STCP || socket_type == VFS_SKT_SUDP) {
+        netCtx->secure = true;
+    }
+
+    return netCtx;
+}
+
+int PlatformNetFree(struct netCtx *c) {
+    if (c == NULL) {
+        return -EINVAL;
+    }
+
+    WantedFree(c);
+
+    return 0;
+}
+
+int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port)
+{
     struct hostent *host;
     struct sockaddr_in addr;
-    if ( (host = gethostbyname(hostname)) == NULL )
-    {
-        perror(hostname);
-        abort();
+
+    if (NULL == c) {
+        return -EINVAL;
     }
-    sd = socket(PF_INET, SOCK_STREAM, 0);
+
+    if ((host = gethostbyname(hostname)) == NULL){
+        return -EINVAL;
+    }
+
     bzero(&addr, sizeof(addr));
+
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = *(long*)(host->h_addr);
-    if ( connect(sd, (struct sockaddr*)&addr, sizeof(addr)) != 0 )
-    {
-        close(sd);
-        perror(hostname);
-        abort();
-    }
-    return sd;
-}
 
-SSL_CTX* InitCTX(void)
-{
-    const SSL_METHOD *method;
-    SSL_CTX *ctx;
-    OpenSSL_add_all_algorithms();  /* Load cryptos, et.al. */
-    SSL_load_error_strings();   /* Bring in and register error messages */
-    method = TLS_client_method();  /* Create new client-method instance */
-    ctx = SSL_CTX_new(method);   /* Create new context */
-    if ( ctx == NULL )
-    {
-        ERR_print_errors_fp(stderr);
-        abort();
+    if (connect(c->socket, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+        return -errno;
     }
-    return ctx;
-}
 
-void ShowCerts(SSL* ssl)
-{
-    X509 *cert;
-    char *line;
-    cert = SSL_get_peer_certificate(ssl); /* get the server's certificate */
-    if ( cert != NULL )
-    {
-        printf("Server certificates:\n");
-        line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
-        printf("Subject: %s\n", line);
-        free(line);       /* free the malloc'ed string */
-        line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
-        printf("Issuer: %s\n", line);
-        free(line);       /* free the malloc'ed string */
-        X509_free(cert);     /* free the malloc'ed certificate copy */
-    }
-    else
-        printf("Info: No client certificates configured.\n");
-}
-
-int main(int count, char *strings[])
-{
-    SSL_CTX *ctx;
-    int server;
-    SSL *ssl;
-    char buf[1024];
-    char acClientRequest[1024] = {0};
-    int bytes;
-    char *hostname, *portnum;
-    if ( count != 3 )
-    {
-        printf("usage: %s <hostname> <portnum>\n", strings[0]);
-        exit(0);
-    }
-    SSL_library_init();
-    hostname=strings[1];
-    portnum=strings[2];
-    ctx = InitCTX();
-    server = OpenConnection(hostname, atoi(portnum));
-    ssl = SSL_new(ctx);      /* create new SSL connection state */
-    SSL_set_fd(ssl, server);    /* attach the socket descriptor */
-    if ( SSL_connect(ssl) == FAIL )   /* perform the connection */
-        ERR_print_errors_fp(stderr);
-    else
-    {
-        sprintf(acClientRequest, "GET /\r\n\r\n");
-        printf("\n\nConnected with %s encryption\n", SSL_get_cipher(ssl));
-        ShowCerts(ssl);        /* get any certs */
-        SSL_write(ssl,acClientRequest, strlen(acClientRequest));   /* encrypt & send message */
-        printf("Response body:\n======================\n");
-        while((bytes = SSL_read(ssl, buf, sizeof(buf)))) {  /* get reply & decrypt */
-            buf[bytes] = 0;
-            printf("%s", buf);
+    /* Initialize secure connection */
+    if (c->secure) {
+        if ((c->sslCtx = TLSInitCtx()) == NULL) {
+            return -ENOMEM;
         }
-        printf("\n======================\n");
-        SSL_free(ssl);        /* release connection state */
+
+        if ((c->ssl = TLSOpenConnection(c->sslCtx, c->socket)) == NULL) {
+            TLSFreeCtx(c->sslCtx);
+            return -ECONNREFUSED;
+        }
     }
-    close(server);         /* close socket */
-    SSL_CTX_free(ctx);        /* release context */
+
+    return 0;
+}
+
+int PlatformNetClose(struct netCtx *c)
+{
+    if (NULL == c) {
+        return -EINVAL;
+    }
+
+    if (c->secure) {
+        TLSShutdown(c->ssl);
+        TLSFree(c->ssl);
+        c->ssl = NULL;
+        TLSFreeCtx(c->sslCtx);
+        c->sslCtx = NULL;
+    }
+
+    close(c->socket);
+
+    return 0;
+}
+
+int PlatformNetRecv(struct netCtx *c, void *buf, size_t nbyte, int flags)
+{
+    int ret;
+
+    if (NULL == c) {
+        return -EINVAL;
+    }
+
+    if (c->secure) {
+        if ((ret = TLSRead(c->ssl, buf, nbyte)) < 0) {
+            return -EIO;
+        }
+    } else {
+        if ((ret = recv(c->socket, buf, nbyte, flags)) < 0) {
+            return -errno;
+        }
+    }
+    return ret;
+}
+
+int PlatformNetSend(struct netCtx *c, const void *buf, size_t nbyte, int flags)
+{
+    int ret;
+
+    if (NULL == c) {
+        return -EINVAL;
+    }
+
+    if (c->secure) {
+        if ((ret = TLSWrite(c->ssl, buf, nbyte)) < 0) {
+            return -EIO;
+        }
+    } else {
+        if ((ret = send(c->socket, buf, nbyte, flags)) < 0) {
+            return -errno;
+        }
+    }
+    return ret;
+}
+
+/* TODO: totally untested, broken */
+int PlatformNetAccept(struct netCtx *c)
+{
+    int newFd;
+
+    if (NULL == c) {
+        return -EINVAL;
+    }
+
+    if ((newFd = accept(c->socket, NULL, NULL)) < 0) {
+        return -errno;
+    }
+
+    if (c->secure) {
+        c->ssl = TLSOpenConnection(c->sslCtx, newFd);
+        if (c->ssl == NULL) {
+            return -ECONNREFUSED;
+        }
+        TLSAccept(c->ssl);
+    }
+
+    return newFd;
+}
+
+int PlatformNetShutdown(struct netCtx *c, int how)
+{
+    if (NULL == c) {
+        return -EINVAL;
+    }
+
+    if (c->secure) {
+        TLSShutdown(c->ssl);
+    }
+
+    if (shutdown(c->socket, how) != 0) {
+        return -errno;
+    }
+
     return 0;
 }
