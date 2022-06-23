@@ -5,9 +5,17 @@
 #include <vfs.h>
 #include <wanted-api.h>
 
-#define VFS_SKT_BUS 0
-#define VFS_SKT_TCP 1
-#define VFS_SKT_UDP 2
+#ifndef SECURE_SOCKETS
+#   define SECURE_SOCKETS 0
+#endif
+
+enum vfs_socket_type_t {
+    VFS_SKT_BUS,
+    VFS_SKT_TCP,
+    VFS_SKT_UDP,
+    VFS_SKT_STCP,   /* secure tcp */
+    VFS_SKT_SUDP,   /* secure udp */
+};
 
 typedef vfs_driver_t *(*VfsInitFunction_t)(const wapp_t *wapp, uint8_t argc, const char *args[]);
 

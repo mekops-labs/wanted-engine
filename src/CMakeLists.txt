@@ -11,6 +11,7 @@ set(vfs-srcs
     "vfs/vfs-null.c"
     "vfs/vfs-virtual.c"
     "vfs/vfs-romfs.c"
+    "vfs/vfs-socket.c"
     "vfs/vfs-wanted.c"
     "vfs/vfs-wanted-config.c"
     "vfs/vfs-wanted-ctrl.c"
@@ -88,4 +89,10 @@ option(WANTED_DEBUG_TRACES "Enable debug prints for Wanted" OFF)
 if (WANTED_DEBUG_TRACES)
     message("-- Debug tracing for Wanted enabled")
     target_compile_definitions(${project} PRIVATE DEBUG=1)
+endif()
+
+
+if (SECURE_SOCKETS)
+    message("-- Building with support for secure sockets")
+    target_compile_definitions(${project} PUBLIC SECURE_SOCKETS=1)
 endif()
