@@ -186,6 +186,7 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
         return -EINVAL;
     }
 
+    // TODO: make this simpler, e.g. a table of drivers
     if (memcmp("9p", name, 3) == 0) {
         drv = Vfs9PInit(w, 1, &options);
         if (NULL == drv) {
