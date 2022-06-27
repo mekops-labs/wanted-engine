@@ -56,11 +56,11 @@ static size_t RegistryToJson(const reg_entry_t *reg, size_t regLen, uint8_t *buf
 const char *statusToString(status_t state)
 {
     switch(state) {
-    case NOT_STARTED: return "NOT_STARTED";
-    case STARTING:    return "STARTING";
-    case RUNNING:     return "RUNNING";
-    case EXITED:      return "EXITED";
-    case FAILURE:     return "FAILURE";
+    case NOT_STARTED: return "not_started";
+    case STARTING:    return "starting";
+    case RUNNING:     return "running";
+    case EXITED:      return "exited";
+    case FAILURE:     return "failure";
     }
 }
 
@@ -68,7 +68,7 @@ static size_t StateToJson(const wapp_state_t *stateList, size_t stateLen, uint8_
 {
     char *p = (char *)buf;
     size_t left = bufLen;
-    char ver[9];
+    char ver[12];
 
     p = json_objOpen(p, NULL, &left);
     p = json_arrOpen(p, "wapps", &left);
@@ -78,7 +78,7 @@ static size_t StateToJson(const wapp_state_t *stateList, size_t stateLen, uint8_
         p = json_int(p, "id", stateList[i].id, &left);
         p = json_str(p, "state", statusToString(stateList[i].status), &left);
         const uint8_t *v = stateList[i].version.v;
-        snprintf(ver, 9, "%X.%X.%X", v[0], v[1], v[2]);
+        snprintf(ver, 12, "%X.%X.%X-%X", v[0], v[1], v[2], v[3]);
         p = json_nstr(p, "version", ver, 9, &left);
         p = json_objClose(p, &left);
     }
