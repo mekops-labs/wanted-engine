@@ -299,46 +299,18 @@ wapp_t WantedGetCurrentSupervisor()
     /* TODO: in the future we need to update the image if downloaded new version */
     /* now we're using only factory version */
 
-    wapp_t w;
+    int ret;
+    wapp_t w = { 0 };
+    wapp_action_t act;
+    const char *def =
+    #include "default_supervisor_cfg.json.h"
+    ;
+
+    ret = WantedParseCtrlAction(def, strlen(def), w.name, &act, &w.cfg);
+    if (ret < 0) return w;
+
     w.img = supervisor;
     w.img_len = supervisor_len;
-
-    strcpy(w.cfg.console[0].name, "platform");
-    strcpy(w.cfg.console[0].options, "./");
-    strcpy(w.cfg.console[1].name, "platform");
-    strcpy(w.cfg.console[1].options, "./");
-    strcpy(w.cfg.console[2].name, "platform");
-    strcpy(w.cfg.console[2].options, "./");
-
-    strcpy(w.cfg.drivers[0].name, "rom");
-    strcpy(w.cfg.drivers[0].path, "/rom");
-    strcpy(w.cfg.drivers[0].options, "");
-
-    strcpy(w.cfg.drivers[1].name, "platform");
-    strcpy(w.cfg.drivers[1].path, "/mnt");
-    strcpy(w.cfg.drivers[1].options, "./");
-
-    strcpy(w.cfg.drivers[2].name, "socket");
-    strcpy(w.cfg.drivers[2].path, "/skt");
-    strcpy(w.cfg.drivers[2].options, "t 127.0.0.1 8888");
-
-    strcpy(w.cfg.drivers[3].name, "wanted");
-    strcpy(w.cfg.drivers[3].path, "/w");
-    strcpy(w.cfg.drivers[3].options, "");
-
-    strcpy(w.cfg.drivers[4].name, "virt");
-    strcpy(w.cfg.drivers[4].path, "/n");
-    strcpy(w.cfg.drivers[4].options, "");
-
-    strcpy(w.cfg.drivers[5].name, "9p");
-    strcpy(w.cfg.drivers[5].path, "/n/9p");
-    strcpy(w.cfg.drivers[5].options, "tcp!localhost!5640");
-
-    strcpy(w.cfg.drivers[6].name, "socket");
-    strcpy(w.cfg.drivers[6].path, "/sskt");
-    strcpy(w.cfg.drivers[6].options, "T localhost 8889");
-
-    w.cfg.driversCnt = 7;
 
     return w;
 }
