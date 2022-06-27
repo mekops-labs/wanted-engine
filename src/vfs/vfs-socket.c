@@ -51,20 +51,18 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
     }
 }
 
-vfs_driver_t *VfsSocketInit(const wapp_t *wapp, uint8_t argc, const char *args[])
+vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options)
 {
     int ret;
     char t;
-    const char *options;
     uint16_t port;
     vfs_driver_t *driver;
 
-    if (argc < 1 || args == NULL || args[0] == NULL) {
+    if (NULL == options) {
         DEBUG_TRACE("bad options");
         return NULL;
     }
 
-    options = args[0];
     char addr[strnlen(options, MAX_ADDR_LEN)];
 
     ret = sscanf(options, "%c %s %hd", &t, addr, &port);

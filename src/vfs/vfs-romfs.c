@@ -28,19 +28,19 @@ struct vfs_driver_ctx_t {
     romfs_t     romfs;
 };
 
-vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, uint8_t argc, const char *args[])
+vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, const char *opt)
 {
     int ret;
     const char *root;
     vfs_driver_t *driver;
     romfs_t r;
 
-    if (NULL == wapp || argc < 1 || NULL == args || NULL == args[0]) {
+    if (NULL == wapp || NULL == opt) {
         DEBUG_TRACE("bad arguments");
         return NULL;
     }
 
-    root = args[0];
+    root = opt;
 
     ret = RomfsLoad(wapp->img, wapp->img_len, &r);
     if (ret < 0) {

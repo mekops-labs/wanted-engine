@@ -6,6 +6,7 @@ set(sources
 )
 
 set(vfs-srcs
+    "vfs/drivers.c"
     "vfs/vfs.c"
     "vfs/vfs-9p.c"
     "vfs/vfs-null.c"

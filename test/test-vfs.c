@@ -57,7 +57,7 @@ TEST_TEAR_DOWN(vfs_register)
 
 TEST(vfs_register, SingleRoot)
 {
-    virt1 = VfsVirtualInit(NULL, 0, NULL);
+    virt1 = VfsVirtualInit(NULL, NULL);
     VfsRegister(vfs, "/", virt1);
 
     TEST_ASSERT_EQUAL_PTR(vfs->rootDriver, vfs->fildes[3].drv);
@@ -65,8 +65,8 @@ TEST(vfs_register, SingleRoot)
 
 TEST(vfs_register, RootAndSingleVirtualDir)
 {
-    virt1 = VfsVirtualInit(NULL, 0, NULL);
-    virt2 = VfsVirtualInit(NULL, 0, NULL);
+    virt1 = VfsVirtualInit(NULL, NULL);
+    virt2 = VfsVirtualInit(NULL, NULL);
 
     VfsRegister(vfs, "/", virt1);
     VfsRegister(vfs, "/dir", virt2);
@@ -94,10 +94,10 @@ TEST_GROUP(vfs_openclose);
 TEST_SETUP(vfs_openclose)
 {
     wapp_t w = { .img = test_wasi, .img_len = test_wasi_len };
-    const char *args[] = { "/", };
+    const char *args = "/";
     vfs = VfsInit();
-    virt1 = VfsVirtualInit(NULL, 0, NULL);
-    romfs = VfsRomfsInit(&w, 1, args);
+    virt1 = VfsVirtualInit(NULL, NULL);
+    romfs = VfsRomfsInit(&w, args);
     VfsRegister(vfs, "/", virt1);
     VfsRegister(vfs, "rom", romfs);
 }

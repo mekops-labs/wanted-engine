@@ -180,72 +180,30 @@ int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen)
 int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, const char *path, const char *options)
 {
     int ret = 0;
+    int i = 0;
     vfs_driver_t *drv = NULL;
 
     if (c == NULL || w == NULL || name == NULL || path == NULL) {
         return -EINVAL;
     }
 
-    // TODO: make this simpler, e.g. a table of drivers
-    if (memcmp("9p", name, 3) == 0) {
-        drv = Vfs9PInit(w, 1, &options);
-        if (NULL == drv) {
-            DEBUG_TRACE("can't load 9p driver (%d)", ret);
+    while ((global_driver_table[i].name != NULL) && (global_driver_table[i].init != NULL)) {
+        if (memcmp(global_driver_table[i].name, name, strlen(global_driver_table[i].name)) == 0) {
+            drv = global_driver_table[i].init(w, options);
+            if (NULL == drv) {
+                DEBUG_TRACE("can't load %s driver (%d)", name, ret);
             return -EINVAL;
+            }
         }
-    } else if (memcmp("null", name, 5) == 0) {
-        drv = VfsNullInit(w, 0, NULL);
-        if (NULL == drv) {
-            DEBUG_TRACE("can't load null driver (%d)", ret);
-            return -EINVAL;
-        }
-    } else if (memcmp("virt", name, 5) == 0) {
-        drv = VfsVirtualInit(w, 0, NULL);
-        if (NULL == drv) {
-            DEBUG_TRACE("can't load virt driver (%d)", ret);
-            return -EINVAL;
-        }
-    } else if (memcmp("rom", name, 4) == 0) {
-        if (options == NULL) {
-            return -EINVAL;
-        }
-        drv = VfsRomfsInit(w, 1, &options);
-        if (NULL == drv) {
-            DEBUG_TRACE("can't load romfs (%d)", ret);
-            return -EINVAL;
-        }
-    } else if (memcmp("platform", name, 9) == 0) {
-        uint8_t argc = 1;
-        if (options == NULL) {
-            argc = 0;
-        }
-
-        drv = VfsPlatformFsInit(w, argc, &options);
-        if (NULL == drv) {
-            DEBUG_TRACE("can't load platform driver (%d)", ret);
-            return -EINVAL;
-        }
-    } else if (memcmp("socket", name, 7) == 0) {
-        if (options == NULL) {
-            return -EINVAL;
-        }
-
-        drv = VfsSocketInit(w, 1, &options);
-        if (NULL == drv) {
-            DEBUG_TRACE("can't load socket driver (%d)", ret);
-            return -EINVAL;
-        }
-    } else if (memcmp("wanted", name, 7) == 0) {
-        drv = VfsWantedInit(w, 0, NULL);
-        if (NULL == drv) {
-            DEBUG_TRACE("can't load wanted driver (%d)", ret);
-            return -EINVAL;
-        }
-    } else {
-        return -EINVAL;
+        i++;
     }
 
-    ret = VfsRegister(c, path, drv);
+    if (NULL != drv) {
+        ret = VfsRegister(c, path, drv);
+    } else {
+        DEBUG_TRACE("can't load %s driver, not found", name);
+        return -EINVAL;
+    }
 
     return ret;
 }

@@ -89,7 +89,7 @@ TEST(vfs_virtual_init, InitAndDestroy)
     int ret;
     vfs_driver_t *v;
 
-    v = VfsVirtualInit(NULL, 0, NULL);
+    v = VfsVirtualInit(NULL, NULL);
     TEST_ASSERT_NOT_NULL(v);
 
     vfs_entry_t *fs = v->ctx->entries;
@@ -113,7 +113,7 @@ TEST_GROUP(vfs_virtual_register);
 
 TEST_SETUP(vfs_virtual_register)
 {
-    virt = VfsVirtualInit(NULL, 0, NULL);
+    virt = VfsVirtualInit(NULL, NULL);
 }
 
 TEST_TEAR_DOWN(vfs_virtual_register)
@@ -186,7 +186,7 @@ TEST(vfs_virtual_register, RegisterTree)
     int ret;
     vfs_driver_t dummy = { 0 };
 
-    virt2 = VfsVirtualInit(NULL, 0, NULL);
+    virt2 = VfsVirtualInit(NULL, NULL);
 
     ret = TRY_DRV(virt, Register, "a", virt2);
     TEST_ASSERT_EQUAL(1, ret);
@@ -216,8 +216,8 @@ TEST_GROUP(vfs_virtual_find);
 
 TEST_SETUP(vfs_virtual_find)
 {
-    virt = VfsVirtualInit(NULL, 0, NULL);
-    virt2 = VfsVirtualInit(NULL, 0, NULL);
+    virt = VfsVirtualInit(NULL, NULL);
+    virt2 = VfsVirtualInit(NULL, NULL);
     TRY_DRV(virt, Register, "a", &dummy_test);
     TRY_DRV(virt, Register, "b", &dummy_test);
     TRY_DRV(virt, Register, "c", &dummy_test);
@@ -367,8 +367,8 @@ TEST_GROUP(vfs_virtual_open);
 TEST_SETUP(vfs_virtual_open)
 {
     dummyOpened = 0;
-    virt = VfsVirtualInit(NULL, 0, NULL);
-    virt2 = VfsVirtualInit(NULL, 0, NULL);
+    virt = VfsVirtualInit(NULL, NULL);
+    virt2 = VfsVirtualInit(NULL, NULL);
     TRY_DRV(virt, Register, "a", &dummy_test);
     TRY_DRV(virt, Register, "b", &dummy_test);
     TRY_DRV(virt, Register, "c", &dummy_test);
@@ -496,8 +496,8 @@ TEST_GROUP(vfs_virtual_close);
 TEST_SETUP(vfs_virtual_close)
 {
     dummyClosed = 0;
-    virt = VfsVirtualInit(NULL, 0, NULL);
-    virt2 = VfsVirtualInit(NULL, 0, NULL);
+    virt = VfsVirtualInit(NULL, NULL);
+    virt2 = VfsVirtualInit(NULL, NULL);
     TRY_DRV(virt, Register, "a", &dummy_test);
     TRY_DRV(virt, Register, "dir", virt2);
     TRY_DRV(virt, Register, "dir/a", &dummy_test);
@@ -575,8 +575,8 @@ TEST_GROUP(vfs_virtual_stat);
 
 TEST_SETUP(vfs_virtual_stat)
 {
-    virt = VfsVirtualInit(NULL, 0, NULL);
-    virt2 = VfsVirtualInit(NULL, 0, NULL);
+    virt = VfsVirtualInit(NULL, NULL);
+    virt2 = VfsVirtualInit(NULL, NULL);
     dummy_test.Stat = _DummyStat;
     TRY_DRV(virt, Register, "a", &dummy_test);
     TRY_DRV(virt, Register, "b", &dummy_test);
@@ -648,8 +648,8 @@ TEST_SETUP(vfs_virtual_read_write_seek)
     dummyRead = 0;
     dummyWrite = 0;
     dummySeek = 0;
-    virt = VfsVirtualInit(NULL, 0, NULL);
-    virt2 = VfsVirtualInit(NULL, 0, NULL);
+    virt = VfsVirtualInit(NULL, NULL);
+    virt2 = VfsVirtualInit(NULL, NULL);
     TRY_DRV(virt, Register, "a", &dummy_test);
     TRY_DRV(virt, Register, "dir", virt2);
     TRY_DRV(virt, Register, "dir/b", &dummy_test);
@@ -735,8 +735,8 @@ TEST_SETUP(vfs_virtual_readdir)
 {
     dummyClosed = 0;
     dummy_test.filetype = VFS_FILETYPE_REGULAR_FILE;
-    virt = VfsVirtualInit(NULL, 0, NULL);
-    virt2 = VfsVirtualInit(NULL, 0, NULL);
+    virt = VfsVirtualInit(NULL, NULL);
+    virt2 = VfsVirtualInit(NULL, NULL);
     TRY_DRV(virt, Register, "a", &dummy_test);
     TRY_DRV(virt, Register, "dir", virt2);
     TRY_DRV(virt, Register, "dir/b", &dummy_test);
