@@ -1,13 +1,13 @@
 {
     "system": {
         "defaultWapps": [
-            "abc",
-            "xyz"
+            "a",
+            "b",
+            "c"
         ]
     },
     "supervisor": {
         "params": {
-            "name": "supervisor",
             "console": {
                 "in":  {"name": "platform"},
                 "out": {"name": "platform"},

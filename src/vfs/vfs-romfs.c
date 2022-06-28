@@ -183,6 +183,7 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long
     return ret;
 }
 
+// TODO: make configurable
 #define DIR_BUF_LEN 10
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)

@@ -39,6 +39,7 @@ static int _Unlink  (vfs_driver_ctx_t d, int fd, const char *path);
 #define ATTACHED        0x2
 #define DISCONNECTED    0x4
 
+// TODO: make configurable
 #define MAX_OPENED_FILES 10
 
 typedef struct C9aux {

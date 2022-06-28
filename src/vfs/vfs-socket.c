@@ -9,7 +9,7 @@
 
 #include <platform.h>
 
-/* TODO: max address length should be defined */
+// TODO: make configurable, max address length should be defined
 #define MAX_ADDR_LEN 32
 
 static const char id[] = { 'S', 'o', 'c', 'k' };

@@ -6,6 +6,7 @@
 #include <vfs.h>
 #include <wanted.h>
 
+// TODO: make configurable
 #define MAX_WAPPS 3
 #define WAPP_MAX_NAME_LEN 15
 #define WAPP_MAX_VERSION_LEN 15
