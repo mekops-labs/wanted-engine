@@ -1,3 +1,5 @@
+#include <errno.h>
+
 #include <wasm3.h>
 #include <m3_api_libc.h>
 #include <m3_env.h>
@@ -299,14 +301,27 @@ wapp_t WantedGetCurrentSupervisor()
     /* TODO: in the future we need to update the image if downloaded new version */
     /* now we're using only factory version */
 
-    int ret;
+    int ret = 0;
     wapp_t w = { 0 };
-    wapp_action_t act;
-    const char *def =
-    #include "default_supervisor_cfg.json.h"
-    ;
+    const wantedConfig_t *cfg = WantedGetConfig();
 
-    ret = WantedParseCtrlAction(def, strlen(def), w.name, &act, &w.cfg);
+    if (cfg == NULL || !cfg->supervisorCfg.valid) {
+        // Load defaults, supervisor config invalid
+        const char *def =
+        #include "default_supervisor_cfg.json.h"
+        ;
+
+        DEBUG_TRACE("loading defaults");
+        ret = WantedParseCtrlActionJson(def, strlen(def), w.name, NULL, &w.cfg);
+        if (ret < 0) {
+            DEBUG_TRACE("error during loading of defaults: %d", ret);
+            return w;
+        }
+    } else {
+        DEBUG_TRACE("using global config");
+        w.cfg = cfg->supervisorCfg;
+        memcpy(w.name, "supervisor", 11);
+    }
     if (ret < 0) return w;
 
     w.img = supervisor;
@@ -315,12 +330,15 @@ wapp_t WantedGetCurrentSupervisor()
     return w;
 }
 
-int WantedStart(wantedConfig_t cfg)
+int WantedStart(const char *json, size_t jsonLen)
 {
-    wapp_t wapp;
+    int ret;
 
-    WantedSetConfig(cfg);
-    PlatformWappStart(WantedGetCurrentSupervisor());
+    ret = WantedParseConfig(json, jsonLen);
+    if (ret < 0) return ret;
+
+    ret = PlatformWappStart(WantedGetCurrentSupervisor());
+    if (ret < 0) return ret;
 
     PlatformWappLoop();
 

@@ -1,6 +1,6 @@
-#define STRINGIFY(...) #__VA_ARGS__
+#define JSON(...) #__VA_ARGS__
 
-STRINGIFY(
+JSON(
 {
     "action": "start",
     "params": {

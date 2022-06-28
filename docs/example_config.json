@@ -1,0 +1,33 @@
+{
+    "system": {
+        "defaultWapps": [
+            "abc",
+            "xyz"
+        ]
+    },
+    "supervisor": {
+        "params": {
+            "name": "supervisor",
+            "console": {
+                "in":  {"name": "platform"},
+                "out": {"name": "platform"},
+                "err": {"name": "platform"}
+            },
+            "drivers": [
+                {
+                    "name": "rom",
+                    "path": "/rom"
+                },
+                {
+                    "name": "platform",
+                    "path": "/mnt",
+                    "options": "./"
+                },
+                {
+                    "name": "wanted",
+                    "path": "/w"
+                }
+            ]
+        }
+    }
+}

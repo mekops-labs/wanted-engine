@@ -89,14 +89,76 @@ static size_t StateToJson(const wapp_state_t *stateList, size_t stateLen, uint8_
     return bufLen - left;
 }
 
-int WantedSetConfig(wantedConfig_t cfg)
+static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out)
 {
-    currentConfig = cfg;
+    int i = 0;
+    json_t m[100];
+    char b[len];
+
+    if (NULL == out || NULL == buf) {
+        return -EINVAL;
+    }
+
+    memcpy(b, buf, len);
+    memset(out, 0, sizeof(wantedConfig_t));
+
+    json_t const* json = json_create(b, m, sizeof m / sizeof *m);
+    if (!json || JSON_OBJ != json_getType(json)) {
+        DEBUG_TRACE("can't initialize json parser");
+        return -EINVAL;
+    }
+
+    json_t const* system = json_getProperty(json, "system");
+    if (!system || JSON_OBJ != json_getType(system)) {
+        DEBUG_TRACE(".system property not found in json");
+        return -EINVAL;
+    }
+
+    json_t const* wapps = json_getProperty(system, "defaultWapps");
+    if (!wapps || JSON_ARRAY != json_getType(wapps)) {
+        DEBUG_TRACE(".system.defaultWapps property not found in json");
+        return -EINVAL;
+    }
+    json_t const* wapp;
+
+    for(i = 0, wapp = json_getChild(wapps); wapp && i < MAX_WAPPS; wapp = json_getSibling(wapp), i++) {
+        if (JSON_TEXT == json_getType(wapp)) {
+            strcpy(out->wappsToRun[i], json_getValue(wapp));
+        }
+    }
+    out->nWapps = i;
+
+    json_t const* supervisor = json_getProperty(json, "supervisor");
+    if (supervisor && JSON_OBJ == json_getType(supervisor)) {
+        if (WantedParseCtrlAction(supervisor, NULL, NULL, &out->supervisorCfg) == 0) {
+            out->supervisorCfg.valid = true;
+        } else {
+            DEBUG_TRACE(".supervisor property parsing error");
+        }
+    } else {
+        DEBUG_TRACE(".supervisor property not found in json");
+    }
 
     return 0;
 }
 
-int WantedGetConfig(uint8_t *buf, size_t bufLen)
+int WantedParseConfig(const char* buf, size_t bufLen)
+{
+    return ParseConfig(buf, bufLen, &currentConfig);
+}
+
+// This function is intended only for testing purposes
+void WantedSetConfig(wantedConfig_t cfg)
+{
+    currentConfig = cfg;
+}
+
+const wantedConfig_t *WantedGetConfig()
+{
+    return &currentConfig;
+}
+
+int WantedGetConfigJson(uint8_t *buf, size_t bufLen)
 {
     if (buf == NULL) return -EINVAL;
     return ConfigToJson(&currentConfig, buf, bufLen);
@@ -208,9 +270,82 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name, 
     return ret;
 }
 
-int WantedParseCtrlAction(const char *buf, size_t bufLen, char *wappName, wapp_action_t *act, wapp_config_t *cfg)
+int WantedParseCtrlAction(json_t const* json, char *wappName, wapp_action_t *act, wapp_config_t *cfg)
 {
-    if (NULL == buf || NULL == wappName || NULL == cfg || NULL == act) return -EINVAL;
+    int i;
+    if (NULL == cfg) return -EINVAL;
+
+    if (NULL != act) {
+        json_t const* action = json_getProperty(json, "action");
+        if (!action || JSON_TEXT != json_getType(action)) {
+            DEBUG_TRACE(".action property not found in json");
+            return -EINVAL;
+        }
+        if (strcmp("start", json_getValue(action)) == 0) {
+            *act = WAPP_START;
+        } else if (strcmp("stop",  json_getValue(action)) == 0) {
+            *act = WAPP_STOP;
+        } else {
+            DEBUG_TRACE(".action property has wrong value");
+            return -EINVAL;
+        }
+    }
+
+    json_t const* params = json_getProperty(json, "params");
+    if (!params || JSON_OBJ != json_getType(params)) {
+        DEBUG_TRACE(".params property not found in json");
+        return -EINVAL;
+    }
+
+    if (wappName != NULL) {
+        json_t const* name = json_getProperty(params, "name");
+        if (!name || JSON_TEXT != json_getType(name)) {
+            DEBUG_TRACE(".params.name property not found in json");
+            return -EINVAL;
+        }
+        strcpy(wappName, json_getValue(name));
+    }
+
+    json_t const* console = json_getProperty(params, "console");
+    if (console && JSON_OBJ == json_getType(console)) {
+        json_t const* in = json_getProperty(console, "in");
+        if (in && JSON_OBJ == json_getType(in)) {
+            strcpy(cfg->console[0].name,    NULL == json_getPropertyValue(in, "name") ? "" : json_getPropertyValue(in, "name"));
+            strcpy(cfg->console[0].options, NULL == json_getPropertyValue(in, "options") ? "" : json_getPropertyValue(in, "options"));
+        }
+
+        json_t const* out = json_getProperty(console, "out");
+        if (out && JSON_OBJ == json_getType(out)) {
+            strcpy(cfg->console[1].name,    NULL == json_getPropertyValue(out, "name") ? "" : json_getPropertyValue(out, "name"));
+            strcpy(cfg->console[1].options, NULL == json_getPropertyValue(out, "options") ? "" : json_getPropertyValue(out, "options"));
+        }
+
+        json_t const* err = json_getProperty(console, "err");
+        if (err && JSON_OBJ == json_getType(err)) {
+            strcpy(cfg->console[2].name,    NULL == json_getPropertyValue(err, "name") ? "" : json_getPropertyValue(err, "name"));
+            strcpy(cfg->console[2].options, NULL == json_getPropertyValue(err, "options") ? "" : json_getPropertyValue(err, "options"));
+        }
+    }
+
+    json_t const* drivers = json_getProperty(params, "drivers");
+    json_t const* drv;
+    if (drivers && JSON_ARRAY == json_getType(drivers)) {
+        for(i = 0, drv = json_getChild(drivers); drv && i < 10; drv = json_getSibling(drv), i++) {
+            if (JSON_OBJ == json_getType(drv)) {
+                strcpy(cfg->drivers[i].name, NULL == json_getPropertyValue(drv, "name") ? "" : json_getPropertyValue(drv, "name"));
+                strcpy(cfg->drivers[i].path, NULL == json_getPropertyValue(drv, "path") ? "" : json_getPropertyValue(drv, "path"));
+                strcpy(cfg->drivers[i].options, NULL == json_getPropertyValue(drv, "options") ? "" : json_getPropertyValue(drv, "options"));
+            }
+        }
+        cfg->driversCnt = i;
+    }
+
+    return 0;
+}
+
+int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName, wapp_action_t *act, wapp_config_t *cfg)
+{
+    if (NULL == buf) return -EINVAL;
 
     int i = 0;
     json_t m[40];
@@ -222,67 +357,8 @@ int WantedParseCtrlAction(const char *buf, size_t bufLen, char *wappName, wapp_a
     json_t const* json = json_create(b, m, sizeof m / sizeof *m);
     if (!json || JSON_OBJ != json_getType(json)) {
         DEBUG_TRACE("can't initialize json parser");
-        return -ENOMEM;
-    }
-
-    json_t const* action = json_getProperty(json, "action");
-    if (!action || JSON_TEXT != json_getType(action)) {
-        DEBUG_TRACE(".action property not found in json");
         return -EINVAL;
     }
 
-    json_t const* params = json_getProperty(json, "params");
-    if (!params || JSON_OBJ != json_getType(params)) {
-        DEBUG_TRACE(".params property not found in json");
-        return -EINVAL;
-    }
-
-    json_t const* name = json_getProperty(params, "name");
-    if (!name || JSON_TEXT != json_getType(name)) {
-        DEBUG_TRACE(".params.name property not found in json");
-        return -EINVAL;
-    }
-    strcpy(wappName, json_getValue(name));
-
-    if (strcmp("start", json_getValue(action)) == 0) {
-        *act = WAPP_START;
-
-        json_t const* console = json_getProperty(params, "console");
-        if (console && JSON_OBJ == json_getType(console)) {
-            json_t const* in = json_getProperty(console, "in");
-            if (in && JSON_OBJ == json_getType(in)) {
-                strcpy(cfg->console[0].name,    NULL == json_getPropertyValue(in, "name") ? "" : json_getPropertyValue(in, "name"));
-                strcpy(cfg->console[0].options, NULL == json_getPropertyValue(in, "options") ? "" : json_getPropertyValue(in, "options"));
-            }
-
-            json_t const* out = json_getProperty(console, "out");
-            if (out && JSON_OBJ == json_getType(out)) {
-                strcpy(cfg->console[1].name,    NULL == json_getPropertyValue(out, "name") ? "" : json_getPropertyValue(out, "name"));
-                strcpy(cfg->console[1].options, NULL == json_getPropertyValue(out, "options") ? "" : json_getPropertyValue(out, "options"));
-            }
-
-            json_t const* err = json_getProperty(console, "err");
-            if (err && JSON_OBJ == json_getType(err)) {
-                strcpy(cfg->console[2].name,    NULL == json_getPropertyValue(err, "name") ? "" : json_getPropertyValue(err, "name"));
-                strcpy(cfg->console[2].options, NULL == json_getPropertyValue(err, "options") ? "" : json_getPropertyValue(err, "options"));
-            }
-        }
-
-        json_t const* drivers = json_getProperty(params, "drivers");
-        json_t const* drv;
-        if (drivers && JSON_ARRAY == json_getType(drivers)) {
-            for(i = 0, drv = json_getChild(drivers); drv && i < 10; drv = json_getSibling(drv), i++) {
-                if (JSON_OBJ == json_getType(drv)) {
-                    strcpy(cfg->drivers[i].name, NULL == json_getPropertyValue(drv, "name") ? "" : json_getPropertyValue(drv, "name"));
-                    strcpy(cfg->drivers[i].path, NULL == json_getPropertyValue(drv, "path") ? "" : json_getPropertyValue(drv, "path"));
-                    strcpy(cfg->drivers[i].options, NULL == json_getPropertyValue(drv, "options") ? "" : json_getPropertyValue(drv, "options"));
-                }
-            }
-            cfg->driversCnt = i;
-        }
-    } else if (strcmp("stop",  json_getValue(action)) == 0) {
-        *act = WAPP_STOP;
-    }
-
-    return 0;
+    return WantedParseCtrlAction(json, wappName, act, cfg);;
 }

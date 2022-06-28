@@ -13,7 +13,7 @@
 
 /*
 int WantedSetConfig(wantedConfig_t cfg);
-int WantedGetConfig(uint8_t *buf, size_t bufLen);
+int WantedGetConfigJson(uint8_t *buf, size_t bufLen);
 
 int WantedReadRegistry(uint8_t *buf, size_t bufLen);
 int WantedReadState(uint8_t *buf, size_t bufLen);
@@ -31,6 +31,8 @@ TEST_TEAR_DOWN(wanted_vfs_api)
 {
 }
 
+extern void WantedSetConfig(wantedConfig_t cfg);
+
 TEST(wanted_vfs_api, WantedGetConfigTest)
 {
     int ret;
@@ -41,10 +43,9 @@ TEST(wanted_vfs_api, WantedGetConfigTest)
         .wappsToRun = { "aa", "bb", "cc", },
     };
 
-    ret = WantedSetConfig(cfg);
-    TEST_ASSERT_EQUAL(0, ret);
+    WantedSetConfig(cfg);
 
-    ret = WantedGetConfig(buf, 100);
+    ret = WantedGetConfigJson(buf, 100);
     TEST_ASSERT_EQUAL(26, ret);
 
     /* check that the json is valid */
@@ -97,7 +98,7 @@ TEST(wanted_vfs_api, WantedParseCtrlActionTest)
     wapp_action_t act = WAPP_STOP+1;
     wapp_config_t cfg;
 
-    ret = WantedParseCtrlAction(buf, strlen(buf), appName, &act, &cfg);
+    ret = WantedParseCtrlActionJson(buf, strlen(buf), appName, &act, &cfg);
     TEST_ASSERT_EQUAL(0, ret);
 
     TEST_ASSERT_EQUAL_STRING("app1", appName);

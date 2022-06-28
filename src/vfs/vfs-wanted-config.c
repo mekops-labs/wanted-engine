@@ -78,7 +78,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
         return read;
     }
 
-    read = WantedGetConfig(buf, nbyte);
+    read = WantedGetConfigJson(buf, nbyte);
 
     return read;
 }
