@@ -2,12 +2,18 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #include <vfs.h>
 #include <wanted.h>
 
+// TODO: make configurable
+#define MAX_WAPPS 3
+#define WAPP_MAX_NAME_LEN 15
+#define WAPP_MAX_VERSION_LEN 15
+
 typedef struct m3Data_t *im3Data_t;
 
-typedef struct {
+typedef struct wapp_version_t {
     union {
         struct {
             uint8_t major;
@@ -19,24 +25,25 @@ typedef struct {
     };
 } wapp_version_t;
 
-typedef struct {
+typedef struct wapp_driver_t {
     char name[32];
     char path[32];
     char options[32];
 } wapp_driver_t;
 
-typedef struct {
+typedef struct wapp_config_t {
+    bool valid;
     wapp_driver_t console[3];
     size_t driversCnt;
     wapp_driver_t drivers[10];
 } wapp_config_t;
 
-typedef enum {
+typedef enum wapp_action_t {
     WAPP_START,
     WAPP_STOP,
 } wapp_action_t;
 
-typedef struct {
+typedef struct wapp_t {
     char name[WAPP_MAX_NAME_LEN];
     wapp_version_t version;
     uint8_t *img;
@@ -44,7 +51,7 @@ typedef struct {
     wapp_config_t cfg;
 } wapp_t;
 
-typedef struct {
+typedef struct wapp_data_t {
     uint8_t id;
     wapp_t wapp;
     vfs_ctx_t vfs;
@@ -52,7 +59,7 @@ typedef struct {
     int lastStatus;
 } wapp_data_t;
 
-typedef enum {
+typedef enum status_t {
     NOT_STARTED,
     STARTING,
     RUNNING,
@@ -60,18 +67,28 @@ typedef enum {
     FAILURE,
 } status_t;
 
-typedef struct {
+typedef struct wapp_state_t{
     char name[WAPP_MAX_NAME_LEN];
     uint8_t id;
     wapp_version_t version;
     status_t status;
 } wapp_state_t;
 
-typedef struct {
+typedef struct reg_entry_t {
     char    name[WAPP_MAX_NAME_LEN];
     char    version[WAPP_MAX_VERSION_LEN];
     size_t  size;
 } reg_entry_t;
+
+
+
+// TODO: this is somewhat too simple, make it more dynamic
+
+typedef struct wantedConfig_t {
+    char            wappsToRun[MAX_WAPPS][WAPP_MAX_NAME_LEN];
+    int             nWapps;
+    wapp_config_t   supervisorCfg;
+} wantedConfig_t;
 
 int  WantedWappRun(wapp_data_t *ctx);
 void WantedWappStop(wapp_data_t *ctx);

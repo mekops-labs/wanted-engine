@@ -28,19 +28,19 @@ struct vfs_driver_ctx_t {
     romfs_t     romfs;
 };
 
-vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, uint8_t argc, const char *args[])
+vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, const char *opt)
 {
     int ret;
     const char *root;
     vfs_driver_t *driver;
     romfs_t r;
 
-    if (NULL == wapp || argc < 1 || NULL == args || NULL == args[0]) {
+    if (NULL == wapp || NULL == opt) {
         DEBUG_TRACE("bad arguments");
         return NULL;
     }
 
-    root = args[0];
+    root = opt;
 
     ret = RomfsLoad(wapp->img, wapp->img_len, &r);
     if (ret < 0) {
@@ -183,6 +183,7 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long
     return ret;
 }
 
+// TODO: make configurable
 #define DIR_BUF_LEN 10
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)

@@ -32,16 +32,16 @@ struct vfs_driver_ctx_t {
     const char* rootPath;
 };
 
-vfs_driver_t *VfsLinuxInit(const wapp_t *wapp, uint8_t argc, const char *args[])
+vfs_driver_t *VfsLinuxInit(const wapp_t *wapp, const char *options)
 {
     int ret;
     const char *root;
     vfs_driver_t *driver;
 
-    if (argc < 1 || NULL == args || NULL == args[0] || args[0][0] == '\0') {
+    if (NULL == options) {
         root = DEFAULT_ROOT;
     } else {
-        root = args[0];
+        root = options;
     }
 
     driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));

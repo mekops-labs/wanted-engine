@@ -24,7 +24,7 @@ static vfs_driver_t NullDriver = {
     .Write           = _Write,
 };
 
-vfs_driver_t *VfsNullInit(const wapp_t *wapp, uint8_t argc, const char *args[]) {
+vfs_driver_t *VfsNullInit(const wapp_t *wapp, const char *opt) {
     return &NullDriver;
 }
 

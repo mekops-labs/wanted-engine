@@ -6,12 +6,12 @@ extern const vfs_driver_t WantedConfigDriver;
 extern const vfs_driver_t WantedControlDriver;
 extern const vfs_driver_t WantedRegistryDriver;
 
-vfs_driver_t *VfsWantedInit(const wapp_t *wapp, uint8_t argc, const char *args[])
+vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *opt)
 {
     int ret;
     vfs_driver_t *drv;
 
-    drv = VfsVirtualInit(wapp, argc, args);
+    drv = VfsVirtualInit(wapp, opt);
     if (NULL == drv) {
         DEBUG_TRACE("can't load virtual driver (%d)", ret);
         return NULL;

@@ -96,7 +96,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     if (buf == NULL) return -EINVAL;
     if (!opened) return -EBADF;
 
-    ret = WantedParseCtrlAction(buf, nbyte, wapp.name, &act, &wapp.cfg);
+    ret = WantedParseCtrlActionJson(buf, nbyte, wapp.name, &act, &wapp.cfg);
     if (ret < 0) return ret;
 
     switch (act) {

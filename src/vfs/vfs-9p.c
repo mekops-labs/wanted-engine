@@ -39,6 +39,7 @@ static int _Unlink  (vfs_driver_ctx_t d, int fd, const char *path);
 #define ATTACHED        0x2
 #define DISCONNECTED    0x4
 
+// TODO: make configurable
 #define MAX_OPENED_FILES 10
 
 typedef struct C9aux {
@@ -361,7 +362,7 @@ proc(C9aux *a)
 }
 
 
-vfs_driver_t *Vfs9PInit(const wapp_t *wapp, uint8_t argc, const char *args[]) {
+vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *opt) {
     // Todo:
     // 1. Create context and buffers
     // 2. connect comm backend
@@ -383,7 +384,7 @@ vfs_driver_t *Vfs9PInit(const wapp_t *wapp, uint8_t argc, const char *args[]) {
 
     memset(driver->ctx, 0, sizeof(struct vfs_driver_ctx_t));
 
-    driver->ctx->conf = (char *)WantedMalloc(strlen(args[0])+1);
+    driver->ctx->conf = (char *)WantedMalloc(strlen(opt)+1);
         if (NULL == driver->ctx->conf) {
         DEBUG_TRACE("can't allocate memory");
         WantedFree(driver->ctx);
@@ -391,7 +392,7 @@ vfs_driver_t *Vfs9PInit(const wapp_t *wapp, uint8_t argc, const char *args[]) {
         return NULL;
     }
 
-    memcpy(driver->ctx->conf, args[0], strlen(args[0])+1);
+    memcpy(driver->ctx->conf, opt, strlen(opt)+1);
 
     driver->bytesId         = *(uint32_t*)(id);
     driver->filetype        = VFS_FILETYPE_DIRECTORY;

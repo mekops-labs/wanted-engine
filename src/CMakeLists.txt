@@ -3,9 +3,11 @@ set(sources
     "wanted.c"
     "wanted_wasm_api.c"
     "wanted-vfs-api.c"
+    "default_supervisor_cfg.json.h"
 )
 
 set(vfs-srcs
+    "vfs/drivers.c"
     "vfs/vfs.c"
     "vfs/vfs-9p.c"
     "vfs/vfs-null.c"
