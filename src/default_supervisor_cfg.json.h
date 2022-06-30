@@ -46,6 +46,11 @@ JSON(
             {
                 "name": "wanted",
                 "path": "/w"
+            },
+            {
+                "name": "config",
+                "path": "/conf",
+                "options": "this is an \"example\"\n\tconfig file\n"
             }
         ]
     }

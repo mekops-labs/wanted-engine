@@ -10,14 +10,15 @@ set(vfs-srcs
     "vfs/drivers.c"
     "vfs/vfs.c"
     "vfs/vfs-9p.c"
+    "vfs/vfs-config.c"
     "vfs/vfs-null.c"
-    "vfs/vfs-virtual.c"
     "vfs/vfs-romfs.c"
     "vfs/vfs-socket.c"
     "vfs/vfs-wanted.c"
     "vfs/vfs-wanted-config.c"
     "vfs/vfs-wanted-ctrl.c"
     "vfs/vfs-wanted-registry.c"
+    "vfs/vfs-virtual.c"
     )
 
 set(wasi-src
