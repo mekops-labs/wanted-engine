@@ -7,9 +7,13 @@
 #include <wanted.h>
 
 // TODO: make configurable
-#define MAX_WAPPS 3
-#define WAPP_MAX_NAME_LEN 15
-#define WAPP_MAX_VERSION_LEN 15
+#define MAX_WAPPS               3
+#define WAPP_MAX_NAME_LEN       15
+#define WAPP_MAX_VERSION_LEN    15
+#define MAX_DRIVER_NAME         15
+#define MAX_PATH_LEN            256
+#define MAX_OPTIONS_SIZE        4096
+#define MAX_DRIVERS_CNT         10
 
 typedef struct m3Data_t *im3Data_t;
 
@@ -27,9 +31,9 @@ typedef struct wapp_version_t {
 
 // TODO: make dynamic
 typedef struct wapp_driver_t {
-    char name[32];
-    char path[32];
-    char options[32];
+    char name[WAPP_MAX_NAME_LEN];
+    char path[MAX_PATH_LEN];
+    char options[MAX_OPTIONS_SIZE];
 } wapp_driver_t;
 
 // TODO: make dynamic driver number
@@ -37,7 +41,7 @@ typedef struct wapp_config_t {
     bool valid;
     wapp_driver_t console[3];
     size_t driversCnt;
-    wapp_driver_t drivers[10];
+    wapp_driver_t drivers[MAX_DRIVERS_CNT];
 } wapp_config_t;
 
 typedef enum wapp_action_t {
