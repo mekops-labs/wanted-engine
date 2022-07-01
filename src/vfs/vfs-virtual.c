@@ -135,7 +135,7 @@ int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft)
         return 0;
     }
 
-    DEBUG_TRACE("segment: %.*s (%d)", seg.size, seg.begin, seg.size);
+    DEBUG_TRACE("segment: %.*s (%zu)", (int)seg.size, seg.begin, seg.size);
     found = false;
 
     if (memcmp(".", seg.begin, seg.size) == 0) {
@@ -325,7 +325,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
     size_t used = 0;
     int f;
 
-    DEBUG_TRACE("%d %d %lld", fd, bufLen, cookie);
+    DEBUG_TRACE("%d %zu %zu", fd, bufLen, *cookie);
 
     if (NULL == buf || NULL == cookie || NULL == bufUsed) { return -EINVAL; }
     if (!CheckOpened(d, fd)) { return -EBADF; }

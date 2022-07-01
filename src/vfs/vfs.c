@@ -196,7 +196,7 @@ int VfsStatSet(vfs_ctx_t c, int fd, vfs_stat_t stat)
 
 int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte)
 {
-    DEBUG_TRACE("%d, %d", fd, nbyte);
+    DEBUG_TRACE("%d, %zu", fd, nbyte);
 
     if (!CheckFd(c, fd)) return -EBADF;
 
@@ -209,7 +209,7 @@ int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte)
 
 int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte)
 {
-    DEBUG_TRACE("%d, %d", fd, nbyte);
+    DEBUG_TRACE("%d, %zu", fd, nbyte);
 
     if (!CheckFd(c, fd)) return -EBADF;
 
@@ -222,7 +222,7 @@ int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte)
 
 int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos)
 {
-    DEBUG_TRACE("%d, %d, %d", fd, off, whence);
+    DEBUG_TRACE("%d, %ld, %d", fd, off, whence);
 
     if (!CheckFd(c, fd)) return -EBADF;
 
@@ -235,7 +235,7 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos)
 
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
 {
-    DEBUG_TRACE("%d (%d) %d", fd, bufLen, *cookie);
+    DEBUG_TRACE("%d (%zu) %lu", fd, bufLen, *cookie);
 
     if (!CheckFd(c, fd)) return -EBADF;
 
@@ -270,7 +270,7 @@ int  VfsSockAccept  (vfs_ctx_t c, int fd, vfs_oflags_t flags, int *newFd)
 
 int  VfsSockRecv    (vfs_ctx_t c, int fd, void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags)
 {
-    DEBUG_TRACE("%d (0x%x) %d", fd, iflags, nbyte);
+    DEBUG_TRACE("%d (0x%x) %zu", fd, iflags, nbyte);
 
     if (!CheckFd(c, fd)) {return -EBADF; }
 
@@ -279,7 +279,7 @@ int  VfsSockRecv    (vfs_ctx_t c, int fd, void *buf, size_t nbyte, vfs_riflags_t
 
 int  VfsSockSend    (vfs_ctx_t c, int fd, const void *buf, size_t nbyte, vfs_sdflags_t flags)
 {
-    DEBUG_TRACE("%d (0x%x) %d", fd, flags, nbyte);
+    DEBUG_TRACE("%d (0x%x) %zu", fd, flags, nbyte);
 
     if (!CheckFd(c, fd)) {return -EBADF; }
 
