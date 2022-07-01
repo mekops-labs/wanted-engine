@@ -25,12 +25,14 @@ typedef struct wapp_version_t {
     };
 } wapp_version_t;
 
+// TODO: make dynamic
 typedef struct wapp_driver_t {
     char name[32];
     char path[32];
     char options[32];
 } wapp_driver_t;
 
+// TODO: make dynamic driver number
 typedef struct wapp_config_t {
     bool valid;
     wapp_driver_t console[3];

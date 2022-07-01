@@ -1,5 +1,6 @@
 #pragma once
 
+// TODO: need to by more dynamic and support a tree of file entries
 #define MAX_ENTRIES 10
 
 struct vfs_driver_ctx_t {
