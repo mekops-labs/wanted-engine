@@ -91,7 +91,6 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     wapp_action_t act;
     reg_entry_t e;
     int ret;
-    const char *p = buf;
 
     if (buf == NULL) return -EINVAL;
     if (!opened) return -EBADF;
@@ -104,15 +103,15 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
         const char *ver = strchr(wapp.name, ':');
         if (ver != NULL) {
             ver += 1;
-            size_t nameLen = ver - p > WAPP_MAX_NAME_LEN ? WAPP_MAX_NAME_LEN : ver - p;
+            size_t nameLen = ver - wapp.name > WAPP_MAX_NAME_LEN ? WAPP_MAX_NAME_LEN : ver - wapp.name;
             size_t verLen = strnlen(ver, WAPP_MAX_VERSION_LEN);
-            strncpy(e.name, p, nameLen);
+            strncpy(e.name, wapp.name, nameLen);
             e.name[nameLen-1] = '\0';
 
             strncpy(e.version, ver, verLen);
             e.version[verLen] = '\0';
         } else {
-            strncpy(e.name, p, WAPP_MAX_NAME_LEN);
+            strncpy(e.name, wapp.name, WAPP_MAX_NAME_LEN);
             e.version[0] = '\0';
         }
 
