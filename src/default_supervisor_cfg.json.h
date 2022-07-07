@@ -49,8 +49,8 @@ JSON(
             },
             {
                 "name": "config",
-                "path": "/conf",
-                "options": "this is an \"example\"\n\tconfig file\n"
+                "path": "/config",
+                "options": "{\"config_file\":\"/mnt/config.json\"}"
             }
         ]
     }

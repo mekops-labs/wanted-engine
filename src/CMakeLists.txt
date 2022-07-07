@@ -4,6 +4,7 @@ set(sources
     "wanted_wasm_api.c"
     "wanted-vfs-api.c"
     "default_supervisor_cfg.json.h"
+    "../wasm/supervisor.h"
 )
 
 set(vfs-srcs

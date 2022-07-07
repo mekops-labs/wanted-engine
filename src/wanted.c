@@ -193,7 +193,7 @@ int WantedWappRun(wapp_data_t *ctx)
         DEBUG_TRACE("Can't allocate data for m3 env");
         return -1;
     }
-    ctx->m3->rt =  m3_NewRuntime(ctx->m3->env, 4096, NULL);
+    ctx->m3->rt =  m3_NewRuntime(ctx->m3->env, M3_STACK_SIZE, NULL);
     if (!ctx->m3->rt) {
         DEBUG_TRACE("Can't allocate data for m3 rt");
         return -1;
@@ -324,8 +324,8 @@ wapp_t WantedGetCurrentSupervisor()
     }
     if (ret < 0) return w;
 
-    w.img = supervisor;
-    w.img_len = supervisor_len;
+    w.img = supervisor_wapp;
+    w.img_len = supervisor_wapp_len;
 
     return w;
 }
