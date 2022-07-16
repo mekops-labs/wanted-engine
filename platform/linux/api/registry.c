@@ -69,7 +69,9 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len)
         return -errno;
     }
 
-    n = scandirat(d ,".", &namelist, ParseExt, alphasort);
+    close(d);
+
+    n = scandir(REGISTRY_ROOT, &namelist, ParseExt, alphasort);
     if (n < 0) {
         return -errno;
     }
