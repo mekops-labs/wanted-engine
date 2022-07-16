@@ -325,7 +325,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
     size_t used = 0;
     int f;
 
-    DEBUG_TRACE("%d %zu %zu", fd, bufLen, *cookie);
+    DEBUG_TRACE("%d %zu %zu", fd, bufLen, cookie ? *cookie : 0);
 
     if (NULL == buf || NULL == cookie || NULL == bufUsed) { return -EINVAL; }
     if (!CheckOpened(d, fd)) { return -EBADF; }
