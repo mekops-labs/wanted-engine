@@ -4,7 +4,6 @@ set(sources
     "wanted_wasm_api.c"
     "wanted-vfs-api.c"
     "default_supervisor_cfg.json.h"
-    "../wasm/supervisor.h"
 )
 
 set(vfs-srcs
@@ -60,6 +59,19 @@ endif()
 # Set flags for m3, disable harmless wanings
 target_compile_options(m3 PRIVATE -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer)
 
+option(WANTED_WSH_SUPERVISOR "Use wsh app as supervisor" OFF)
+if (WANTED_WSH_SUPERVISOR)
+    set(SUPERVISOR_TYPE wsh)
+else()
+    set(SUPERVISOR_TYPE default)
+endif()
+
+message("-- Using ${SUPERVISOR_TYPE} supervisor")
+set(sources
+    ${sources}
+    "../wasm/supervisor/${SUPERVISOR_TYPE}/supervisor.h"
+)
+
 add_library(${project} STATIC
     ${sources}
     ${vfs-srcs}
@@ -72,11 +84,13 @@ add_library(${project} STATIC
 target_include_directories(${project}
     PUBLIC ${CMAKE_SOURCE_DIR}/include
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
-    PRIVATE ${CMAKE_SOURCE_DIR}/wasm
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/json-maker/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/c9
+    PRIVATE ${CMAKE_SOURCE_DIR}/wasm/supervisor/${SUPERVISOR_TYPE}
     )
+
+
 
 target_link_libraries(${project}
     PRIVATE romfs
