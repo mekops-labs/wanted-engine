@@ -24,8 +24,10 @@ if (CMAKE_COMPILER_IS_GNUCC)
     endif ()
 endif()
 
+add_subdirectory(${CMAKE_SOURCE_DIR}/platform/dummy ${CMAKE_BINARY_DIR}/platform/dummy)
+
 add_executable(tests ${test_src} ${tiny_json_src} ${CMAKE_CURRENT_BINARY_DIR}/runner.c)
-target_link_libraries(tests unity ${project})
+target_link_libraries(tests unity ${project} platform_dummy)
 
 execute_process(
     COMMAND grep TEST_GROUP ${CMAKE_CURRENT_BINARY_DIR}/runner.c

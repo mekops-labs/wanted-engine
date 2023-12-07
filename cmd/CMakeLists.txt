@@ -7,6 +7,9 @@ if (STATIC_EXECUTABLE)
     target_link_libraries(${project}_cmd PUBLIC "-static")  #static executable
 endif()
 
+add_subdirectory(${CMAKE_SOURCE_DIR}/platform/linux ${CMAKE_BINARY_DIR}/platform/linux)
+
 target_link_libraries(${project}_cmd
     PRIVATE ${project}
+    PRIVATE platform_linux
 )

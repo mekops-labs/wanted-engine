@@ -39,8 +39,6 @@ set(c9-src
     ${CMAKE_SOURCE_DIR}/vendor/c9/c9.c
 )
 
-add_subdirectory(${CMAKE_SOURCE_DIR}/platform ${CMAKE_BINARY_DIR}/platform)
-
 set(CUSTOM_MALLOC_IMPL ${CMAKE_CURRENT_SOURCE_DIR}/romfs_malloc.c)
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/romfs)
 target_compile_definitions(romfs PRIVATE ROMFS_CUSTOM_MALLOC=1)
@@ -83,6 +81,7 @@ add_library(${project} STATIC
 
 target_include_directories(${project}
     PUBLIC ${CMAKE_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/platform/include
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/json-maker/src/include
@@ -95,7 +94,6 @@ target_include_directories(${project}
 target_link_libraries(${project}
     PRIVATE romfs
     PRIVATE cwalk
-    PRIVATE platform
     PRIVATE m3
     PRIVATE m
     )
