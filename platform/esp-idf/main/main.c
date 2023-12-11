@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
+#include <c9.h>
 
 #include "wasm3.h"
 #include "m3_env.h"
@@ -60,7 +61,7 @@ static void run_wasm(void)
     if (result) FATAL("m3_Call: %s", result);
 }
 
-extern "C" void app_main(void)
+void app_main(void)
 {
     printf("\nWasm3 v" M3_VERSION " on " CONFIG_IDF_TARGET ", build " __DATE__ " " __TIME__ "\n");
 
