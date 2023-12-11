@@ -25,8 +25,3 @@ int PlatformNetSend(void *ctx, const void *buf, size_t nbyte, int flags) { retur
 int PlatformNetAccept(void *ctx) { return 0; }
 int PlatformNetShutdown(void *ctx, int how) { return 0; }
 int PlatformNetFree(void *ctx){ return 0; }
-
-vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt)
-{
-    return NULL;
-}
