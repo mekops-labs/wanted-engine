@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include <wanted.h>
 #include <vfs.h>
 #include <wanted-api.h>
 

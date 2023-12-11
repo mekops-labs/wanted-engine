@@ -343,7 +343,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
 
     for (int i = *cookie; i < d->cnt; i++) {
         dir.d_ino       = i-1;
-        dir.d_namlen    = strnlen(d->entries[i].name, MAX_PATH_LEN);
+        dir.d_namlen    = strnlen(d->entries[i].name, MAX_ENTRY_NAME_LEN);
         dir.d_type      = d->entries[i].drv ? d->entries[i].drv->filetype : VFS_FILETYPE_UNKNOWN;
         dir.d_next      = i;
 

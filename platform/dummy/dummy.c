@@ -17,7 +17,7 @@ int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) { 
 int PlatformRegistryRemove(const reg_entry_t *entry) { return 0; }
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) { return 0; }
 
-void *PlatformNetOpen(int socket_type) {}
+void *PlatformNetOpen(int socket_type) { return NULL; }
 int PlatformNetConnect(void *ctx, const char *hostname, uint16_t port) { return 0; }
 int PlatformNetClose(void *ctx) { return 0; }
 int PlatformNetRecv(void *ctx, void *buf, size_t nbyte, int flags) { return 0; }

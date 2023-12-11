@@ -65,13 +65,14 @@ static int LoadFile(const char* name, uint8_t *img, size_t imgLen, struct wappIm
     fd = RomfsOpenAt(r, 3, name, 0);
     if (fd < 0) {
         DEBUG_TRACE("open returned %d\n", ret);
-        goto _exit;
+        goto _close;
     }
 
     ret = RomfsMapFile(r, (void **)&file->img, &file->img_len, fd, 0);
 
-_exit:
+_close:
     RomfsClose(r, fd);
+_exit:
     RomfsUnload(&r);
 
     return ret;
@@ -206,11 +207,11 @@ int WantedWappRun(wapp_data_t *ctx)
 
     DEBUG_TRACE("parsing wasm: %p (%ld)", wasm.img, wasm.img_len);
     status = m3_ParseModule(ctx->m3->env, &mod, wasm.img, wasm.img_len);
-    if (status) DEBUG_TRACE("m3_ParseModule[%d]: %s", ctx->id, status);
+    if (status) { DEBUG_TRACE("m3_ParseModule[%d]: %s", ctx->id, status); }
 
     DEBUG_TRACE("loading wasm");
     status = m3_LoadModule(ctx->m3->rt, mod);
-    if (status) DEBUG_TRACE("m3_LoadModule[%d]: %s", ctx->id, status);
+    if (status) { DEBUG_TRACE("m3_LoadModule[%d]: %s", ctx->id, status); }
 
     DEBUG_TRACE("getting context");
     ctx->m3->wasiCtx = InitWasiContext();
