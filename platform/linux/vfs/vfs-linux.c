@@ -32,9 +32,8 @@ struct vfs_driver_ctx_t {
     const char* rootPath;
 };
 
-vfs_driver_t *VfsLinuxInit(const wapp_t *wapp, const char *options)
+vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options)
 {
-    int ret;
     const char *root;
     vfs_driver_t *driver;
 
