@@ -6,6 +6,8 @@
 
 typedef uint32_t plat_clk_id_t;
 
+#define THREAD_STACK_SIZE 8196
+
 #define PLAT_CLOCKID_REALTIME           0U
 #define PLAT_CLOCKID_MONOTONIC          1U
 #define PLAT_CLOCKID_PROCESS_CPUTIME_ID 2U

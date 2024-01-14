@@ -205,7 +205,7 @@ int WantedWappRun(wapp_data_t *ctx)
         return -1;
     }
 
-    DEBUG_TRACE("parsing wasm: %p (%ld)", wasm.img, wasm.img_len);
+    DEBUG_TRACE("parsing wasm: %p (%zu)", wasm.img, wasm.img_len);
     status = m3_ParseModule(ctx->m3->env, &mod, wasm.img, wasm.img_len);
     if (status) { DEBUG_TRACE("m3_ParseModule[%d]: %s", ctx->id, status); }
 

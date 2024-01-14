@@ -235,7 +235,7 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos)
 
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
 {
-    DEBUG_TRACE("%d (%zu) %lu", fd, bufLen, *cookie);
+    DEBUG_TRACE("%d (%zu) %llu", fd, bufLen, *cookie);
 
     if (!CheckFd(c, fd)) return -EBADF;
 

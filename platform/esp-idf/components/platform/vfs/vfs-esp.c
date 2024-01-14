@@ -171,7 +171,8 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t fl
     DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, joined);
 
     int mode = 0644;
-    int ret = openat(fd, joined, fl, mode);
+    //int ret = openat(fd, joined, fl, mode);
+    int ret = open(joined, fl, mode);
     if (ret < 0) return -errno;
 
     return ret;
@@ -239,7 +240,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
 {
     vfs_dirent_t dir;
     size_t used = 0;
-    DIR *dp = fdopendir(fd);
+    DIR *dp = opendir("/");
     struct dirent *ep;
 
     if (dp != NULL)

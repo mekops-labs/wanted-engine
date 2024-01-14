@@ -5,7 +5,12 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include <platform.h>
+#include <debug_trace.h>
 #include <wanted-api.h>
+
+
+#define FATAL(err, msg, ...) { DEBUG_TRACE("Fatal: " msg, ##__VA_ARGS__); return err; }
 
 static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -20,19 +25,85 @@ volatile struct {
     thread_data_t threads[MAX_WAPPS];
 } state;
 
-int PlatformWappLoad(const char *name, wapp_t * wapp)
+/*
+static void updateState(uint8_t id, int ret) {
+    taskENTER_CRITICAL(&lock);
+    if (ret == 0) {
+        state.threads[id].status = EXITED;
+    } else {
+        state.threads[id].status = FAILURE;
+    }
+    state.n--;
+    taskEXIT_CRITICAL(&lock);
+}
+*/
+
+void WA_thread(void *params)
 {
+    wapp_data_t *d = (wapp_data_t *)params;
+
+    if (d == NULL) {
+        DEBUG_TRACE("parameters passed to thread are NULL");
+        vTaskDelete(NULL);
+    }
+
+    taskENTER_CRITICAL(&lock);
+    state.threads[d->id].status = RUNNING;
+    taskEXIT_CRITICAL(&lock);
+
+    d->lastStatus = 0;
+    d->lastStatus = WantedWappRun(d);
+
+    vTaskDelete(NULL);
+}
+
+int PlatformWappLoad(const char *path, wapp_t * wapp)
+{
+    long filesize;
+    FILE *f;
+    uint8_t *img;
+    size_t r;
+
+    DEBUG_TRACE("Opening: %s\n", path);
+
+    f = fopen(path, "rb");
+
+    if (NULL == f) {
+        FATAL(-errno, "can't open wapp: %s", path);
+    }
+
+    fseek(f, 0L, SEEK_END);
+    filesize = ftell(f);
+    rewind(f);
+
+    img = (uint8_t *)malloc(filesize);
+    if (img == NULL)
+        FATAL(-errno, "can't malloc buffer");
+
+    r = fread(img, 1, filesize, f);
+    if (r < filesize) {
+        FATAL(-errno, "can't read wapp image")
+    }
+
+    wapp->img = img;
+    wapp->img_len = filesize;
+
+    fclose(f);
+
     return 0;
 }
 
 int PlatformWappUnload(const wapp_t *wapp)
 {
+    free(wapp->img);
     return 0;
 }
 
 int PlatformWappStart(wapp_t app)
 {
     int slot;
+
+    DEBUG_TRACE("Trying to start wapp...");
 
     taskENTER_CRITICAL(&lock);
 
@@ -49,6 +120,16 @@ int PlatformWappStart(wapp_t app)
     state.threads[slot].data.id = slot;
     state.threads[slot].data.wapp = app;
     state.threads[slot].status = STARTING;
+
+    xTaskCreate(
+        WA_thread,
+        (const char * const)state.threads[slot].data.wapp.name,
+        65536,
+        (void*) &state.threads[slot].data,
+        tskIDLE_PRIORITY,
+        &state.threads[slot].t
+    );
+    state.n++;
 
     taskEXIT_CRITICAL(&lock);
     return 0;
