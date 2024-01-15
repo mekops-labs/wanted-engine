@@ -105,11 +105,15 @@ void *WA_thread(void *ptr)
     pthread_exit(NULL);
 }
 
-int PlatformWappLoad(const char *path, wapp_t * wapp)
+int PlatformWappLoad(const char *path, wapp_t *wapp)
 {
     long filesize;
     FILE *f;
     uint8_t *img;
+
+    if (NULL == wapp) {
+        return -EINVAL;
+    }
 
     DEBUG_TRACE("Opening: %s\n", path);
 
@@ -136,14 +140,22 @@ int PlatformWappLoad(const char *path, wapp_t * wapp)
 
 int PlatformWappUnload(const wapp_t *wapp)
 {
+    if (NULL == wapp) {
+        return -EINVAL;
+    }
+
     if (munmap(wapp->img, wapp->img_len) < 0)
         FATAL(-errno, "can't unmap file");
     return 0;
 }
 
-int PlatformWappStart(wapp_t app)
+int PlatformWappStart(wapp_t *wapp)
 {
     int slot;
+
+    if (NULL == wapp) {
+        return -EINVAL;
+    }
 
     pthread_mutex_lock(&state_mtx);
     if (state.n >= MAX_WAPPS) {
@@ -157,7 +169,7 @@ int PlatformWappStart(wapp_t app)
     }
 
     state.threads[slot].data.id = slot;
-    state.threads[slot].data.wapp = app;
+    state.threads[slot].data.wapp = wapp;
     state.threads[slot].status = STARTING;
 
     pthread_create((pthread_t *)&state.threads[slot].t, NULL, WA_thread, (void*) &state.threads[slot].data);
@@ -174,7 +186,8 @@ int PlatformWappStop(const char* name)
     int slot;
 
     for (slot = 0; slot < MAX_WAPPS; slot++) {
-        if ((strcmp((char *)state.threads[slot].data.wapp.name, name) == 0)
+        if (state.threads[slot].data.wapp == NULL) continue;
+        if ((strcmp((char *)state.threads[slot].data.wapp->name, name) == 0)
             && state.threads[slot].status == RUNNING)
             break;
     }
@@ -206,7 +219,9 @@ void PlatformWappLoop()
         supervisorOk = 0;
         for (int i = 0; i < MAX_WAPPS; i++) {
             /* at least 1 supervisor needs to be running */
-            if (strncmp((const char*)state.threads[i].data.wapp.name, "supervisor", strlen("supervisor")) == 0 &&
+            if (state.threads[i].data.wapp == NULL) continue;
+
+            if (strncmp((const char*)state.threads[i].data.wapp->name, "supervisor", strlen("supervisor")) == 0 &&
                 state.threads[i].status == RUNNING) {
                 supervisorOk++;
             }
@@ -223,12 +238,12 @@ int  PlatformWappGetState(wapp_state_t *wapps, size_t appsLen)
     int i, r;
 
     for (i = 0, r = 0; i < MAX_WAPPS && r < appsLen; i++) {
-        if (state.threads[i].data.wapp.img == NULL) continue;
+        if (state.threads[i].data.wapp == NULL) continue;
 
-        strncpy(wapps[r].name, (const char *)state.threads[i].data.wapp.name, WAPP_MAX_NAME_LEN);
+        strncpy(wapps[r].name, (const char *)state.threads[i].data.wapp->name, WAPP_MAX_NAME_LEN);
         wapps[r].name[WAPP_MAX_NAME_LEN-1] = '\0';
         wapps[r].status = state.threads[i].status;
-        wapps[r].version = state.threads[i].data.wapp.version;
+        wapps[r].version = state.threads[i].data.wapp->version;
         wapps[r].id = state.threads[i].data.id;
         r++;
     }

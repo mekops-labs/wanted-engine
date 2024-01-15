@@ -32,7 +32,12 @@ struct m3Data_t {
     IM3Environment env;
 };
 
-static int LoadFile(const char* name, uint8_t *img, size_t imgLen, wapp_t *file)
+struct wappImgData_t {
+    uint8_t *img;
+    size_t img_len;
+};
+
+static int LoadFile(const char* name, uint8_t *img, size_t imgLen, struct wappImgData_t *file)
 {
     int ret, fd;
     romfs_t r;
@@ -75,7 +80,7 @@ _exit:
 int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen)
 {
     int ret;
-    wapp_t m;
+    struct wappImgData_t m;
 
     ret = LoadFile(manifestName, w->img, w->img_len, &m);
     if (ret < 0) {
@@ -158,8 +163,8 @@ int WantedWappRun(wapp_data_t *ctx)
     M3Result status;
     IM3Module mod;
     IM3Function f;
-    wapp_t manifest, wasm;
-    wapp_t *wapp = &ctx->wapp;
+    struct wappImgData_t wasm;
+    wapp_t *wapp = ctx->wapp;
     int ret = 0;
 
     if (ctx == NULL) {
@@ -296,13 +301,20 @@ void WantedWappStop(wapp_data_t *ctx)
     DEBUG_TRACE("end");
 }
 
-wapp_t WantedGetCurrentSupervisor()
+wapp_t *WantedGetCurrentSupervisor()
 {
     /* TODO: in the future we need to update the image if downloaded new version */
     /* now we're using only factory version */
 
     int ret = 0;
-    wapp_t w = { 0 };
+    static wapp_t *w = NULL;
+
+    if (NULL != w) {
+        // supervisor metadata is initialized, return it
+        return w;
+    }
+
+    w = WantedMalloc(sizeof(wapp_t));
     const wantedConfig_t *cfg = WantedGetConfig();
 
     if (cfg == NULL || !cfg->supervisorCfg.valid) {
@@ -312,20 +324,20 @@ wapp_t WantedGetCurrentSupervisor()
         ;
 
         DEBUG_TRACE("loading defaults");
-        ret = WantedParseCtrlActionJson(def, strlen(def), w.name, NULL, &w.cfg);
+        ret = WantedParseCtrlActionJson(def, strlen(def), w->name, NULL, &w->cfg);
         if (ret < 0) {
             DEBUG_TRACE("error during loading of defaults: %d", ret);
             return w;
         }
     } else {
         DEBUG_TRACE("using global config");
-        w.cfg = cfg->supervisorCfg;
-        memcpy(w.name, "supervisor", 11);
+        w->cfg = cfg->supervisorCfg;
+        memcpy(w->name, "supervisor", 11);
     }
     if (ret < 0) return w;
 
-    w.img = supervisor_wapp;
-    w.img_len = supervisor_wapp_len;
+    w->img = supervisor_wapp;
+    w->img_len = supervisor_wapp_len;
 
     return w;
 }

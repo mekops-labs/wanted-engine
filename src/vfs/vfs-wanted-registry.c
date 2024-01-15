@@ -165,7 +165,6 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
 {
     vfs_dirent_t dir;
     size_t used = 0;
-    wapp_t w;
 
     if (buf == NULL) return -EINVAL;
     if (!d->opened) return -EBADF;

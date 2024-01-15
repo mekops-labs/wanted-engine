@@ -8,6 +8,7 @@
 #include <platform.h>
 #include <vfs-drivers.h>
 #include <wanted-api.h>
+#include <wanted_malloc.h>
 
 #include <json-maker/json-maker.h>
 #include <tiny-json.h>
@@ -214,18 +215,18 @@ int WantedReadState(uint8_t *buf, size_t bufLen)
 int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen)
 {
     int ret;
-    wapp_t w;
+    wapp_t *w = WantedMalloc(sizeof(wapp_t));
     uint8_t *m;
     size_t mLen;
 
     if (buf == NULL) return -EINVAL;
 
-    ret = PlatformRegistryWappLoad(entry, &w);
+    ret = PlatformRegistryWappLoad(entry, w);
     if (ret < 0) {
         return ret;
     }
 
-    ret = WantedWappLoadManifest(&w, &m, &mLen);
+    ret = WantedWappLoadManifest(w, &m, &mLen);
     if (ret < 0) {
         return -EINVAL;
     }
@@ -234,7 +235,9 @@ int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen)
 
     memcpy(buf, m, n);
 
-    PlatformWappUnload(&w);
+    PlatformWappUnload(w);
+
+    WantedFree(w);
 
     return (int)n;
 }

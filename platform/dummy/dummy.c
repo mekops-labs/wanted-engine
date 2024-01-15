@@ -7,7 +7,7 @@ int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len) { return 0; }
 
 int PlatformWappLoad(const char *name, wapp_t * wapp) { return 0; }
 int PlatformWappUnload(const wapp_t *wapp) { return 0; }
-int PlatformWappStart(wapp_t app) { return 0; }
+int PlatformWappStart(wapp_t *app) { return 0; }
 int PlatformWappStop(const char* name) { return 0; }
 void PlatformWappLoop() {}
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen) { return 0; }

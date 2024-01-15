@@ -32,7 +32,7 @@ TEST(wanted_api, runSimpleWasm)
     strcpy(w.cfg.console[2].name, "null");
 
     ctx.id = 0;
-    ctx.wapp = w;
+    ctx.wapp = &w;
 
     ret = WantedWappRun(&ctx);
     TEST_ASSERT_EQUAL_INT(0, ret);

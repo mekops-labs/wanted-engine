@@ -59,7 +59,7 @@ typedef struct wapp_t {
 
 typedef struct wapp_data_t {
     uint8_t id;
-    wapp_t wapp;
+    wapp_t *wapp;
     vfs_ctx_t vfs;
     im3Data_t m3;
     int lastStatus;
@@ -100,5 +100,5 @@ int  WantedWappRun(wapp_data_t *ctx);
 void WantedWappStop(wapp_data_t *ctx);
 int  WantedWappParseManifest(wapp_t *w);
 int  WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen);
-wapp_t WantedGetCurrentSupervisor();
+wapp_t *WantedGetCurrentSupervisor();
 

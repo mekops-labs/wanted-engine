@@ -9,6 +9,7 @@
 #include <platform.h>
 #include <wanted-api.h>
 #include <wanted-vfs-api.h>
+#include <wanted_malloc.h>
 
 
 #define ID  {'W', 'c', 't', 'l'}
@@ -87,7 +88,6 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 {
-    wapp_t wapp;
     wapp_action_t act;
     reg_entry_t e;
     int ret;
@@ -95,46 +95,53 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     if (buf == NULL) return -EINVAL;
     if (!opened) return -EBADF;
 
-    ret = WantedParseCtrlActionJson(buf, nbyte, wapp.name, &act, &wapp.cfg);
-    if (ret < 0) return ret;
+    wapp_t *wapp = WantedMalloc(sizeof(wapp_t));
+    if (NULL == wapp) {
+        return -ENOMEM;
+    }
+
+    ret = WantedParseCtrlActionJson(buf, nbyte, wapp->name, &act, &wapp->cfg);
+    if (ret < 0) {
+        goto END;
+    }
 
     switch (act) {
     case WAPP_START: {
-        const char *ver = strchr(wapp.name, ':');
+        const char *ver = strchr(wapp->name, ':');
         if (ver != NULL) {
             ver += 1;
-            size_t nameLen = ver - wapp.name > WAPP_MAX_NAME_LEN ? WAPP_MAX_NAME_LEN : ver - wapp.name;
+            size_t nameLen = ver - wapp->name > WAPP_MAX_NAME_LEN ? WAPP_MAX_NAME_LEN : ver - wapp->name;
             size_t verLen = strnlen(ver, WAPP_MAX_VERSION_LEN);
-            strncpy(e.name, wapp.name, nameLen);
+            strncpy(e.name, wapp->name, nameLen);
             e.name[nameLen-1] = '\0';
 
             strncpy(e.version, ver, verLen);
             e.version[verLen] = '\0';
         } else {
-            strncpy(e.name, wapp.name, WAPP_MAX_NAME_LEN);
+            strncpy(e.name, wapp->name, WAPP_MAX_NAME_LEN);
             e.version[0] = '\0';
         }
 
-        ret = PlatformRegistryWappLoad(&e, &wapp);
+        ret = PlatformRegistryWappLoad(&e, wapp);
         if (ret < 0) {
-            return ret;
+            goto END;
         }
 
-        ret = WantedWappParseManifest(&wapp);
+        ret = WantedWappParseManifest(wapp);
         if (ret < 0) {
-            return ret;
+            goto END;
         }
 
         ret = PlatformWappStart(wapp);
         if (ret < 0) {
-            return ret;
+            goto END;
         }
         break;
     }
     case WAPP_STOP: {
-        ret = PlatformWappStop(wapp.name);
+        ret = PlatformWappStop(wapp->name);
         if (ret < 0) {
-            return ret;
+            goto END;
         }
         break;
     }
@@ -142,5 +149,9 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
         break;
     }
 
-    return nbyte;
+    ret = nbyte;
+
+END:
+    WantedFree(wapp);
+    return ret;
 }
