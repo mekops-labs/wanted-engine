@@ -159,7 +159,7 @@ int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft)
         } else {
             *pathLeft = NULL;
         }
-        DEBUG_TRACE("pathLeft: %s", *pathLeft);
+        //DEBUG_TRACE("pathLeft: %s", *pathLeft);
     }
 
     return f;

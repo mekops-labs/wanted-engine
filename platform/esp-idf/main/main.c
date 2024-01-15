@@ -117,10 +117,13 @@ void app_main(void)
 {
     configure_stdin_stdout();
 
+    //esp_vfs_dev_uart_use_nonblocking(CONFIG_ESP_CONSOLE_UART_NUM);
+
     printf("\nWanted on " CONFIG_IDF_TARGET ", build " __DATE__ " " __TIME__ "\n");
 
 
     initializeStorage();
+    ESP_LOGE(TAG, "free stack: %d", uxTaskGetStackHighWaterMark(NULL));
 
     clock_t start = clock();
     int ret = WantedStart(cfg, strlen(cfg));

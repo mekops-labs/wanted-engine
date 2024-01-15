@@ -346,11 +346,14 @@ wapp_t *WantedGetCurrentSupervisor()
 int WantedStart(const char *json, size_t jsonLen)
 {
     int ret;
+    wapp_t *app;
 
     ret = WantedParseConfig(json, jsonLen);
     if (ret < 0) return ret;
 
-    ret = PlatformWappStart(WantedGetCurrentSupervisor());
+    app = WantedGetCurrentSupervisor();
+
+    ret = PlatformWappStart(app);
     if (ret < 0) return ret;
 
     PlatformWappLoop();

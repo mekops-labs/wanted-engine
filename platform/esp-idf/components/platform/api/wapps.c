@@ -5,10 +5,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "esp_log.h"
+
 #include <platform.h>
 #include <debug_trace.h>
 #include <wanted-api.h>
 
+
+#define TAG "wapps"
 
 #define FATAL(err, msg, ...) { DEBUG_TRACE("Fatal: " msg, ##__VA_ARGS__); return err; }
 
@@ -41,6 +45,8 @@ static void updateState(uint8_t id, int ret) {
 void WA_thread(void *params)
 {
     wapp_data_t *d = (wapp_data_t *)params;
+
+    ESP_LOGE("wapps", "starting wa thread");
 
     if (d == NULL) {
         DEBUG_TRACE("parameters passed to thread are NULL");
@@ -99,11 +105,13 @@ int PlatformWappUnload(const wapp_t *wapp)
     return 0;
 }
 
-int PlatformWappStart(wapp_t app)
+int PlatformWappStart(wapp_t *app)
 {
     int slot;
+    TaskHandle_t t;
 
     DEBUG_TRACE("Trying to start wapp...");
+    ESP_LOGE(TAG, "free stack: %d", uxTaskGetStackHighWaterMark(NULL));
 
     taskENTER_CRITICAL(&lock);
 
@@ -118,20 +126,28 @@ int PlatformWappStart(wapp_t app)
     }
 
     state.threads[slot].data.id = slot;
-    state.threads[slot].data.wapp = app;
+    state.threads[slot].data.wapp = *app;
     state.threads[slot].status = STARTING;
+    taskEXIT_CRITICAL(&lock);
 
-    xTaskCreate(
+    xTaskCreatePinnedToCore(
         WA_thread,
         (const char * const)state.threads[slot].data.wapp.name,
         65536,
         (void*) &state.threads[slot].data,
         tskIDLE_PRIORITY,
-        &state.threads[slot].t
+        &t,
+        1
     );
-    state.n++;
+    configASSERT(t);
 
+    taskENTER_CRITICAL(&lock);
+    state.n++;
+    state.threads[slot].t = t;
     taskEXIT_CRITICAL(&lock);
+
+    DEBUG_TRACE("created task");
+    ESP_LOGE(TAG, "free stack: %d", uxTaskGetStackHighWaterMark(NULL));
     return 0;
 }
 
@@ -157,9 +173,11 @@ int PlatformWappStop(const char* name)
 void PlatformWappLoop()
 {
     uint8_t supervisorOk;
+    DEBUG_TRACE("looping");
+    ESP_LOGE(TAG, "free stack: %d", uxTaskGetStackHighWaterMark(NULL));
 
     for (;;) {
-        //sleep(1);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
 
         if (!state.n) {
             /* when only supervisor was running and it ended, let's exit */

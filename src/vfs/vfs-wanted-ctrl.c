@@ -131,7 +131,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
             goto END;
         }
 
-        ret = PlatformWappStart(wapp);
+        ret = PlatformWappStart(&wapp);
         if (ret < 0) {
             goto END;
         }
