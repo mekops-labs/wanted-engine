@@ -14,11 +14,13 @@
 #include <cwalk.h>
 #include <wanted-api.h>
 
+#define ROOT_DIR    "/spiffs/"
+#define ROOT_FD     3
+
 static const char id[] = { 'E', 's', 'p', 'i' };
 
 static int _Destroy (struct vfs_driver_t *d);
 static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close   (vfs_driver_ctx_t d, int fd);
 static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
@@ -36,7 +38,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options)
     vfs_driver_t *driver;
 
     if (NULL == options) {
-        root = "/";
+        root = ROOT_DIR;
     } else {
         root = options;
     }
@@ -73,7 +75,6 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options)
     driver->filetype        = VFS_FILETYPE_DIRECTORY;
     driver->Destroy         = _Destroy;
     driver->Open            = _Open;
-    driver->OpenAt          = _OpenAt;
     driver->Close           = _Close;
     driver->Stat            = _Stat;
     driver->Read            = _Read;
@@ -155,31 +156,20 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     int fl = convertVfsFlagsToLinux(flags);
 
     DEBUG_TRACE("flags: %x, path: %s", fl, joined);
+    if (memcmp(joined, d->rootPath, strlen(d->rootPath)+1) == 0) return ROOT_FD;
+
     int mode = 0644;
     int fd = open(joined, fl, mode);
     if (fd < 0) return -errno;
-    return fd;
-}
 
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags)
-{
-    char joined[PATH_MAX];
-    cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
-
-    int fl = convertVfsFlagsToLinux(flags);
-
-    DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, joined);
-
-    int mode = 0644;
-    //int ret = openat(fd, joined, fl, mode);
-    int ret = open(joined, fl, mode);
-    if (ret < 0) return -errno;
-
-    return ret;
+    return fd+1;
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd)
 {
+    if (ROOT_FD == fd) return 0;
+    if (fd > ROOT_FD) fd--;
+
     int ret = close(fd);
     if (ret < 0) return -errno;
     return ret;
@@ -187,11 +177,27 @@ static int _Close(vfs_driver_ctx_t d, int fd)
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s)
 {
-    int ret, fl;
+    int ret;//, fl;
     struct stat statbuf;
 
-    fl = fcntl(fd, F_GETFL);
-    if (fl < 0) return -errno;
+    if (ROOT_FD == fd) {
+        s->filetype = VFS_FILETYPE_DIRECTORY;
+        s->dev = *(uint32_t*)(id);
+        s->ino = 0;
+        s->nlink = 0;
+        s->size = 0;
+        s->atim = 0;
+        s->mtim = 0;
+        s->ctim = 0;
+        s->oflags = VFS_O_DIRECTORY | VFS_O_RDONLY;
+
+        return 0;
+    }
+
+    if (fd > ROOT_FD) fd--;
+
+    //fl = fcntl(fd, F_GETFL);
+    //if (fl < 0) return -errno;
 
     ret = fstat(fd, &statbuf);
     if (ret < 0) return -errno;
@@ -204,15 +210,18 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s)
     s->atim = convertTimespec(&statbuf.st_atim);
     s->mtim = convertTimespec(&statbuf.st_mtim);
     s->ctim = convertTimespec(&statbuf.st_ctim);
-    s->oflags = ((fl & O_APPEND)    ? VFS_O_APPEND    : 0) |
-                ((fl & O_NONBLOCK)  ? VFS_O_NONBLOCK  : 0) |
-                ((fl & O_SYNC)      ? VFS_O_SYNC      : 0);
+//    s->oflags = ((fl & O_APPEND)    ? VFS_O_APPEND    : 0) |
+  //              ((fl & O_NONBLOCK)  ? VFS_O_NONBLOCK  : 0) |
+    //            ((fl & O_SYNC)      ? VFS_O_SYNC      : 0);
 
     return 0;
 }
 
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 {
+    if (ROOT_FD == fd) return -EISDIR;
+    if (fd > ROOT_FD) fd--;
+
     int ret = read(fd, buf, nbyte);
     if (ret < 0) return -errno;
     return ret;
@@ -220,6 +229,9 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
 
 static int  _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 {
+    if (ROOT_FD == fd) return -EISDIR;
+    if (fd > ROOT_FD) fd--;
+
     int ret = write(fd, buf, nbyte);
     if (ret < 0) return -errno;
     return ret;
@@ -228,6 +240,8 @@ static int  _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
 {
     if (pos == NULL) return -EINVAL;
+    if (ROOT_FD == fd) return -EISDIR;
+    if (fd > ROOT_FD) fd--;
 
     errno = 0;
     *pos = lseek(fd, off, whence);
@@ -238,9 +252,11 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
 {
+    if (fd != ROOT_FD) return -ENOTDIR;
+
     vfs_dirent_t dir;
     size_t used = 0;
-    DIR *dp = opendir("/");
+    DIR *dp = opendir(d->rootPath);
     struct dirent *ep;
 
     if (dp != NULL)
