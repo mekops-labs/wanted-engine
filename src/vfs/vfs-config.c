@@ -90,7 +90,7 @@ static int _Destroy (struct vfs_driver_t *d)
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
-    if (d->opened) return -EBUSY;
+    //if (d->opened) return -EBUSY;
     if ((flags & 0x3) != VFS_O_RDONLY) return -EROFS;
 
     d->opened = true;
