@@ -1,4 +1,4 @@
-set(APP_SOURCES "main.c" "m3_api_esp_wasi.c")
+set(APP_SOURCES "main.c")
 
 idf_component_register(SRCS ${APP_SOURCES})
 
