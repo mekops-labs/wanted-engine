@@ -1,6 +1,12 @@
 Changelog
 =========
 
+0.4.0
+-----
+
+- added initial support for ESP32 platform (sockets not yet supported)
+- reduced stack usage
+
 0.3.0
 -----
 
