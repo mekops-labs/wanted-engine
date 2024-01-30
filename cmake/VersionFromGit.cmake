@@ -25,7 +25,7 @@
 # Original doc file: https://github.com/Munkei/munkei-cmake/blob/master/doc/MunkeiVersionFromGit.md
 
 
-cmake_minimum_required( VERSION 3.0.0 )
+cmake_minimum_required( VERSION 3.5.0 )
 
 include( CMakeParseArguments )
 
