@@ -77,7 +77,6 @@ void thread_sigHandler(int sig)
 
 void *WA_thread(void *ptr)
 {
-    int ret;
     wapp_data_t *d = (wapp_data_t *)ptr;
 
 #ifndef __ANDROID__

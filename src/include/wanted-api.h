@@ -12,7 +12,7 @@
 #define WAPP_MAX_VERSION_LEN    15
 #define MAX_DRIVER_NAME         15
 #define MAX_PATH_LEN            256
-#define MAX_OPTIONS_SIZE        4096
+#define MAX_OPTIONS_SIZE        1024
 #define MAX_DRIVERS_CNT         10
 
 typedef struct m3Data_t *im3Data_t;

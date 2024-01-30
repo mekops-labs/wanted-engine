@@ -8,7 +8,6 @@ set(sources
     api/clock.c
     api/random.c
     api/registry.c
-    api/vfs.c
     api/wapps.c
     api/socket.c
 )

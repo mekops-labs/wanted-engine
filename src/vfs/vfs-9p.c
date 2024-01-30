@@ -205,7 +205,7 @@ dial(char *s)
     }
     port++;
     if ((e = getaddrinfo(host, port, &hint, &r)) != 0){
-        DEBUG_TRACE("%s: %s", gai_strerror(e), s);
+        //DEBUG_TRACE("%s: %s", gai_strerror(e), s);
         return -1;
     }
     f = -1;
@@ -251,7 +251,7 @@ ctxprocR(C9ctx *ctx, C9r *r)
         break;
 
     case Rread:
-        DEBUG_TRACE("Rread: %u", r->read.size);
+        DEBUG_TRACE("Rread: %lu", r->read.size);
         a->rCnt = r->read.size;
         break;
     case Rstat:

@@ -8,7 +8,7 @@ extern const vfs_driver_t WantedRegistryDriver;
 
 vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *opt)
 {
-    int ret;
+    int ret = 0;
     vfs_driver_t *drv;
 
     drv = VfsVirtualInit(wapp, opt);

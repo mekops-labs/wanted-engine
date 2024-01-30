@@ -14,7 +14,6 @@ static const char id[] = {'C', 'o', 'n', 'f'};
 
 static int _Destroy (struct vfs_driver_t *d);
 static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
 static int _Close   (vfs_driver_ctx_t d, int fd);
 static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
@@ -91,7 +90,8 @@ static int _Destroy (struct vfs_driver_t *d)
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 {
-    if (d->opened) return -EBUSY;
+    // TODO: fix for esp and linux platforms
+    //if (d->opened) return -EBUSY;
     if ((flags & 0x3) != VFS_O_RDONLY) return -EROFS;
 
     d->opened = true;

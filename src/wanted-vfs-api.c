@@ -62,6 +62,7 @@ const char *statusToString(status_t state)
     case RUNNING:     return "running";
     case EXITED:      return "exited";
     case FAILURE:     return "failure";
+    default:          return "unknown";
     }
 }
 

@@ -30,6 +30,5 @@ M3Result  LinkWantedApi  (IM3Module module)
 
     (SuppressLookupFailure (m3_LinkRawFunction(module, env, "func", "i(iii)", &my_func)));
 
-_catch:
     return result;
 }
