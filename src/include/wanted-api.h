@@ -1,19 +1,19 @@
 #pragma once
 
-#include <stdint.h>
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <vfs.h>
 #include <wanted.h>
 
 // TODO: make configurable
-#define MAX_WAPPS               3
-#define WAPP_MAX_NAME_LEN       15
-#define WAPP_MAX_VERSION_LEN    15
-#define MAX_DRIVER_NAME         15
-#define MAX_PATH_LEN            256
-#define MAX_OPTIONS_SIZE        1024
-#define MAX_DRIVERS_CNT         10
+#define MAX_WAPPS 3
+#define WAPP_MAX_NAME_LEN 15
+#define WAPP_MAX_VERSION_LEN 15
+#define MAX_DRIVER_NAME 15
+#define MAX_PATH_LEN 256
+#define MAX_OPTIONS_SIZE 1024
+#define MAX_DRIVERS_CNT 10
 
 typedef struct m3Data_t *im3Data_t;
 
@@ -73,7 +73,7 @@ typedef enum status_t {
     FAILURE,
 } status_t;
 
-typedef struct wapp_state_t{
+typedef struct wapp_state_t {
     char name[WAPP_MAX_NAME_LEN];
     uint8_t id;
     wapp_version_t version;
@@ -81,24 +81,21 @@ typedef struct wapp_state_t{
 } wapp_state_t;
 
 typedef struct reg_entry_t {
-    char    name[WAPP_MAX_NAME_LEN];
-    char    version[WAPP_MAX_VERSION_LEN];
-    size_t  size;
+    char name[WAPP_MAX_NAME_LEN];
+    char version[WAPP_MAX_VERSION_LEN];
+    size_t size;
 } reg_entry_t;
-
-
 
 // TODO: this is somewhat too simple, make it more dynamic
 
 typedef struct wantedConfig_t {
-    char            wappsToRun[MAX_WAPPS][WAPP_MAX_NAME_LEN];
-    int             nWapps;
-    wapp_config_t   supervisorCfg;
+    char wappsToRun[MAX_WAPPS][WAPP_MAX_NAME_LEN];
+    int nWapps;
+    wapp_config_t supervisorCfg;
 } wantedConfig_t;
 
-int  WantedWappRun(wapp_data_t *ctx);
+int WantedWappRun(wapp_data_t *ctx);
 void WantedWappStop(wapp_data_t *ctx);
-int  WantedWappParseManifest(wapp_t *w);
-int  WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen);
+int WantedWappParseManifest(wapp_t *w);
+int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen);
 wapp_t *WantedGetCurrentSupervisor();
-

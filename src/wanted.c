@@ -1,30 +1,28 @@
-#include <errno.h>
-
-#include <wasm3.h>
 #include <m3_api_libc.h>
 #include <m3_env.h>
+#include <wasm3.h>
 
 #include <tiny-json.h>
 
 #include <wanted_wasm_api.h>
 #include <wasi.h>
 
-#include <wanted_malloc.h>
 #include <debug_trace.h>
+#include <wanted_malloc.h>
 
-#include <wanted.h>
+#include <romfs.h>
+#include <vfs-drivers.h>
+#include <vfs.h>
 #include <wanted-api.h>
 #include <wanted-vfs-api.h>
-#include <romfs.h>
-#include <vfs.h>
-#include <vfs-drivers.h>
+#include <wanted.h>
 
 #include <supervisor.h>
 
 #include <platform.h>
 
-static const char* manifestName = "manifest.json";
-static const char* appName      = "app.wasm";
+static const char *manifestName = "manifest.json";
+static const char *appName = "app.wasm";
 
 struct m3Data_t {
     m3_wasi_context_t *wasiCtx;
@@ -37,8 +35,8 @@ struct wappImgData_t {
     size_t img_len;
 };
 
-static int LoadFile(const char* name, uint8_t *img, size_t imgLen, struct wappImgData_t *file)
-{
+static int LoadFile(const char *name, uint8_t *img, size_t imgLen,
+                    struct wappImgData_t *file) {
     int ret, fd;
     romfs_t r;
 
@@ -78,8 +76,7 @@ _exit:
     return ret;
 }
 
-int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen)
-{
+int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen) {
     int ret;
     struct wappImgData_t m;
 
@@ -95,8 +92,7 @@ int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen)
     return 0;
 }
 
-int WantedWappParseManifest(wapp_t *w)
-{
+int WantedWappParseManifest(wapp_t *w) {
     int ret = 0;
     json_t mem[32];
     uint8_t *manifestImg;
@@ -115,38 +111,39 @@ int WantedWappParseManifest(wapp_t *w)
     }
     memcpy(buf, manifestImg, manifestLen);
 
-    json_t const* json = json_create(buf, mem, sizeof mem / sizeof *mem );
-    if ( !json ) {
+    json_t const *json = json_create(buf, mem, sizeof mem / sizeof *mem);
+    if (!json) {
         DEBUG_TRACE("Error json create.");
         ret = -1;
         goto _exit;
     }
 
-    json_t const* name = json_getProperty( json, "name" );
-    if ( !name || JSON_TEXT != json_getType( name ) ) {
+    json_t const *name = json_getProperty(json, "name");
+    if (!name || JSON_TEXT != json_getType(name)) {
         DEBUG_TRACE("Error, the name property is not found.");
         ret = -1;
         goto _exit;
     }
     strncpy(w->name, json_getValue(name), WAPP_MAX_NAME_LEN);
 
-    json_t const* varsionArr = json_getProperty( json, "version" );
-    if ( !varsionArr || JSON_ARRAY != json_getType( varsionArr ) ) {
+    json_t const *varsionArr = json_getProperty(json, "version");
+    if (!varsionArr || JSON_ARRAY != json_getType(varsionArr)) {
         DEBUG_TRACE("Error, the version property is not found.");
         ret = -1;
         goto _exit;
     }
 
-    json_t const* version;
+    json_t const *version;
     int i;
-    for( i = 0, version = json_getChild( varsionArr ); i < 3 && version != 0; i++, version = json_getSibling( version ) ) {
-        if ( JSON_INTEGER == json_getType( version ) ) {
+    for (i = 0, version = json_getChild(varsionArr); i < 3 && version != 0;
+         i++, version = json_getSibling(version)) {
+        if (JSON_INTEGER == json_getType(version)) {
             w->version.v[i] = (uint8_t)json_getInteger(version);
         }
     }
 
-    json_t const* pkg = json_getProperty( json, "package" );
-    if ( !pkg || JSON_INTEGER != json_getType( pkg ) ) {
+    json_t const *pkg = json_getProperty(json, "package");
+    if (!pkg || JSON_INTEGER != json_getType(pkg)) {
         DEBUG_TRACE("Warning, the package property is not found.");
         w->version.package = 0;
     } else {
@@ -159,8 +156,7 @@ _exit:
     return ret;
 }
 
-int WantedWappRun(wapp_data_t *ctx)
-{
+int WantedWappRun(wapp_data_t *ctx) {
     M3Result status;
     IM3Module mod;
     IM3Function f;
@@ -199,7 +195,7 @@ int WantedWappRun(wapp_data_t *ctx)
         DEBUG_TRACE("Can't allocate data for m3 env");
         return -1;
     }
-    ctx->m3->rt =  m3_NewRuntime(ctx->m3->env, M3_STACK_SIZE, NULL);
+    ctx->m3->rt = m3_NewRuntime(ctx->m3->env, M3_STACK_SIZE, NULL);
     if (!ctx->m3->rt) {
         DEBUG_TRACE("Can't allocate data for m3 rt");
         return -1;
@@ -207,11 +203,15 @@ int WantedWappRun(wapp_data_t *ctx)
 
     DEBUG_TRACE("parsing wasm: %p (%zu)", wasm.img, wasm.img_len);
     status = m3_ParseModule(ctx->m3->env, &mod, wasm.img, wasm.img_len);
-    if (status) { DEBUG_TRACE("m3_ParseModule[%d]: %s", ctx->id, status); }
+    if (status) {
+        DEBUG_TRACE("m3_ParseModule[%d]: %s", ctx->id, status);
+    }
 
     DEBUG_TRACE("loading wasm");
     status = m3_LoadModule(ctx->m3->rt, mod);
-    if (status) { DEBUG_TRACE("m3_LoadModule[%d]: %s", ctx->id, status); }
+    if (status) {
+        DEBUG_TRACE("m3_LoadModule[%d]: %s", ctx->id, status);
+    }
 
     DEBUG_TRACE("getting context");
     ctx->m3->wasiCtx = InitWasiContext();
@@ -235,16 +235,21 @@ int WantedWappRun(wapp_data_t *ctx)
     m3_LinkLibC(mod);
 
     /* install console */
-    ret =  WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[0].name,   "<stdin>",  wapp->cfg.console[0].options);
-    ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[1].name,   "<stdout>", wapp->cfg.console[1].options);
-    ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[2].name,   "<stderr>", wapp->cfg.console[2].options);
+    ret = WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[0].name,
+                              "<stdin>", wapp->cfg.console[0].options);
+    ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[1].name,
+                               "<stdout>", wapp->cfg.console[1].options);
+    ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[2].name,
+                               "<stderr>", wapp->cfg.console[2].options);
 
     /* root driver */
-    ret += WantedInstallDriver(ctx->vfs, wapp, "virt",       "/", NULL);
+    ret += WantedInstallDriver(ctx->vfs, wapp, "virt", "/", NULL);
 
     /* fs drivers */
     for (int i = 0; i < wapp->cfg.driversCnt; i++) {
-        ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.drivers[i].name, wapp->cfg.drivers[i].path, wapp->cfg.drivers[i].options);
+        ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.drivers[i].name,
+                                   wapp->cfg.drivers[i].path,
+                                   wapp->cfg.drivers[i].options);
     }
 
     if (ret < 0) {
@@ -252,9 +257,9 @@ int WantedWappRun(wapp_data_t *ctx)
         goto _freeVfs;
     }
 
-    status = m3_FindFunction (&f, ctx->m3->rt, "entry");
+    status = m3_FindFunction(&f, ctx->m3->rt, "entry");
     if (status) {
-        status = m3_FindFunction (&f, ctx->m3->rt, "_start");
+        status = m3_FindFunction(&f, ctx->m3->rt, "_start");
         if (status) {
             DEBUG_TRACE("m3_FindFunction[%d]: %s", ctx->id, status);
             goto _freeVfs;
@@ -262,7 +267,7 @@ int WantedWappRun(wapp_data_t *ctx)
     }
 
     DEBUG_TRACE("starting wapp: %d", ctx->id);
-    status = m3_CallV (f, (int32_t)ctx->id);
+    status = m3_CallV(f, (int32_t)ctx->id);
     if (status) {
         M3ErrorInfo info;
         m3_GetErrorInfo(ctx->m3->rt, &info);
@@ -287,9 +292,9 @@ _freeM3:
     return -1;
 }
 
-void WantedWappStop(wapp_data_t *ctx)
-{
-    if (ctx->lastStatus != 0) return;
+void WantedWappStop(wapp_data_t *ctx) {
+    if (ctx->lastStatus != 0)
+        return;
 
     DEBUG_TRACE("start");
 
@@ -302,9 +307,9 @@ void WantedWappStop(wapp_data_t *ctx)
     DEBUG_TRACE("end");
 }
 
-wapp_t *WantedGetCurrentSupervisor()
-{
-    /* TODO: in the future we need to update the image if downloaded new version */
+wapp_t *WantedGetCurrentSupervisor() {
+    /* TODO: in the future we need to update the image if downloaded new version
+     */
     /* now we're using only factory version */
 
     int ret = 0;
@@ -321,11 +326,12 @@ wapp_t *WantedGetCurrentSupervisor()
     if (cfg == NULL || !cfg->supervisorCfg.valid) {
         // Load defaults, supervisor config invalid
         const char *def =
-        #include "default_supervisor_cfg.json.h"
-        ;
+#include "default_supervisor_cfg.json.h"
+            ;
 
         DEBUG_TRACE("loading defaults");
-        ret = WantedParseCtrlActionJson(def, strlen(def), w->name, NULL, &w->cfg);
+        ret =
+            WantedParseCtrlActionJson(def, strlen(def), w->name, NULL, &w->cfg);
         if (ret < 0) {
             DEBUG_TRACE("error during loading of defaults: %d", ret);
             return w;
@@ -335,7 +341,8 @@ wapp_t *WantedGetCurrentSupervisor()
         w->cfg = cfg->supervisorCfg;
         memcpy(w->name, "supervisor", 11);
     }
-    if (ret < 0) return w;
+    if (ret < 0)
+        return w;
 
     w->img = supervisor_wapp;
     w->img_len = supervisor_wapp_len;
@@ -343,18 +350,19 @@ wapp_t *WantedGetCurrentSupervisor()
     return w;
 }
 
-int WantedStart(const char *json, size_t jsonLen)
-{
+int WantedStart(const char *json, size_t jsonLen) {
     int ret;
     wapp_t *app;
 
     ret = WantedParseConfig(json, jsonLen);
-    if (ret < 0) return ret;
+    if (ret < 0)
+        return ret;
 
     app = WantedGetCurrentSupervisor();
 
     ret = PlatformWappStart(app);
-    if (ret < 0) return ret;
+    if (ret < 0)
+        return ret;
 
     PlatformWappLoop();
 

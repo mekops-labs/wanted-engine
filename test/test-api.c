@@ -1,6 +1,5 @@
 #include "unity_fixture.h"
 
-#include <errno.h>
 #include <string.h>
 
 #include <wanted-api.h>
@@ -11,18 +10,13 @@
 TEST_GROUP(wanted_api);
 /***************************************/
 
-TEST_SETUP(wanted_api)
-{
-}
+TEST_SETUP(wanted_api) {}
 
-TEST_TEAR_DOWN(wanted_api)
-{
-}
+TEST_TEAR_DOWN(wanted_api) {}
 
-TEST(wanted_api, runSimpleWasm)
-{
+TEST(wanted_api, runSimpleWasm) {
     wapp_data_t ctx;
-    wapp_t w = { 0 };
+    wapp_t w = {0};
     int ret;
 
     w.img = test_wasi;
@@ -38,7 +32,4 @@ TEST(wanted_api, runSimpleWasm)
     TEST_ASSERT_EQUAL_INT(0, ret);
 }
 
-TEST_GROUP_RUNNER(wanted_api)
-{
-    RUN_TEST_CASE(wanted_api, runSimpleWasm);
-}
+TEST_GROUP_RUNNER(wanted_api) { RUN_TEST_CASE(wanted_api, runSimpleWasm); }

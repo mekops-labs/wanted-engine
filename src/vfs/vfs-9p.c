@@ -1,45 +1,46 @@
+#include <errno.h>
+#include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <string.h>
-#include <stdint.h>
-#include <unistd.h>
-#include <errno.h>
 #include <time.h>
+#include <unistd.h>
 
-#include <sys/socket.h>
-#include <sys/select.h>
-#include <sys/time.h>
-#include <netinet/in.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 
-#include <vfs.h>
 #include <vfs-drivers.h>
+#include <vfs.h>
 
 #include <debug_trace.h>
 #include <wanted_malloc.h>
 
 #include <c9.h>
 
+static const char id[] = {'S', 't', 'y', 'x'};
 
-static const char id[] = { 'S', 't', 'y', 'x' };
-
-static int _Destroy (struct vfs_driver_t *d);
-static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
-static int _Close   (vfs_driver_ctx_t d, int fd);
-static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
-static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
-static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
-static int _Seek    (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
-static int _ReadDir (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
-static int _Unlink  (vfs_driver_ctx_t d, int fd, const char *path);
-
+static int _Destroy(struct vfs_driver_t *d);
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
+                   vfs_oflags_t flags);
+static int _Close(vfs_driver_ctx_t d, int fd);
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
+static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
+                 long *pos);
+static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
+                    uint64_t *cookie, size_t *bufUsed);
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 
 #define MSIZE 8192u
-#define ERROR           0x1
-#define ATTACHED        0x2
-#define DISCONNECTED    0x4
+#define ERROR 0x1
+#define ATTACHED 0x2
+#define DISCONNECTED 0x4
 
 // TODO: make configurable
 #define MAX_OPENED_FILES 10
@@ -50,7 +51,7 @@ typedef struct C9aux {
     uint8_t rBuf[MSIZE];
     size_t rCnt;
     uint8_t wBuf[MSIZE];
-    size_t  wOff;
+    size_t wOff;
     C9stat *lastStat;
     C9qid lastQid;
     C9ctx c;
@@ -69,10 +70,9 @@ struct vfs_driver_ctx_t {
     char *conf;
 };
 
-static
-int FindFirstClosedFd(vfs_driver_ctx_t d)
-{
-    if (!d) return -EINVAL;
+static int FindFirstClosedFd(vfs_driver_ctx_t d) {
+    if (!d)
+        return -EINVAL;
 
     for (int i = 0; i < MAX_OPENED_FILES; i++) {
         if (!d->fildes[i].opened) {
@@ -94,14 +94,12 @@ static vfs_filetype_t convert9pFiletype(C9qt t) {
     return VFS_FILETYPE_UNKNOWN;
 }
 
-static int
-wrsend(C9aux *a)
-{
+static int wrsend(C9aux *a) {
     uint32_t n;
     int w;
 
     for (n = 0; n < a->wOff; n += w) {
-        if ((w = write(a->f, a->wBuf+n, a->wOff-n)) <= 0) {
+        if ((w = write(a->f, a->wBuf + n, a->wOff - n)) <= 0) {
             if (errno == EINTR)
                 continue;
             if (errno != EPIPE) { /* remote end closed */
@@ -117,9 +115,7 @@ wrsend(C9aux *a)
     return 0;
 }
 
-static uint8_t *
-ctxbegin(C9ctx *ctx, uint32_t size)
-{
+static uint8_t *ctxbegin(C9ctx *ctx, uint32_t size) {
     uint8_t *b;
     C9aux *a;
 
@@ -134,16 +130,12 @@ ctxbegin(C9ctx *ctx, uint32_t size)
     return b;
 }
 
-static int
-ctxend(C9ctx *ctx)
-{
+static int ctxend(C9ctx *ctx) {
     (void)ctx;
     return 0;
 }
 
-static uint8_t *
-ctxread(C9ctx *ctx, uint32_t size, int *err)
-{
+static uint8_t *ctxread(C9ctx *ctx, uint32_t size, int *err) {
     uint32_t n;
     int r;
     C9aux *a;
@@ -151,7 +143,7 @@ ctxread(C9ctx *ctx, uint32_t size, int *err)
     a = ctx->aux;
     *err = 0;
     for (n = 0; n < size; n += r) {
-        if ((r = read(a->f, a->rBuf+n, size-n)) <= 0) {
+        if ((r = read(a->f, a->rBuf + n, size - n)) <= 0) {
             if (errno == EINTR)
                 continue;
             if (errno != EPIPE) { /* remote end closed */
@@ -166,10 +158,8 @@ ctxread(C9ctx *ctx, uint32_t size, int *err)
     return a->rBuf;
 }
 
-__attribute__ ((format (printf, 1, 2)))
-static void
-ctxerror(const char *fmt, ...)
-{
+__attribute__((format(printf, 1, 2))) static void ctxerror(const char *fmt,
+                                                           ...) {
     va_list ap;
 
     va_start(ap, fmt);
@@ -178,10 +168,9 @@ ctxerror(const char *fmt, ...)
     va_end(ap);
 }
 
-static int
-dial(char *s)
-{
-    struct addrinfo *r, *a, hint = {.ai_flags = AI_ADDRCONFIG, .ai_family = AF_UNSPEC, 0};
+static int dial(char *s) {
+    struct addrinfo *r, *a,
+        hint = {.ai_flags = AI_ADDRCONFIG, .ai_family = AF_UNSPEC, 0};
     char host[64], *port;
     int e, f;
 
@@ -195,17 +184,18 @@ dial(char *s)
         DEBUG_TRACE("invalid dial string: %s", s);
         return -1;
     }
-    if ((port = strchr(s+4, '!')) == NULL) {
+    if ((port = strchr(s + 4, '!')) == NULL) {
         DEBUG_TRACE("invalid dial string: %s", s);
         return -1;
     }
-    if (snprintf(host, sizeof(host), "%.*s", (int)(port-s-4), s+4) >= (int)sizeof(host)) {
+    if (snprintf(host, sizeof(host), "%.*s", (int)(port - s - 4), s + 4) >=
+        (int)sizeof(host)) {
         DEBUG_TRACE("host name too large: %s", s);
         return -1;
     }
     port++;
-    if ((e = getaddrinfo(host, port, &hint, &r)) != 0){
-        //DEBUG_TRACE("%s: %s", gai_strerror(e), s);
+    if ((e = getaddrinfo(host, port, &hint, &r)) != 0) {
+        // DEBUG_TRACE("%s: %s", gai_strerror(e), s);
         return -1;
     }
     f = -1;
@@ -222,9 +212,7 @@ dial(char *s)
     return f;
 }
 
-static void
-ctxprocR(C9ctx *ctx, C9r *r)
-{
+static void ctxprocR(C9ctx *ctx, C9r *r) {
     C9aux *a;
     C9tag tag;
 
@@ -262,10 +250,11 @@ ctxprocR(C9ctx *ctx, C9r *r)
         DEBUG_TRACE("Ropen");
         a->lastQid = r->qid[0];
         // if ((a->flags & Joined) == 0 && printjoin) {
-        // 	c9write(ctx, &tag, Chatfid, 0, buf, snprintf(buf, sizeof(buf), "JOIN %s to chat\n", nick));
-        // 	a->flags |= Joined;
+        // 	c9write(ctx, &tag, Chatfid, 0, buf, snprintf(buf, sizeof(buf),
+        // "JOIN %s to chat\n", nick)); 	a->flags |= Joined;
         // }
-        // c9read(ctx, &tag, Chatfid, chatoff, chatoff < skipuntil ? skipuntil-chatoff : Msize);
+        // c9read(ctx, &tag, Chatfid, chatoff, chatoff < skipuntil ?
+        // skipuntil-chatoff : Msize);
         break;
 
     case Rclunk:
@@ -282,9 +271,7 @@ ctxprocR(C9ctx *ctx, C9r *r)
     }
 }
 
-static C9aux *
-srv(char *s, struct vfs_driver_ctx_t *ctx)
-{
+static C9aux *srv(char *s, struct vfs_driver_ctx_t *ctx) {
     int f;
     C9aux *c;
 
@@ -303,9 +290,7 @@ srv(char *s, struct vfs_driver_ctx_t *ctx)
     return c;
 }
 
-static C9aux *
-start(vfs_driver_ctx_t ctx)
-{
+static C9aux *start(vfs_driver_ctx_t ctx) {
     C9aux *a;
     C9tag tag;
     int i;
@@ -326,9 +311,7 @@ start(vfs_driver_ctx_t ctx)
     return a;
 }
 
-static int
-proc(C9aux *a)
-{
+static int proc(C9aux *a) {
     struct timeval t;
     int n, sz, sz0;
     fd_set r, e;
@@ -363,7 +346,6 @@ proc(C9aux *a)
     return 0;
 }
 
-
 vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *opt) {
     // Todo:
     // 1. Create context and buffers
@@ -377,7 +359,8 @@ vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *opt) {
         return NULL;
     }
 
-    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
+    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(
+        sizeof(struct vfs_driver_ctx_t));
     if (NULL == driver->ctx) {
         DEBUG_TRACE("can't allocate memory");
         WantedFree(driver);
@@ -386,34 +369,33 @@ vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *opt) {
 
     memset(driver->ctx, 0, sizeof(struct vfs_driver_ctx_t));
 
-    driver->ctx->conf = (char *)WantedMalloc(strlen(opt)+1);
-        if (NULL == driver->ctx->conf) {
+    driver->ctx->conf = (char *)WantedMalloc(strlen(opt) + 1);
+    if (NULL == driver->ctx->conf) {
         DEBUG_TRACE("can't allocate memory");
         WantedFree(driver->ctx);
         WantedFree(driver);
         return NULL;
     }
 
-    memcpy(driver->ctx->conf, opt, strlen(opt)+1);
+    memcpy(driver->ctx->conf, opt, strlen(opt) + 1);
 
-    driver->bytesId         = *(uint32_t*)(id);
-    driver->filetype        = VFS_FILETYPE_DIRECTORY;
-    driver->Destroy         = _Destroy;
-    driver->Open            = _Open;
-    driver->OpenAt          = _OpenAt;
-    driver->Close           = _Close;
-    driver->Stat            = _Stat;
-    driver->Read            = _Read;
-    driver->Write           = _Write;
-    driver->Seek            = _Seek;
-    driver->ReadDir         = _ReadDir;
-    driver->Unlink          = _Unlink;
+    driver->bytesId = *(uint32_t *)(id);
+    driver->filetype = VFS_FILETYPE_DIRECTORY;
+    driver->Destroy = _Destroy;
+    driver->Open = _Open;
+    driver->OpenAt = _OpenAt;
+    driver->Close = _Close;
+    driver->Stat = _Stat;
+    driver->Read = _Read;
+    driver->Write = _Write;
+    driver->Seek = _Seek;
+    driver->ReadDir = _ReadDir;
+    driver->Unlink = _Unlink;
 
     return driver;
 }
 
-static int _Destroy (struct vfs_driver_t *d)
-{
+static int _Destroy(struct vfs_driver_t *d) {
     DEBUG_TRACE("9p Destroy");
 
     C9aux *a = &d->ctx->aux;
@@ -432,13 +414,12 @@ static int _Destroy (struct vfs_driver_t *d)
     return 0;
 }
 
-static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
-{
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     C9aux *a = &d->aux;
 
     // TODO: max depth is 3 currently - dirty!
-    const char* p[3] = { NULL };
-    char buf[strlen(path)+1];
+    const char *p[3] = {NULL};
+    char buf[strlen(path) + 1];
     int newFd;
 
     memcpy(buf, path, strlen(path));
@@ -446,7 +427,8 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
 
     int i = 0;
     p[i++] = strtok(buf, "/");
-    while ((p[i++] = strtok(NULL, "/")) != NULL) {};
+    while ((p[i++] = strtok(NULL, "/")) != NULL) {
+    };
 
     // version/auth/attach
     DEBUG_TRACE("9p Open: %s", path);
@@ -457,13 +439,14 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
         }
 
         while (proc(a) == 0 && wrsend(a) == 0) {
-            if (a->flags & ATTACHED) break;
+            if (a->flags & ATTACHED)
+                break;
         }
 
         d->fildes[0].opened = 0;
     }
 
-    if (!d->fildes[0].opened)  {
+    if (!d->fildes[0].opened) {
         c9open(&a->c, &a->tag, 0, C9read);
         wrsend(a);
         proc(a);
@@ -478,7 +461,8 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     }
 
     newFd = FindFirstClosedFd(d);
-    if (newFd < 0) return newFd;
+    if (newFd < 0)
+        return newFd;
 
     // TODO: error handling
     c9walk(&a->c, &a->tag, 0, newFd, p);
@@ -515,20 +499,20 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     return newFd;
 }
 
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags)
-{
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
+                   vfs_oflags_t flags) {
     // TODO: OpenAt seems not used in drivers
     DEBUG_TRACE("9p OpenAt: %d, %s", fd, path);
     return 0;
 }
 
-static int _Close(vfs_driver_ctx_t d, int fd)
-{
+static int _Close(vfs_driver_ctx_t d, int fd) {
     C9aux *a = &d->aux;
     // close
     DEBUG_TRACE("9p Close: %d", fd);
 
-    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+    if (fd > MAX_OPENED_FILES || fd < 0)
+        return -EBADF;
 
     if (fd != 0) {
         c9clunk(&a->c, &a->tag, fd);
@@ -540,8 +524,7 @@ static int _Close(vfs_driver_ctx_t d, int fd)
     return 0;
 }
 
-static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
-{
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     C9stat *s;
     uint8_t *b;
     C9aux *a = &d->aux;
@@ -550,7 +533,8 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
     // stat
     DEBUG_TRACE("9p Stat: %d", fd);
 
-    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+    if (fd > MAX_OPENED_FILES || fd < 0)
+        return -EBADF;
 
     c9stat(&a->c, &a->tag, fd);
     wrsend(a);
@@ -560,9 +544,10 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
 
     s = a->lastStat;
 
-    stat->dev = *(uint32_t*)(id);
+    stat->dev = *(uint32_t *)(id);
     stat->ino = s->qid.path;
-    stat->filetype = convert9pFiletype(s->qid.type);;
+    stat->filetype = convert9pFiletype(s->qid.type);
+    ;
     stat->nlink = 0;
     stat->size = (uint32_t)s->size;
     stat->atim = s->atime;
@@ -572,8 +557,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
 
     return 0;
 }
-static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
-{
+static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     C9aux *a = &d->aux;
     size_t r;
     uint8_t *b;
@@ -581,7 +565,8 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
     // read
     DEBUG_TRACE("9p Read: %d, %zu", fd, nbyte);
 
-    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+    if (fd > MAX_OPENED_FILES || fd < 0)
+        return -EBADF;
 
     if (d->fildes[fd].type == VFS_FILETYPE_DIRECTORY) {
         return -EISDIR;
@@ -606,14 +591,14 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
     return r;
 }
 
-static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
-{
+static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     C9aux *a = &d->aux;
 
     // write
     DEBUG_TRACE("9p Write: %d, %zu", fd, nbyte);
 
-    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+    if (fd > MAX_OPENED_FILES || fd < 0)
+        return -EBADF;
 
     if (d->fildes[fd].type == VFS_FILETYPE_DIRECTORY) {
         return -EISDIR;
@@ -633,24 +618,24 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
     return nbyte;
 }
 
-
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
-{
+static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
+                 long *pos) {
     DEBUG_TRACE("9p Seek: %d, %ld (%u)", fd, off, whence);
 
-    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+    if (fd > MAX_OPENED_FILES || fd < 0)
+        return -EBADF;
 
     switch (whence) {
-        case VFS_SEEK_SET:
-            d->fildes[fd].currOff = off;
-            break;
-        case VFS_SEEK_CUR:
-            d->fildes[fd].currOff += off;
-            break;
-        case VFS_SEEK_END:
-            break;
-        default:
-            return -EINVAL;
+    case VFS_SEEK_SET:
+        d->fildes[fd].currOff = off;
+        break;
+    case VFS_SEEK_CUR:
+        d->fildes[fd].currOff += off;
+        break;
+    case VFS_SEEK_END:
+        break;
+    default:
+        return -EINVAL;
     }
 
     *pos = d->fildes[fd].currOff;
@@ -658,11 +643,10 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long
     return 0;
 }
 
-
-static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
-{
+static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
+                    uint64_t *cookie, size_t *bufUsed) {
     C9aux *a = &d->aux;
-    C9stat s = { 0 };
+    C9stat s = {0};
     uint8_t *b;
     uint32_t sz;
     size_t used = 0;
@@ -672,22 +656,24 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
     // read and parse dir entry
     DEBUG_TRACE("9p ReadDir: %d, %zu", fd, bufLen);
 
-    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+    if (fd > MAX_OPENED_FILES || fd < 0)
+        return -EBADF;
 
     do {
         c9read(&a->c, &a->tag, fd, off, MSIZE - 7);
         wrsend(a);
         proc(a);
-        if (a->rCnt < 7) break;
+        if (a->rCnt < 7)
+            break;
         off += a->rCnt;
         b = &a->rBuf[7];
         sz = a->rCnt;
 
         while (sz > 0 && c9parsedir(&a->c, &s, &b, &sz) == 0) {
-            dir.d_ino       = s.qid.path;
-            dir.d_type      = convert9pFiletype(s.qid.type);
-            dir.d_namlen    = strnlen(s.name, MAX_PATH_LEN);
-            dir.d_next      = off;
+            dir.d_ino = s.qid.path;
+            dir.d_type = convert9pFiletype(s.qid.type);
+            dir.d_namlen = strnlen(s.name, MAX_PATH_LEN);
+            dir.d_next = off;
 
             if (used + sizeof(dir) + dir.d_namlen > bufLen) {
                 used = bufLen;
@@ -706,17 +692,17 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
     return 0;
 }
 
-static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path)
-{
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
     C9aux *a = &d->aux;
 
     DEBUG_TRACE("9p Unlink: %d, %s", fd, path);
 
-    if (fd > MAX_OPENED_FILES || fd < 0) return -EBADF;
+    if (fd > MAX_OPENED_FILES || fd < 0)
+        return -EBADF;
 
     // TODO: max depth is 3 currently - dirty!
-    const char* p[3] = { NULL };
-    char buf[strlen(path)+1];
+    const char *p[3] = {NULL};
+    char buf[strlen(path) + 1];
     int newFd = fd;
 
     memcpy(buf, path, strlen(path));
@@ -724,7 +710,8 @@ static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path)
 
     int i = 0;
     p[i++] = strtok(buf, "/");
-    while ((p[i++] = strtok(NULL, "/")) != NULL) {};
+    while ((p[i++] = strtok(NULL, "/")) != NULL) {
+    };
 
     c9walk(&a->c, &a->tag, 0, newFd, p);
     wrsend(a);

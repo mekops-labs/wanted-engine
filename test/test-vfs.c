@@ -3,12 +3,11 @@
 #include <errno.h>
 #include <string.h>
 
+#include <vfs-drivers.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
-#include <vfs-drivers.h>
 
 #include "external_symbols.h"
-
 
 static vfs_ctx_t vfs;
 static vfs_driver_t *romfs;
@@ -18,16 +17,11 @@ static vfs_driver_t *virt1, *virt2;
 TEST_GROUP(vfs_init);
 /***************************************/
 
-TEST_SETUP(vfs_init)
-{
-}
+TEST_SETUP(vfs_init) {}
 
-TEST_TEAR_DOWN(vfs_init)
-{
-}
+TEST_TEAR_DOWN(vfs_init) {}
 
-TEST(vfs_init, InitAndDestroy)
-{
+TEST(vfs_init, InitAndDestroy) {
     vfs_ctx_t c = VfsInit();
     TEST_ASSERT_EQUAL(c->fildes[0].drv_fd, 0);
 
@@ -35,36 +29,24 @@ TEST(vfs_init, InitAndDestroy)
     TEST_ASSERT_NULL(c);
 }
 
-TEST_GROUP_RUNNER(vfs_init)
-{
-    RUN_TEST_CASE(vfs_init, InitAndDestroy);
-}
+TEST_GROUP_RUNNER(vfs_init) { RUN_TEST_CASE(vfs_init, InitAndDestroy); }
 
 /***************************************/
 TEST_GROUP(vfs_register);
 /***************************************/
 
+TEST_SETUP(vfs_register) { vfs = VfsInit(); }
 
-TEST_SETUP(vfs_register)
-{
-    vfs = VfsInit();
-}
+TEST_TEAR_DOWN(vfs_register) { VfsDestroy(&vfs); }
 
-TEST_TEAR_DOWN(vfs_register)
-{
-    VfsDestroy(&vfs);
-}
-
-TEST(vfs_register, SingleRoot)
-{
+TEST(vfs_register, SingleRoot) {
     virt1 = VfsVirtualInit(NULL, NULL);
     VfsRegister(vfs, "/", virt1);
 
     TEST_ASSERT_EQUAL_PTR(vfs->rootDriver, vfs->fildes[3].drv);
 }
 
-TEST(vfs_register, RootAndSingleVirtualDir)
-{
+TEST(vfs_register, RootAndSingleVirtualDir) {
     virt1 = VfsVirtualInit(NULL, NULL);
     virt2 = VfsVirtualInit(NULL, NULL);
 
@@ -80,20 +62,17 @@ TEST(vfs_register, RootAndSingleVirtualDir)
     TEST_ASSERT_EQUAL(virt2->bytesId, stat.dev);
 }
 
-TEST_GROUP_RUNNER(vfs_register)
-{
+TEST_GROUP_RUNNER(vfs_register) {
     RUN_TEST_CASE(vfs_register, SingleRoot);
     RUN_TEST_CASE(vfs_register, RootAndSingleVirtualDir);
 }
-
 
 /***************************************/
 TEST_GROUP(vfs_openclose);
 /***************************************/
 
-TEST_SETUP(vfs_openclose)
-{
-    wapp_t w = { .img = test_wasi, .img_len = test_wasi_len };
+TEST_SETUP(vfs_openclose) {
+    wapp_t w = {.img = test_wasi, .img_len = test_wasi_len};
     const char *args = "/";
     vfs = VfsInit();
     virt1 = VfsVirtualInit(NULL, NULL);
@@ -102,26 +81,21 @@ TEST_SETUP(vfs_openclose)
     VfsRegister(vfs, "rom", romfs);
 }
 
-TEST_TEAR_DOWN(vfs_openclose)
-{
-    VfsDestroy(&vfs);
-}
+TEST_TEAR_DOWN(vfs_openclose) { VfsDestroy(&vfs); }
 
-TEST(vfs_openclose, OpenFail)
-{
+TEST(vfs_openclose, OpenFail) {
     int i = VfsOpen(vfs, "xxx", 0);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
-    TEST_ASSERT_FALSE( vfs->fildes[4].opened);
-    TEST_ASSERT_EQUAL_PTR(NULL,  vfs->fildes[4].drv);
+    TEST_ASSERT_FALSE(vfs->fildes[4].opened);
+    TEST_ASSERT_EQUAL_PTR(NULL, vfs->fildes[4].drv);
 
     i = VfsOpen(vfs, "/roms", 0);
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
     TEST_ASSERT_FALSE(vfs->fildes[4].opened);
-    TEST_ASSERT_EQUAL_PTR(NULL,  vfs->fildes[4].drv);
+    TEST_ASSERT_EQUAL_PTR(NULL, vfs->fildes[4].drv);
 }
 
-TEST(vfs_openclose, OpenThenClose)
-{
+TEST(vfs_openclose, OpenThenClose) {
     int i;
 
     i = VfsOpen(vfs, "/", 0);
@@ -172,8 +146,7 @@ TEST(vfs_openclose, OpenThenClose)
     TEST_ASSERT_FALSE(vfs->fildes[5].opened);
 }
 
-TEST_GROUP_RUNNER(vfs_openclose)
-{
+TEST_GROUP_RUNNER(vfs_openclose) {
     RUN_TEST_CASE(vfs_openclose, OpenFail);
     RUN_TEST_CASE(vfs_openclose, OpenThenClose);
 }

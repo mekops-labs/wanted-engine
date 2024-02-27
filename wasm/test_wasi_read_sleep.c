@@ -1,16 +1,13 @@
-#include <stdio.h>
-#include <stdlib.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <unistd.h>
 
-int main (void)
-{
+int main(void) {
     ssize_t ret;
     int f;
     char buf[100];
 
-
-    for (int i = 0; ;i++) {
+    for (int i = 0;; i++) {
 
         sprintf(buf, "%5d: ", i);
         write(STDOUT_FILENO, buf, 7);

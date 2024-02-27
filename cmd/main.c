@@ -1,28 +1,16 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 #include <wanted.h>
-
 
 #define STR(...) #__VA_ARGS__
 
-char* defCfg = STR(
-{
-    "system": {
-        "defaultWapps": [
-            "a",
-            "bb",
-            "ccc"
-        ]
-    }
-}
-);
+char *defCfg = STR({"system" : {"defaultWapps" : [ "a", "bb", "ccc" ]}});
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char *argv[]) {
     int ret;
-    char* cfg;
+    char *cfg;
 
     if (argc > 1) {
         long sz;

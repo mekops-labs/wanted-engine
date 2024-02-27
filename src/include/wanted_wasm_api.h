@@ -4,6 +4,7 @@
 
 d_m3BeginExternC
 
-M3Result    LinkWantedApi(IM3Module io_module);
+    M3Result
+    LinkWantedApi(IM3Module io_module);
 
 d_m3EndExternC

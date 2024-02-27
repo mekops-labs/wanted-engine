@@ -1,13 +1,10 @@
-#include <stddef.h>
-#include <stdint.h>
-
 #include "wasm3_libc.h"
 
-#define WASM_EXPORT __attribute__((used)) __attribute__((visibility ("default")))
+#define WASM_EXPORT __attribute__((used)) __attribute__((visibility("default")))
 
 int WASM_EXPORT entry(int id) {
     e_print("%s\n", "Hello world");
-    wanted_func(1,2,3);
+    wanted_func(1, 2, 3);
 
     return 0;
 }

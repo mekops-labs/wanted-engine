@@ -1,13 +1,13 @@
-#include <stdlib.h>
-#include <time.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include <platform.h>
 
-int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len)
-{
-    if (buf == NULL) return -EINVAL;
+int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len) {
+    if (buf == NULL)
+        return -EINVAL;
 
     srandom((unsigned int)time(NULL));
 

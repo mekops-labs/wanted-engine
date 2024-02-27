@@ -1,57 +1,55 @@
-#include <string.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <string.h>
 
-#include <vfs.h>
 #include <vfs-drivers.h>
+#include <vfs.h>
 
 #include <wanted-vfs-api.h>
 
-#define ID  {'W', 'c', 'f', 'g'}
+#define ID                                                                     \
+    { 'W', 'c', 'f', 'g' }
 
-static int _Destroy (struct vfs_driver_t *d);
-static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _Close   (vfs_driver_ctx_t d, int fd);
-static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
-static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
-static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+static int _Destroy(struct vfs_driver_t *d);
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _Close(vfs_driver_ctx_t d, int fd);
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
+static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 
 const vfs_driver_t WantedConfigDriver = {
-    .id              = ID,
-    .filetype        = VFS_FILETYPE_CHARACTER_DEVICE,
-    .Destroy         = _Destroy,
-    .Open            = _Open,
-    .Close           = _Close,
-    .Stat            = _Stat,
-    .Read            = _Read,
-    .Write           = _Write,
+    .id = ID,
+    .filetype = VFS_FILETYPE_CHARACTER_DEVICE,
+    .Destroy = _Destroy,
+    .Open = _Open,
+    .Close = _Close,
+    .Stat = _Stat,
+    .Read = _Read,
+    .Write = _Write,
 };
 
 static bool opened = false;
 
-static int _Destroy (struct vfs_driver_t *d)
-{
+static int _Destroy(struct vfs_driver_t *d) {
     opened = false;
 
     return 0;
 }
 
-static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
-{
-    if (opened) return -EBUSY;
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
+    if (opened)
+        return -EBUSY;
     opened = true;
 
     return 0;
 }
 
-static int _Close(vfs_driver_ctx_t d, int fd)
-{
+static int _Close(vfs_driver_ctx_t d, int fd) {
     opened = false;
     return 0;
 }
 
-static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
-{
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     stat->dev = WantedConfigDriver.bytesId;
     stat->ino = 0;
     stat->filetype = WantedConfigDriver.filetype;
@@ -64,11 +62,12 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
 
     return 0;
 }
-static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
-{
-    if (buf == NULL) return -EINVAL;
+static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
+    if (buf == NULL)
+        return -EINVAL;
 
-    if (!opened) return -EBADF;
+    if (!opened)
+        return -EBADF;
 
     static int read = 0;
     if (read > 0) {
@@ -81,7 +80,6 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
     return read;
 }
 
-static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
-{
+static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     return -EROFS;
 }

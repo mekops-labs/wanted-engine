@@ -1,35 +1,37 @@
+#include <errno.h>
 #include <stdint.h>
 #include <string.h>
-#include <errno.h>
 
-#include <debug_trace.h>
-#include <wanted_malloc.h>
-#include <romfs.h>
-#include <vfs.h>
-#include <vfs-drivers.h>
 #include <cwalk.h>
+#include <debug_trace.h>
+#include <romfs.h>
+#include <vfs-drivers.h>
+#include <vfs.h>
+#include <wanted_malloc.h>
 
-static const char id[] = { 'R', 'o', 'm', 'f' };
+static const char id[] = {'R', 'o', 'm', 'f'};
 
-static int _Destroy (struct vfs_driver_t *d);
-static int _Open    (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _OpenAt  (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
-static int _Close   (vfs_driver_ctx_t d, int fd);
-static int _Stat    (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
-static int _Read    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
-static int _Seek    (vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos);
-static int _ReadDir (vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed);
-static int _Write   (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
+static int _Destroy(struct vfs_driver_t *d);
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
+                   vfs_oflags_t flags);
+static int _Close(vfs_driver_ctx_t d, int fd);
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
+static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
+                 long *pos);
+static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
+                    uint64_t *cookie, size_t *bufUsed);
+static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     return -EROFS;
 }
 
 struct vfs_driver_ctx_t {
-    const char* rootPath;
-    romfs_t     romfs;
+    const char *rootPath;
+    romfs_t romfs;
 };
 
-vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, const char *opt)
-{
+vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, const char *opt) {
     int ret;
     const char *root;
     vfs_driver_t *driver;
@@ -54,7 +56,8 @@ vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, const char *opt)
         return NULL;
     }
 
-    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
+    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(
+        sizeof(struct vfs_driver_ctx_t));
     if (NULL == driver->ctx) {
         DEBUG_TRACE("can't allocate memory");
         WantedFree(driver);
@@ -62,7 +65,7 @@ vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, const char *opt)
     }
 
     size_t rootLen = strnlen(root, MAX_PATH_LEN);
-    driver->ctx->rootPath = (char *)WantedMalloc(rootLen+1);
+    driver->ctx->rootPath = (char *)WantedMalloc(rootLen + 1);
     if (NULL == driver->ctx->rootPath) {
         DEBUG_TRACE("can't allocate memory");
         WantedFree(driver->ctx);
@@ -75,25 +78,24 @@ vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, const char *opt)
         memcpy((char *)driver->ctx->rootPath, root, rootLen);
     }
     memcpy((char *)&driver->ctx->rootPath[rootLen], &nullChar, 1);
-    driver->ctx->romfs      = r;
+    driver->ctx->romfs = r;
 
-    driver->bytesId         = *(uint32_t*)(id);
-    driver->filetype        = VFS_FILETYPE_DIRECTORY;
-    driver->Destroy         = _Destroy;
-    driver->Open            = _Open;
-    driver->OpenAt          = _OpenAt;
-    driver->Close           = _Close;
-    driver->Stat            = _Stat;
-    driver->Read            = _Read;
-    driver->Write           = _Write;
-    driver->Seek            = _Seek;
-    driver->ReadDir         = _ReadDir;
+    driver->bytesId = *(uint32_t *)(id);
+    driver->filetype = VFS_FILETYPE_DIRECTORY;
+    driver->Destroy = _Destroy;
+    driver->Open = _Open;
+    driver->OpenAt = _OpenAt;
+    driver->Close = _Close;
+    driver->Stat = _Stat;
+    driver->Read = _Read;
+    driver->Write = _Write;
+    driver->Seek = _Seek;
+    driver->ReadDir = _ReadDir;
 
     return driver;
 }
 
-static int _Destroy(struct vfs_driver_t *d)
-{
+static int _Destroy(struct vfs_driver_t *d) {
     RomfsUnload(&(d->ctx->romfs));
 
     WantedFree((void *)d->ctx->rootPath);
@@ -103,23 +105,30 @@ static int _Destroy(struct vfs_driver_t *d)
     return 0;
 }
 
-static vfs_filetype_t convertFiletype(uint8_t t)
-{
+static vfs_filetype_t convertFiletype(uint8_t t) {
     switch (t & ROMFS_TYPE_MASK) {
-    case ROMFS_TYPE_HARDLINK:   return VFS_FILETYPE_SYMBOLIC_LINK;
-    case ROMFS_TYPE_DIRECTORY:  return VFS_FILETYPE_DIRECTORY;
-    case ROMFS_TYPE_FILE:       return VFS_FILETYPE_REGULAR_FILE;
-    case ROMFS_TYPE_SOFTLINK:   return VFS_FILETYPE_SYMBOLIC_LINK;
-    case ROMFS_TYPE_BLOCKDEV:   return VFS_FILETYPE_BLOCK_DEVICE;
-    case ROMFS_TYPE_CHARDEV:    return VFS_FILETYPE_CHARACTER_DEVICE;
-    case ROMFS_TYPE_SOCKET:     return VFS_FILETYPE_SOCKET_STREAM;
-    case ROMFS_TYPE_FIFO:       return VFS_FILETYPE_REGULAR_FILE;
-    default:                    return VFS_FILETYPE_UNKNOWN;
+    case ROMFS_TYPE_HARDLINK:
+        return VFS_FILETYPE_SYMBOLIC_LINK;
+    case ROMFS_TYPE_DIRECTORY:
+        return VFS_FILETYPE_DIRECTORY;
+    case ROMFS_TYPE_FILE:
+        return VFS_FILETYPE_REGULAR_FILE;
+    case ROMFS_TYPE_SOFTLINK:
+        return VFS_FILETYPE_SYMBOLIC_LINK;
+    case ROMFS_TYPE_BLOCKDEV:
+        return VFS_FILETYPE_BLOCK_DEVICE;
+    case ROMFS_TYPE_CHARDEV:
+        return VFS_FILETYPE_CHARACTER_DEVICE;
+    case ROMFS_TYPE_SOCKET:
+        return VFS_FILETYPE_SOCKET_STREAM;
+    case ROMFS_TYPE_FIFO:
+        return VFS_FILETYPE_REGULAR_FILE;
+    default:
+        return VFS_FILETYPE_UNKNOWN;
     }
 }
 
-static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
-{
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     char normalized[MAX_PATH_LEN];
 
     cwk_path_change_root(path, d->rootPath, normalized, sizeof(normalized));
@@ -128,8 +137,8 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     return RomfsOpenRoot(d->romfs, normalized, flags);
 }
 
-static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags)
-{
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
+                   vfs_oflags_t flags) {
     char normalized[MAX_PATH_LEN];
 
     cwk_path_change_root(path, d->rootPath, normalized, sizeof(normalized));
@@ -137,20 +146,20 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t fl
     return RomfsOpenAt(d->romfs, fd, normalized, flags);
 }
 
-static int _Close(vfs_driver_ctx_t d, int fd)
-{
+static int _Close(vfs_driver_ctx_t d, int fd) {
     return RomfsClose(d->romfs, fd);
 }
 
-static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
-{
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     int ret;
     romfs_stat_t romfsStat;
 
-    if (NULL == stat) return -EINVAL;
+    if (NULL == stat)
+        return -EINVAL;
 
     ret = RomfsFdStat(d->romfs, fd, &romfsStat);
-    if (ret < 0) return ret;
+    if (ret < 0)
+        return ret;
 
     stat->dev = *(uint32_t *)id;
     stat->ino = romfsStat.ino;
@@ -164,18 +173,19 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat)
     return 0;
 }
 
-static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
-{
+static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     return RomfsRead(d->romfs, fd, buf, nbyte);
 }
 
-static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
-{
+static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
+                 long *pos) {
     int ret;
 
     if (whence != VFS_SEEK_CUR || off != 0) {
         ret = RomfsSeek(d->romfs, fd, off, (romfs_seek_t)whence);
-        if (ret < 0) { return ret; }
+        if (ret < 0) {
+            return ret;
+        }
     }
 
     ret = RomfsTell(d->romfs, fd, pos);
@@ -186,8 +196,8 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long
 // TODO: make configurable
 #define DIR_BUF_LEN 10
 
-static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64_t *cookie, size_t *bufUsed)
-{
+static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
+                    uint64_t *cookie, size_t *bufUsed) {
     int ret;
     romfs_dirent_t dir[DIR_BUF_LEN];
     vfs_dirent_t entry;
@@ -195,11 +205,13 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
     size_t used;
     size_t bUsed = 0;
 
-    if (NULL == buf || NULL == cookie || NULL == bufUsed) return -EINVAL;
+    if (NULL == buf || NULL == cookie || NULL == bufUsed)
+        return -EINVAL;
 
     do {
         ret = RomfsReadDir(d->romfs, fd, dir, DIR_BUF_LEN, &last, &used);
-        if (ret < 0) return ret;
+        if (ret < 0)
+            return ret;
 
         for (size_t i = 0; i < used; i++) {
             entry.d_next = dir[i].next;
@@ -218,7 +230,8 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen, uint64
             bUsed += entry.d_namlen;
         }
 
-        if (last == ROMFS_COOKIE_LAST || bufLen == bUsed) break;
+        if (last == ROMFS_COOKIE_LAST || bufLen == bUsed)
+            break;
     } while (used == DIR_BUF_LEN);
 
     *bufUsed = bUsed;

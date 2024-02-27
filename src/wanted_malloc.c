@@ -1,12 +1,11 @@
-#include <wanted_malloc.h>
 #include <debug_trace.h>
+#include <wanted_malloc.h>
 
 #ifndef WANTED_CUSTOM_MALLOC
 static size_t allocated;
 
-void *WantedMalloc(size_t s)
-{
-    void* p = malloc(s + sizeof(size_t));
+void *WantedMalloc(size_t s) {
+    void *p = malloc(s + sizeof(size_t));
     if (p != NULL) {
         allocated += s;
         *(size_t *)p = s;
@@ -17,18 +16,15 @@ void *WantedMalloc(size_t s)
     return p;
 }
 
-void WantedFree(void* ptr)
-{
-    if (!ptr) return;
+void WantedFree(void *ptr) {
+    if (!ptr)
+        return;
     ptr = (size_t *)ptr - 1;
     allocated -= *(size_t *)ptr;
     DEBUG_TRACE("%zu (%zu)", *(size_t *)ptr, allocated);
     free(ptr);
 }
 
-size_t WantedGetAllocatedMem()
-{
-    return allocated;
-}
+size_t WantedGetAllocatedMem() { return allocated; }
 
 #endif

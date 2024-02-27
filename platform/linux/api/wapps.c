@@ -1,27 +1,30 @@
+#include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
-#include <unistd.h>
 #include <sys/mman.h>
-#include <errno.h>
+#include <unistd.h>
 
-#include <platform.h>
-#include <wanted.h>
-#include <wanted-api.h>
 #include <config-linux.h>
+#include <platform.h>
+#include <wanted-api.h>
+#include <wanted.h>
 
 #include <debug_trace.h>
 
 #ifdef __ANDROID__
-#   define GNU_SOURCE
-#   include <signal.h>
+#define GNU_SOURCE
+#include <signal.h>
 #endif
-
 
 pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
 
-#define FATAL(err, msg, ...) { DEBUG_TRACE("Fatal: " msg, ##__VA_ARGS__); return err; }
+#define FATAL(err, msg, ...)                                                   \
+    {                                                                          \
+        DEBUG_TRACE("Fatal: " msg, ##__VA_ARGS__);                             \
+        return err;                                                            \
+    }
 
 typedef struct {
     pthread_t t;
@@ -45,8 +48,7 @@ static void updateState(uint8_t id, int ret) {
     pthread_mutex_unlock(&state_mtx);
 }
 
-void WA_threadEnd(void *ptr)
-{
+void WA_threadEnd(void *ptr) {
     wapp_data_t *d = (wapp_data_t *)ptr;
 
     WantedWappStop(d);
@@ -55,8 +57,7 @@ void WA_threadEnd(void *ptr)
 }
 
 #ifdef __ANDROID__
-void thread_sigHandler(int sig)
-{
+void thread_sigHandler(int sig) {
     int i;
     if (sig != SIGUSR1) {
         return;
@@ -65,9 +66,11 @@ void thread_sigHandler(int sig)
     pthread_t t = pthread_self();
 
     for (i = 0; i < MAX_WAPPS; i++) {
-        if (state.threads[i].t == t) break;
+        if (state.threads[i].t == t)
+            break;
     }
-    if (i == MAX_WAPPS) return;
+    if (i == MAX_WAPPS)
+        return;
 
     WA_threadEnd((void *)&state.threads[i].data);
 
@@ -75,8 +78,7 @@ void thread_sigHandler(int sig)
 }
 #endif
 
-void *WA_thread(void *ptr)
-{
+void *WA_thread(void *ptr) {
     wapp_data_t *d = (wapp_data_t *)ptr;
 
 #ifndef __ANDROID__
@@ -104,8 +106,7 @@ void *WA_thread(void *ptr)
     pthread_exit(NULL);
 }
 
-int PlatformWappLoad(const char *path, wapp_t *wapp)
-{
+int PlatformWappLoad(const char *path, wapp_t *wapp) {
     long filesize;
     FILE *f;
     uint8_t *img;
@@ -137,8 +138,7 @@ int PlatformWappLoad(const char *path, wapp_t *wapp)
     return 0;
 }
 
-int PlatformWappUnload(const wapp_t *wapp)
-{
+int PlatformWappUnload(const wapp_t *wapp) {
     if (NULL == wapp) {
         return -EINVAL;
     }
@@ -148,8 +148,7 @@ int PlatformWappUnload(const wapp_t *wapp)
     return 0;
 }
 
-int PlatformWappStart(wapp_t *wapp)
-{
+int PlatformWappStart(wapp_t *wapp) {
     int slot;
 
     if (NULL == wapp) {
@@ -163,7 +162,9 @@ int PlatformWappStart(wapp_t *wapp)
     }
 
     for (slot = 0; slot < MAX_WAPPS; slot++) {
-        if (state.threads[slot].status == NOT_STARTED || state.threads[slot].status == EXITED || state.threads[slot].status == FAILURE)
+        if (state.threads[slot].status == NOT_STARTED ||
+            state.threads[slot].status == EXITED ||
+            state.threads[slot].status == FAILURE)
             break;
     }
 
@@ -171,7 +172,8 @@ int PlatformWappStart(wapp_t *wapp)
     state.threads[slot].data.wapp = wapp;
     state.threads[slot].status = STARTING;
 
-    pthread_create((pthread_t *)&state.threads[slot].t, NULL, WA_thread, (void*) &state.threads[slot].data);
+    pthread_create((pthread_t *)&state.threads[slot].t, NULL, WA_thread,
+                   (void *)&state.threads[slot].data);
     pthread_detach(state.threads[slot].t);
     state.n++;
 
@@ -180,14 +182,14 @@ int PlatformWappStart(wapp_t *wapp)
     return 0;
 }
 
-int PlatformWappStop(const char* name)
-{
+int PlatformWappStop(const char *name) {
     int slot;
 
     for (slot = 0; slot < MAX_WAPPS; slot++) {
-        if (state.threads[slot].data.wapp == NULL) continue;
-        if ((strcmp((char *)state.threads[slot].data.wapp->name, name) == 0)
-            && state.threads[slot].status == RUNNING)
+        if (state.threads[slot].data.wapp == NULL)
+            continue;
+        if ((strcmp((char *)state.threads[slot].data.wapp->name, name) == 0) &&
+            state.threads[slot].status == RUNNING)
             break;
     }
 
@@ -202,8 +204,7 @@ int PlatformWappStop(const char* name)
 #endif
 }
 
-void PlatformWappLoop()
-{
+void PlatformWappLoop() {
     uint8_t supervisorOk;
 
     for (;;) {
@@ -218,9 +219,11 @@ void PlatformWappLoop()
         supervisorOk = 0;
         for (int i = 0; i < MAX_WAPPS; i++) {
             /* at least 1 supervisor needs to be running */
-            if (state.threads[i].data.wapp == NULL) continue;
+            if (state.threads[i].data.wapp == NULL)
+                continue;
 
-            if (strncmp((const char*)state.threads[i].data.wapp->name, "supervisor", strlen("supervisor")) == 0 &&
+            if (strncmp((const char *)state.threads[i].data.wapp->name,
+                        "supervisor", strlen("supervisor")) == 0 &&
                 state.threads[i].status == RUNNING) {
                 supervisorOk++;
             }
@@ -232,15 +235,16 @@ void PlatformWappLoop()
     }
 }
 
-int  PlatformWappGetState(wapp_state_t *wapps, size_t appsLen)
-{
+int PlatformWappGetState(wapp_state_t *wapps, size_t appsLen) {
     int i, r;
 
     for (i = 0, r = 0; i < MAX_WAPPS && r < appsLen; i++) {
-        if (state.threads[i].data.wapp == NULL) continue;
+        if (state.threads[i].data.wapp == NULL)
+            continue;
 
-        strncpy(wapps[r].name, (const char *)state.threads[i].data.wapp->name, WAPP_MAX_NAME_LEN);
-        wapps[r].name[WAPP_MAX_NAME_LEN-1] = '\0';
+        strncpy(wapps[r].name, (const char *)state.threads[i].data.wapp->name,
+                WAPP_MAX_NAME_LEN);
+        wapps[r].name[WAPP_MAX_NAME_LEN - 1] = '\0';
         wapps[r].status = state.threads[i].status;
         wapps[r].version = state.threads[i].data.wapp->version;
         wapps[r].id = state.threads[i].data.id;
@@ -249,5 +253,3 @@ int  PlatformWappGetState(wapp_state_t *wapps, size_t appsLen)
 
     return r;
 }
-
-

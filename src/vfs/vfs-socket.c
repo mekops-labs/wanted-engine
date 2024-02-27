@@ -1,43 +1,47 @@
-#include <string.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <errno.h>
+#include <string.h>
 
+#include <debug_trace.h>
 #include <vfs-drivers.h>
 #include <wanted_malloc.h>
-#include <debug_trace.h>
 
 #include <platform.h>
 
 // TODO: make configurable, max address length should be defined
 #define MAX_ADDR_LEN 32
 
-static const char id[] = { 'S', 'o', 'c', 'k' };
+static const char id[] = {'S', 'o', 'c', 'k'};
 
 /* TODO: support many connections */
 struct vfs_driver_ctx_t {
-    uint8_t         type;
-    const char      addr[MAX_ADDR_LEN];
-    uint16_t        port;
-    vfs_oflags_t    flags;
-    bool            connected;
-    void            *netCtx;
+    uint8_t type;
+    const char addr[MAX_ADDR_LEN];
+    uint16_t port;
+    vfs_oflags_t flags;
+    bool connected;
+    void *netCtx;
 };
 
-static int _Destroy     (struct vfs_driver_t *d);
-static int _Open        (vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
-static int _OpenAt      (vfs_driver_ctx_t d, int fd, const char *path, vfs_oflags_t flags);
-static int _Close       (vfs_driver_ctx_t d, int fd);
-static int _Read        (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
-static int _Write       (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
-static int _Stat        (vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
-static int _SockAccept  (vfs_driver_ctx_t d, int fd, vfs_oflags_t flags, int *newFd);
-static int _SockRecv    (vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags);
-static int _SockSend    (vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte, vfs_sdflags_t flags);
+static int _Destroy(struct vfs_driver_t *d);
+static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
+static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
+                   vfs_oflags_t flags);
+static int _Close(vfs_driver_ctx_t d, int fd);
+static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
+static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
+static int _SockAccept(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags,
+                       int *newFd);
+static int _SockRecv(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte,
+                     vfs_riflags_t iflags, vfs_roflags_t *oflags);
+static int _SockSend(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte,
+                     vfs_sdflags_t flags);
 static int _SockShutdown(vfs_driver_ctx_t d, int fd, vfs_sdflags_t flags);
 
 static vfs_filetype_t convertSocketType(uint8_t type) {
-    switch(type) {
+    switch (type) {
     case VFS_SKT_BUS:
         return VFS_FILETYPE_SOCKET_STREAM;
     case VFS_SKT_TCP:
@@ -51,8 +55,7 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
     }
 }
 
-vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options)
-{
+vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     int ret;
     char t;
     uint16_t port;
@@ -73,12 +76,24 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options)
 
     uint8_t type;
     switch (t) {
-        case 'T': type = VFS_SKT_STCP; break;
-        case 'U': type = VFS_SKT_SUDP; break;
-        case 't': type = VFS_SKT_TCP; break;
-        case 'u': type = VFS_SKT_UDP; break;
-        case 'b': type = VFS_SKT_BUS; break;
-        default: DEBUG_TRACE("error during parsing socket type"); return NULL;
+    case 'T':
+        type = VFS_SKT_STCP;
+        break;
+    case 'U':
+        type = VFS_SKT_SUDP;
+        break;
+    case 't':
+        type = VFS_SKT_TCP;
+        break;
+    case 'u':
+        type = VFS_SKT_UDP;
+        break;
+    case 'b':
+        type = VFS_SKT_BUS;
+        break;
+    default:
+        DEBUG_TRACE("error during parsing socket type");
+        return NULL;
     }
 
     if (!SECURE_SOCKETS && (type == VFS_SKT_STCP || type == VFS_SKT_SUDP)) {
@@ -92,7 +107,8 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options)
         return NULL;
     }
 
-    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
+    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(
+        sizeof(struct vfs_driver_ctx_t));
     if (NULL == driver->ctx) {
         DEBUG_TRACE("can't allocate memory");
         WantedFree(driver);
@@ -100,28 +116,27 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options)
     }
     bzero(driver->ctx, sizeof(struct vfs_driver_ctx_t));
 
-    driver->bytesId         = *(uint32_t*)(id);
-    driver->filetype        = convertSocketType(type);
-    driver->ctx->type       = type;
+    driver->bytesId = *(uint32_t *)(id);
+    driver->filetype = convertSocketType(type);
+    driver->ctx->type = type;
     strncpy((char *)driver->ctx->addr, addr, MAX_ADDR_LEN);
-    driver->ctx->port       = port;
-    driver->Destroy         = _Destroy;
-    driver->Open            = _Open;
-    driver->OpenAt          = _OpenAt;
-    driver->Close           = _Close;
-    driver->Read            = _Read;
-    driver->Write           = _Write;
-    driver->Stat            = _Stat;
-    driver->SockAccept      = _SockAccept;
-    driver->SockRecv        = _SockRecv;
-    driver->SockSend        = _SockSend;
-    driver->SockShutdown    = _SockShutdown;
+    driver->ctx->port = port;
+    driver->Destroy = _Destroy;
+    driver->Open = _Open;
+    driver->OpenAt = _OpenAt;
+    driver->Close = _Close;
+    driver->Read = _Read;
+    driver->Write = _Write;
+    driver->Stat = _Stat;
+    driver->SockAccept = _SockAccept;
+    driver->SockRecv = _SockRecv;
+    driver->SockSend = _SockSend;
+    driver->SockShutdown = _SockShutdown;
 
     return driver;
 }
 
-static int _Destroy (struct vfs_driver_t *d)
-{
+static int _Destroy(struct vfs_driver_t *d) {
     PlatformNetClose(d->ctx->netCtx);
     PlatformNetFree(d->ctx->netCtx);
     WantedFree(d->ctx);
@@ -130,8 +145,7 @@ static int _Destroy (struct vfs_driver_t *d)
     return 0;
 }
 
-static int _Open(vfs_driver_ctx_t c, const char *path, vfs_oflags_t flags)
-{
+static int _Open(vfs_driver_ctx_t c, const char *path, vfs_oflags_t flags) {
     int ret;
 
     if (c->connected) {
@@ -155,23 +169,21 @@ static int _Open(vfs_driver_ctx_t c, const char *path, vfs_oflags_t flags)
     return 0;
 }
 
-static int _OpenAt(vfs_driver_ctx_t c, int fd, const char *path, vfs_oflags_t flags)
-{
+static int _OpenAt(vfs_driver_ctx_t c, int fd, const char *path,
+                   vfs_oflags_t flags) {
     return _Open(c, path, flags);
 }
 
-static int _Close(vfs_driver_ctx_t c, int fd)
-{
+static int _Close(vfs_driver_ctx_t c, int fd) {
     c->connected = false;
     return PlatformNetClose(c->netCtx);
 }
 
-static int _Read(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte)
-{
+static int _Read(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte) {
     int ret;
 
     if (!c->connected) {
-        if((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
+        if ((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
             return ret;
         }
         c->connected = true;
@@ -182,12 +194,11 @@ static int _Read(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte)
     return ret;
 }
 
-static int _Write(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte)
-{
+static int _Write(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte) {
     int ret;
 
     if (!c->connected) {
-        if((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
+        if ((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
             return ret;
         }
         c->connected = true;
@@ -198,9 +209,9 @@ static int _Write(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte)
     return ret;
 }
 
-static int _Stat(vfs_driver_ctx_t c, int fd, vfs_stat_t *stat)
-{
-    if (NULL == stat) return -EINVAL;
+static int _Stat(vfs_driver_ctx_t c, int fd, vfs_stat_t *stat) {
+    if (NULL == stat)
+        return -EINVAL;
 
     stat->dev = *(uint32_t *)id;
     stat->ino = c->port;
@@ -214,8 +225,8 @@ static int _Stat(vfs_driver_ctx_t c, int fd, vfs_stat_t *stat)
     return 0;
 }
 
-static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags, int *newFd)
-{
+static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
+                       int *newFd) {
     int ret;
     if (newFd == NULL) {
         return -EINVAL;
@@ -231,12 +242,12 @@ static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags, int *newF
     return ret;
 }
 
-static int _SockRecv(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte, vfs_riflags_t iflags, vfs_roflags_t *oflags)
-{
+static int _SockRecv(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte,
+                     vfs_riflags_t iflags, vfs_roflags_t *oflags) {
     int ret;
 
     if (!c->connected) {
-        if((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
+        if ((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
             return ret;
         }
         c->connected = true;
@@ -247,12 +258,12 @@ static int _SockRecv(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte, vfs_ri
     return ret;
 }
 
-static int _SockSend(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte, vfs_sdflags_t flags)
-{
+static int _SockSend(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte,
+                     vfs_sdflags_t flags) {
     int ret;
 
     if (!c->connected) {
-        if((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
+        if ((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
             return ret;
         }
         c->connected = true;
@@ -263,8 +274,7 @@ static int _SockSend(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte, 
     return ret;
 }
 
-static int _SockShutdown(vfs_driver_ctx_t c, int fd, vfs_sdflags_t flags)
-{
+static int _SockShutdown(vfs_driver_ctx_t c, int fd, vfs_sdflags_t flags) {
     int ret;
 
     ret = PlatformNetShutdown(c->netCtx, flags);

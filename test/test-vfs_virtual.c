@@ -3,14 +3,12 @@
 #include <errno.h>
 #include <string.h>
 
+#include <vfs-drivers.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
-#include <vfs-drivers.h>
 #include <vfs/vfs-virtual.h>
 
 #include <path_utils.h>
-
-#include "external_symbols.h"
 
 static int dummyOpened;
 static int dummyClosed;
@@ -18,8 +16,8 @@ static int dummyRead;
 static int dummyWrite;
 static int dummySeek;
 
-static int _DummyOpen(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
-{
+static int _DummyOpen(vfs_driver_ctx_t d, const char *path,
+                      vfs_oflags_t flags) {
     if (memcmp("/", path, 2) != 0) {
         return -EPERM;
     }
@@ -27,32 +25,29 @@ static int _DummyOpen(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags)
     return 0;
 }
 
-static int _DummyClose(vfs_driver_ctx_t d, int fd)
-{
+static int _DummyClose(vfs_driver_ctx_t d, int fd) {
     dummyClosed++;
     return 0;
 }
 
-static int _DummyRead(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte)
-{
+static int _DummyRead(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     dummyRead++;
     return 0;
 }
 
-static int _DummyWrite(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte)
-{
+static int _DummyWrite(vfs_driver_ctx_t d, int fd, const void *buf,
+                       size_t nbyte) {
     dummyWrite++;
     return 0;
 }
 
-static int _DummySeek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence, long *pos)
-{
+static int _DummySeek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
+                      long *pos) {
     dummySeek++;
     return 0;
 }
 
-static int _DummyStat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s)
-{
+static int _DummyStat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
     s->filetype = VFS_FILETYPE_REGULAR_FILE;
     s->dev = 1234;
     s->ino = 1;
@@ -64,28 +59,22 @@ static vfs_driver_t *virt;
 static vfs_driver_t *virt2;
 
 static vfs_driver_t dummy_test = {
-    .Open  = _DummyOpen,
+    .Open = _DummyOpen,
     .Close = _DummyClose,
-    .Read  = _DummyRead,
+    .Read = _DummyRead,
     .Write = _DummyWrite,
-    .Seek  = _DummySeek,
+    .Seek = _DummySeek,
 };
 
 /***************************************/
 TEST_GROUP(vfs_virtual_init);
 /***************************************/
 
-TEST_SETUP(vfs_virtual_init)
-{
+TEST_SETUP(vfs_virtual_init) {}
 
-}
+TEST_TEAR_DOWN(vfs_virtual_init) {}
 
-TEST_TEAR_DOWN(vfs_virtual_init)
-{
-}
-
-TEST(vfs_virtual_init, InitAndDestroy)
-{
+TEST(vfs_virtual_init, InitAndDestroy) {
     int ret;
     vfs_driver_t *v;
 
@@ -102,8 +91,7 @@ TEST(vfs_virtual_init, InitAndDestroy)
     v->Destroy(v);
 }
 
-TEST_GROUP_RUNNER(vfs_virtual_init)
-{
+TEST_GROUP_RUNNER(vfs_virtual_init) {
     RUN_TEST_CASE(vfs_virtual_init, InitAndDestroy);
 }
 
@@ -111,20 +99,13 @@ TEST_GROUP_RUNNER(vfs_virtual_init)
 TEST_GROUP(vfs_virtual_register);
 /***************************************/
 
-TEST_SETUP(vfs_virtual_register)
-{
-    virt = VfsVirtualInit(NULL, NULL);
-}
+TEST_SETUP(vfs_virtual_register) { virt = VfsVirtualInit(NULL, NULL); }
 
-TEST_TEAR_DOWN(vfs_virtual_register)
-{
-    virt->Destroy(virt);
-}
+TEST_TEAR_DOWN(vfs_virtual_register) { virt->Destroy(virt); }
 
-TEST(vfs_virtual_register, RegisterFail)
-{
+TEST(vfs_virtual_register, RegisterFail) {
     int ret;
-    vfs_driver_t dummy = { 0 };
+    vfs_driver_t dummy = {0};
     vfs_entry_t *fs = virt->ctx->entries;
 
     ret = TRY_DRV(virt, Register, "", &dummy);
@@ -146,10 +127,9 @@ TEST(vfs_virtual_register, RegisterFail)
     TEST_ASSERT_EQUAL(-ENFILE, ret);
 }
 
-TEST(vfs_virtual_register, RegisterSingle)
-{
+TEST(vfs_virtual_register, RegisterSingle) {
     int ret;
-    vfs_driver_t dummy = { 0 };
+    vfs_driver_t dummy = {0};
     vfs_entry_t *fs = virt->ctx->entries;
 
     ret = TRY_DRV(virt, Register, "a", &dummy);
@@ -159,11 +139,10 @@ TEST(vfs_virtual_register, RegisterSingle)
     TEST_ASSERT_EQUAL_STRING("a", fs[1].name);
 }
 
-TEST(vfs_virtual_register, RegisterMultiple)
-{
+TEST(vfs_virtual_register, RegisterMultiple) {
     int ret;
-    vfs_driver_t dummy1 = { 0 };
-    vfs_driver_t dummy2 = { 0 };
+    vfs_driver_t dummy1 = {0};
+    vfs_driver_t dummy2 = {0};
     vfs_entry_t *fs = virt->ctx->entries;
 
     ret = TRY_DRV(virt, Register, "abc", &dummy1);
@@ -181,10 +160,9 @@ TEST(vfs_virtual_register, RegisterMultiple)
     TEST_ASSERT_NULL(fs[3].drv);
 }
 
-TEST(vfs_virtual_register, RegisterTree)
-{
+TEST(vfs_virtual_register, RegisterTree) {
     int ret;
-    vfs_driver_t dummy = { 0 };
+    vfs_driver_t dummy = {0};
 
     virt2 = VfsVirtualInit(NULL, NULL);
 
@@ -202,8 +180,7 @@ TEST(vfs_virtual_register, RegisterTree)
     TEST_ASSERT_EQUAL(-EPERM, ret);
 }
 
-TEST_GROUP_RUNNER(vfs_virtual_register)
-{
+TEST_GROUP_RUNNER(vfs_virtual_register) {
     RUN_TEST_CASE(vfs_virtual_register, RegisterFail);
     RUN_TEST_CASE(vfs_virtual_register, RegisterSingle);
     RUN_TEST_CASE(vfs_virtual_register, RegisterMultiple);
@@ -214,8 +191,7 @@ TEST_GROUP_RUNNER(vfs_virtual_register)
 TEST_GROUP(vfs_virtual_find);
 /***************************************/
 
-TEST_SETUP(vfs_virtual_find)
-{
+TEST_SETUP(vfs_virtual_find) {
     virt = VfsVirtualInit(NULL, NULL);
     virt2 = VfsVirtualInit(NULL, NULL);
     TRY_DRV(virt, Register, "a", &dummy_test);
@@ -229,13 +205,9 @@ TEST_SETUP(vfs_virtual_find)
     TRY_DRV(virt, Register, ".dotfile", &dummy_test);
 }
 
-TEST_TEAR_DOWN(vfs_virtual_find)
-{
-    virt->Destroy(virt);
-}
+TEST_TEAR_DOWN(vfs_virtual_find) { virt->Destroy(virt); }
 
-TEST(vfs_virtual_find, findFileNotFound)
-{
+TEST(vfs_virtual_find, findFileNotFound) {
     int i;
     vfs_entry_t *fs = virt->ctx->entries;
     const char *pathLeft;
@@ -262,8 +234,7 @@ TEST(vfs_virtual_find, findFileNotFound)
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 }
 
-TEST(vfs_virtual_find, findFileRoot)
-{
+TEST(vfs_virtual_find, findFileRoot) {
     vfs_entry_t *fs = virt->ctx->entries;
 
     int i = VfsFindEntry("/", fs, NULL);
@@ -282,8 +253,7 @@ TEST(vfs_virtual_find, findFileRoot)
     TEST_ASSERT_EQUAL_INT(3, i);
 }
 
-TEST(vfs_virtual_find, findFileDir)
-{
+TEST(vfs_virtual_find, findFileDir) {
     vfs_entry_t *fs = virt->ctx->entries;
     vfs_entry_t *fs2 = virt2->ctx->entries;
     const char *pathLeft;
@@ -305,7 +275,7 @@ TEST(vfs_virtual_find, findFileDir)
     i = VfsFindEntry(pathLeft, fs2, NULL);
     TEST_ASSERT_EQUAL_INT(2, i);
 
-     i = VfsFindEntry("dev/a", fs, &pathLeft);
+    i = VfsFindEntry("dev/a", fs, &pathLeft);
     TEST_ASSERT_EQUAL_INT(6, i);
     TEST_ASSERT_EQUAL_STRING("a", pathLeft);
 
@@ -320,8 +290,7 @@ TEST(vfs_virtual_find, findFileDir)
     TEST_ASSERT_EQUAL_INT(-ENOENT, i);
 }
 
-TEST(vfs_virtual_find, findFileDriver)
-{
+TEST(vfs_virtual_find, findFileDriver) {
     vfs_entry_t *fs = virt->ctx->entries;
 
     const char *drvPath = NULL;
@@ -351,21 +320,18 @@ TEST(vfs_virtual_find, findFileDriver)
     drvPath = NULL;
 }
 
-TEST_GROUP_RUNNER(vfs_virtual_find)
-{
+TEST_GROUP_RUNNER(vfs_virtual_find) {
     RUN_TEST_CASE(vfs_virtual_find, findFileNotFound);
     RUN_TEST_CASE(vfs_virtual_find, findFileRoot);
     RUN_TEST_CASE(vfs_virtual_find, findFileDir);
     RUN_TEST_CASE(vfs_virtual_find, findFileDriver);
 }
 
-
 /***************************************/
 TEST_GROUP(vfs_virtual_open);
 /***************************************/
 
-TEST_SETUP(vfs_virtual_open)
-{
+TEST_SETUP(vfs_virtual_open) {
     dummyOpened = 0;
     virt = VfsVirtualInit(NULL, NULL);
     virt2 = VfsVirtualInit(NULL, NULL);
@@ -380,15 +346,11 @@ TEST_SETUP(vfs_virtual_open)
     TRY_DRV(virt, Register, ".dotfile", &dummy_test);
 }
 
-TEST_TEAR_DOWN(vfs_virtual_open)
-{
-    virt->Destroy(virt);
-}
+TEST_TEAR_DOWN(vfs_virtual_open) { virt->Destroy(virt); }
 
-TEST(vfs_virtual_open, OpenFail)
-{
+TEST(vfs_virtual_open, OpenFail) {
     int r;
-    char path_too_long[MAX_PATH_LEN+1];
+    char path_too_long[MAX_PATH_LEN + 1];
 
     r = TRY_DRV(virt, Open, "", 0);
     TEST_ASSERT_EQUAL(-EINVAL, r);
@@ -402,10 +364,10 @@ TEST(vfs_virtual_open, OpenFail)
     r = TRY_DRV(virt, Open, "x", 0);
     TEST_ASSERT_EQUAL(-ENOENT, r);
 
-    r = TRY_DRV(virt, OpenAt, MAX_ENTRIES+1, "a", 0);
+    r = TRY_DRV(virt, OpenAt, MAX_ENTRIES + 1, "a", 0);
     TEST_ASSERT_EQUAL(-EBADF, r);
 
-    r = TRY_DRV(virt, OpenAt, MAX_ENTRIES+1, "a", 0);
+    r = TRY_DRV(virt, OpenAt, MAX_ENTRIES + 1, "a", 0);
     TEST_ASSERT_EQUAL(-EBADF, r);
 
     memset(path_too_long, 'a', sizeof(path_too_long));
@@ -432,8 +394,7 @@ TEST(vfs_virtual_open, OpenFail)
     TEST_ASSERT_EQUAL(-EMFILE, r);
 }
 
-TEST(vfs_virtual_open, OpenSimple)
-{
+TEST(vfs_virtual_open, OpenSimple) {
     int r;
 
     r = TRY_DRV(virt, Open, "/", 0);
@@ -462,8 +423,7 @@ TEST(vfs_virtual_open, OpenSimple)
     TEST_ASSERT_EQUAL(4, dummyOpened);
 }
 
-TEST(vfs_virtual_open, OpenAdvanced)
-{
+TEST(vfs_virtual_open, OpenAdvanced) {
     int r;
 
     r = TRY_DRV(virt, Open, "dir/xyz", 0);
@@ -475,26 +435,23 @@ TEST(vfs_virtual_open, OpenAdvanced)
     r = TRY_DRV(virt, Open, "/./////dir///../dev/////", 0);
     TEST_ASSERT_EQUAL(3, r);
 
-     r = TRY_DRV(virt, Open, "dir/../dev/xyz", 0);
+    r = TRY_DRV(virt, Open, "dir/../dev/xyz", 0);
     TEST_ASSERT_EQUAL(4, r);
 
     TEST_ASSERT_EQUAL(2, dummyOpened);
 }
 
-TEST_GROUP_RUNNER(vfs_virtual_open)
-{
+TEST_GROUP_RUNNER(vfs_virtual_open) {
     RUN_TEST_CASE(vfs_virtual_open, OpenFail);
     RUN_TEST_CASE(vfs_virtual_open, OpenSimple);
     RUN_TEST_CASE(vfs_virtual_open, OpenAdvanced);
 }
 
-
 /***************************************/
 TEST_GROUP(vfs_virtual_close);
 /***************************************/
 
-TEST_SETUP(vfs_virtual_close)
-{
+TEST_SETUP(vfs_virtual_close) {
     dummyClosed = 0;
     virt = VfsVirtualInit(NULL, NULL);
     virt2 = VfsVirtualInit(NULL, NULL);
@@ -503,13 +460,9 @@ TEST_SETUP(vfs_virtual_close)
     TRY_DRV(virt, Register, "dir/a", &dummy_test);
 }
 
-TEST_TEAR_DOWN(vfs_virtual_close)
-{
-    virt->Destroy(virt);
-}
+TEST_TEAR_DOWN(vfs_virtual_close) { virt->Destroy(virt); }
 
-TEST(vfs_virtual_close, CloseFail)
-{
+TEST(vfs_virtual_close, CloseFail) {
     int r;
 
     r = TRY_DRV(virt, Close, 0);
@@ -518,7 +471,7 @@ TEST(vfs_virtual_close, CloseFail)
     r = TRY_DRV(virt, Open, "a", 0);
     TEST_ASSERT_EQUAL(1, r);
 
-    r = TRY_DRV(virt, Close, r+1);
+    r = TRY_DRV(virt, Close, r + 1);
     TEST_ASSERT_EQUAL(-EBADF, r);
 
     r = TRY_DRV(virt, Open, "a", 0);
@@ -535,8 +488,7 @@ TEST(vfs_virtual_close, CloseFail)
     TEST_ASSERT_EQUAL(-EBADF, r);
 }
 
-TEST(vfs_virtual_close, CloseOk)
-{
+TEST(vfs_virtual_close, CloseOk) {
     int r;
 
     r = TRY_DRV(virt, Open, "dir", 0);
@@ -563,8 +515,7 @@ TEST(vfs_virtual_close, CloseOk)
     TEST_ASSERT_EQUAL(1, dummyClosed);
 }
 
-TEST_GROUP_RUNNER(vfs_virtual_close)
-{
+TEST_GROUP_RUNNER(vfs_virtual_close) {
     RUN_TEST_CASE(vfs_virtual_close, CloseFail);
     RUN_TEST_CASE(vfs_virtual_close, CloseOk);
 }
@@ -573,8 +524,7 @@ TEST_GROUP_RUNNER(vfs_virtual_close)
 TEST_GROUP(vfs_virtual_stat);
 /***************************************/
 
-TEST_SETUP(vfs_virtual_stat)
-{
+TEST_SETUP(vfs_virtual_stat) {
     virt = VfsVirtualInit(NULL, NULL);
     virt2 = VfsVirtualInit(NULL, NULL);
     dummy_test.Stat = _DummyStat;
@@ -589,13 +539,9 @@ TEST_SETUP(vfs_virtual_stat)
     TRY_DRV(virt, Register, ".dotfile", &dummy_test);
 }
 
-TEST_TEAR_DOWN(vfs_virtual_stat)
-{
-    virt->Destroy(virt);
-}
+TEST_TEAR_DOWN(vfs_virtual_stat) { virt->Destroy(virt); }
 
-TEST(vfs_virtual_stat, StatFail)
-{
+TEST(vfs_virtual_stat, StatFail) {
     int r;
     vfs_stat_t stat;
 
@@ -609,8 +555,7 @@ TEST(vfs_virtual_stat, StatFail)
     TEST_ASSERT_EQUAL(1, r);
 }
 
-TEST(vfs_virtual_stat, StatOk)
-{
+TEST(vfs_virtual_stat, StatOk) {
     int r;
     vfs_stat_t stat;
 
@@ -633,8 +578,7 @@ TEST(vfs_virtual_stat, StatOk)
     TEST_ASSERT_EQUAL(1, stat.ino);
 }
 
-TEST_GROUP_RUNNER(vfs_virtual_stat)
-{
+TEST_GROUP_RUNNER(vfs_virtual_stat) {
     RUN_TEST_CASE(vfs_virtual_stat, StatFail);
     RUN_TEST_CASE(vfs_virtual_stat, StatOk);
 }
@@ -643,8 +587,7 @@ TEST_GROUP_RUNNER(vfs_virtual_stat)
 TEST_GROUP(vfs_virtual_read_write_seek);
 /***************************************/
 
-TEST_SETUP(vfs_virtual_read_write_seek)
-{
+TEST_SETUP(vfs_virtual_read_write_seek) {
     dummyRead = 0;
     dummyWrite = 0;
     dummySeek = 0;
@@ -655,13 +598,9 @@ TEST_SETUP(vfs_virtual_read_write_seek)
     TRY_DRV(virt, Register, "dir/b", &dummy_test);
 }
 
-TEST_TEAR_DOWN(vfs_virtual_read_write_seek)
-{
-    virt->Destroy(virt);
-}
+TEST_TEAR_DOWN(vfs_virtual_read_write_seek) { virt->Destroy(virt); }
 
-TEST(vfs_virtual_read_write_seek, ReadWriteSeekFail)
-{
+TEST(vfs_virtual_read_write_seek, ReadWriteSeekFail) {
     int r;
     uint8_t buf[1];
     long pos;
@@ -671,7 +610,7 @@ TEST(vfs_virtual_read_write_seek, ReadWriteSeekFail)
     r = TRY_DRV(virt, Read, 0, NULL, 0);
     TEST_ASSERT_EQUAL(-EINVAL, r);
 
-    r = TRY_DRV(virt, Read, f+1, buf, 0);
+    r = TRY_DRV(virt, Read, f + 1, buf, 0);
     TEST_ASSERT_EQUAL(-EBADF, r);
 
     r = TRY_DRV(virt, Read, 0, buf, 0);
@@ -680,7 +619,7 @@ TEST(vfs_virtual_read_write_seek, ReadWriteSeekFail)
     r = TRY_DRV(virt, Write, 0, NULL, 0);
     TEST_ASSERT_EQUAL(-EINVAL, r);
 
-    r = TRY_DRV(virt, Write, f+1, buf, 0);
+    r = TRY_DRV(virt, Write, f + 1, buf, 0);
     TEST_ASSERT_EQUAL(-EBADF, r);
 
     r = TRY_DRV(virt, Write, 0, buf, 0);
@@ -689,18 +628,17 @@ TEST(vfs_virtual_read_write_seek, ReadWriteSeekFail)
     r = TRY_DRV(virt, Seek, 0, 0, 0, NULL);
     TEST_ASSERT_EQUAL(-EINVAL, r);
 
-    r = TRY_DRV(virt, Seek, 0, 0, VFS_SEEK_END+1, &pos);
+    r = TRY_DRV(virt, Seek, 0, 0, VFS_SEEK_END + 1, &pos);
     TEST_ASSERT_EQUAL(-EINVAL, r);
 
-    r = TRY_DRV(virt, Seek, f+1, 0, 0, &pos);
+    r = TRY_DRV(virt, Seek, f + 1, 0, 0, &pos);
     TEST_ASSERT_EQUAL(-EBADF, r);
 
     r = TRY_DRV(virt, Seek, 0, 0, 0, &pos);
     TEST_ASSERT_EQUAL(-EISDIR, r);
 }
 
-TEST(vfs_virtual_read_write_seek, ReadWriteSeekOk)
-{
+TEST(vfs_virtual_read_write_seek, ReadWriteSeekOk) {
     int r;
     uint8_t buf[1];
     long pos;
@@ -721,8 +659,7 @@ TEST(vfs_virtual_read_write_seek, ReadWriteSeekOk)
     TEST_ASSERT_EQUAL(1, dummySeek);
 }
 
-TEST_GROUP_RUNNER(vfs_virtual_read_write_seek)
-{
+TEST_GROUP_RUNNER(vfs_virtual_read_write_seek) {
     RUN_TEST_CASE(vfs_virtual_read_write_seek, ReadWriteSeekFail);
     RUN_TEST_CASE(vfs_virtual_read_write_seek, ReadWriteSeekOk);
 }
@@ -731,8 +668,7 @@ TEST_GROUP_RUNNER(vfs_virtual_read_write_seek)
 TEST_GROUP(vfs_virtual_readdir);
 /***************************************/
 
-TEST_SETUP(vfs_virtual_readdir)
-{
+TEST_SETUP(vfs_virtual_readdir) {
     dummyClosed = 0;
     dummy_test.filetype = VFS_FILETYPE_REGULAR_FILE;
     virt = VfsVirtualInit(NULL, NULL);
@@ -742,15 +678,11 @@ TEST_SETUP(vfs_virtual_readdir)
     TRY_DRV(virt, Register, "dir/b", &dummy_test);
 }
 
-TEST_TEAR_DOWN(vfs_virtual_readdir)
-{
-    virt->Destroy(virt);
-}
+TEST_TEAR_DOWN(vfs_virtual_readdir) { virt->Destroy(virt); }
 
 #define BUF_LEN 256
 
-TEST(vfs_virtual_readdir, ReadDirFail)
-{
+TEST(vfs_virtual_readdir, ReadDirFail) {
     int r;
     uint8_t buf[BUF_LEN];
     uint64_t cookie;
@@ -771,12 +703,9 @@ TEST(vfs_virtual_readdir, ReadDirFail)
     r = TRY_DRV(virt, Open, "a", 0);
     r = TRY_DRV(virt, ReadDir, r, buf, BUF_LEN, &cookie, &bufUsed);
     TEST_ASSERT_EQUAL(-EPERM, r);
-
 }
 
-
-TEST(vfs_virtual_readdir, ReadDirOk)
-{
+TEST(vfs_virtual_readdir, ReadDirOk) {
     int r;
     uint8_t buf[BUF_LEN];
     uint64_t cookie = 0;
@@ -794,21 +723,22 @@ TEST(vfs_virtual_readdir, ReadDirOk)
     TEST_ASSERT_EQUAL(52, bufUsed);
     TEST_ASSERT_EQUAL(2, cookie);
 
-    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*buf);                                // uint64_t d_next
-    TEST_ASSERT_EQUAL_UINT64(0, (uint64_t)*(buf + 8));                          // uint64_t d_ino
-    TEST_ASSERT_EQUAL_UINT32(1, (uint32_t)*(buf + 16));                         // uint32_t d_namlen
-    TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_REGULAR_FILE, (uint32_t)*(buf + 20)); // vfs_filetype_t d_type
-    TEST_ASSERT_EQUAL_STRING_LEN("a", buf + 24, 1);                             // filename
+    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*buf);          // uint64_t d_next
+    TEST_ASSERT_EQUAL_UINT64(0, (uint64_t) * (buf + 8));  // uint64_t d_ino
+    TEST_ASSERT_EQUAL_UINT32(1, (uint32_t) * (buf + 16)); // uint32_t d_namlen
+    TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_REGULAR_FILE,
+                             (uint32_t) * (buf + 20)); // vfs_filetype_t d_type
+    TEST_ASSERT_EQUAL_STRING_LEN("a", buf + 24, 1);    // filename
 
-    TEST_ASSERT_EQUAL_UINT64(2, (uint64_t)*(buf + 25));                         // uint64_t d_next
-    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*(buf + 33));                         // uint64_t d_ino
-    TEST_ASSERT_EQUAL_UINT32(3, (uint32_t)*(buf + 41));                         // uint32_t d_namlen
-    TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_DIRECTORY, (uint32_t)*(buf + 45)); // vfs_filetype_t d_type
-    TEST_ASSERT_EQUAL_STRING_LEN("dir", buf + 49, 3);                             // filename
+    TEST_ASSERT_EQUAL_UINT64(2, (uint64_t) * (buf + 25)); // uint64_t d_next
+    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t) * (buf + 33)); // uint64_t d_ino
+    TEST_ASSERT_EQUAL_UINT32(3, (uint32_t) * (buf + 41)); // uint32_t d_namlen
+    TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_DIRECTORY,
+                             (uint32_t) * (buf + 45)); // vfs_filetype_t d_type
+    TEST_ASSERT_EQUAL_STRING_LEN("dir", buf + 49, 3);  // filename
 }
 
-TEST(vfs_virtual_readdir, ReadDirTwice)
-{
+TEST(vfs_virtual_readdir, ReadDirTwice) {
     int r;
     uint8_t buf[BUF_LEN];
     uint64_t cookie = 0;
@@ -826,26 +756,27 @@ TEST(vfs_virtual_readdir, ReadDirTwice)
     TEST_ASSERT_EQUAL(40, bufUsed);
     TEST_ASSERT_EQUAL(2, cookie);
 
-    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*buf);                                // uint64_t d_next
-    TEST_ASSERT_EQUAL_UINT64(0, (uint64_t)*(buf + 8));                          // uint64_t d_ino
-    TEST_ASSERT_EQUAL_UINT32(1, (uint32_t)*(buf + 16));                         // uint32_t d_namlen
-    TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_REGULAR_FILE, (uint32_t)*(buf + 20)); // vfs_filetype_t d_type
-    TEST_ASSERT_EQUAL_STRING_LEN("a", buf + 24, 1);                             // filename
+    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*buf);          // uint64_t d_next
+    TEST_ASSERT_EQUAL_UINT64(0, (uint64_t) * (buf + 8));  // uint64_t d_ino
+    TEST_ASSERT_EQUAL_UINT32(1, (uint32_t) * (buf + 16)); // uint32_t d_namlen
+    TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_REGULAR_FILE,
+                             (uint32_t) * (buf + 20)); // vfs_filetype_t d_type
+    TEST_ASSERT_EQUAL_STRING_LEN("a", buf + 24, 1);    // filename
 
     r = TRY_DRV(virt, ReadDir, 0, buf, 40, &cookie, &bufUsed);
     TEST_ASSERT_EQUAL(0, r);
     TEST_ASSERT_EQUAL(27, bufUsed);
     TEST_ASSERT_EQUAL(2, cookie);
 
-    TEST_ASSERT_EQUAL_UINT64(2, (uint64_t)*buf);                                // uint64_t d_next
-    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*(buf + 8));                          // uint64_t d_ino
-    TEST_ASSERT_EQUAL_UINT32(3, (uint32_t)*(buf + 16));                         // uint32_t d_namlen
-    TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_DIRECTORY, (uint32_t)*(buf + 20));    // vfs_filetype_t d_type
-    TEST_ASSERT_EQUAL_STRING_LEN("dir", buf + 24, 3);                           // filename
+    TEST_ASSERT_EQUAL_UINT64(2, (uint64_t)*buf);          // uint64_t d_next
+    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t) * (buf + 8));  // uint64_t d_ino
+    TEST_ASSERT_EQUAL_UINT32(3, (uint32_t) * (buf + 16)); // uint32_t d_namlen
+    TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_DIRECTORY,
+                             (uint32_t) * (buf + 20)); // vfs_filetype_t d_type
+    TEST_ASSERT_EQUAL_STRING_LEN("dir", buf + 24, 3);  // filename
 }
 
-TEST(vfs_virtual_readdir, ReadDirInDir)
-{
+TEST(vfs_virtual_readdir, ReadDirInDir) {
     int r;
     uint8_t buf[BUF_LEN];
     uint64_t cookie = 0;
@@ -857,16 +788,15 @@ TEST(vfs_virtual_readdir, ReadDirInDir)
     TEST_ASSERT_EQUAL(25, bufUsed);
     TEST_ASSERT_EQUAL(1, cookie);
 
-    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*buf);                                // uint64_t d_next
-    TEST_ASSERT_EQUAL_UINT64(0, (uint64_t)*(buf + 8));                          // uint64_t d_ino
-    TEST_ASSERT_EQUAL_UINT32(1, (uint32_t)*(buf + 16));                         // uint32_t d_namlen
-    TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_REGULAR_FILE, (uint32_t)*(buf + 20)); // vfs_filetype_t d_type
-    TEST_ASSERT_EQUAL_STRING_LEN("b", buf + 24, 1);                             // filename
-
+    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*buf);          // uint64_t d_next
+    TEST_ASSERT_EQUAL_UINT64(0, (uint64_t) * (buf + 8));  // uint64_t d_ino
+    TEST_ASSERT_EQUAL_UINT32(1, (uint32_t) * (buf + 16)); // uint32_t d_namlen
+    TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_REGULAR_FILE,
+                             (uint32_t) * (buf + 20)); // vfs_filetype_t d_type
+    TEST_ASSERT_EQUAL_STRING_LEN("b", buf + 24, 1);    // filename
 }
 
-TEST_GROUP_RUNNER(vfs_virtual_readdir)
-{
+TEST_GROUP_RUNNER(vfs_virtual_readdir) {
     RUN_TEST_CASE(vfs_virtual_readdir, ReadDirFail);
     RUN_TEST_CASE(vfs_virtual_readdir, ReadDirOk);
     RUN_TEST_CASE(vfs_virtual_readdir, ReadDirTwice);

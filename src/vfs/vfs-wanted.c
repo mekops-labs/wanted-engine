@@ -1,13 +1,12 @@
 #include <debug_trace.h>
-#include <vfs.h>
 #include <vfs-drivers.h>
+#include <vfs.h>
 
 extern const vfs_driver_t WantedConfigDriver;
 extern const vfs_driver_t WantedControlDriver;
 extern const vfs_driver_t WantedRegistryDriver;
 
-vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *opt)
-{
+vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *opt) {
     int ret = 0;
     vfs_driver_t *drv;
 

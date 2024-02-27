@@ -1,20 +1,23 @@
+#include <errno.h>
 #include <stddef.h>
 #include <string.h>
-#include <errno.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include "esp_log.h"
 
-#include <platform.h>
 #include <debug_trace.h>
+#include <platform.h>
 #include <wanted-api.h>
-
 
 #define TAG "wapps"
 
-#define FATAL(err, msg, ...) { DEBUG_TRACE("Fatal: " msg, ##__VA_ARGS__); return err; }
+#define FATAL(err, msg, ...)                                                   \
+    {                                                                          \
+        DEBUG_TRACE("Fatal: " msg, ##__VA_ARGS__);                             \
+        return err;                                                            \
+    }
 
 static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -42,8 +45,7 @@ static void updateState(uint8_t id, int ret) {
 }
 */
 
-void WA_thread(void *params)
-{
+void WA_thread(void *params) {
     wapp_data_t *d = (wapp_data_t *)params;
 
     ESP_LOGE("wapps", "starting wa thread");
@@ -63,8 +65,7 @@ void WA_thread(void *params)
     vTaskDelete(NULL);
 }
 
-int PlatformWappLoad(const char *path, wapp_t * wapp)
-{
+int PlatformWappLoad(const char *path, wapp_t *wapp) {
     long filesize;
     FILE *f;
     uint8_t *img;
@@ -99,14 +100,12 @@ int PlatformWappLoad(const char *path, wapp_t * wapp)
     return 0;
 }
 
-int PlatformWappUnload(const wapp_t *wapp)
-{
+int PlatformWappUnload(const wapp_t *wapp) {
     free(wapp->img);
     return 0;
 }
 
-int PlatformWappStart(wapp_t *app)
-{
+int PlatformWappStart(wapp_t *app) {
     int slot;
     TaskHandle_t t;
 
@@ -121,7 +120,9 @@ int PlatformWappStart(wapp_t *app)
     }
 
     for (slot = 0; slot < MAX_WAPPS; slot++) {
-        if (state.threads[slot].status == NOT_STARTED || state.threads[slot].status == EXITED || state.threads[slot].status == FAILURE)
+        if (state.threads[slot].status == NOT_STARTED ||
+            state.threads[slot].status == EXITED ||
+            state.threads[slot].status == FAILURE)
             break;
     }
 
@@ -131,14 +132,8 @@ int PlatformWappStart(wapp_t *app)
     taskEXIT_CRITICAL(&lock);
 
     xTaskCreatePinnedToCore(
-        WA_thread,
-        (const char * const)state.threads[slot].data.wapp.name,
-        65536,
-        (void*) &state.threads[slot].data,
-        tskIDLE_PRIORITY,
-        &t,
-        1
-    );
+        WA_thread, (const char *const)state.threads[slot].data.wapp.name, 65536,
+        (void *)&state.threads[slot].data, tskIDLE_PRIORITY, &t, 1);
     configASSERT(t);
 
     taskENTER_CRITICAL(&lock);
@@ -151,13 +146,12 @@ int PlatformWappStart(wapp_t *app)
     return 0;
 }
 
-int PlatformWappStop(const char* name)
-{
+int PlatformWappStop(const char *name) {
     int slot;
 
     for (slot = 0; slot < MAX_WAPPS; slot++) {
-        if ((strcmp((char *)state.threads[slot].data.wapp.name, name) == 0)
-            && state.threads[slot].status == RUNNING)
+        if ((strcmp((char *)state.threads[slot].data.wapp.name, name) == 0) &&
+            state.threads[slot].status == RUNNING)
             break;
     }
 
@@ -170,8 +164,7 @@ int PlatformWappStop(const char* name)
     return 0;
 }
 
-void PlatformWappLoop()
-{
+void PlatformWappLoop() {
     uint8_t supervisorOk;
     DEBUG_TRACE("looping");
     ESP_LOGE(TAG, "free stack: %d", uxTaskGetStackHighWaterMark(NULL));
@@ -188,7 +181,8 @@ void PlatformWappLoop()
         supervisorOk = 0;
         for (int i = 0; i < MAX_WAPPS; i++) {
             /* at least 1 supervisor needs to be running */
-            if (strncmp((const char*)state.threads[i].data.wapp.name, "supervisor", strlen("supervisor")) == 0 &&
+            if (strncmp((const char *)state.threads[i].data.wapp.name,
+                        "supervisor", strlen("supervisor")) == 0 &&
                 state.threads[i].status == RUNNING) {
                 supervisorOk++;
             }
@@ -200,15 +194,16 @@ void PlatformWappLoop()
     }
 }
 
-int PlatformWappGetState(wapp_state_t *apps, size_t appsLen)
-{
+int PlatformWappGetState(wapp_state_t *apps, size_t appsLen) {
     int i, r;
 
     for (i = 0, r = 0; i < MAX_WAPPS && r < appsLen; i++) {
-        if (state.threads[i].data.wapp.img == NULL) continue;
+        if (state.threads[i].data.wapp.img == NULL)
+            continue;
 
-        strncpy(apps[r].name, (const char *)state.threads[i].data.wapp.name, WAPP_MAX_NAME_LEN);
-        apps[r].name[WAPP_MAX_NAME_LEN-1] = '\0';
+        strncpy(apps[r].name, (const char *)state.threads[i].data.wapp.name,
+                WAPP_MAX_NAME_LEN);
+        apps[r].name[WAPP_MAX_NAME_LEN - 1] = '\0';
         apps[r].status = state.threads[i].status;
         apps[r].version = state.threads[i].data.wapp.version;
         apps[r].id = state.threads[i].data.id;

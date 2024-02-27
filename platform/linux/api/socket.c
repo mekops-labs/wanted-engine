@@ -1,15 +1,15 @@
-#include <string.h>
-#include <stdbool.h>
-#include <sys/socket.h>
 #include <arpa/inet.h>
-#include <resolv.h>
-#include <netdb.h>
-#include <unistd.h>
 #include <errno.h>
+#include <netdb.h>
+#include <resolv.h>
+#include <stdbool.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
-#include <wanted_malloc.h>
-#include <vfs-drivers.h>
 #include <network.h>
+#include <vfs-drivers.h>
+#include <wanted_malloc.h>
 
 struct netCtx {
     void *ssl;
@@ -18,16 +18,14 @@ struct netCtx {
     int socket;
 };
 
-void *PlatformNetOpen(int socket_type)
-{
+void *PlatformNetOpen(int socket_type) {
     int sock;
     int type;
     int ret;
 
     struct netCtx *netCtx;
 
-    switch (socket_type)
-    {
+    switch (socket_type) {
     case VFS_SKT_TCP:
     case VFS_SKT_STCP:
         type = SOCK_STREAM;
@@ -70,8 +68,7 @@ int PlatformNetFree(struct netCtx *c) {
     return 0;
 }
 
-int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port)
-{
+int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
     struct hostent *host;
     struct sockaddr_in addr;
 
@@ -79,7 +76,7 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port)
         return -EINVAL;
     }
 
-    if ((host = gethostbyname(hostname)) == NULL){
+    if ((host = gethostbyname(hostname)) == NULL) {
         return -EINVAL;
     }
 
@@ -87,9 +84,9 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port)
 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = *(long*)(host->h_addr);
+    addr.sin_addr.s_addr = *(long *)(host->h_addr);
 
-    if (connect(c->socket, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+    if (connect(c->socket, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
         return -errno;
     }
 
@@ -108,8 +105,7 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port)
     return 0;
 }
 
-int PlatformNetClose(struct netCtx *c)
-{
+int PlatformNetClose(struct netCtx *c) {
     if (NULL == c) {
         return -EINVAL;
     }
@@ -127,8 +123,7 @@ int PlatformNetClose(struct netCtx *c)
     return 0;
 }
 
-int PlatformNetRecv(struct netCtx *c, void *buf, size_t nbyte, int flags)
-{
+int PlatformNetRecv(struct netCtx *c, void *buf, size_t nbyte, int flags) {
     int ret;
 
     if (NULL == c) {
@@ -147,8 +142,8 @@ int PlatformNetRecv(struct netCtx *c, void *buf, size_t nbyte, int flags)
     return ret;
 }
 
-int PlatformNetSend(struct netCtx *c, const void *buf, size_t nbyte, int flags)
-{
+int PlatformNetSend(struct netCtx *c, const void *buf, size_t nbyte,
+                    int flags) {
     int ret;
 
     if (NULL == c) {
@@ -168,8 +163,7 @@ int PlatformNetSend(struct netCtx *c, const void *buf, size_t nbyte, int flags)
 }
 
 /* TODO: totally untested, broken */
-int PlatformNetAccept(struct netCtx *c)
-{
+int PlatformNetAccept(struct netCtx *c) {
     int newFd;
 
     if (NULL == c) {
@@ -191,8 +185,7 @@ int PlatformNetAccept(struct netCtx *c)
     return newFd;
 }
 
-int PlatformNetShutdown(struct netCtx *c, int how)
-{
+int PlatformNetShutdown(struct netCtx *c, int how) {
     if (NULL == c) {
         return -EINVAL;
     }
