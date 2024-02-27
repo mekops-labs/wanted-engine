@@ -5,7 +5,7 @@
 	exit 1
 }
 
-test_groups=$(sed -n -e '/TEST_GROUP_RUNNER/s/TEST_GROUP_RUNNER(\(.*\))/\1/p' test-*.c)
+test_groups=$(sed -n -e '/TEST_GROUP_RUNNER/s/TEST_GROUP_RUNNER(\([^)]*\)).*/\1/p' test-*.c)
 
 cat >$1 <<EOF
 #include "unity_fixture.h"
