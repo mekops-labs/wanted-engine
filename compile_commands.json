@@ -1,0 +1,356 @@
+[
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/wanted_malloc.c.o -c /var/home/mek/work/wanted-engine/src/wanted_malloc.c",
+  "file": "/var/home/mek/work/wanted-engine/src/wanted_malloc.c",
+  "output": "src/CMakeFiles/wanted.dir/wanted_malloc.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/wanted.c.o -c /var/home/mek/work/wanted-engine/src/wanted.c",
+  "file": "/var/home/mek/work/wanted-engine/src/wanted.c",
+  "output": "src/CMakeFiles/wanted.dir/wanted.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/wanted_wasm_api.c.o -c /var/home/mek/work/wanted-engine/src/wanted_wasm_api.c",
+  "file": "/var/home/mek/work/wanted-engine/src/wanted_wasm_api.c",
+  "output": "src/CMakeFiles/wanted.dir/wanted_wasm_api.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/wanted-vfs-api.c.o -c /var/home/mek/work/wanted-engine/src/wanted-vfs-api.c",
+  "file": "/var/home/mek/work/wanted-engine/src/wanted-vfs-api.c",
+  "output": "src/CMakeFiles/wanted.dir/wanted-vfs-api.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/drivers.c.o -c /var/home/mek/work/wanted-engine/src/vfs/drivers.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/drivers.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/drivers.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs-9p.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs-9p.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs-9p.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs-9p.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs-config.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs-config.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs-config.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs-config.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs-null.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs-null.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs-null.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs-null.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs-romfs.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs-romfs.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs-romfs.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs-romfs.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs-socket.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs-socket.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs-socket.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs-socket.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs-wanted.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs-wanted.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs-wanted.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs-wanted.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs-wanted-config.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs-wanted-config.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs-wanted-config.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs-wanted-config.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs-wanted-ctrl.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs-wanted-ctrl.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs-wanted-ctrl.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs-wanted-ctrl.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs-wanted-registry.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs-wanted-registry.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs-wanted-registry.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs-wanted-registry.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/vfs/vfs-virtual.c.o -c /var/home/mek/work/wanted-engine/src/vfs/vfs-virtual.c",
+  "file": "/var/home/mek/work/wanted-engine/src/vfs/vfs-virtual.c",
+  "output": "src/CMakeFiles/wanted.dir/vfs/vfs-virtual.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/wasi/wasi-vfs.c.o -c /var/home/mek/work/wanted-engine/src/wasi/wasi-vfs.c",
+  "file": "/var/home/mek/work/wanted-engine/src/wasi/wasi-vfs.c",
+  "output": "src/CMakeFiles/wanted.dir/wasi/wasi-vfs.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/__/vendor/tiny-json/tiny-json.c.o -c /var/home/mek/work/wanted-engine/vendor/tiny-json/tiny-json.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/tiny-json/tiny-json.c",
+  "output": "src/CMakeFiles/wanted.dir/__/vendor/tiny-json/tiny-json.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/__/vendor/json-maker/src/json-maker.c.o -c /var/home/mek/work/wanted-engine/vendor/json-maker/src/json-maker.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/json-maker/src/json-maker.c",
+  "output": "src/CMakeFiles/wanted.dir/__/vendor/json-maker/src/json-maker.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/vendor/json-maker/src/include -I/var/home/mek/work/wanted-engine/vendor/c9 -I/var/home/mek/work/wanted-engine/wasm/supervisor/default -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -g -o src/CMakeFiles/wanted.dir/__/vendor/c9/c9.c.o -c /var/home/mek/work/wanted-engine/vendor/c9/c9.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/c9/c9.c",
+  "output": "src/CMakeFiles/wanted.dir/__/vendor/c9/c9.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DROMFS_CUSTOM_MALLOC=1 -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -o romfs/CMakeFiles/romfs.dir/path_utils.c.o -c /var/home/mek/work/wanted-engine/vendor/romfs-lib/src/path_utils.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/path_utils.c",
+  "output": "romfs/CMakeFiles/romfs.dir/path_utils.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DROMFS_CUSTOM_MALLOC=1 -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -o romfs/CMakeFiles/romfs.dir/romfs-internal.c.o -c /var/home/mek/work/wanted-engine/vendor/romfs-lib/src/romfs-internal.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/romfs-internal.c",
+  "output": "romfs/CMakeFiles/romfs.dir/romfs-internal.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DROMFS_CUSTOM_MALLOC=1 -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -o romfs/CMakeFiles/romfs.dir/romfs.c.o -c /var/home/mek/work/wanted-engine/vendor/romfs-lib/src/romfs.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/romfs.c",
+  "output": "romfs/CMakeFiles/romfs.dir/romfs.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DMAX_NAME_LEN=32 -DMAX_PATH_LEN=256 -DPROJECT_VERSION=\\\"0.4.0\\\" -DROMFS_CUSTOM_MALLOC=1 -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/src/../include -o romfs/CMakeFiles/romfs.dir/__/__/__/src/romfs_malloc.c.o -c /var/home/mek/work/wanted-engine/src/romfs_malloc.c",
+  "file": "/var/home/mek/work/wanted-engine/src/romfs_malloc.c",
+  "output": "romfs/CMakeFiles/romfs.dir/__/__/__/src/romfs_malloc.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -std=gnu11 -Wall -Wextra -Wpedantic -Werror -o cwalk/CMakeFiles/cwalk.dir/src/cwalk.c.o -c /var/home/mek/work/wanted-engine/vendor/cwalk/src/cwalk.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/cwalk/src/cwalk.c",
+  "output": "cwalk/CMakeFiles/cwalk.dir/src/cwalk.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_api_libc.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_api_libc.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_api_libc.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_api_libc.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_api_wasi.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_api_wasi.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_api_wasi.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_api_wasi.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_api_uvwasi.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_api_uvwasi.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_api_uvwasi.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_api_uvwasi.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_api_meta_wasi.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_api_meta_wasi.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_api_meta_wasi.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_api_meta_wasi.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_api_tracer.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_api_tracer.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_api_tracer.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_api_tracer.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_bind.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_bind.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_bind.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_bind.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_code.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_code.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_code.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_code.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_compile.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_compile.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_compile.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_compile.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_core.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_core.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_core.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_core.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -Wno-sign-compare -o m3/CMakeFiles/m3.dir/m3_env.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_env.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_env.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_env.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_exec.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_exec.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_exec.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_exec.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_function.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_function.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_function.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_function.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_info.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_info.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_info.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_info.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_module.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_module.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_module.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_module.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/vendor/wasm3/source/. -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer -o m3/CMakeFiles/m3.dir/m3_parse.c.o -c /var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_parse.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/wasm3/source/m3_parse.c",
+  "output": "m3/CMakeFiles/m3.dir/m3_parse.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/linux/include -g -o cmd/CMakeFiles/wanted_cmd.dir/main.c.o -c /var/home/mek/work/wanted-engine/cmd/main.c",
+  "file": "/var/home/mek/work/wanted-engine/cmd/main.c",
+  "output": "cmd/CMakeFiles/wanted_cmd.dir/main.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/platform/linux/include -o platform/linux/CMakeFiles/platform_linux.dir/vfs/vfs-linux.c.o -c /var/home/mek/work/wanted-engine/platform/linux/vfs/vfs-linux.c",
+  "file": "/var/home/mek/work/wanted-engine/platform/linux/vfs/vfs-linux.c",
+  "output": "platform/linux/CMakeFiles/platform_linux.dir/vfs/vfs-linux.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/platform/linux/include -o platform/linux/CMakeFiles/platform_linux.dir/api/clock.c.o -c /var/home/mek/work/wanted-engine/platform/linux/api/clock.c",
+  "file": "/var/home/mek/work/wanted-engine/platform/linux/api/clock.c",
+  "output": "platform/linux/CMakeFiles/platform_linux.dir/api/clock.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/platform/linux/include -o platform/linux/CMakeFiles/platform_linux.dir/api/random.c.o -c /var/home/mek/work/wanted-engine/platform/linux/api/random.c",
+  "file": "/var/home/mek/work/wanted-engine/platform/linux/api/random.c",
+  "output": "platform/linux/CMakeFiles/platform_linux.dir/api/random.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/platform/linux/include -o platform/linux/CMakeFiles/platform_linux.dir/api/registry.c.o -c /var/home/mek/work/wanted-engine/platform/linux/api/registry.c",
+  "file": "/var/home/mek/work/wanted-engine/platform/linux/api/registry.c",
+  "output": "platform/linux/CMakeFiles/platform_linux.dir/api/registry.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/platform/linux/include -o platform/linux/CMakeFiles/platform_linux.dir/api/wapps.c.o -c /var/home/mek/work/wanted-engine/platform/linux/api/wapps.c",
+  "file": "/var/home/mek/work/wanted-engine/platform/linux/api/wapps.c",
+  "output": "platform/linux/CMakeFiles/platform_linux.dir/api/wapps.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/platform/linux/include -o platform/linux/CMakeFiles/platform_linux.dir/api/socket.c.o -c /var/home/mek/work/wanted-engine/platform/linux/api/socket.c",
+  "file": "/var/home/mek/work/wanted-engine/platform/linux/api/socket.c",
+  "output": "platform/linux/CMakeFiles/platform_linux.dir/api/socket.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/cwalk/include -I/var/home/mek/work/wanted-engine/platform/linux/include -o platform/linux/CMakeFiles/platform_linux.dir/api/ssocket.c.o -c /var/home/mek/work/wanted-engine/platform/linux/api/ssocket.c",
+  "file": "/var/home/mek/work/wanted-engine/platform/linux/api/ssocket.c",
+  "output": "platform/linux/CMakeFiles/platform_linux.dir/api/ssocket.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/src -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/src -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/test/unity/src -I/var/home/mek/work/wanted-engine/build/test/unity -I/var/home/mek/work/wanted-engine/test/unity/extras/memory/src -I/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src -g -o test/CMakeFiles/tests.dir/test-api.c.o -c /var/home/mek/work/wanted-engine/test/test-api.c",
+  "file": "/var/home/mek/work/wanted-engine/test/test-api.c",
+  "output": "test/CMakeFiles/tests.dir/test-api.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/src -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/src -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/test/unity/src -I/var/home/mek/work/wanted-engine/build/test/unity -I/var/home/mek/work/wanted-engine/test/unity/extras/memory/src -I/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src -g -o test/CMakeFiles/tests.dir/test-vfs.c.o -c /var/home/mek/work/wanted-engine/test/test-vfs.c",
+  "file": "/var/home/mek/work/wanted-engine/test/test-vfs.c",
+  "output": "test/CMakeFiles/tests.dir/test-vfs.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/src -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/src -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/test/unity/src -I/var/home/mek/work/wanted-engine/build/test/unity -I/var/home/mek/work/wanted-engine/test/unity/extras/memory/src -I/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src -g -o test/CMakeFiles/tests.dir/test-vfs_virtual.c.o -c /var/home/mek/work/wanted-engine/test/test-vfs_virtual.c",
+  "file": "/var/home/mek/work/wanted-engine/test/test-vfs_virtual.c",
+  "output": "test/CMakeFiles/tests.dir/test-vfs_virtual.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/src -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/src -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/test/unity/src -I/var/home/mek/work/wanted-engine/build/test/unity -I/var/home/mek/work/wanted-engine/test/unity/extras/memory/src -I/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src -g -o test/CMakeFiles/tests.dir/test-wanted-vfs-api.c.o -c /var/home/mek/work/wanted-engine/test/test-wanted-vfs-api.c",
+  "file": "/var/home/mek/work/wanted-engine/test/test-wanted-vfs-api.c",
+  "output": "test/CMakeFiles/tests.dir/test-wanted-vfs-api.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/src -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/src -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/test/unity/src -I/var/home/mek/work/wanted-engine/build/test/unity -I/var/home/mek/work/wanted-engine/test/unity/extras/memory/src -I/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src -g -o test/CMakeFiles/tests.dir/test_wasi.romfs.c.o -c /var/home/mek/work/wanted-engine/test/test_wasi.romfs.c",
+  "file": "/var/home/mek/work/wanted-engine/test/test_wasi.romfs.c",
+  "output": "test/CMakeFiles/tests.dir/test_wasi.romfs.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/src -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/src -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/test/unity/src -I/var/home/mek/work/wanted-engine/build/test/unity -I/var/home/mek/work/wanted-engine/test/unity/extras/memory/src -I/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src -g -o test/CMakeFiles/tests.dir/__/vendor/tiny-json/tiny-json.c.o -c /var/home/mek/work/wanted-engine/vendor/tiny-json/tiny-json.c",
+  "file": "/var/home/mek/work/wanted-engine/vendor/tiny-json/tiny-json.c",
+  "output": "test/CMakeFiles/tests.dir/__/vendor/tiny-json/tiny-json.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -DSECURE_SOCKETS=1 -I/src -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/src -I/var/home/mek/work/wanted-engine/src/include -I/var/home/mek/work/wanted-engine/vendor/romfs-lib/include -I/var/home/mek/work/wanted-engine/vendor/tiny-json -I/var/home/mek/work/wanted-engine/test/unity/src -I/var/home/mek/work/wanted-engine/build/test/unity -I/var/home/mek/work/wanted-engine/test/unity/extras/memory/src -I/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src -g -o test/CMakeFiles/tests.dir/runner.c.o -c /var/home/mek/work/wanted-engine/build/test/runner.c",
+  "file": "/var/home/mek/work/wanted-engine/build/test/runner.c",
+  "output": "test/CMakeFiles/tests.dir/runner.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/test/unity/src -I/var/home/mek/work/wanted-engine/build/test/unity -I/var/home/mek/work/wanted-engine/test/unity/extras/memory/src -I/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src -std=c11 -Waddress -Waggregate-return -Wformat-nonliteral -Wformat-security -Wformat -Winit-self -Wmissing-declarations -Wmissing-include-dirs -Wno-multichar -Wno-parentheses -Wno-type-limits -Wno-unused-parameter -Wunreachable-code -Wwrite-strings -Wpointer-arith -Werror -Wall -o test/unity/CMakeFiles/unity.dir/src/unity.c.o -c /var/home/mek/work/wanted-engine/test/unity/src/unity.c",
+  "file": "/var/home/mek/work/wanted-engine/test/unity/src/unity.c",
+  "output": "test/unity/CMakeFiles/unity.dir/src/unity.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/test/unity/src -I/var/home/mek/work/wanted-engine/build/test/unity -I/var/home/mek/work/wanted-engine/test/unity/extras/memory/src -I/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src -std=c11 -Waddress -Waggregate-return -Wformat-nonliteral -Wformat-security -Wformat -Winit-self -Wmissing-declarations -Wmissing-include-dirs -Wno-multichar -Wno-parentheses -Wno-type-limits -Wno-unused-parameter -Wunreachable-code -Wwrite-strings -Wpointer-arith -Werror -Wall -o test/unity/CMakeFiles/unity.dir/extras/fixture/src/unity_fixture.c.o -c /var/home/mek/work/wanted-engine/test/unity/extras/fixture/src/unity_fixture.c",
+  "file": "/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src/unity_fixture.c",
+  "output": "test/unity/CMakeFiles/unity.dir/extras/fixture/src/unity_fixture.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/test/unity/src -I/var/home/mek/work/wanted-engine/build/test/unity -I/var/home/mek/work/wanted-engine/test/unity/extras/memory/src -I/var/home/mek/work/wanted-engine/test/unity/extras/fixture/src -std=c11 -Waddress -Waggregate-return -Wformat-nonliteral -Wformat-security -Wformat -Winit-self -Wmissing-declarations -Wmissing-include-dirs -Wno-multichar -Wno-parentheses -Wno-type-limits -Wno-unused-parameter -Wunreachable-code -Wwrite-strings -Wpointer-arith -Werror -Wall -o test/unity/CMakeFiles/unity.dir/extras/memory/src/unity_memory.c.o -c /var/home/mek/work/wanted-engine/test/unity/extras/memory/src/unity_memory.c",
+  "file": "/var/home/mek/work/wanted-engine/test/unity/extras/memory/src/unity_memory.c",
+  "output": "test/unity/CMakeFiles/unity.dir/extras/memory/src/unity_memory.c.o"
+},
+{
+  "directory": "/var/home/mek/work/wanted-engine/build",
+  "command": "/usr/sbin/cc -I/var/home/mek/work/wanted-engine/include -I/var/home/mek/work/wanted-engine/platform/include -I/var/home/mek/work/wanted-engine/src/include -o platform/dummy/CMakeFiles/platform_dummy.dir/dummy.c.o -c /var/home/mek/work/wanted-engine/platform/dummy/dummy.c",
+  "file": "/var/home/mek/work/wanted-engine/platform/dummy/dummy.c",
+  "output": "platform/dummy/CMakeFiles/platform_dummy.dir/dummy.c.o"
+}
+]
