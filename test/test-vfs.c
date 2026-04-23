@@ -72,7 +72,9 @@ TEST_GROUP(vfs_openclose);
 /***************************************/
 
 TEST_SETUP(vfs_openclose) {
-    wapp_t w = {.img = test_wasi, .img_len = test_wasi_len};
+    wapp_t w = {.layers = {test_wasi},
+                .layer_lens = {test_wasi_len},
+                .layer_cnt = 1};
     const char *args = "/";
     vfs = VfsInit();
     virt1 = VfsVirtualInit(NULL, NULL);

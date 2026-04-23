@@ -131,8 +131,9 @@ int PlatformWappLoad(const char *path, wapp_t *wapp) {
     if (img == MAP_FAILED)
         FATAL(-errno, "can't map file");
 
-    wapp->img = img;
-    wapp->img_len = filesize;
+    wapp->layers[0] = img;
+    wapp->layer_lens[0] = filesize;
+    wapp->layer_cnt = 1;
 
     fclose(f);
     return 0;
@@ -143,7 +144,7 @@ int PlatformWappUnload(const wapp_t *wapp) {
         return -EINVAL;
     }
 
-    if (munmap(wapp->img, wapp->img_len) < 0)
+    if (munmap(wapp->layers[0], wapp->layer_lens[0]) < 0)
         FATAL(-errno, "can't unmap file");
     return 0;
 }
