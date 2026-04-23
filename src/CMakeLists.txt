@@ -13,6 +13,7 @@ set(vfs-srcs
     "vfs/vfs-config.c"
     "vfs/vfs-null.c"
     "vfs/vfs-romfs.c"
+    "vfs/vfs-tarfs.c"
     "vfs/vfs-socket.c"
     "vfs/vfs-wanted.c"
     "vfs/vfs-wanted-config.c"
