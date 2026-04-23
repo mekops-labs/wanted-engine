@@ -80,7 +80,7 @@ int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen) {
     int ret;
     struct wappImgData_t m;
 
-    ret = LoadFile(manifestName, w->img, w->img_len, &m);
+    ret = LoadFile(manifestName, w->layers[0], w->layer_lens[0], &m);
     if (ret < 0) {
         DEBUG_TRACE("Can't load manifest from wapp image: %d", ret);
         return -1;
@@ -177,7 +177,7 @@ int WantedWappRun(wapp_data_t *ctx) {
         return -1;
     }
 
-    ret = LoadFile(appName, wapp->img, wapp->img_len, &wasm);
+    ret = LoadFile(appName, wapp->layers[0], wapp->layer_lens[0], &wasm);
     if (ret < 0) {
         DEBUG_TRACE("Can't load application from wapp image: %d", ret);
         return -1;
@@ -344,8 +344,12 @@ wapp_t *WantedGetCurrentSupervisor() {
     if (ret < 0)
         return w;
 
-    w->img = supervisor_wapp;
-    w->img_len = supervisor_wapp_len;
+    /* Transitional: expose the supervisor blob as the sole OCI layer. When the
+     * supervisor build pipeline emits a TAR (Phase 6 prerequisite), the blob
+     * format changes but this assignment stays the same. */
+    w->layers[0] = supervisor_wapp;
+    w->layer_lens[0] = supervisor_wapp_len;
+    w->layer_cnt = 1;
 
     return w;
 }

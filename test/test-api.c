@@ -19,8 +19,9 @@ TEST(wanted_api, runSimpleWasm) {
     wapp_t w = {0};
     int ret;
 
-    w.img = test_wasi;
-    w.img_len = test_wasi_len;
+    w.layers[0] = test_wasi;
+    w.layer_lens[0] = test_wasi_len;
+    w.layer_cnt = 1;
     strcpy(w.cfg.console[0].name, "null");
     strcpy(w.cfg.console[1].name, "null");
     strcpy(w.cfg.console[2].name, "null");

@@ -44,7 +44,9 @@ vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, const char *opt) {
 
     root = opt;
 
-    ret = RomfsLoad(wapp->img, wapp->img_len, &r);
+    /* Transitional: read from layer 0 until the supervisor wapp is rebuilt as TAR
+     * and vfs-romfs.c is deleted in Phase 8. */
+    ret = RomfsLoad(wapp->layers[0], wapp->layer_lens[0], &r);
     if (ret < 0) {
         DEBUG_TRACE("can't load romfs");
         return NULL;

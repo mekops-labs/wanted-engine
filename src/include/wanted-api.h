@@ -14,6 +14,7 @@
 #define MAX_PATH_LEN 256
 #define MAX_OPTIONS_SIZE 1024
 #define MAX_DRIVERS_CNT 10
+#define TARFS_MAX_LAYERS 4
 
 typedef struct m3Data_t *im3Data_t;
 
@@ -52,9 +53,11 @@ typedef enum wapp_action_t {
 typedef struct wapp_t {
     char name[WAPP_MAX_NAME_LEN];
     wapp_version_t version;
-    uint8_t *img;
-    size_t img_len;
     wapp_config_t cfg;
+    /* OCI layer stack (newest first, index 0 = topmost) */
+    uint8_t *layers[TARFS_MAX_LAYERS];
+    size_t layer_lens[TARFS_MAX_LAYERS];
+    uint8_t layer_cnt; /* must be >= 1 for a valid wapp */
 } wapp_t;
 
 typedef struct wapp_data_t {
