@@ -8,20 +8,25 @@
 #include <debug_trace.h>
 #include <vfs-devfs.h>
 #include <vfs-netfs.h>
+#include <vfs-tarfs.h>
 #include <vfs.h>
 #include <wanted_malloc.h>
 
 #include <cwalk.h>
 
-/* Phase 4 — stateless prefix router.
+/* Phase 4/5 — stateless prefix router.
  *
  * VfsOpen / VfsOpenAt detect "/dev/" and "/net/" prefixes and route those
- * paths through DevFs / NetFs into the typed-FD table (c->fds[]). Everything
- * else continues to flow through the legacy per-driver fildes[]/rootDriver
- * dispatch until Phase 6 rewires wanted.c boot and Phase 8 deletes the
- * legacy plumbing. The two FD pools share one integer space — both
- * allocators consult both arrays to keep VFS-fd numbers monotone, which is
- * required by the WASI fd-prestat contract. */
+ * paths through DevFs / NetFs. Phase 5 adds the TARFS branch: when the wapp
+ * has a tarfs context (`c->tarfs != NULL`), every other path resolves
+ * against the layered TAR index. All routed opens return into the typed-FD
+ * table (c->fds[]); the legacy per-driver fildes[]/rootDriver dispatch
+ * remains as a fallback for wapps without a tarfs context, until Phase 6
+ * rewires the boot path and Phase 8 deletes the legacy plumbing.
+ *
+ * The two FD pools share one integer space — allocators consult both arrays
+ * to keep VFS-fd numbers monotone, as required by the WASI fd-prestat
+ * contract. */
 
 static inline bool is_typed_fd(struct vfs_ctx_t *c, int fd) {
     return c && fd >= 0 && fd < MAX_OPEN &&
@@ -51,6 +56,22 @@ static int FindFirstClosedFd(struct vfs_ctx_t *c) {
     return -EMFILE;
 }
 
+/* Typed FDs (DevFs/NetFs/TarFs) skip ROOT_FD when it has been claimed by a
+ * legacy "/" preopen via VfsRegister. WASI's prestat contract pins ROOT_FD
+ * to the root mount; only legacy "/" opens may land there. */
+static int FindFirstClosedTypedFd(struct vfs_ctx_t *c) {
+    if (!c)
+        return -EINVAL;
+
+    int start = (c->fildes[ROOT_FD].drv != NULL) ? (ROOT_FD + 1) : ROOT_FD;
+    for (int i = start; i < MAX_OPEN; i++) {
+        if (!c->fildes[i].opened && c->fds[i].type == VFS_TYPE_NONE) {
+            return i;
+        }
+    }
+    return -EMFILE;
+}
+
 static bool path_has_prefix(const char *path, const char *prefix) {
     return strncmp(path, prefix, strlen(prefix)) == 0;
 }
@@ -66,6 +87,9 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     } else if (path_has_prefix(path, "/net/")) {
         type = VFS_TYPE_NET;
         handle = NetFs_Open(c, path + 5, flags);
+    } else if (c->tarfs != NULL) {
+        type = VFS_TYPE_TARFS;
+        handle = TarFs_Open(c->tarfs, path, flags);
     } else {
         return -ENOTSUP;
     }
@@ -74,12 +98,14 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
         return -ENOENT;
     }
 
-    fd = FindFirstClosedFd(c);
+    fd = FindFirstClosedTypedFd(c);
     if (fd < 0) {
         if (type == VFS_TYPE_DEV)
             DevFs_Close(c, handle);
-        else
+        else if (type == VFS_TYPE_NET)
             NetFs_Close(c, handle);
+        else
+            TarFs_Close(c->tarfs, handle);
         return fd;
     }
 
@@ -87,6 +113,10 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     c->fds[fd].internal_ctx = handle;
     c->fds[fd].flags = flags;
     return fd;
+}
+
+static inline bool path_is_routed_prefix(const char *path) {
+    return path_has_prefix(path, "/dev/") || path_has_prefix(path, "/net/");
 }
 
 /* PUBLIC INTERFACE */
@@ -122,6 +152,8 @@ static void DestroyTypedFds(vfs_ctx_t c) {
             DevFs_Close(c, c->fds[i].internal_ctx);
         } else if (c->fds[i].type == VFS_TYPE_NET) {
             NetFs_Close(c, c->fds[i].internal_ctx);
+        } else if (c->fds[i].type == VFS_TYPE_TARFS) {
+            TarFs_Close(c->tarfs, c->fds[i].internal_ctx);
         }
         c->fds[i].type = VFS_TYPE_NONE;
         c->fds[i].internal_ctx = NULL;
@@ -197,7 +229,7 @@ int VfsOpen(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
         return -EINVAL;
     }
 
-    if (path_has_prefix(path, "/dev/") || path_has_prefix(path, "/net/")) {
+    if (path_is_routed_prefix(path) || c->tarfs != NULL) {
         return route_open(c, path, flags);
     }
 
@@ -211,9 +243,10 @@ int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags) {
         return -EINVAL;
     }
 
-    /* Absolute /dev/ and /net/ paths short-circuit straight into the router,
-     * regardless of the parent fd. */
-    if (path_has_prefix(path, "/dev/") || path_has_prefix(path, "/net/")) {
+    /* Absolute routed paths short-circuit into the router, regardless of the
+     * parent fd. /dev/ and /net/ always route; arbitrary paths route when the
+     * wapp has a tarfs context. */
+    if (path_is_routed_prefix(path) || c->tarfs != NULL) {
         return route_open(c, path, flags);
     }
 
@@ -256,6 +289,8 @@ int VfsClose(vfs_ctx_t c, int fd) {
             r = DevFs_Close(c, c->fds[fd].internal_ctx);
         } else if (c->fds[fd].type == VFS_TYPE_NET) {
             r = NetFs_Close(c, c->fds[fd].internal_ctx);
+        } else if (c->fds[fd].type == VFS_TYPE_TARFS) {
+            r = TarFs_Close(c->tarfs, c->fds[fd].internal_ctx);
         } else {
             r = -EBADF;
         }
@@ -307,6 +342,8 @@ int VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat) {
             return DevFs_Stat(c, c->fds[fd].internal_ctx, stat);
         if (c->fds[fd].type == VFS_TYPE_NET)
             return NetFs_Stat(c, c->fds[fd].internal_ctx, stat);
+        if (c->fds[fd].type == VFS_TYPE_TARFS)
+            return TarFs_Stat(c->tarfs, c->fds[fd].internal_ctx, stat);
         return -EBADF;
     }
 
@@ -322,6 +359,8 @@ int VfsStatSet(vfs_ctx_t c, int fd, vfs_stat_t stat) {
     if (is_typed_fd(c, fd)) {
         if (c->fds[fd].type == VFS_TYPE_DEV)
             return DevFs_StatSet(c, c->fds[fd].internal_ctx, stat);
+        if (c->fds[fd].type == VFS_TYPE_TARFS)
+            return -EROFS;
         return -ENOTSUP;
     }
 
@@ -343,6 +382,8 @@ int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte) {
             return DevFs_Read(c, c->fds[fd].internal_ctx, buf, nbyte);
         if (c->fds[fd].type == VFS_TYPE_NET)
             return NetFs_Read(c, c->fds[fd].internal_ctx, buf, nbyte);
+        if (c->fds[fd].type == VFS_TYPE_TARFS)
+            return TarFs_Read(c->tarfs, c->fds[fd].internal_ctx, buf, nbyte);
         return -EBADF;
     }
 
@@ -364,6 +405,8 @@ int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte) {
             return DevFs_Write(c, c->fds[fd].internal_ctx, buf, nbyte);
         if (c->fds[fd].type == VFS_TYPE_NET)
             return NetFs_Write(c, c->fds[fd].internal_ctx, buf, nbyte);
+        if (c->fds[fd].type == VFS_TYPE_TARFS)
+            return -EROFS;
         return -EBADF;
     }
 
@@ -383,6 +426,9 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
     if (is_typed_fd(c, fd)) {
         if (c->fds[fd].type == VFS_TYPE_DEV)
             return DevFs_Seek(c, c->fds[fd].internal_ctx, off, whence, pos);
+        if (c->fds[fd].type == VFS_TYPE_TARFS)
+            return TarFs_Seek(c->tarfs, c->fds[fd].internal_ctx, off, whence,
+                              pos);
         return -ENOTSUP;
     }
 
@@ -405,6 +451,9 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
         if (c->fds[fd].type == VFS_TYPE_DEV)
             return DevFs_ReadDir(c, c->fds[fd].internal_ctx, buf, bufLen,
                                  cookie, bufUsed);
+        if (c->fds[fd].type == VFS_TYPE_TARFS)
+            return TarFs_ReadDir(c->tarfs, c->fds[fd].internal_ctx, buf,
+                                 bufLen, cookie, bufUsed);
         return -ENOTSUP;
     }
 
@@ -425,6 +474,8 @@ int VfsUnlink(vfs_ctx_t c, int fd, const char *path) {
     if (is_typed_fd(c, fd)) {
         if (c->fds[fd].type == VFS_TYPE_DEV)
             return DevFs_Unlink(c, c->fds[fd].internal_ctx, path);
+        if (c->fds[fd].type == VFS_TYPE_TARFS)
+            return -EROFS;
         return -ENOTSUP;
     }
 
