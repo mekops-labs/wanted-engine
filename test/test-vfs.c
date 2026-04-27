@@ -162,15 +162,24 @@ TEST_GROUP(vfs_prefix_router);
  * the virt subtree; the router intercepts /dev/* and /net/* opens and routes
  * them through DevFs/NetFs into the typed-FD table. */
 
+static vfs_driver_t *router_dev_virt;
+static vfs_driver_t *router_net_virt;
 static vfs_driver_t *router_dev_drv;
 static vfs_driver_t *router_net_drv;
 
 TEST_SETUP(vfs_prefix_router) {
     vfs = VfsInit();
     virt1 = VfsVirtualInit(NULL, NULL);
+    /* Sub-virt mounts at /dev and /net so /dev/null and /net/null are real
+     * leaf entries — without them, virt would route every /dev/* path to
+     * the same null driver and -ENOENT could never surface. */
+    router_dev_virt = VfsVirtualInit(NULL, NULL);
+    router_net_virt = VfsVirtualInit(NULL, NULL);
     router_dev_drv = VfsNullInit(NULL, NULL);
     router_net_drv = VfsNullInit(NULL, NULL);
     VfsRegister(vfs, "/", virt1);
+    VfsRegister(vfs, "/dev", router_dev_virt);
+    VfsRegister(vfs, "/net", router_net_virt);
     VfsRegister(vfs, "/dev/null", router_dev_drv);
     VfsRegister(vfs, "/net/null", router_net_drv);
 }

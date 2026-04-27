@@ -30,6 +30,19 @@ typedef struct __attribute__((packed)) tar_index_entry_t {
     uint32_t size;
 } tar_index_entry_t;
 
+/* Heap-allocated handle returned by TarFs_Open. Files carry layer/offset/size
+ * + a read cursor; directories carry the synthesised "<dir>/" prefix used to
+ * walk the sorted index. */
+typedef struct tarfs_file_ctx_t {
+    bool is_dir;
+    uint16_t layer_idx;
+    uint32_t hdr_offset;
+    uint32_t size;
+    uint32_t pos;
+    char *dir_prefix;
+    size_t dir_prefix_len;
+} tarfs_file_ctx_t;
+
 struct vfs_tarfs_ctx_t {
     const uint8_t *layers[TARFS_MAX_LAYERS];
     size_t layer_lens[TARFS_MAX_LAYERS];
@@ -335,4 +348,293 @@ const uint8_t *TarFsEntrypointManifest(const vfs_tarfs_ctx_t *ctx,
 
 uint16_t TarFsIndexLen(const vfs_tarfs_ctx_t *ctx) {
     return ctx ? ctx->index_len : 0;
+}
+
+/* Phase 5: file/directory operations.
+ *
+ * Lookups run on the qsorted index from Phase 2 — exact-match for files,
+ * "<path>/" prefix scan for implicit directories. Reads are zero-copy via
+ * the layer pointer; the only heap allocation per open is the handle plus
+ * (for directories) a copy of the prefix string. */
+
+static uint16_t LowerBound(const tar_index_entry_t *idx, uint16_t n,
+                           const char *key) {
+    uint16_t lo = 0, hi = n;
+    while (lo < hi) {
+        uint16_t mid = lo + (uint16_t)((hi - lo) / 2);
+        if (strcmp(idx[mid].path_ptr, key) < 0)
+            lo = (uint16_t)(mid + 1);
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
+static const tar_index_entry_t *FindExact(const vfs_tarfs_ctx_t *ctx,
+                                          const char *path) {
+    uint16_t pos = LowerBound(ctx->index, ctx->index_len, path);
+    if (pos < ctx->index_len &&
+        strcmp(ctx->index[pos].path_ptr, path) == 0) {
+        return &ctx->index[pos];
+    }
+    return NULL;
+}
+
+static bool DirectoryExists(const vfs_tarfs_ctx_t *ctx, const char *prefix,
+                            size_t prefix_len) {
+    if (prefix_len == 0)
+        return ctx->index_len > 0;
+    uint16_t pos = LowerBound(ctx->index, ctx->index_len, prefix);
+    return pos < ctx->index_len &&
+           strncmp(ctx->index[pos].path_ptr, prefix, prefix_len) == 0;
+}
+
+static tarfs_file_ctx_t *AllocFileHandle(const tar_index_entry_t *e) {
+    tarfs_file_ctx_t *h = WantedMalloc(sizeof(*h));
+    if (!h)
+        return NULL;
+    memset(h, 0, sizeof(*h));
+    h->is_dir = false;
+    h->layer_idx = e->layer_idx;
+    h->hdr_offset = e->hdr_offset;
+    h->size = e->size;
+    h->pos = 0;
+    return h;
+}
+
+static tarfs_file_ctx_t *AllocDirHandle(const char *prefix, size_t prefix_len) {
+    tarfs_file_ctx_t *h = WantedMalloc(sizeof(*h));
+    if (!h)
+        return NULL;
+    memset(h, 0, sizeof(*h));
+    h->is_dir = true;
+    h->dir_prefix = WantedMalloc(prefix_len + 1);
+    if (!h->dir_prefix) {
+        WantedFree(h);
+        return NULL;
+    }
+    if (prefix_len > 0)
+        memcpy(h->dir_prefix, prefix, prefix_len);
+    h->dir_prefix[prefix_len] = '\0';
+    h->dir_prefix_len = prefix_len;
+    return h;
+}
+
+void *TarFs_Open(vfs_tarfs_ctx_t *ctx, const char *path, vfs_oflags_t flags) {
+    if (!ctx || !path)
+        return NULL;
+
+    /* Read-only filesystem. Anything other than O_RDONLY without create/trunc
+     * is rejected before we touch the index. */
+    if ((flags & 03) != VFS_O_RDONLY)
+        return NULL;
+    if (flags & (VFS_O_CREAT | VFS_O_TRUNC))
+        return NULL;
+
+    while (*path == '/')
+        path++;
+
+    size_t plen = strlen(path);
+    bool trailing_slash = (plen > 0 && path[plen - 1] == '/');
+    if (trailing_slash)
+        plen--;
+
+    /* Cap normalised path at 255 bytes — TAR ustar names are 100 bytes,
+     * the prefix field gets us to 256, and we drop those entries during
+     * indexing anyway. */
+    if (plen > 255)
+        return NULL;
+
+    char work[257];
+    if (plen > 0)
+        memcpy(work, path, plen);
+    work[plen] = '\0';
+
+    if (plen == 0) {
+        /* Root directory always exists; empty prefix matches every entry. */
+        return AllocDirHandle("", 0);
+    }
+
+    if (!trailing_slash) {
+        const tar_index_entry_t *e = FindExact(ctx, work);
+        if (e != NULL) {
+            if (e->layer_idx == TARFS_WHITEOUT)
+                return NULL;
+            if (flags & VFS_O_DIRECTORY)
+                return NULL;
+            return AllocFileHandle(e);
+        }
+    }
+
+    /* Treat as directory: synthesise "<work>/" and look for any indexed
+     * entry sharing that prefix. */
+    work[plen] = '/';
+    work[plen + 1] = '\0';
+    size_t prefix_len = plen + 1;
+
+    if (!DirectoryExists(ctx, work, prefix_len))
+        return NULL;
+
+    return AllocDirHandle(work, prefix_len);
+}
+
+int TarFs_Close(vfs_tarfs_ctx_t *ctx, void *handle) {
+    (void)ctx;
+    if (!handle)
+        return -EBADF;
+    tarfs_file_ctx_t *h = handle;
+    if (h->is_dir && h->dir_prefix)
+        WantedFree(h->dir_prefix);
+    WantedFree(h);
+    return 0;
+}
+
+int TarFs_Read(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t nbyte) {
+    if (!ctx || !handle || !buf)
+        return -EINVAL;
+    tarfs_file_ctx_t *h = handle;
+    if (h->is_dir)
+        return -EISDIR;
+    if (h->pos >= h->size)
+        return 0;
+
+    size_t remaining = h->size - h->pos;
+    size_t n = nbyte < remaining ? nbyte : remaining;
+    const uint8_t *data =
+        ctx->layers[h->layer_idx] + h->hdr_offset + TAR_BLOCK_SIZE + h->pos;
+    memcpy(buf, data, n);
+    h->pos += (uint32_t)n;
+    return (int)n;
+}
+
+int TarFs_Stat(vfs_tarfs_ctx_t *ctx, void *handle, vfs_stat_t *stat) {
+    (void)ctx;
+    if (!handle || !stat)
+        return -EINVAL;
+    tarfs_file_ctx_t *h = handle;
+    memset(stat, 0, sizeof(*stat));
+    if (h->is_dir) {
+        stat->filetype = VFS_FILETYPE_DIRECTORY;
+        stat->size = 0;
+    } else {
+        stat->filetype = VFS_FILETYPE_REGULAR_FILE;
+        stat->size = h->size;
+    }
+    stat->nlink = 1;
+    return 0;
+}
+
+int TarFs_Seek(vfs_tarfs_ctx_t *ctx, void *handle, long off,
+               vfs_whence_t whence, long *pos) {
+    (void)ctx;
+    if (!handle || !pos)
+        return -EINVAL;
+    tarfs_file_ctx_t *h = handle;
+    if (h->is_dir)
+        return -EISDIR;
+
+    long new_pos;
+    switch (whence) {
+    case VFS_SEEK_SET:
+        new_pos = off;
+        break;
+    case VFS_SEEK_CUR:
+        new_pos = (long)h->pos + off;
+        break;
+    case VFS_SEEK_END:
+        new_pos = (long)h->size + off;
+        break;
+    default:
+        return -EINVAL;
+    }
+    if (new_pos < 0)
+        return -EINVAL;
+    if (new_pos > (long)h->size)
+        new_pos = (long)h->size;
+    h->pos = (uint32_t)new_pos;
+    *pos = new_pos;
+    return 0;
+}
+
+int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
+                  uint64_t *cookie, size_t *bufUsed) {
+    if (!ctx || !handle || !buf || !cookie || !bufUsed)
+        return -EINVAL;
+    tarfs_file_ctx_t *h = handle;
+    if (!h->is_dir)
+        return -ENOTDIR;
+
+    size_t used = 0;
+    uint16_t i;
+    if (*cookie == 0) {
+        i = LowerBound(ctx->index, ctx->index_len, h->dir_prefix);
+    } else {
+        i = (uint16_t)*cookie;
+    }
+
+    while (i < ctx->index_len) {
+        const tar_index_entry_t *e = &ctx->index[i];
+
+        if (h->dir_prefix_len > 0 &&
+            strncmp(e->path_ptr, h->dir_prefix, h->dir_prefix_len) != 0) {
+            break;
+        }
+
+        const char *suffix = e->path_ptr + h->dir_prefix_len;
+        if (*suffix == '\0') {
+            i++;
+            continue;
+        }
+
+        const char *slash = strchr(suffix, '/');
+        bool is_subdir = (slash != NULL);
+        size_t namlen =
+            is_subdir ? (size_t)(slash - suffix) : strlen(suffix);
+
+        if (!is_subdir && e->layer_idx == TARFS_WHITEOUT) {
+            i++;
+            continue;
+        }
+
+        if (used + sizeof(vfs_dirent_t) + namlen > bufLen)
+            break;
+
+        vfs_dirent_t dir = {0};
+        dir.d_ino = i;
+        dir.d_namlen = (uint32_t)namlen;
+        dir.d_type =
+            is_subdir ? VFS_FILETYPE_DIRECTORY : VFS_FILETYPE_REGULAR_FILE;
+
+        uint16_t next_i;
+        if (is_subdir) {
+            /* Sorted index keeps siblings under "<prefix><name>/" contiguous,
+             * so dedup is a forward scan rather than a hash. */
+            next_i = (uint16_t)(i + 1);
+            while (next_i < ctx->index_len) {
+                const char *p = ctx->index[next_i].path_ptr;
+                if (h->dir_prefix_len > 0 &&
+                    strncmp(p, h->dir_prefix, h->dir_prefix_len) != 0)
+                    break;
+                const char *s = p + h->dir_prefix_len;
+                if (strncmp(s, suffix, namlen) != 0)
+                    break;
+                if (s[namlen] != '/')
+                    break;
+                next_i++;
+            }
+        } else {
+            next_i = (uint16_t)(i + 1);
+        }
+        dir.d_next = next_i;
+
+        memcpy((uint8_t *)buf + used, &dir, sizeof(dir));
+        memcpy((uint8_t *)buf + used + sizeof(dir), suffix, namlen);
+        used += sizeof(dir) + namlen;
+
+        i = next_i;
+    }
+
+    *cookie = i;
+    *bufUsed = used;
+    return 0;
 }
