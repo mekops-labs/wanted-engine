@@ -11,6 +11,8 @@ set(vfs-srcs
     "vfs/vfs.c"
     "vfs/vfs-9p.c"
     "vfs/vfs-config.c"
+    "vfs/vfs-devfs.c"
+    "vfs/vfs-netfs.c"
     "vfs/vfs-null.c"
     "vfs/vfs-romfs.c"
     "vfs/vfs-tarfs.c"
