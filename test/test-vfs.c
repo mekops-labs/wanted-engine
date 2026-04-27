@@ -152,3 +152,93 @@ TEST_GROUP_RUNNER(vfs_openclose) {
     RUN_TEST_CASE(vfs_openclose, OpenFail);
     RUN_TEST_CASE(vfs_openclose, OpenThenClose);
 }
+
+/***************************************/
+TEST_GROUP(vfs_prefix_router);
+/***************************************/
+
+/* Phase 4 — verify the stateless prefix router on top of the legacy
+ * virt-rooted registration. Drivers are still installed via VfsRegister into
+ * the virt subtree; the router intercepts /dev/* and /net/* opens and routes
+ * them through DevFs/NetFs into the typed-FD table. */
+
+static vfs_driver_t *router_dev_drv;
+static vfs_driver_t *router_net_drv;
+
+TEST_SETUP(vfs_prefix_router) {
+    vfs = VfsInit();
+    virt1 = VfsVirtualInit(NULL, NULL);
+    router_dev_drv = VfsNullInit(NULL, NULL);
+    router_net_drv = VfsNullInit(NULL, NULL);
+    VfsRegister(vfs, "/", virt1);
+    VfsRegister(vfs, "/dev/null", router_dev_drv);
+    VfsRegister(vfs, "/net/null", router_net_drv);
+}
+
+TEST_TEAR_DOWN(vfs_prefix_router) { VfsDestroy(&vfs); }
+
+TEST(vfs_prefix_router, DevPathTakesTypedFdSlot) {
+    int fd = VfsOpen(vfs, "/dev/null", VFS_O_RDWR);
+
+    TEST_ASSERT_TRUE(fd >= ROOT_FD);
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_DEV, vfs->fds[fd].type);
+    TEST_ASSERT_NOT_NULL(vfs->fds[fd].internal_ctx);
+    /* Legacy slot must remain untouched for typed FDs. */
+    TEST_ASSERT_FALSE(vfs->fildes[fd].opened);
+    TEST_ASSERT_NULL(vfs->fildes[fd].drv);
+
+    char buf[4] = {0};
+    TEST_ASSERT_EQUAL_INT(0, VfsRead(vfs, fd, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_INT(3, VfsWrite(vfs, fd, "abc", 3));
+
+    TEST_ASSERT_EQUAL_INT(0, VfsClose(vfs, fd));
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_NONE, vfs->fds[fd].type);
+    TEST_ASSERT_NULL(vfs->fds[fd].internal_ctx);
+}
+
+TEST(vfs_prefix_router, NetPathTakesTypedFdSlot) {
+    int fd = VfsOpen(vfs, "/net/null", VFS_O_RDWR);
+
+    TEST_ASSERT_TRUE(fd >= ROOT_FD);
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_NET, vfs->fds[fd].type);
+    TEST_ASSERT_NOT_NULL(vfs->fds[fd].internal_ctx);
+    TEST_ASSERT_FALSE(vfs->fildes[fd].opened);
+
+    TEST_ASSERT_EQUAL_INT(0, VfsClose(vfs, fd));
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_NONE, vfs->fds[fd].type);
+}
+
+TEST(vfs_prefix_router, NonRoutedPathStaysOnLegacy) {
+    int fd = VfsOpen(vfs, "/", 0);
+
+    TEST_ASSERT_EQUAL_INT(ROOT_FD, fd);
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_NONE, vfs->fds[fd].type);
+    TEST_ASSERT_TRUE(vfs->fildes[fd].opened);
+    TEST_ASSERT_EQUAL_PTR(vfs->rootDriver, vfs->fildes[fd].drv);
+}
+
+TEST(vfs_prefix_router, TypedAndLegacyFdsCoexist) {
+    int dev_fd = VfsOpen(vfs, "/dev/null", VFS_O_RDWR);
+    int legacy_fd = VfsOpen(vfs, "/", 0);
+
+    TEST_ASSERT_NOT_EQUAL(dev_fd, legacy_fd);
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_DEV, vfs->fds[dev_fd].type);
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_NONE, vfs->fds[legacy_fd].type);
+    TEST_ASSERT_TRUE(vfs->fildes[legacy_fd].opened);
+
+    TEST_ASSERT_EQUAL_INT(0, VfsClose(vfs, dev_fd));
+    TEST_ASSERT_EQUAL_INT(0, VfsClose(vfs, legacy_fd));
+}
+
+TEST(vfs_prefix_router, MissingDevSuffixReturnsEnoent) {
+    int fd = VfsOpen(vfs, "/dev/does-not-exist", 0);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, fd);
+}
+
+TEST_GROUP_RUNNER(vfs_prefix_router) {
+    RUN_TEST_CASE(vfs_prefix_router, DevPathTakesTypedFdSlot);
+    RUN_TEST_CASE(vfs_prefix_router, NetPathTakesTypedFdSlot);
+    RUN_TEST_CASE(vfs_prefix_router, NonRoutedPathStaysOnLegacy);
+    RUN_TEST_CASE(vfs_prefix_router, TypedAndLegacyFdsCoexist);
+    RUN_TEST_CASE(vfs_prefix_router, MissingDevSuffixReturnsEnoent);
+}

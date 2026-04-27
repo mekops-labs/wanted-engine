@@ -6,15 +6,34 @@
 
 #include "vfs-internal.h"
 #include <debug_trace.h>
+#include <vfs-devfs.h>
+#include <vfs-netfs.h>
 #include <vfs.h>
 #include <wanted_malloc.h>
 
 #include <cwalk.h>
 
+/* Phase 4 — stateless prefix router.
+ *
+ * VfsOpen / VfsOpenAt detect "/dev/" and "/net/" prefixes and route those
+ * paths through DevFs / NetFs into the typed-FD table (c->fds[]). Everything
+ * else continues to flow through the legacy per-driver fildes[]/rootDriver
+ * dispatch until Phase 6 rewires wanted.c boot and Phase 8 deletes the
+ * legacy plumbing. The two FD pools share one integer space — both
+ * allocators consult both arrays to keep VFS-fd numbers monotone, which is
+ * required by the WASI fd-prestat contract. */
+
+static inline bool is_typed_fd(struct vfs_ctx_t *c, int fd) {
+    return c && fd >= 0 && fd < MAX_OPEN &&
+           c->fds[fd].type != VFS_TYPE_NONE;
+}
+
 static inline bool CheckFd(struct vfs_ctx_t *c, int fd) {
-    if (fd >= MAX_OPEN || fd < 0)
+    if (!c || fd < 0 || fd >= MAX_OPEN)
         return false;
-    if (c && c->fildes[fd].drv == NULL)
+    if (c->fds[fd].type != VFS_TYPE_NONE)
+        return true;
+    if (c->fildes[fd].drv == NULL)
         return false;
 
     return true;
@@ -25,11 +44,49 @@ static int FindFirstClosedFd(struct vfs_ctx_t *c) {
         return -EINVAL;
 
     for (int i = ROOT_FD; i < MAX_OPEN; i++) {
-        if (!c->fildes[i].opened) {
+        if (!c->fildes[i].opened && c->fds[i].type == VFS_TYPE_NONE) {
             return i;
         }
     }
     return -EMFILE;
+}
+
+static bool path_has_prefix(const char *path, const char *prefix) {
+    return strncmp(path, prefix, strlen(prefix)) == 0;
+}
+
+static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
+    int fd;
+    void *handle;
+    vfs_fd_type_t type;
+
+    if (path_has_prefix(path, "/dev/")) {
+        type = VFS_TYPE_DEV;
+        handle = DevFs_Open(c, path + 5, flags);
+    } else if (path_has_prefix(path, "/net/")) {
+        type = VFS_TYPE_NET;
+        handle = NetFs_Open(c, path + 5, flags);
+    } else {
+        return -ENOTSUP;
+    }
+
+    if (handle == NULL) {
+        return -ENOENT;
+    }
+
+    fd = FindFirstClosedFd(c);
+    if (fd < 0) {
+        if (type == VFS_TYPE_DEV)
+            DevFs_Close(c, handle);
+        else
+            NetFs_Close(c, handle);
+        return fd;
+    }
+
+    c->fds[fd].type = type;
+    c->fds[fd].internal_ctx = handle;
+    c->fds[fd].flags = flags;
+    return fd;
 }
 
 /* PUBLIC INTERFACE */
@@ -59,9 +116,22 @@ static void DestroyFildesDrv(vfs_ctx_t c, unsigned fd) {
         c->fildes[fd].drv->Destroy((vfs_driver_t *)c->fildes[fd].drv);
 }
 
+static void DestroyTypedFds(vfs_ctx_t c) {
+    for (int i = 0; i < MAX_OPEN; i++) {
+        if (c->fds[i].type == VFS_TYPE_DEV) {
+            DevFs_Close(c, c->fds[i].internal_ctx);
+        } else if (c->fds[i].type == VFS_TYPE_NET) {
+            NetFs_Close(c, c->fds[i].internal_ctx);
+        }
+        c->fds[i].type = VFS_TYPE_NONE;
+        c->fds[i].internal_ctx = NULL;
+    }
+}
+
 void VfsDestroy(vfs_ctx_t *c) {
     if (NULL == c || NULL == *c)
         return;
+    DestroyTypedFds(*c);
     DestroyRootDriver(*c);
     DestroyFildesDrv(*c, VFS_STDERR);
     DestroyFildesDrv(*c, VFS_STDOUT);
@@ -123,17 +193,37 @@ int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver) {
 int VfsOpen(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     DEBUG_TRACE("%s (0x%x)", path, flags);
 
+    if (!c || !path || *path == '\0') {
+        return -EINVAL;
+    }
+
+    if (path_has_prefix(path, "/dev/") || path_has_prefix(path, "/net/")) {
+        return route_open(c, path, flags);
+    }
+
     return VfsOpenAt(c, ROOT_FD, path, flags);
 }
 
 int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags) {
     DEBUG_TRACE("%d, %s (0x%x)", fd, path, flags);
 
+    if (!c || NULL == path || *path == '\0') {
+        return -EINVAL;
+    }
+
+    /* Absolute /dev/ and /net/ paths short-circuit straight into the router,
+     * regardless of the parent fd. */
+    if (path_has_prefix(path, "/dev/") || path_has_prefix(path, "/net/")) {
+        return route_open(c, path, flags);
+    }
+
     if (!CheckFd(c, fd))
         return -EBADF;
 
-    if (NULL == path || *path == '\0') {
-        return -EINVAL;
+    /* Phase 4 does not yet support OpenAt on typed-FD parents. The legacy
+     * preopen entries (ROOT_FD etc.) still go through the legacy dispatch. */
+    if (is_typed_fd(c, fd)) {
+        return -ENOTSUP;
     }
 
     int f = FindFirstClosedFd(c);
@@ -160,6 +250,20 @@ int VfsClose(vfs_ctx_t c, int fd) {
     if (!CheckFd(c, fd))
         return -EBADF;
 
+    if (is_typed_fd(c, fd)) {
+        int r;
+        if (c->fds[fd].type == VFS_TYPE_DEV) {
+            r = DevFs_Close(c, c->fds[fd].internal_ctx);
+        } else if (c->fds[fd].type == VFS_TYPE_NET) {
+            r = NetFs_Close(c, c->fds[fd].internal_ctx);
+        } else {
+            r = -EBADF;
+        }
+        c->fds[fd].type = VFS_TYPE_NONE;
+        c->fds[fd].internal_ctx = NULL;
+        return r;
+    }
+
     c->fildes[fd].opened = false;
 
     return TRY_DRV(c->fildes[fd].drv, Close, c->fildes[fd].drv_fd);
@@ -172,6 +276,10 @@ int VfsStatAt(vfs_ctx_t c, int fd, const char *path, vfs_stat_t *stat) {
 
     if (!CheckFd(c, fd))
         return -EBADF;
+
+    if (is_typed_fd(c, fd)) {
+        return -ENOTSUP;
+    }
 
     f = TRY_DRV(c->fildes[fd].drv, OpenAt, c->fildes[fd].drv_fd, path, 0);
     if (f < 0) {
@@ -194,6 +302,14 @@ int VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat) {
     if (!CheckFd(c, fd))
         return -EBADF;
 
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_DEV)
+            return DevFs_Stat(c, c->fds[fd].internal_ctx, stat);
+        if (c->fds[fd].type == VFS_TYPE_NET)
+            return NetFs_Stat(c, c->fds[fd].internal_ctx, stat);
+        return -EBADF;
+    }
+
     return TRY_DRV(c->fildes[fd].drv, Stat, c->fildes[fd].drv_fd, stat);
 }
 
@@ -202,6 +318,12 @@ int VfsStatSet(vfs_ctx_t c, int fd, vfs_stat_t stat) {
 
     if (!CheckFd(c, fd))
         return -EBADF;
+
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_DEV)
+            return DevFs_StatSet(c, c->fds[fd].internal_ctx, stat);
+        return -ENOTSUP;
+    }
 
     return TRY_DRV(c->fildes[fd].drv, StatSet, c->fildes[fd].drv_fd, stat);
 }
@@ -214,6 +336,14 @@ int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte) {
 
     if (NULL == buf) {
         return -EINVAL;
+    }
+
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_DEV)
+            return DevFs_Read(c, c->fds[fd].internal_ctx, buf, nbyte);
+        if (c->fds[fd].type == VFS_TYPE_NET)
+            return NetFs_Read(c, c->fds[fd].internal_ctx, buf, nbyte);
+        return -EBADF;
     }
 
     return TRY_DRV(c->fildes[fd].drv, Read, c->fildes[fd].drv_fd, buf, nbyte);
@@ -229,6 +359,14 @@ int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte) {
         return -EINVAL;
     }
 
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_DEV)
+            return DevFs_Write(c, c->fds[fd].internal_ctx, buf, nbyte);
+        if (c->fds[fd].type == VFS_TYPE_NET)
+            return NetFs_Write(c, c->fds[fd].internal_ctx, buf, nbyte);
+        return -EBADF;
+    }
+
     return TRY_DRV(c->fildes[fd].drv, Write, c->fildes[fd].drv_fd, buf, nbyte);
 }
 
@@ -240,6 +378,12 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
 
     if (NULL == pos) {
         return -EINVAL;
+    }
+
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_DEV)
+            return DevFs_Seek(c, c->fds[fd].internal_ctx, off, whence, pos);
+        return -ENOTSUP;
     }
 
     return TRY_DRV(c->fildes[fd].drv, Seek, c->fildes[fd].drv_fd, off, whence,
@@ -257,6 +401,13 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
         return -EINVAL;
     }
 
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_DEV)
+            return DevFs_ReadDir(c, c->fds[fd].internal_ctx, buf, bufLen,
+                                 cookie, bufUsed);
+        return -ENOTSUP;
+    }
+
     return TRY_DRV(c->fildes[fd].drv, ReadDir, c->fildes[fd].drv_fd, buf,
                    bufLen, cookie, bufUsed);
 }
@@ -271,6 +422,12 @@ int VfsUnlink(vfs_ctx_t c, int fd, const char *path) {
         return -EINVAL;
     }
 
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_DEV)
+            return DevFs_Unlink(c, c->fds[fd].internal_ctx, path);
+        return -ENOTSUP;
+    }
+
     return TRY_DRV(c->fildes[fd].drv, Unlink, c->fildes[fd].drv_fd, path);
 }
 
@@ -279,6 +436,12 @@ int VfsSockAccept(vfs_ctx_t c, int fd, vfs_oflags_t flags, int *newFd) {
 
     if (!CheckFd(c, fd)) {
         return -EBADF;
+    }
+
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_NET)
+            return NetFs_SockAccept(c, c->fds[fd].internal_ctx, flags, newFd);
+        return -ENOTSOCK;
     }
 
     return TRY_DRV(c->fildes[fd].drv, SockAccept, c->fildes[fd].drv_fd, flags,
@@ -293,6 +456,13 @@ int VfsSockRecv(vfs_ctx_t c, int fd, void *buf, size_t nbyte,
         return -EBADF;
     }
 
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_NET)
+            return NetFs_SockRecv(c, c->fds[fd].internal_ctx, buf, nbyte,
+                                  iflags, oflags);
+        return -ENOTSOCK;
+    }
+
     return TRY_DRV(c->fildes[fd].drv, SockRecv, c->fildes[fd].drv_fd, buf,
                    nbyte, iflags, oflags);
 }
@@ -305,6 +475,13 @@ int VfsSockSend(vfs_ctx_t c, int fd, const void *buf, size_t nbyte,
         return -EBADF;
     }
 
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_NET)
+            return NetFs_SockSend(c, c->fds[fd].internal_ctx, buf, nbyte,
+                                  flags);
+        return -ENOTSOCK;
+    }
+
     return TRY_DRV(c->fildes[fd].drv, SockSend, c->fildes[fd].drv_fd, buf,
                    nbyte, flags);
 }
@@ -314,6 +491,12 @@ int VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags) {
 
     if (!CheckFd(c, fd)) {
         return -EBADF;
+    }
+
+    if (is_typed_fd(c, fd)) {
+        if (c->fds[fd].type == VFS_TYPE_NET)
+            return NetFs_SockShutdown(c, c->fds[fd].internal_ctx, flags);
+        return -ENOTSOCK;
     }
 
     return TRY_DRV(c->fildes[fd].drv, SockShutdown, c->fildes[fd].drv_fd,
