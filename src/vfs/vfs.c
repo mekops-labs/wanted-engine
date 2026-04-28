@@ -170,9 +170,20 @@ void VfsDestroy(vfs_ctx_t *c) {
     DestroyFildesDrv(*c, VFS_STDERR);
     DestroyFildesDrv(*c, VFS_STDOUT);
     DestroyFildesDrv(*c, VFS_STDIN);
+    if ((*c)->tarfs)
+        TarFsDestroy((*c)->tarfs);
 
     WantedFree(*c);
     *c = NULL;
+}
+
+int VfsAttachTarfs(vfs_ctx_t c, vfs_tarfs_ctx_t *tarfs) {
+    if (!c)
+        return -EINVAL;
+    if (c->tarfs && c->tarfs != tarfs)
+        TarFsDestroy(c->tarfs);
+    c->tarfs = tarfs;
+    return 0;
 }
 
 int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver) {

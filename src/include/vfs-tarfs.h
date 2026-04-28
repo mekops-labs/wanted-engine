@@ -18,6 +18,12 @@ vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
 
 void TarFsDestroy(vfs_tarfs_ctx_t *ctx);
 
+/* Hand a tarfs context off to a vfs ctx so the prefix router resolves
+ * non-/dev//net/ paths against it. The vfs ctx takes ownership: VfsDestroy
+ * (or a subsequent VfsAttachTarfs replacing the slot) will TarFsDestroy() it.
+ * Returns -EINVAL on a NULL vfs ctx. */
+int VfsAttachTarfs(vfs_ctx_t c, vfs_tarfs_ctx_t *tarfs);
+
 /* Pre-fetched boot entrypoints. Returns NULL if the path was absent or
  * shadowed by a whiteout in the top layer. */
 const uint8_t *TarFsEntrypointWasm(const vfs_tarfs_ctx_t *ctx, size_t *len);
