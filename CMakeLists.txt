@@ -27,6 +27,13 @@ add_custom_target(wasm
     )
 #add_dependencies(${CMAKE_PROJECT_NAME} compile_wasm)
 
+# Rebuilds wasm/supervisor/<variant>/supervisor.h (a TAR layer) from app.wasm +
+# manifest.json. Not wired as a build dependency: the header is checked in and
+# only refreshed when the supervisor sources change.
+add_custom_target(supervisor
+    COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm/supervisor
+    )
+
 option (BUILD_EXECUTABLE "Build standalone executable. Linux only" ON)
 if (BUILD_EXECUTABLE)
     add_subdirectory(${CMAKE_SOURCE_DIR}/cmd)
