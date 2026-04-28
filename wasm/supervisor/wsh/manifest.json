@@ -1,0 +1,36 @@
+{
+    "name": "supervisor",
+    "version": [ 0, 4, 0 ],
+    "chksum": "da4bc306110f304767aa91f273c63cfad61f57a4436ad3c3aaaf43294c1efc2e",
+    "package": 1,
+    "drivers": [
+        {
+            "path": "stdin",
+            "driver": null
+        },
+        {
+            "path": "stdout",
+            "driver": null
+        },
+        {
+            "path": "stderr",
+            "driver": null
+        },
+        {
+            "path": "/rom",
+            "driver": null
+        },
+        {
+            "path": "/data",
+            "driver": null
+        },
+        {
+            "path": "/wanted",
+            "driver": null
+        },
+        {
+            "path": "/skt",
+            "driver": null
+        }
+    ]
+}
