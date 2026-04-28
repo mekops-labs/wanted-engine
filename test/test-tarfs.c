@@ -392,3 +392,144 @@ TEST_GROUP_RUNNER(tarfs_phase5) {
     RUN_TEST_CASE(tarfs_phase5, WhiteoutHidesShadowedFile);
     RUN_TEST_CASE(tarfs_phase5, OpenDirectoryWithODirectoryFlagOnFileFails);
 }
+
+/***************************************/
+/* Phase 7 — end-to-end opens through VfsOpen with c->tarfs populated. */
+/***************************************/
+
+/* Three layer buffers cover every Phase 7 fixture; tear-down zeroes them so
+ * each test sees a clean slate. */
+static uint8_t p7_layerA[512 * 4];
+static uint8_t p7_layerB[512 * 4];
+static vfs_ctx_t p7_vfs;
+
+static vfs_ctx_t BuildVfsWithTarfs(uint8_t *const layers[],
+                                   const size_t layer_lens[],
+                                   uint8_t layer_cnt) {
+    vfs_tarfs_ctx_t *t = TarFsInit(layers, layer_lens, layer_cnt);
+    if (!t)
+        return NULL;
+    vfs_ctx_t v = VfsInit();
+    if (!v) {
+        TarFsDestroy(t);
+        return NULL;
+    }
+    /* Ownership transfers to the vfs ctx — VfsDestroy frees the tarfs. */
+    VfsAttachTarfs(v, t);
+    return v;
+}
+
+static int ReadAll(vfs_ctx_t v, int fd, void *buf, size_t cap) {
+    int n = VfsRead(v, fd, buf, cap);
+    return n;
+}
+
+TEST_GROUP(tarfs_single_layer);
+
+TEST_SETUP(tarfs_single_layer) {
+    memset(p7_layerA, 0, sizeof(p7_layerA));
+    p7_vfs = NULL;
+}
+
+TEST_TEAR_DOWN(tarfs_single_layer) {
+    if (p7_vfs)
+        VfsDestroy(&p7_vfs);
+}
+
+TEST(tarfs_single_layer, OpensAppWasmAndReadsPayload) {
+    const char payload[] = "WASM-PAYLOAD";
+    TarHeader(p7_layerA, "app.wasm", sizeof(payload) - 1, '0');
+    memcpy(p7_layerA + 512, payload, sizeof(payload) - 1);
+
+    uint8_t *layers[1] = {p7_layerA};
+    size_t lens[1] = {sizeof(p7_layerA)};
+    p7_vfs = BuildVfsWithTarfs(layers, lens, 1);
+    TEST_ASSERT_NOT_NULL(p7_vfs);
+
+    int fd = VfsOpen(p7_vfs, "/app.wasm", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+
+    char buf[32] = {0};
+    int n = ReadAll(p7_vfs, fd, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT((int)(sizeof(payload) - 1), n);
+    TEST_ASSERT_EQUAL_STRING_LEN(payload, buf, sizeof(payload) - 1);
+
+    TEST_ASSERT_EQUAL_INT(0, VfsClose(p7_vfs, fd));
+}
+
+TEST_GROUP_RUNNER(tarfs_single_layer) {
+    RUN_TEST_CASE(tarfs_single_layer, OpensAppWasmAndReadsPayload);
+}
+
+TEST_GROUP(tarfs_layer_override);
+
+TEST_SETUP(tarfs_layer_override) {
+    memset(p7_layerA, 0, sizeof(p7_layerA));
+    memset(p7_layerB, 0, sizeof(p7_layerB));
+    p7_vfs = NULL;
+}
+
+TEST_TEAR_DOWN(tarfs_layer_override) {
+    if (p7_vfs)
+        VfsDestroy(&p7_vfs);
+}
+
+TEST(tarfs_layer_override, NewerLayerWins) {
+    /* Base layer carries the original file; top layer ships an override. */
+    TarHeader(p7_layerB, "data.txt", 4, '0');
+    memcpy(p7_layerB + 512, "base", 4);
+    TarHeader(p7_layerA, "data.txt", 8, '0');
+    memcpy(p7_layerA + 512, "override", 8);
+
+    /* layers[0] is newest. */
+    uint8_t *layers[2] = {p7_layerA, p7_layerB};
+    size_t lens[2] = {sizeof(p7_layerA), sizeof(p7_layerB)};
+    p7_vfs = BuildVfsWithTarfs(layers, lens, 2);
+    TEST_ASSERT_NOT_NULL(p7_vfs);
+
+    int fd = VfsOpen(p7_vfs, "/data.txt", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+
+    char buf[16] = {0};
+    int n = ReadAll(p7_vfs, fd, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT(8, n);
+    TEST_ASSERT_EQUAL_STRING_LEN("override", buf, 8);
+
+    TEST_ASSERT_EQUAL_INT(0, VfsClose(p7_vfs, fd));
+}
+
+TEST_GROUP_RUNNER(tarfs_layer_override) {
+    RUN_TEST_CASE(tarfs_layer_override, NewerLayerWins);
+}
+
+TEST_GROUP(tarfs_whiteout);
+
+TEST_SETUP(tarfs_whiteout) {
+    memset(p7_layerA, 0, sizeof(p7_layerA));
+    memset(p7_layerB, 0, sizeof(p7_layerB));
+    p7_vfs = NULL;
+}
+
+TEST_TEAR_DOWN(tarfs_whiteout) {
+    if (p7_vfs)
+        VfsDestroy(&p7_vfs);
+}
+
+TEST(tarfs_whiteout, ShadowedFileReturnsENOENT) {
+    /* Base layer has secret.txt; top layer whites it out. */
+    TarHeader(p7_layerB, "secret.txt", 6, '0');
+    memcpy(p7_layerB + 512, "SECRET", 6);
+    TarHeader(p7_layerA, ".wh.secret.txt", 0, '0');
+
+    uint8_t *layers[2] = {p7_layerA, p7_layerB};
+    size_t lens[2] = {sizeof(p7_layerA), sizeof(p7_layerB)};
+    p7_vfs = BuildVfsWithTarfs(layers, lens, 2);
+    TEST_ASSERT_NOT_NULL(p7_vfs);
+
+    int fd = VfsOpen(p7_vfs, "/secret.txt", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, fd);
+}
+
+TEST_GROUP_RUNNER(tarfs_whiteout) {
+    RUN_TEST_CASE(tarfs_whiteout, ShadowedFileReturnsENOENT);
+}
