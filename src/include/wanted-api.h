@@ -100,5 +100,7 @@ typedef struct wantedConfig_t {
 int WantedWappRun(wapp_data_t *ctx);
 void WantedWappStop(wapp_data_t *ctx);
 int WantedWappParseManifest(wapp_t *w);
+int WantedWappParseManifestBytes(wapp_t *w, const uint8_t *manifest,
+                                 size_t manifestLen);
 int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen);
 wapp_t *WantedGetCurrentSupervisor();
