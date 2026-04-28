@@ -2,7 +2,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "vfs-internal.h"
@@ -11,49 +10,78 @@
 #include <vfs.h>
 #include <wanted_malloc.h>
 
-/* NetFs Phase 4 shim — forwards into the per-wapp legacy socket driver via
- * the rootDriver subtree, mirroring DevFs. Phase 6 will collapse the
- * forward-through into a direct call once the socket driver is owned
- * per-wapp outside of virt. */
-
-#define NETFS_PATH_MAX 128
+/* NetFs Phase 6 shim — direct table-backed lookup.
+ *
+ * Mirrors DevFs: WantedInstallDriver registers each "/net/<name>" driver into
+ * the per-wapp table; NetFs_Open exact-matches the suffix and forwards into
+ * the matched driver's Open. Driver lifetime is owned by NetFs. */
 
 typedef struct netfs_handle_t {
     const vfs_driver_t *drv;
     int drv_fd;
 } netfs_handle_t;
 
-static int forward_open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags) {
-    char path[NETFS_PATH_MAX];
-    int n;
+static const vfs_driver_t *LookupDrv(vfs_ctx_t c, const char *suffix) {
+    if (!c || !suffix || *suffix == '\0')
+        return NULL;
+    for (uint8_t i = 0; i < c->netfs_cnt; i++) {
+        if (strncmp(c->netfs[i].name, suffix, MAX_ENTRY_NAME_LEN) == 0)
+            return c->netfs[i].drv;
+    }
+    return NULL;
+}
 
-    if (!c || !c->rootDriver || !suffix || *suffix == '\0') {
+int NetFs_Register(vfs_ctx_t c, const char *name, const vfs_driver_t *driver) {
+    if (!c || !name || *name == '\0' || !driver)
         return -EINVAL;
-    }
-
-    n = snprintf(path, sizeof(path), "/net/%s", suffix);
-    if (n < 0 || (size_t)n >= sizeof(path)) {
+    if (strlen(name) >= MAX_ENTRY_NAME_LEN)
         return -ENAMETOOLONG;
+    if (c->netfs_cnt >= VFS_DEVFS_MAX_ENTRIES)
+        return -ENOSPC;
+
+    for (uint8_t i = 0; i < c->netfs_cnt; i++) {
+        if (strncmp(c->netfs[i].name, name, MAX_ENTRY_NAME_LEN) == 0)
+            return -EEXIST;
     }
 
-    return TRY_DRV(c->rootDriver, OpenAt, c->fildes[ROOT_FD].drv_fd, path,
-                   flags);
+    vfs_named_drv_t *e = &c->netfs[c->netfs_cnt++];
+    strncpy(e->name, name, MAX_ENTRY_NAME_LEN - 1);
+    e->name[MAX_ENTRY_NAME_LEN - 1] = '\0';
+    e->drv = driver;
+    DEBUG_TRACE("/net/%s -> %.4s", e->name, driver->id);
+    return 0;
+}
+
+void NetFs_Destroy(vfs_ctx_t c) {
+    if (!c)
+        return;
+    for (uint8_t i = 0; i < c->netfs_cnt; i++) {
+        const vfs_driver_t *d = c->netfs[i].drv;
+        if (d && d->Destroy)
+            d->Destroy((vfs_driver_t *)d);
+        c->netfs[i].drv = NULL;
+        c->netfs[i].name[0] = '\0';
+    }
+    c->netfs_cnt = 0;
 }
 
 void *NetFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags) {
     DEBUG_TRACE("/net/%s (0x%x)", suffix ? suffix : "(null)", flags);
 
-    int drv_fd = forward_open(c, suffix, flags);
-    if (drv_fd < 0) {
+    const vfs_driver_t *drv = LookupDrv(c, suffix);
+    if (!drv)
         return NULL;
-    }
+
+    int drv_fd = TRY_DRV(drv, Open, "", flags);
+    if (drv_fd < 0)
+        return NULL;
 
     netfs_handle_t *h = WantedMalloc(sizeof(*h));
     if (!h) {
-        TRY_DRV(c->rootDriver, Close, drv_fd);
+        TRY_DRV(drv, Close, drv_fd);
         return NULL;
     }
-    h->drv = c->rootDriver;
+    h->drv = drv;
     h->drv_fd = drv_fd;
     return h;
 }

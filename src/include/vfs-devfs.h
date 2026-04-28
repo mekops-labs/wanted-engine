@@ -4,15 +4,17 @@
 #include <stdint.h>
 #include <vfs.h>
 
-/* DevFs — Phase 4 prefix-router shim for "/dev/<name>" paths.
+/* DevFs — prefix-router shim for "/dev/<name>" paths.
  *
- * Phase 4 keeps the legacy per-wapp driver registration intact: drivers are
- * still installed under the rootDriver (virt) subtree by WantedInstallDriver.
- * DevFs sits in front of that registration and exposes a typed-FD API the
- * stateless prefix router can call into. Phase 6 will replace the forwarding
- * body with a direct, table-backed lookup once wanted.c stops registering
- * drivers through virt.
+ * Phase 6 owns driver lifetime directly: WantedInstallDriver calls
+ * DevFs_Register to insert (name, driver) pairs into the per-wapp table on
+ * vfs_ctx_t. DevFs_Open resolves "/dev/<suffix>" by exact-matching `suffix`
+ * against the registered names — no more forwarding through the legacy
+ * virt-rooted dispatch.
  */
+
+int DevFs_Register(vfs_ctx_t c, const char *name, const vfs_driver_t *driver);
+void DevFs_Destroy(vfs_ctx_t c);
 
 void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags);
 int DevFs_Close(vfs_ctx_t c, void *handle);

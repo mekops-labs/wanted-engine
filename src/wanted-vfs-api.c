@@ -5,7 +5,9 @@
 
 #include <debug_trace.h>
 #include <platform.h>
+#include <vfs-devfs.h>
 #include <vfs-drivers.h>
+#include <vfs-netfs.h>
 #include <wanted-api.h>
 #include <wanted-vfs-api.h>
 #include <wanted_malloc.h>
@@ -241,6 +243,25 @@ int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen) {
     return (int)n;
 }
 
+/* Phase 6 — route /dev/<name> and /net/<name> straight into the DevFs/NetFs
+ * tables; bare /dev or /net are now implicit prefix-router namespaces and
+ * never need their own mount, so a request to register one is treated as a
+ * no-op. Everything else (root, console pseudo-paths, arbitrary mounts)
+ * stays on the legacy VfsRegister path until Phase 8 rips it out. */
+static int InstallTo(struct vfs_ctx_t *c, const char *path,
+                     const vfs_driver_t *drv) {
+    if (strcmp(path, "/dev") == 0 || strcmp(path, "/net") == 0) {
+        if (drv->Destroy)
+            drv->Destroy((vfs_driver_t *)drv);
+        return 0;
+    }
+    if (strncmp(path, "/dev/", 5) == 0)
+        return DevFs_Register(c, path + 5, drv);
+    if (strncmp(path, "/net/", 5) == 0)
+        return NetFs_Register(c, path + 5, drv);
+    return VfsRegister(c, path, drv);
+}
+
 int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
                         const char *path, const char *options) {
     int ret = 0;
@@ -265,7 +286,7 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
     }
 
     if (NULL != drv) {
-        ret = VfsRegister(c, path, drv);
+        ret = InstallTo(c, path, drv);
     } else {
         DEBUG_TRACE("can't load %s driver, not found", name);
         return -EINVAL;

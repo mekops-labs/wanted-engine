@@ -4,13 +4,17 @@
 #include <stdint.h>
 #include <vfs.h>
 
-/* NetFs — Phase 4 prefix-router shim for "/net/<name>" paths.
+/* NetFs — prefix-router shim for "/net/<name>" paths.
  *
- * Wraps the existing socket driver (currently registered via the legacy
- * virt-rooted dispatch) so VfsSock* operations can route through the typed-FD
- * table. Phase 6 will collapse the forwarding into a direct call once the
- * socket driver is owned per-wapp outside of virt.
+ * Phase 6 owns driver lifetime directly: WantedInstallDriver calls
+ * NetFs_Register to insert (name, driver) pairs into the per-wapp table on
+ * vfs_ctx_t. NetFs_Open resolves "/net/<suffix>" by exact-matching `suffix`
+ * against the registered names — the legacy virt-rooted dispatch is no
+ * longer involved.
  */
+
+int NetFs_Register(vfs_ctx_t c, const char *name, const vfs_driver_t *driver);
+void NetFs_Destroy(vfs_ctx_t c);
 
 void *NetFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags);
 int NetFs_Close(vfs_ctx_t c, void *handle);

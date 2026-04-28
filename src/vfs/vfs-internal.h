@@ -51,6 +51,17 @@ typedef struct vfs_fildes_t {
  * without pulling vfs-tarfs.h into every translation unit. */
 struct vfs_tarfs_ctx_t;
 
+/* Phase 6 — direct DevFs/NetFs registration tables. Drivers under "/dev/<name>"
+ * and "/net/<name>" are now registered straight into these per-ctx tables by
+ * WantedInstallDriver, replacing the legacy virt-rooted sub-mount path. The
+ * prefix router resolves opens by exact-matching the suffix against `name`. */
+#define VFS_DEVFS_MAX_ENTRIES 10
+
+typedef struct vfs_named_drv_t {
+    char name[MAX_ENTRY_NAME_LEN];
+    const vfs_driver_t *drv;
+} vfs_named_drv_t;
+
 struct vfs_ctx_t {
     /* Legacy per-driver FD table — removed in Phase 4. */
     vfs_fildes_t fildes[MAX_OPEN];
@@ -59,6 +70,13 @@ struct vfs_ctx_t {
     /* New typed FD table — owned by the VFS core, populated in Phase 4. */
     vfs_fd_t fds[VFS_MAX_FDS];
     struct vfs_tarfs_ctx_t *tarfs;
+
+    /* Phase 6 direct registration: DevFs / NetFs own the driver lifetime;
+     * VfsDestroy walks both tables and calls each driver's Destroy. */
+    vfs_named_drv_t devfs[VFS_DEVFS_MAX_ENTRIES];
+    uint8_t devfs_cnt;
+    vfs_named_drv_t netfs[VFS_DEVFS_MAX_ENTRIES];
+    uint8_t netfs_cnt;
 };
 
 int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft);

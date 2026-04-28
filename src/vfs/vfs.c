@@ -164,6 +164,8 @@ void VfsDestroy(vfs_ctx_t *c) {
     if (NULL == c || NULL == *c)
         return;
     DestroyTypedFds(*c);
+    DevFs_Destroy(*c);
+    NetFs_Destroy(*c);
     DestroyRootDriver(*c);
     DestroyFildesDrv(*c, VFS_STDERR);
     DestroyFildesDrv(*c, VFS_STDOUT);
