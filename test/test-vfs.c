@@ -74,8 +74,11 @@ TEST_GROUP(vfs_openclose);
 /***************************************/
 
 TEST_SETUP(vfs_openclose) {
-    wapp_t w = {.layers = {test_wasi},
-                .layer_lens = {test_wasi_len},
+    /* Legacy romfs path coverage: this test exercises VfsRomfsInit, which
+     * cannot parse the new TAR-format test_wasi blob. Phase 8 retires both
+     * the romfs driver and this fixture. */
+    wapp_t w = {.layers = {test_wasi_romfs},
+                .layer_lens = {test_wasi_romfs_len},
                 .layer_cnt = 1};
     const char *args = "/";
     vfs = VfsInit();
