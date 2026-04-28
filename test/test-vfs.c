@@ -3,7 +3,9 @@
 #include <errno.h>
 #include <string.h>
 
+#include <vfs-devfs.h>
 #include <vfs-drivers.h>
+#include <vfs-netfs.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
 
@@ -157,31 +159,22 @@ TEST_GROUP_RUNNER(vfs_openclose) {
 TEST_GROUP(vfs_prefix_router);
 /***************************************/
 
-/* Phase 4 — verify the stateless prefix router on top of the legacy
- * virt-rooted registration. Drivers are still installed via VfsRegister into
- * the virt subtree; the router intercepts /dev/* and /net/* opens and routes
- * them through DevFs/NetFs into the typed-FD table. */
+/* Phase 6 — drivers are registered straight into the per-ctx DevFs/NetFs
+ * tables; the legacy virt-rooted /dev and /net sub-mounts are gone. The
+ * prefix router exact-matches the suffix against the registered names and
+ * dispatches into the typed-FD table. */
 
-static vfs_driver_t *router_dev_virt;
-static vfs_driver_t *router_net_virt;
 static vfs_driver_t *router_dev_drv;
 static vfs_driver_t *router_net_drv;
 
 TEST_SETUP(vfs_prefix_router) {
     vfs = VfsInit();
     virt1 = VfsVirtualInit(NULL, NULL);
-    /* Sub-virt mounts at /dev and /net so /dev/null and /net/null are real
-     * leaf entries — without them, virt would route every /dev/* path to
-     * the same null driver and -ENOENT could never surface. */
-    router_dev_virt = VfsVirtualInit(NULL, NULL);
-    router_net_virt = VfsVirtualInit(NULL, NULL);
     router_dev_drv = VfsNullInit(NULL, NULL);
     router_net_drv = VfsNullInit(NULL, NULL);
     VfsRegister(vfs, "/", virt1);
-    VfsRegister(vfs, "/dev", router_dev_virt);
-    VfsRegister(vfs, "/net", router_net_virt);
-    VfsRegister(vfs, "/dev/null", router_dev_drv);
-    VfsRegister(vfs, "/net/null", router_net_drv);
+    DevFs_Register(vfs, "null", router_dev_drv);
+    NetFs_Register(vfs, "null", router_net_drv);
 }
 
 TEST_TEAR_DOWN(vfs_prefix_router) { VfsDestroy(&vfs); }
@@ -244,10 +237,24 @@ TEST(vfs_prefix_router, MissingDevSuffixReturnsEnoent) {
     TEST_ASSERT_EQUAL_INT(-ENOENT, fd);
 }
 
+TEST(vfs_prefix_router, DevFsExactMatchOnly) {
+    /* A suffix that *starts* with a registered name but extends past it must
+     * not collide with the registration — DevFs lookup is exact, not prefix. */
+    int fd = VfsOpen(vfs, "/dev/nullx", VFS_O_RDWR);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, fd);
+}
+
+TEST(vfs_prefix_router, DevFsRejectsDuplicateRegister) {
+    vfs_driver_t *dup = VfsNullInit(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(-EEXIST, DevFs_Register(vfs, "null", dup));
+}
+
 TEST_GROUP_RUNNER(vfs_prefix_router) {
     RUN_TEST_CASE(vfs_prefix_router, DevPathTakesTypedFdSlot);
     RUN_TEST_CASE(vfs_prefix_router, NetPathTakesTypedFdSlot);
     RUN_TEST_CASE(vfs_prefix_router, NonRoutedPathStaysOnLegacy);
     RUN_TEST_CASE(vfs_prefix_router, TypedAndLegacyFdsCoexist);
     RUN_TEST_CASE(vfs_prefix_router, MissingDevSuffixReturnsEnoent);
+    RUN_TEST_CASE(vfs_prefix_router, DevFsExactMatchOnly);
+    RUN_TEST_CASE(vfs_prefix_router, DevFsRejectsDuplicateRegister);
 }

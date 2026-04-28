@@ -2,7 +2,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "vfs-internal.h"
@@ -11,49 +10,79 @@
 #include <vfs.h>
 #include <wanted_malloc.h>
 
-/* DevFs Phase 4 shim — forwards into the per-wapp legacy rootDriver subtree.
- * The handle owns no driver state; it just remembers which (drv, drv_fd) pair
- * the typed-FD entry points at, so Read/Write/Close/etc. can call straight
- * through. Phase 6 swaps the forward-through body for a direct table lookup. */
-
-#define DEVFS_PATH_MAX 128
+/* DevFs Phase 6 shim — direct table-backed lookup.
+ *
+ * The handle owns no driver state; it just remembers the (drv, drv_fd) pair
+ * so subsequent ops can dispatch without rewalking the table. Driver lifetime
+ * is owned by DevFs itself: DevFs_Destroy walks the table on VfsDestroy. */
 
 typedef struct devfs_handle_t {
     const vfs_driver_t *drv;
     int drv_fd;
 } devfs_handle_t;
 
-static int forward_open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags) {
-    char path[DEVFS_PATH_MAX];
-    int n;
+static const vfs_driver_t *LookupDrv(vfs_ctx_t c, const char *suffix) {
+    if (!c || !suffix || *suffix == '\0')
+        return NULL;
+    for (uint8_t i = 0; i < c->devfs_cnt; i++) {
+        if (strncmp(c->devfs[i].name, suffix, MAX_ENTRY_NAME_LEN) == 0)
+            return c->devfs[i].drv;
+    }
+    return NULL;
+}
 
-    if (!c || !c->rootDriver || !suffix || *suffix == '\0') {
+int DevFs_Register(vfs_ctx_t c, const char *name, const vfs_driver_t *driver) {
+    if (!c || !name || *name == '\0' || !driver)
         return -EINVAL;
-    }
-
-    n = snprintf(path, sizeof(path), "/dev/%s", suffix);
-    if (n < 0 || (size_t)n >= sizeof(path)) {
+    if (strlen(name) >= MAX_ENTRY_NAME_LEN)
         return -ENAMETOOLONG;
+    if (c->devfs_cnt >= VFS_DEVFS_MAX_ENTRIES)
+        return -ENOSPC;
+
+    /* Reject duplicate name to keep lookup deterministic. */
+    for (uint8_t i = 0; i < c->devfs_cnt; i++) {
+        if (strncmp(c->devfs[i].name, name, MAX_ENTRY_NAME_LEN) == 0)
+            return -EEXIST;
     }
 
-    return TRY_DRV(c->rootDriver, OpenAt, c->fildes[ROOT_FD].drv_fd, path,
-                   flags);
+    vfs_named_drv_t *e = &c->devfs[c->devfs_cnt++];
+    strncpy(e->name, name, MAX_ENTRY_NAME_LEN - 1);
+    e->name[MAX_ENTRY_NAME_LEN - 1] = '\0';
+    e->drv = driver;
+    DEBUG_TRACE("/dev/%s -> %.4s", e->name, driver->id);
+    return 0;
+}
+
+void DevFs_Destroy(vfs_ctx_t c) {
+    if (!c)
+        return;
+    for (uint8_t i = 0; i < c->devfs_cnt; i++) {
+        const vfs_driver_t *d = c->devfs[i].drv;
+        if (d && d->Destroy)
+            d->Destroy((vfs_driver_t *)d);
+        c->devfs[i].drv = NULL;
+        c->devfs[i].name[0] = '\0';
+    }
+    c->devfs_cnt = 0;
 }
 
 void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags) {
     DEBUG_TRACE("/dev/%s (0x%x)", suffix ? suffix : "(null)", flags);
 
-    int drv_fd = forward_open(c, suffix, flags);
-    if (drv_fd < 0) {
+    const vfs_driver_t *drv = LookupDrv(c, suffix);
+    if (!drv)
         return NULL;
-    }
+
+    int drv_fd = TRY_DRV(drv, Open, "", flags);
+    if (drv_fd < 0)
+        return NULL;
 
     devfs_handle_t *h = WantedMalloc(sizeof(*h));
     if (!h) {
-        TRY_DRV(c->rootDriver, Close, drv_fd);
+        TRY_DRV(drv, Close, drv_fd);
         return NULL;
     }
-    h->drv = c->rootDriver;
+    h->drv = drv;
     h->drv_fd = drv_fd;
     return h;
 }
