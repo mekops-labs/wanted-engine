@@ -10,8 +10,8 @@
 #include <debug_trace.h>
 #include <wanted_malloc.h>
 
-#include <romfs.h>
 #include <vfs-drivers.h>
+#include <vfs-tarfs.h>
 #include <vfs.h>
 #include <wanted-api.h>
 #include <wanted-vfs-api.h>
@@ -21,95 +21,60 @@
 
 #include <platform.h>
 
-static const char *manifestName = "manifest.json";
-static const char *appName = "app.wasm";
-
 struct m3Data_t {
     m3_wasi_context_t *wasiCtx;
     IM3Runtime rt;
     IM3Environment env;
 };
 
-struct wappImgData_t {
-    uint8_t *img;
-    size_t img_len;
-};
-
-static int LoadFile(const char *name, uint8_t *img, size_t imgLen,
-                    struct wappImgData_t *file) {
-    int ret, fd;
-    romfs_t r;
-
-    if (name == NULL || img == NULL || file == NULL) {
-        DEBUG_TRACE("invalid paramter\n");
-        return -1;
-    }
-
-    ret = RomfsLoad(img, imgLen, &r);
-    if (ret < 0) {
-        DEBUG_TRACE("RomfsLoad returned %d\n", ret);
-        return -1;
-    }
-
-    ret = RomfsFdStatAt(r, 3, name, NULL);
-    if (ret < 0) {
-        DEBUG_TRACE("RomfsFdStatAt returned %d\n", ret);
-        goto _exit;
-    } else if (!IS_FILE(ret)) {
-        DEBUG_TRACE("%s is not correct file\n", name);
-        goto _exit;
-    }
-
-    fd = RomfsOpenAt(r, 3, name, 0);
-    if (fd < 0) {
-        DEBUG_TRACE("open returned %d\n", ret);
-        goto _close;
-    }
-
-    ret = RomfsMapFile(r, (void **)&file->img, &file->img_len, fd, 0);
-
-_close:
-    RomfsClose(r, fd);
-_exit:
-    RomfsUnload(&r);
-
-    return ret;
+/* Build a one-shot tarfs ctx over the wapp's layer stack. Caller owns the
+ * returned ctx and must TarFsDestroy() it. Returns NULL on bad args / OOM /
+ * malformed layer. */
+static vfs_tarfs_ctx_t *WappTarfsInit(const wapp_t *w) {
+    if (!w || w->layer_cnt == 0)
+        return NULL;
+    return TarFsInit((uint8_t *const *)w->layers, w->layer_lens, w->layer_cnt);
 }
 
 int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen) {
-    int ret;
-    struct wappImgData_t m;
+    if (!w || !img || !imgLen)
+        return -1;
 
-    ret = LoadFile(manifestName, w->layers[0], w->layer_lens[0], &m);
-    if (ret < 0) {
-        DEBUG_TRACE("Can't load manifest from wapp image: %d", ret);
+    vfs_tarfs_ctx_t *t = WappTarfsInit(w);
+    if (!t) {
+        DEBUG_TRACE("Can't initialize tarfs for wapp manifest lookup");
         return -1;
     }
 
-    *img = m.img;
-    *imgLen = m.img_len;
+    size_t mlen = 0;
+    const uint8_t *m = TarFsEntrypointManifest(t, &mlen);
+    if (!m) {
+        DEBUG_TRACE("manifest.json absent from wapp image");
+        TarFsDestroy(t);
+        return -1;
+    }
 
+    /* Pointer is into the wapp's layer bytes, which outlive this ctx. */
+    *img = (uint8_t *)m;
+    *imgLen = mlen;
+    TarFsDestroy(t);
     return 0;
 }
 
-int WantedWappParseManifest(wapp_t *w) {
+int WantedWappParseManifestBytes(wapp_t *w, const uint8_t *manifest,
+                                 size_t manifestLen) {
     int ret = 0;
     json_t mem[32];
-    uint8_t *manifestImg;
-    size_t manifestLen;
 
-    ret = WantedWappLoadManifest(w, &manifestImg, &manifestLen);
-    if (ret < 0) {
-        DEBUG_TRACE("Can't load manifest");
+    if (!w || !manifest || manifestLen == 0)
         return -1;
-    }
 
     char *buf = WantedMalloc(manifestLen);
     if (buf == NULL) {
         DEBUG_TRACE("Can't allocate mem for manifest json buffer");
         return -1;
     }
-    memcpy(buf, manifestImg, manifestLen);
+    memcpy(buf, manifest, manifestLen);
 
     json_t const *json = json_create(buf, mem, sizeof mem / sizeof *mem);
     if (!json) {
@@ -156,12 +121,26 @@ _exit:
     return ret;
 }
 
+int WantedWappParseManifest(wapp_t *w) {
+    uint8_t *manifest;
+    size_t manifestLen;
+    int ret = WantedWappLoadManifest(w, &manifest, &manifestLen);
+    if (ret < 0) {
+        DEBUG_TRACE("Can't load manifest");
+        return -1;
+    }
+    return WantedWappParseManifestBytes(w, manifest, manifestLen);
+}
+
 int WantedWappRun(wapp_data_t *ctx) {
     M3Result status;
     IM3Module mod;
     IM3Function f;
-    struct wappImgData_t wasm;
-    wapp_t *wapp = ctx->wapp;
+    wapp_t *wapp;
+    vfs_tarfs_ctx_t *tarfs = NULL;
+    const uint8_t *manifest = NULL;
+    const uint8_t *wasm = NULL;
+    size_t manifestLen = 0, wasmLen = 0;
     int ret = 0;
 
     if (ctx == NULL) {
@@ -169,40 +148,63 @@ int WantedWappRun(wapp_data_t *ctx) {
         return -1;
     }
 
+    wapp = ctx->wapp;
+
     DEBUG_TRACE("entering thread: %d", ctx->id);
 
-    ret = WantedWappParseManifest(wapp);
-    if (ret < 0) {
-        DEBUG_TRACE("Can't parse wapp manifest: %d", ret);
+    /* Build the per-wapp tarfs index once. The pre-fetched entrypoint
+     * pointers feed both manifest parsing and wasm load below; the same ctx
+     * is later attached to the vfs so the prefix router can resolve arbitrary
+     * paths into the same layer stack. */
+    tarfs = WappTarfsInit(wapp);
+    if (!tarfs) {
+        DEBUG_TRACE("Can't initialize tarfs for wapp");
         return -1;
     }
 
-    ret = LoadFile(appName, wapp->layers[0], wapp->layer_lens[0], &wasm);
-    if (ret < 0) {
-        DEBUG_TRACE("Can't load application from wapp image: %d", ret);
-        return -1;
+    manifest = TarFsEntrypointManifest(tarfs, &manifestLen);
+    if (!manifest) {
+        DEBUG_TRACE("manifest.json absent from wapp image");
+        ret = -1;
+        goto _freeTarfs;
+    }
+
+    if (WantedWappParseManifestBytes(wapp, manifest, manifestLen) < 0) {
+        DEBUG_TRACE("Can't parse wapp manifest");
+        ret = -1;
+        goto _freeTarfs;
+    }
+
+    wasm = TarFsEntrypointWasm(tarfs, &wasmLen);
+    if (!wasm) {
+        DEBUG_TRACE("app.wasm absent from wapp image");
+        ret = -1;
+        goto _freeTarfs;
     }
 
     ctx->m3 = (struct m3Data_t *)WantedMalloc(sizeof(struct m3Data_t));
     if (!ctx->m3) {
         DEBUG_TRACE("Can't allocate data for m3");
-        return -1;
+        ret = -1;
+        goto _freeTarfs;
     }
     memset(ctx->m3, 0, sizeof(struct m3Data_t));
 
     ctx->m3->env = m3_NewEnvironment();
     if (!ctx->m3->env) {
         DEBUG_TRACE("Can't allocate data for m3 env");
-        return -1;
+        ret = -1;
+        goto _freeM3;
     }
     ctx->m3->rt = m3_NewRuntime(ctx->m3->env, M3_STACK_SIZE, NULL);
     if (!ctx->m3->rt) {
         DEBUG_TRACE("Can't allocate data for m3 rt");
-        return -1;
+        ret = -1;
+        goto _freeM3;
     }
 
-    DEBUG_TRACE("parsing wasm: %p (%zu)", wasm.img, wasm.img_len);
-    status = m3_ParseModule(ctx->m3->env, &mod, wasm.img, wasm.img_len);
+    DEBUG_TRACE("parsing wasm: %p (%zu)", wasm, wasmLen);
+    status = m3_ParseModule(ctx->m3->env, &mod, wasm, wasmLen);
     if (status) {
         DEBUG_TRACE("m3_ParseModule[%d]: %s", ctx->id, status);
     }
@@ -225,6 +227,10 @@ int WantedWappRun(wapp_data_t *ctx) {
         DEBUG_TRACE("VfsInit: can't allocate");
         goto _freeCtx;
     }
+
+    /* Hand the tarfs ctx off — VfsDestroy now frees it. */
+    VfsAttachTarfs(ctx->vfs, tarfs);
+    tarfs = NULL;
 
     ctx->m3->wasiCtx->argc = 0;
     ctx->m3->wasiCtx->argv = NULL;
@@ -283,13 +289,18 @@ _freeVfs:
 _freeCtx:
     FreeWasiContext(ctx->m3->wasiCtx);
 _freeM3:
-    m3_FreeRuntime(ctx->m3->rt);
-    m3_FreeEnvironment(ctx->m3->env);
+    if (ctx->m3->rt)
+        m3_FreeRuntime(ctx->m3->rt);
+    if (ctx->m3->env)
+        m3_FreeEnvironment(ctx->m3->env);
     WantedFree(ctx->m3);
+_freeTarfs:
+    if (tarfs)
+        TarFsDestroy(tarfs);
 
     DEBUG_TRACE("end");
 
-    return -1;
+    return ret < 0 ? ret : -1;
 }
 
 void WantedWappStop(wapp_data_t *ctx) {
