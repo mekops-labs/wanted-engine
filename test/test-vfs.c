@@ -25,8 +25,7 @@ TEST(vfs_init, InitAndDestroy) {
     vfs_ctx_t c = VfsInit();
     TEST_ASSERT_NOT_NULL(c);
 
-    /* Phase 8: ctx is zero-initialised; the typed FD table is empty and there
-     * is no shadow legacy table. */
+    /* ctx is zero-initialised; the typed FD table starts empty. */
     for (int i = 0; i < VFS_MAX_FDS; i++) {
         TEST_ASSERT_EQUAL_INT(VFS_TYPE_NONE, c->fds[i].type);
     }
@@ -44,7 +43,7 @@ TEST_GROUP_RUNNER(vfs_init) { RUN_TEST_CASE(vfs_init, InitAndDestroy); }
 TEST_GROUP(vfs_prefix_router);
 /***************************************/
 
-/* Phase 8 — only sinks are DevFs, NetFs, TARFS and stdio STREAM slots. The
+/* The only open sinks are DevFs, NetFs, TARFS, and stdio STREAM slots. The
  * prefix router exact-matches the suffix and dispatches into the typed-FD
  * table; everything else returns -ENOENT. */
 
@@ -124,10 +123,10 @@ TEST_GROUP_RUNNER(vfs_prefix_router) {
 TEST_GROUP(vfs_stream_register);
 /***************************************/
 
-/* Phase 8 — VfsRegister is the stdio-only path. Each `<stdin>`/`<stdout>`/
- * `<stderr>` mount drops the supplied driver into a STREAM slot at fd 0/1/2;
- * VfsDestroy walks those slots and frees the driver. Anything else is
- * destroyed and returns -EINVAL. */
+/* VfsRegister is the stdio-only path. Each `<stdin>`/`<stdout>`/`<stderr>`
+ * mount drops the supplied driver into a STREAM slot at fd 0/1/2; VfsDestroy
+ * walks those slots and frees the driver. Anything else is destroyed and
+ * returns -EINVAL. */
 
 TEST_SETUP(vfs_stream_register) { vfs = VfsInit(); }
 

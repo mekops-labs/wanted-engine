@@ -12,14 +12,13 @@
 #include <vfs.h>
 #include <wanted_malloc.h>
 
-/* Phase 4-8 — stateless prefix router on top of a single typed-FD table.
+/* Stateless prefix router on top of a single typed-FD table.
  *
  * VfsOpen / VfsOpenAt detect "/dev/" and "/net/" prefixes and route those
  * paths through DevFs / NetFs. When the wapp has a tarfs context
  * (`c->tarfs != NULL`), every other path resolves against the layered TAR
  * index. Stdio is preregistered into c->fds[0..2] as VFS_TYPE_STREAM during
- * VfsRegister, and dispatched through the embedded driver pointer. There is
- * no longer a generic "/" mount or arbitrary-path register hook — TARFS owns
+ * VfsRegister, and dispatched through the embedded driver pointer. TARFS owns
  * root, the prefix router owns /dev and /net, and everything else is
  * unsupported. */
 
@@ -159,8 +158,7 @@ int VfsAttachTarfs(vfs_ctx_t c, vfs_tarfs_ctx_t *tarfs) {
     return 0;
 }
 
-/* Phase 8: VfsRegister exists only to wire up stdio. The "/" mount and
- * arbitrary sub-paths are gone — TARFS owns root and the prefix router owns
+/* VfsRegister wires up stdio only. TARFS owns root and the prefix router owns
  * /dev and /net. Callers who hand us anything else lose the driver they
  * built; the registry layer in vfs-wanted-ctrl.c filters those before they
  * reach here, but we destroy defensively so a stale call can't leak. */
@@ -214,8 +212,7 @@ int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags) {
     if (!c || NULL == path || *path == '\0')
         return -EINVAL;
 
-    /* Phase 8: only absolute routed paths are supported. The legacy
-     * fildes[].drv->OpenAt fallback is gone — a relative path against a
+    /* Only absolute routed paths are supported — a relative path against a
      * typed-FD parent has no sensible mapping under DevFs/NetFs/TARFS. */
     if (path_is_routed_prefix(path) || c->tarfs != NULL)
         return route_open(c, path, flags);
@@ -261,8 +258,8 @@ int VfsStatAt(vfs_ctx_t c, int fd, const char *path, vfs_stat_t *stat) {
     if (!CheckFd(c, fd))
         return -EBADF;
 
-    /* Phase 8 has no driver-backed parent fds; the prefix router serves
-     * absolute paths directly. */
+    /* The prefix router serves absolute paths directly; fd is used only
+     * to inherit the VFS context, not as a directory handle. */
     int newfd = VfsOpenAt(c, fd, path, 0);
     if (newfd < 0)
         return newfd;

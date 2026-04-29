@@ -32,7 +32,7 @@ const uint8_t *TarFsEntrypointManifest(const vfs_tarfs_ctx_t *ctx, size_t *len);
 /* Indexed entry count — exposed for tests and diagnostics. */
 uint16_t TarFsIndexLen(const vfs_tarfs_ctx_t *ctx);
 
-/* Phase 5 file/directory operations.
+/* File/directory operations.
  *
  * TarFs is read-only. TarFs_Open returns a heap-owned handle on success or
  * NULL on -ENOENT / shadowed-by-whiteout / write flags. The handle is

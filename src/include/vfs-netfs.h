@@ -6,11 +6,9 @@
 
 /* NetFs — prefix-router shim for "/net/<name>" paths.
  *
- * Phase 6 owns driver lifetime directly: WantedInstallDriver calls
- * NetFs_Register to insert (name, driver) pairs into the per-wapp table on
- * vfs_ctx_t. NetFs_Open resolves "/net/<suffix>" by exact-matching `suffix`
- * against the registered names — the legacy virt-rooted dispatch is no
- * longer involved.
+ * WantedInstallDriver calls NetFs_Register to insert (name, driver) pairs into
+ * the per-wapp table on vfs_ctx_t. NetFs_Open resolves "/net/<suffix>" by
+ * exact-matching `suffix` against the registered names.
  */
 
 int NetFs_Register(vfs_ctx_t c, const char *name, const vfs_driver_t *driver);

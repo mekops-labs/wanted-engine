@@ -243,10 +243,8 @@ int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen) {
     return (int)n;
 }
 
-/* Phase 8 — global driver table moved here from the deleted vfs/drivers.c.
- * It is the single registry used by WantedInstallDriver to resolve a config
- * driver name into an init callback. The legacy `rom` (romfs) entry is gone
- * along with the driver itself. */
+/* Global driver table — single registry used by WantedInstallDriver to resolve
+ * a config driver name into an init callback. */
 static const vfs_driver_table_t global_driver_table[] = {
     {"null", VfsNullInit},     {"9p", Vfs9PInit},
     {"config", VfsConfigInit}, {"platform", VfsPlatformFsInit},
@@ -254,13 +252,12 @@ static const vfs_driver_table_t global_driver_table[] = {
     {"wanted", VfsWantedInit}, {NULL, NULL},
 };
 
-/* Phase 8 — every wapp mount must terminate at one of three sinks:
+/* Every wapp mount must terminate at one of three sinks:
  *   /dev/<x>  → DevFs registration table
  *   /net/<x>  → NetFs registration table
  *   <stdio>   → STREAM slot in the typed-FD table
- * Anything else is a config artifact from the legacy generic mount system —
- * we silently destroy the driver so a stale supervisor manifest can't fail
- * boot, and the unrouted path will surface as -ENOENT on first open. */
+ * Anything else is silently destroyed so a stale supervisor manifest can't
+ * fail boot; the unrouted path will surface as -ENOENT on first open. */
 static int InstallTo(struct vfs_ctx_t *c, const char *path,
                      const vfs_driver_t *drv) {
     if (strncmp(path, "/dev/", 5) == 0)
