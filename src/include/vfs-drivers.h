@@ -25,13 +25,10 @@ typedef struct vfs_driver_table_t {
     VfsInitFunction_t init;
 } vfs_driver_table_t;
 
-extern vfs_driver_table_t global_driver_table[];
-
 vfs_driver_t *VfsNullInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsConfigInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options);
-vfs_driver_t *VfsRomfsInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsVirtualInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *options);

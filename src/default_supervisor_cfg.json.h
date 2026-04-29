@@ -10,9 +10,7 @@ JSON({
             "err" : {"name" : "platform"}
         },
         "drivers" : [
-            {"name" : "rom", "path" : "/rom"},
-            {"name" : "platform", "path" : "/mnt", "options" : "./"},
-            {"name" : "virt", "path" : "/net"}, {
+            {
                 "name" : "socket",
                 "path" : "/net/s",
                 "options" : "t localhost 8888"
@@ -22,12 +20,10 @@ JSON({
                 "path" : "/net/ss",
                 "options" : "T localhost 8889"
             },
-            {"name" : "virt", "path" : "/d"},
-            {"name" : "9p", "path" : "/d/b", "options" : "tcp!localhost!5640"},
-            {"name" : "wanted", "path" : "/w"}, {
-                "name" : "config",
-                "path" : "/config",
-                "options" : "{\"config_file\":\"/mnt/config.json\"}"
+            {"name" : "9p", "path" : "/dev/9p", "options" : "tcp!localhost!5640"},
+            {"name" : "wanted", "path" : "/dev/wanted"},
+            {"name" : "config", "path" : "/dev/config",
+                "options" : "{\"config_file\":\"/config.json\"}"
             }
         ]
     }

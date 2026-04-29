@@ -1,7 +1,6 @@
 #pragma once
 
 #include "m3_core.h"
-#include <romfs.h>
 #include <vfs.h>
 
 d_m3BeginExternC

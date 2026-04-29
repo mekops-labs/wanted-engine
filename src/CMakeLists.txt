@@ -7,14 +7,12 @@ set(sources
 )
 
 set(vfs-srcs
-    "vfs/drivers.c"
     "vfs/vfs.c"
     "vfs/vfs-9p.c"
     "vfs/vfs-config.c"
     "vfs/vfs-devfs.c"
     "vfs/vfs-netfs.c"
     "vfs/vfs-null.c"
-    "vfs/vfs-romfs.c"
     "vfs/vfs-tarfs.c"
     "vfs/vfs-socket.c"
     "vfs/vfs-wanted.c"
@@ -41,10 +39,6 @@ set(json-maker-src
 set(c9-src
     ${CMAKE_SOURCE_DIR}/vendor/c9/c9.c
 )
-
-set(CUSTOM_MALLOC_IMPL ${CMAKE_CURRENT_SOURCE_DIR}/romfs_malloc.c)
-add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/romfs-lib/src ${CMAKE_BINARY_DIR}/romfs)
-target_compile_definitions(romfs PRIVATE ROMFS_CUSTOM_MALLOC=1)
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
 
@@ -95,7 +89,6 @@ target_include_directories(${project}
 
 
 target_link_libraries(${project}
-    PRIVATE romfs
     PRIVATE cwalk
     PRIVATE m3
     PRIVATE m

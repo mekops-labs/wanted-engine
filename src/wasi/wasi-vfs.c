@@ -243,15 +243,16 @@ m3ApiRawFunction(m3_wasi_unstable_fd_seek) {
 
     int whence;
 
+    /* WASI unstable maps whence values 0/1/2 to CUR/END/SET (legacy ABI). */
     switch (wasi_whence) {
     case 0:
-        whence = ROMFS_SEEK_CUR;
+        whence = VFS_SEEK_CUR;
         break;
     case 1:
-        whence = ROMFS_SEEK_END;
+        whence = VFS_SEEK_END;
         break;
     case 2:
-        whence = ROMFS_SEEK_SET;
+        whence = VFS_SEEK_SET;
         break;
     default:
         m3ApiReturn(__WASI_ERRNO_INVAL);
@@ -278,15 +279,16 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_fd_seek) {
 
     int whence;
 
+    /* WASI snapshot_preview1 maps 0/1/2 to SET/CUR/END. */
     switch (wasi_whence) {
     case 0:
-        whence = ROMFS_SEEK_SET;
+        whence = VFS_SEEK_SET;
         break;
     case 1:
-        whence = ROMFS_SEEK_CUR;
+        whence = VFS_SEEK_CUR;
         break;
     case 2:
-        whence = ROMFS_SEEK_END;
+        whence = VFS_SEEK_END;
         break;
     default:
         m3ApiReturn(__WASI_ERRNO_INVAL);
