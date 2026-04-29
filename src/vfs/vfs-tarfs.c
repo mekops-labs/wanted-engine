@@ -350,12 +350,12 @@ uint16_t TarFsIndexLen(const vfs_tarfs_ctx_t *ctx) {
     return ctx ? ctx->index_len : 0;
 }
 
-/* Phase 5: file/directory operations.
+/* File/directory operations.
  *
- * Lookups run on the qsorted index from Phase 2 — exact-match for files,
- * "<path>/" prefix scan for implicit directories. Reads are zero-copy via
- * the layer pointer; the only heap allocation per open is the handle plus
- * (for directories) a copy of the prefix string. */
+ * Lookups run on the qsorted index — exact-match for files, "<path>/" prefix
+ * scan for implicit directories. Reads are zero-copy via the layer pointer;
+ * the only heap allocation per open is the handle plus (for directories) a
+ * copy of the prefix string. */
 
 static uint16_t LowerBound(const tar_index_entry_t *idx, uint16_t n,
                            const char *key) {

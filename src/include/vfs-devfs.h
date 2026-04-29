@@ -6,11 +6,9 @@
 
 /* DevFs — prefix-router shim for "/dev/<name>" paths.
  *
- * Phase 6 owns driver lifetime directly: WantedInstallDriver calls
- * DevFs_Register to insert (name, driver) pairs into the per-wapp table on
- * vfs_ctx_t. DevFs_Open resolves "/dev/<suffix>" by exact-matching `suffix`
- * against the registered names — no more forwarding through the legacy
- * virt-rooted dispatch.
+ * WantedInstallDriver calls DevFs_Register to insert (name, driver) pairs into
+ * the per-wapp table on vfs_ctx_t. DevFs_Open resolves "/dev/<suffix>" by
+ * exact-matching `suffix` against the registered names.
  */
 
 int DevFs_Register(vfs_ctx_t c, const char *name, const vfs_driver_t *driver);

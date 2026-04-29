@@ -394,11 +394,11 @@ TEST_GROUP_RUNNER(tarfs_phase5) {
 }
 
 /***************************************/
-/* Phase 7 — end-to-end opens through VfsOpen with c->tarfs populated. */
+/* End-to-end opens through VfsOpen with c->tarfs populated. */
 /***************************************/
 
-/* Three layer buffers cover every Phase 7 fixture; tear-down zeroes them so
- * each test sees a clean slate. */
+/* Two layer buffers shared across fixtures; tear-down zeroes them so each
+ * test sees a clean slate. */
 static uint8_t p7_layerA[512 * 4];
 static uint8_t p7_layerB[512 * 4];
 static vfs_ctx_t p7_vfs;

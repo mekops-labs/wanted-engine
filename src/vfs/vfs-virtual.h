@@ -7,10 +7,8 @@
 // TODO: need to by more dynamic and support a tree of file entries
 #define MAX_ENTRIES 10
 
-/* Phase 8: virt is the sole remaining consumer of the per-driver fildes[]
- * pattern; the global VFS dispatch table moved to a typed FD model on
- * vfs_ctx_t. We keep these here because the virt driver still tracks its
- * own opens internally. */
+/* The virt driver tracks its own opens internally via a per-driver fildes[]
+ * table. MAX_OPEN caps the number of concurrent virt handles per context. */
 #define MAX_OPEN 20
 
 typedef struct vfs_fildes_t {

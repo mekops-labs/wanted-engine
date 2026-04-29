@@ -16,11 +16,10 @@
 #define ROOT_FD 3
 #define MAX_DRIVERS 10
 
-/* Phase 8: typed FD table is now the only dispatch path. The table sits
- * directly on vfs_ctx_t and is indexed by the WASI fd; types pick which
- * subsystem owns the slot. STREAM fds carry an embedded driver pointer +
- * internal fd so stdio can stay driver-backed without the legacy fildes[]
- * shadow table. */
+/* Typed FD table — the only dispatch path. The table sits directly on
+ * vfs_ctx_t and is indexed by the WASI fd; types pick which subsystem owns
+ * the slot. STREAM fds carry an embedded driver pointer + internal fd so
+ * stdio can stay driver-backed. */
 #define VFS_MAX_FDS 32
 
 typedef enum {
@@ -52,10 +51,10 @@ typedef struct vfs_entry_t {
  * without pulling vfs-tarfs.h into every translation unit. */
 struct vfs_tarfs_ctx_t;
 
-/* Phase 6 — direct DevFs/NetFs registration tables. Drivers under "/dev/<name>"
- * and "/net/<name>" are registered straight into these per-ctx tables by
- * WantedInstallDriver, replacing the legacy virt-rooted sub-mount path. The
- * prefix router resolves opens by exact-matching the suffix against `name`. */
+/* Direct DevFs/NetFs registration tables. Drivers under "/dev/<name>"
+ * and "/net/<name>" are registered into these per-ctx tables by
+ * WantedInstallDriver. The prefix router resolves opens by exact-matching
+ * the suffix against `name`. */
 #define VFS_DEVFS_MAX_ENTRIES 10
 
 typedef struct vfs_named_drv_t {

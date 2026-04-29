@@ -10,7 +10,7 @@
 #include <vfs.h>
 #include <wanted_malloc.h>
 
-/* DevFs Phase 6 shim — direct table-backed lookup.
+/* DevFs — direct table-backed lookup.
  *
  * The handle owns no driver state; it just remembers the (drv, drv_fd) pair
  * so subsequent ops can dispatch without rewalking the table. Driver lifetime

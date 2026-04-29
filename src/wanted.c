@@ -248,8 +248,6 @@ int WantedWappRun(wapp_data_t *ctx) {
     ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[2].name,
                                "<stderr>", wapp->cfg.console[2].options);
 
-    /* Phase 8: root is owned by tarfs; no generic /-driver to install. */
-
     /* fs drivers */
     for (int i = 0; i < wapp->cfg.driversCnt; i++) {
         ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.drivers[i].name,
@@ -354,9 +352,7 @@ wapp_t *WantedGetCurrentSupervisor() {
     if (ret < 0)
         return w;
 
-    /* Transitional: expose the supervisor blob as the sole OCI layer. When the
-     * supervisor build pipeline emits a TAR (Phase 6 prerequisite), the blob
-     * format changes but this assignment stays the same. */
+    /* Expose the supervisor blob as the sole OCI layer. */
     w->layers[0] = supervisor_wapp;
     w->layer_lens[0] = supervisor_wapp_len;
     w->layer_cnt = 1;

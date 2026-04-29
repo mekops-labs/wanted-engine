@@ -10,7 +10,7 @@
 #include <vfs.h>
 #include <wanted_malloc.h>
 
-/* NetFs Phase 6 shim — direct table-backed lookup.
+/* NetFs — direct table-backed lookup.
  *
  * Mirrors DevFs: WantedInstallDriver registers each "/net/<name>" driver into
  * the per-wapp table; NetFs_Open exact-matches the suffix and forwards into
