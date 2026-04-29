@@ -7,8 +7,7 @@
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
 #include <vfs/vfs-virtual.h>
-
-#include <path_utils.h>
+#include <wanted-api.h>
 
 static int dummyOpened;
 static int dummyClosed;

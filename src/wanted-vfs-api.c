@@ -243,23 +243,35 @@ int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen) {
     return (int)n;
 }
 
-/* Phase 6 — route /dev/<name> and /net/<name> straight into the DevFs/NetFs
- * tables; bare /dev or /net are now implicit prefix-router namespaces and
- * never need their own mount, so a request to register one is treated as a
- * no-op. Everything else (root, console pseudo-paths, arbitrary mounts)
- * stays on the legacy VfsRegister path until Phase 8 rips it out. */
+/* Phase 8 — global driver table moved here from the deleted vfs/drivers.c.
+ * It is the single registry used by WantedInstallDriver to resolve a config
+ * driver name into an init callback. The legacy `rom` (romfs) entry is gone
+ * along with the driver itself. */
+static const vfs_driver_table_t global_driver_table[] = {
+    {"null", VfsNullInit},     {"9p", Vfs9PInit},
+    {"config", VfsConfigInit}, {"platform", VfsPlatformFsInit},
+    {"socket", VfsSocketInit}, {"virt", VfsVirtualInit},
+    {"wanted", VfsWantedInit}, {NULL, NULL},
+};
+
+/* Phase 8 — every wapp mount must terminate at one of three sinks:
+ *   /dev/<x>  → DevFs registration table
+ *   /net/<x>  → NetFs registration table
+ *   <stdio>   → STREAM slot in the typed-FD table
+ * Anything else is a config artifact from the legacy generic mount system —
+ * we silently destroy the driver so a stale supervisor manifest can't fail
+ * boot, and the unrouted path will surface as -ENOENT on first open. */
 static int InstallTo(struct vfs_ctx_t *c, const char *path,
                      const vfs_driver_t *drv) {
-    if (strcmp(path, "/dev") == 0 || strcmp(path, "/net") == 0) {
-        if (drv->Destroy)
-            drv->Destroy((vfs_driver_t *)drv);
-        return 0;
-    }
     if (strncmp(path, "/dev/", 5) == 0)
         return DevFs_Register(c, path + 5, drv);
     if (strncmp(path, "/net/", 5) == 0)
         return NetFs_Register(c, path + 5, drv);
-    return VfsRegister(c, path, drv);
+    if (path[0] == '<')
+        return VfsRegister(c, path, drv);
+    if (drv->Destroy)
+        drv->Destroy((vfs_driver_t *)drv);
+    return 0;
 }
 
 int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,

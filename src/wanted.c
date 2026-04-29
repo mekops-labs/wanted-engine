@@ -248,8 +248,7 @@ int WantedWappRun(wapp_data_t *ctx) {
     ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[2].name,
                                "<stderr>", wapp->cfg.console[2].options);
 
-    /* root driver */
-    ret += WantedInstallDriver(ctx->vfs, wapp, "virt", "/", NULL);
+    /* Phase 8: root is owned by tarfs; no generic /-driver to install. */
 
     /* fs drivers */
     for (int i = 0; i < wapp->cfg.driversCnt; i++) {

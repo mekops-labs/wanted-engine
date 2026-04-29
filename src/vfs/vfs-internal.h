@@ -13,11 +13,14 @@
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 #define MAX_ENTRY_NAME_LEN 32
-#define MAX_OPEN 20
 #define ROOT_FD 3
 #define MAX_DRIVERS 10
 
-/* Typed FD table — Phase 3. Populated by Phase 4's stateless prefix router. */
+/* Phase 8: typed FD table is now the only dispatch path. The table sits
+ * directly on vfs_ctx_t and is indexed by the WASI fd; types pick which
+ * subsystem owns the slot. STREAM fds carry an embedded driver pointer +
+ * internal fd so stdio can stay driver-backed without the legacy fildes[]
+ * shadow table. */
 #define VFS_MAX_FDS 32
 
 typedef enum {
@@ -25,6 +28,7 @@ typedef enum {
     VFS_TYPE_TARFS,
     VFS_TYPE_DEV,
     VFS_TYPE_NET,
+    VFS_TYPE_STREAM,
 } vfs_fd_type_t;
 
 typedef struct vfs_fd_t {
@@ -32,27 +36,24 @@ typedef struct vfs_fd_t {
     void *internal_ctx; /* tarfs_file_ctx_t, devfs handle, socket_ctx, ... */
     int flags;          /* VFS_O_* from open() */
     int rights;         /* WASI-style capability mask (reserved) */
+
+    /* STREAM-only: stdio backed by a driver. The driver is owned by the vfs
+     * ctx — VfsDestroy walks STREAM slots and calls Destroy. */
+    const vfs_driver_t *driver;
+    int drv_fd;
 } vfs_fd_t;
 
 typedef struct vfs_entry_t {
     char name[MAX_ENTRY_NAME_LEN];
     const vfs_driver_t *drv;
-    //    vfs_filetype_t  type;
 } vfs_entry_t;
-
-typedef struct vfs_fildes_t {
-    int drv_fd;
-    const vfs_driver_t *drv;
-    bool opened;
-    int flags;
-} vfs_fildes_t;
 
 /* Forward-declared here so the ctx can carry a per-wapp tarfs pointer
  * without pulling vfs-tarfs.h into every translation unit. */
 struct vfs_tarfs_ctx_t;
 
 /* Phase 6 — direct DevFs/NetFs registration tables. Drivers under "/dev/<name>"
- * and "/net/<name>" are now registered straight into these per-ctx tables by
+ * and "/net/<name>" are registered straight into these per-ctx tables by
  * WantedInstallDriver, replacing the legacy virt-rooted sub-mount path. The
  * prefix router resolves opens by exact-matching the suffix against `name`. */
 #define VFS_DEVFS_MAX_ENTRIES 10
@@ -63,16 +64,12 @@ typedef struct vfs_named_drv_t {
 } vfs_named_drv_t;
 
 struct vfs_ctx_t {
-    /* Legacy per-driver FD table — removed in Phase 4. */
-    vfs_fildes_t fildes[MAX_OPEN];
-    const vfs_driver_t *rootDriver;
-
-    /* New typed FD table — owned by the VFS core, populated in Phase 4. */
+    /* Typed FD table — owns every open in the wapp. */
     vfs_fd_t fds[VFS_MAX_FDS];
     struct vfs_tarfs_ctx_t *tarfs;
 
-    /* Phase 6 direct registration: DevFs / NetFs own the driver lifetime;
-     * VfsDestroy walks both tables and calls each driver's Destroy. */
+    /* Direct DevFs/NetFs registration tables. Owned by the vfs ctx;
+     * VfsDestroy walks both and calls each driver's Destroy. */
     vfs_named_drv_t devfs[VFS_DEVFS_MAX_ENTRIES];
     uint8_t devfs_cnt;
     vfs_named_drv_t netfs[VFS_DEVFS_MAX_ENTRIES];
