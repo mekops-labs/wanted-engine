@@ -5,41 +5,57 @@
 
 > [CHANGELOG](CHANGELOG.md)
 
-- uses `wasm3` as WA interpreter
-- runs multiple [wapps](#wapp-overview) at once as separate threads
-- provides isolation through WebAssembly memory model and interaction with outside world is only through VFS drivers
-- implements interface to manage the run state of the wapp
-  - can start, stop wapp, parameters (e.g. mounted drivers) are defined by JSON config file
+- **Interpreter:** Uses `wasm3` as the high-performance WebAssembly interpreter.
+- **Concurrency:** Runs multiple [wapps](#wapp-overview) simultaneously as isolated threads.
+- **Isolation:** Strict memory isolation via WebAssembly; external interactions are mediated exclusively through the VFS.
+- **Stateless Prefix Router:** High-speed native routing for `/dev/` and `/net/` namespaces.
+- **Layered TarFS:** OCI-compatible filesystem supporting multiple TAR layers with shadowing and whiteout (`.wh.`) semantics.
+- **Efficient Indexing:** Zero-copy filesystem indexing in memory with O(log N) lookup performance and boot-time pre-fetching.
 
 ## General architecture
 
-> TBD
+WANTED implements a Cloud-Native VFS Router. Path resolution is split into three primary domains:
+
+1. **Device Namespace (`/dev/`):** Routes to platform-specific and virtual drivers (e.g., `9p`, `config`, `platform`, `null`).
+2. **Network Namespace (`/net/`):** Routes to the socket driver for TCP/UDP operations.
+3. **Application Space (Root):** Handled by **TarFS**, which merges up to 4 OCI layers into a single unified view.
 
 ```text
-WAPP -> WASI -> VFS -> drivers
+WAPP -> WASI -> VFS ROUTER -> [/dev/ | /net/ | TarFS]
 ```
 
 ## Wapp overview
 
-Wapp is RomFs packaged filesystem. It has few requirements:
+A Wapp is a collection of OCI-compatible TAR layers.
 
-1. At least 2 files in root directory:
+1. **Required Files:** At least the following must exist in the layer stack:
+    - `app.wasm`: The WebAssembly application binary.
+    - `manifest.json`: Application metadata and requirement definitions.
 
-    ```bash
-    Some.wapp
-    |
-    |-> app.wasm
-    \-> manifest.json
-    ```
+2. **Manifest Schema:** A JSON file containing:
+    - `name`: Unique application identifier.
+    - `version`: SemVer-compatible version string.
+    - `chksum`: SHA256 of the WASM binary.
+    - `drivers`: Array of required capabilities.
 
-    - `app.wasm` is a WebAssembly application to run
-    - `manifest.json` is a description of application metadata and requirements
-2. Manifest is a JSON file (`manifest.json`), which contains necessary metadata of the application. The template is in `wasm/wapp` folder of this project. Contents:
-    - name - application name
-    - version - application version
-    - chksum - check sum of the wasm file
-    - package - package build number (e.g. for different configurations)
-    - drivers - required drivers for the application
+3. **Layering:** Supports OCI-style overlays. Newer layers shadow files in older layers. Whiteout files (`.wh.<filename>`) can be used to "delete" files from underlying layers.
 
-Rest of the files inside wapp archive is optional and depends on
-application. It could be some data or extra configuration files.
+## Build and Verification
+
+The development environment is standardized via Podman to ensure toolchain consistency.
+
+### Build
+
+```bash
+podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
+    registry.gitlab.com/wanted-project/wanted-engine/build \
+    -c "mkdir -p /src/build && cd /src/build && cmake -G Ninja /src && ninja"
+```
+
+### Test
+
+```bash
+podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
+    registry.gitlab.com/wanted-project/wanted-engine/build \
+    -c "cd /src/build && ctest --output-on-failure"
+```
