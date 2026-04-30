@@ -14,7 +14,8 @@
 int DevFs_Register(vfs_ctx_t c, const char *name, const vfs_driver_t *driver);
 void DevFs_Destroy(vfs_ctx_t c);
 
-void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags);
+void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
+                 int *out_err);
 int DevFs_Close(vfs_ctx_t c, void *handle);
 int DevFs_Read(vfs_ctx_t c, void *handle, void *buf, size_t nbyte);
 int DevFs_Write(vfs_ctx_t c, void *handle, const void *buf, size_t nbyte);

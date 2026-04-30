@@ -14,7 +14,8 @@
 int NetFs_Register(vfs_ctx_t c, const char *name, const vfs_driver_t *driver);
 void NetFs_Destroy(vfs_ctx_t c);
 
-void *NetFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags);
+void *NetFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
+                 int *out_err);
 int NetFs_Close(vfs_ctx_t c, void *handle);
 int NetFs_Read(vfs_ctx_t c, void *handle, void *buf, size_t nbyte);
 int NetFs_Write(vfs_ctx_t c, void *handle, const void *buf, size_t nbyte);
