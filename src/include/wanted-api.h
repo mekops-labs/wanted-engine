@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <vfs.h>
+#include <vfs-tarfs.h>
 #include <wanted.h>
 
 // TODO: make configurable
@@ -14,7 +15,6 @@
 #define MAX_PATH_LEN 256
 #define MAX_OPTIONS_SIZE 1024
 #define MAX_DRIVERS_CNT 10
-#define TARFS_MAX_LAYERS 4
 
 typedef struct m3Data_t *im3Data_t;
 

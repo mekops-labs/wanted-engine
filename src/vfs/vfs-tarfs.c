@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -26,7 +27,7 @@
 typedef struct __attribute__((packed)) tar_index_entry_t {
     const char *path_ptr;
     uint16_t layer_idx;
-    uint32_t hdr_offset;
+    uint64_t hdr_offset;
     uint32_t size;
 } tar_index_entry_t;
 
@@ -36,7 +37,7 @@ typedef struct __attribute__((packed)) tar_index_entry_t {
 typedef struct tarfs_file_ctx_t {
     bool is_dir;
     uint16_t layer_idx;
-    uint32_t hdr_offset;
+    uint64_t hdr_offset;
     uint32_t size;
     uint32_t pos;
     char *dir_prefix;
@@ -88,10 +89,20 @@ static bool IsZeroBlock(const uint8_t *b) {
     return true;
 }
 
+/* Binary search over the sorted prefix [0, n). Only valid when n entries have
+ * already been sorted — i.e. called with the length from a prior layer, not
+ * including entries currently being appended for the layer under construction. */
 static bool IndexContains(const tar_index_entry_t *idx, uint16_t n,
                           const char *path) {
-    for (uint16_t i = 0; i < n; i++) {
-        if (strcmp(idx[i].path_ptr, path) == 0)
+    uint16_t lo = 0, hi = n;
+    while (lo < hi) {
+        uint16_t mid = lo + (uint16_t)((hi - lo) / 2);
+        int cmp = strcmp(idx[mid].path_ptr, path);
+        if (cmp < 0)
+            lo = (uint16_t)(mid + 1);
+        else if (cmp > 0)
+            hi = mid;
+        else
             return true;
     }
     return false;
@@ -151,7 +162,10 @@ static char *MakeWhiteoutTarget(const char *path) {
     return out;
 }
 
-static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx) {
+/* sorted_len: number of entries in ctx->index that are already sorted (i.e.
+ * entries from all previously-indexed layers). Used for O(log N) dedup. */
+static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
+                      uint16_t sorted_len) {
     const uint8_t *buf = ctx->layers[layer_idx];
     size_t len = ctx->layer_lens[layer_idx];
     size_t off = 0;
@@ -173,7 +187,25 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx) {
         size_t name_field_len = strnlen(name, TAR_NAME_LEN);
         uint32_t size =
             ParseOctal((const char *)(hdr + TAR_SIZE_OFFSET), TAR_SIZE_LEN);
-        size_t next_off = off + TAR_BLOCK_SIZE + AlignUp512(size);
+
+        /* Guard against crafted entries whose claimed size overflows or exceeds
+         * the layer buffer. AlignUp512 can wrap on 32-bit if size is near
+         * SIZE_MAX, so validate before the arithmetic. */
+        if (len - off < TAR_BLOCK_SIZE ||
+            (size_t)size > len - off - TAR_BLOCK_SIZE) {
+            DEBUG_TRACE("tarfs: entry at %zu size %u exceeds layer bound %zu",
+                        off, size, len);
+            break;
+        }
+        size_t aligned_size = AlignUp512((size_t)size);
+        if (aligned_size < (size_t)size) {
+            /* AlignUp512 overflowed on this platform. */
+            break;
+        }
+        size_t next_off = off + TAR_BLOCK_SIZE + aligned_size;
+        if (next_off < off) {
+            break;
+        }
 
         /* Skip entries we can't safely zero-copy: 100-char name with no NUL,
          * or a ustar prefix field in use (would require concatenation). */
@@ -231,8 +263,11 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx) {
             entry_layer = layer_idx;
         }
 
-        /* Newer-layer shadowing: first occurrence wins. */
-        if (IndexContains(ctx->index, ctx->index_len, entry_path)) {
+        /* Newer-layer shadowing: first occurrence wins.
+         * Search only the sorted prefix from previous layers. Within-layer
+         * duplicates are the TAR writer's problem; well-formed archives don't
+         * have them. */
+        if (IndexContains(ctx->index, sorted_len, entry_path)) {
             off = next_off;
             continue;
         }
@@ -259,7 +294,7 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx) {
         tar_index_entry_t *e = &ctx->index[ctx->index_len++];
         e->path_ptr = entry_path;
         e->layer_idx = entry_layer;
-        e->hdr_offset = (uint32_t)off;
+        e->hdr_offset = off;
         e->size = size;
 
         off = next_off;
@@ -301,15 +336,17 @@ vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
     ctx->layer_cnt = layer_cnt;
 
     for (uint8_t i = 0; i < layer_cnt; i++) {
-        if (IndexLayer(ctx, i) < 0) {
+        /* snapshot of the sorted boundary before this layer's entries land */
+        uint16_t sorted_len = ctx->index_len;
+        if (IndexLayer(ctx, i, sorted_len) < 0) {
             DEBUG_TRACE("tarfs: indexing failed on layer %u", i);
             TarFsDestroy(ctx);
             return NULL;
         }
-    }
-
-    if (ctx->index_len > 0) {
-        qsort(ctx->index, ctx->index_len, sizeof(tar_index_entry_t), IndexCmp);
+        /* Sort the full index so subsequent layers can binary-search it. */
+        if (ctx->index_len > 0)
+            qsort(ctx->index, ctx->index_len, sizeof(tar_index_entry_t),
+                  IndexCmp);
     }
 
     DEBUG_TRACE("tarfs: indexed %u entries across %u layers", ctx->index_len,
@@ -500,6 +537,9 @@ int TarFs_Read(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t nbyte) {
 
     size_t remaining = h->size - h->pos;
     size_t n = nbyte < remaining ? nbyte : remaining;
+    /* Clamp to INT_MAX so the cast to int is always non-negative. */
+    if (n > (size_t)INT_MAX)
+        n = (size_t)INT_MAX;
     const uint8_t *data =
         ctx->layers[h->layer_idx] + h->hdr_offset + TAR_BLOCK_SIZE + h->pos;
     memcpy(buf, data, n);
@@ -569,6 +609,10 @@ int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
     if (*cookie == 0) {
         i = LowerBound(ctx->index, ctx->index_len, h->dir_prefix);
     } else {
+        /* WASI dircookie is uint64_t. The index is uint16_t-bounded, so any
+         * cookie beyond the index length means iteration is complete. */
+        if (*cookie > ctx->index_len)
+            return -EINVAL;
         i = (uint16_t)*cookie;
     }
 
