@@ -66,22 +66,33 @@ void DevFs_Destroy(vfs_ctx_t c) {
     c->devfs_cnt = 0;
 }
 
-void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags) {
+void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
+                 int *out_err) {
     DEBUG_TRACE("/dev/%s (0x%x)", suffix ? suffix : "(null)", flags);
 
     const vfs_driver_t *drv = LookupDrv(c, suffix);
-    if (!drv)
+    if (!drv) {
+        if (out_err)
+            *out_err = -ENOENT;
         return NULL;
+    }
 
     int drv_fd = TRY_DRV(drv, Open, "", flags);
-    if (drv_fd < 0)
+    if (drv_fd < 0) {
+        if (out_err)
+            *out_err = drv_fd;
         return NULL;
+    }
 
     devfs_handle_t *h = WantedMalloc(sizeof(*h));
     if (!h) {
         TRY_DRV(drv, Close, drv_fd);
+        if (out_err)
+            *out_err = -ENOMEM;
         return NULL;
     }
+    if (out_err)
+        *out_err = 0;
     h->drv = drv;
     h->drv_fd = drv_fd;
     return h;
