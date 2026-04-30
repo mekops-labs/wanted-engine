@@ -256,8 +256,8 @@ static const vfs_driver_table_t global_driver_table[] = {
  *   /dev/<x>  → DevFs registration table
  *   /net/<x>  → NetFs registration table
  *   <stdio>   → STREAM slot in the typed-FD table
- * Anything else is silently destroyed so a stale supervisor manifest can't
- * fail boot; the unrouted path will surface as -ENOENT on first open. */
+ * Anything else is rejected: a misconfigured supervisor manifest must fail
+ * loudly at install time rather than silently at first open. */
 static int InstallTo(struct vfs_ctx_t *c, const char *path,
                      const vfs_driver_t *drv) {
     if (strncmp(path, "/dev/", 5) == 0)
@@ -266,9 +266,10 @@ static int InstallTo(struct vfs_ctx_t *c, const char *path,
         return NetFs_Register(c, path + 5, drv);
     if (path[0] == '<')
         return VfsRegister(c, path, drv);
+    DEBUG_TRACE("InstallTo: unrouted path '%s', dropping driver", path);
     if (drv->Destroy)
         drv->Destroy((vfs_driver_t *)drv);
-    return 0;
+    return -EINVAL;
 }
 
 int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,

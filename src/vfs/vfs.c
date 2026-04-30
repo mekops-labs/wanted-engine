@@ -50,22 +50,31 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     int fd;
     void *handle;
     vfs_fd_type_t type;
+    int open_err = -ENOENT;
 
     if (path_has_prefix(path, "/dev/")) {
         type = VFS_TYPE_DEV;
-        handle = DevFs_Open(c, path + 5, flags);
+        handle = DevFs_Open(c, path + 5, flags, &open_err);
     } else if (path_has_prefix(path, "/net/")) {
         type = VFS_TYPE_NET;
-        handle = NetFs_Open(c, path + 5, flags);
+        handle = NetFs_Open(c, path + 5, flags, &open_err);
     } else if (c->tarfs != NULL) {
+        /* TarFs is read-only; reject write-mode opens before touching the
+         * index so callers get -EROFS rather than a generic -ENOENT. */
+        if ((flags & 03) != VFS_O_RDONLY ||
+            (flags & (VFS_O_CREAT | VFS_O_TRUNC))) {
+            return -EROFS;
+        }
         type = VFS_TYPE_TARFS;
         handle = TarFs_Open(c->tarfs, path, flags);
+        /* TarFs_Open returns NULL for ENOENT or OOM; both surface as ENOENT to
+         * the caller — OOM is indistinguishable without an API change. */
     } else {
         return -ENOTSUP;
     }
 
     if (handle == NULL) {
-        return -ENOENT;
+        return open_err;
     }
 
     fd = FindFirstClosedFd(c);
