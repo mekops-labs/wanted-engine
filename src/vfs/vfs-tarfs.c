@@ -23,6 +23,7 @@
 
 #define INDEX_INIT_CAP 16
 #define OWNED_INIT_CAP 4
+#define PATH_POOL_INIT_CAP 256
 
 typedef struct __attribute__((packed)) tar_index_entry_t {
     const char *path_ptr;
@@ -49,9 +50,6 @@ struct vfs_tarfs_ctx_t {
     size_t layer_lens[TARFS_MAX_LAYERS];
     uint8_t layer_cnt;
 
-    /* Deduplicated sorted index. Target: PSRAM on ESP.
-     * TODO(psram): swap WantedMalloc -> heap_caps_malloc(MALLOC_CAP_SPIRAM)
-     *              behind a platform hook once the ESP port lands. */
     tar_index_entry_t *index;
     uint16_t index_len;
     uint16_t index_cap;
@@ -61,7 +59,14 @@ struct vfs_tarfs_ctx_t {
     uint16_t owned_len;
     uint16_t owned_cap;
 
-    /* Boot optimisations: direct pointers into flash-mapped layer data. */
+    /* String pool for paths that cannot be zero-copied from the layer:
+     * PAX path= values (end with '\n', not '\0') and ustar prefix+name
+     * concatenations. Allocated lazily on first use. */
+    char *path_pool;
+    size_t path_pool_used;
+    size_t path_pool_cap;
+
+    /* Boot optimisations: direct pointers into layer data. */
     const uint8_t *entrypoint_wasm;
     size_t entrypoint_wasm_len;
     const uint8_t *entrypoint_manifest;
@@ -143,6 +148,31 @@ static int RememberOwned(vfs_tarfs_ctx_t *ctx, char *s) {
     return 0;
 }
 
+/* Copy s[0..len) into the path pool (null-terminated) and return a pointer
+ * into the pool. Returns NULL on allocation failure. */
+static const char *InternPath(vfs_tarfs_ctx_t *ctx, const char *s, size_t len) {
+    if (ctx->path_pool_used + len + 1 > ctx->path_pool_cap) {
+        size_t new_cap = ctx->path_pool_cap ? ctx->path_pool_cap * 2
+                                            : PATH_POOL_INIT_CAP;
+        while (new_cap < ctx->path_pool_used + len + 1)
+            new_cap *= 2;
+        char *next = WantedMalloc(new_cap);
+        if (!next)
+            return NULL;
+        if (ctx->path_pool) {
+            memcpy(next, ctx->path_pool, ctx->path_pool_used);
+            WantedFree(ctx->path_pool);
+        }
+        ctx->path_pool = next;
+        ctx->path_pool_cap = new_cap;
+    }
+    char *dest = ctx->path_pool + ctx->path_pool_used;
+    memcpy(dest, s, len);
+    dest[len] = '\0';
+    ctx->path_pool_used += len + 1;
+    return dest;
+}
+
 static const char *Basename(const char *path) {
     const char *slash = strrchr(path, '/');
     return slash ? slash + 1 : path;
@@ -162,6 +192,61 @@ static char *MakeWhiteoutTarget(const char *path) {
     return out;
 }
 
+/* Walk a PAX extended header data block and extract path= and size= overrides.
+ * Both out-params are left unchanged if the corresponding key is absent.
+ * path_out points into data[] — not null-terminated; caller must intern it. */
+static void ParsePaxData(const uint8_t *data, size_t data_len,
+                         const char **path_out, size_t *path_len_out,
+                         uint32_t *size_out) {
+    size_t pos = 0;
+    while (pos < data_len) {
+        size_t rec_start = pos;
+        size_t rec_len = 0;
+        while (pos < data_len && data[pos] >= '0' && data[pos] <= '9')
+            rec_len = rec_len * 10 + (size_t)(data[pos++] - '0');
+        if (rec_len == 0 || pos >= data_len || data[pos] != ' ')
+            break;
+        pos++; /* skip space */
+
+        size_t rec_end = rec_start + rec_len;
+        if (rec_end > data_len)
+            break;
+
+        /* Locate '=' separating key from value. */
+        size_t key_start = pos;
+        while (pos < rec_end && data[pos] != '=' && data[pos] != '\n')
+            pos++;
+        if (pos >= rec_end || data[pos] != '=')
+            goto next_record;
+
+        {
+            size_t key_len = pos - key_start;
+            const char *key = (const char *)data + key_start;
+            const char *val = (const char *)data + pos + 1;
+            /* Value ends at rec_end - 1 (the '\n'). Guard against underflow. */
+            size_t val_len = (rec_end > 0 && rec_end - 1 > (size_t)(pos + 1))
+                                 ? rec_end - 1 - (pos + 1)
+                                 : 0;
+
+            if (key_len == 4 && memcmp(key, "path", 4) == 0) {
+                *path_out = val;
+                *path_len_out = val_len;
+            } else if (key_len == 4 && memcmp(key, "size", 4) == 0) {
+                uint32_t s = 0;
+                for (size_t i = 0; i < val_len; i++) {
+                    if (val[i] < '0' || val[i] > '9')
+                        break;
+                    s = s * 10 + (uint32_t)(val[i] - '0');
+                }
+                *size_out = s;
+            }
+        }
+
+    next_record:
+        pos = rec_end;
+    }
+}
+
 /* sorted_len: number of entries in ctx->index that are already sorted (i.e.
  * entries from all previously-indexed layers). Used for O(log N) dedup. */
 static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
@@ -170,6 +255,10 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
     size_t len = ctx->layer_lens[layer_idx];
     size_t off = 0;
     int empty_run = 0;
+
+    /* Overrides set by extended header blocks ('x', 'L') for the next entry. */
+    const char *override_path = NULL;
+    uint32_t override_size = 0;
 
     while (off + TAR_BLOCK_SIZE <= len) {
         const uint8_t *hdr = buf + off;
@@ -183,8 +272,6 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
         }
         empty_run = 0;
 
-        const char *name = (const char *)(hdr + TAR_NAME_OFFSET);
-        size_t name_field_len = strnlen(name, TAR_NAME_LEN);
         uint32_t size =
             ParseOctal((const char *)(hdr + TAR_SIZE_OFFSET), TAR_SIZE_LEN);
 
@@ -199,7 +286,6 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
         }
         size_t aligned_size = AlignUp512((size_t)size);
         if (aligned_size < (size_t)size) {
-            /* AlignUp512 overflowed on this platform. */
             break;
         }
         size_t next_off = off + TAR_BLOCK_SIZE + aligned_size;
@@ -207,22 +293,104 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
             break;
         }
 
-        /* Skip entries we can't safely zero-copy: 100-char name with no NUL,
-         * or a ustar prefix field in use (would require concatenation). */
-        if (name_field_len == TAR_NAME_LEN || hdr[TAR_PREFIX_OFFSET] != '\0') {
-            DEBUG_TRACE(
-                "tarfs: skipping long/prefixed entry in layer %u at %zu",
-                layer_idx, off);
-            off = next_off;
-            continue;
-        }
-
-        if (name[0] == '\0') {
-            off = next_off;
-            continue;
-        }
-
         uint8_t typeflag = hdr[TAR_TYPEFLAG_OFFSET];
+
+        /* Extended header blocks: extract overrides for the immediately
+         * following entry, then continue to the next loop iteration. */
+        if (typeflag == 'x') {
+            /* PAX local extended header: parse path= and size= keys. */
+            const char *pax_path = NULL;
+            size_t pax_path_len = 0;
+            ParsePaxData(buf + off + TAR_BLOCK_SIZE, size,
+                         &pax_path, &pax_path_len, &override_size);
+            if (pax_path && pax_path_len > 0) {
+                /* Normalise leading "./" or "/" before interning. */
+                if (pax_path_len >= 2 && pax_path[0] == '.' && pax_path[1] == '/')
+                    { pax_path += 2; pax_path_len -= 2; }
+                else if (pax_path_len >= 1 && pax_path[0] == '/')
+                    { pax_path += 1; pax_path_len -= 1; }
+                if (pax_path_len > 0) {
+                    const char *p = InternPath(ctx, pax_path, pax_path_len);
+                    if (!p) return -ENOMEM;
+                    override_path = p;
+                }
+            }
+            off = next_off;
+            continue;
+        }
+        if (typeflag == 'g' || typeflag == 'K') {
+            /* PAX global header or GNU long linkname: nothing we use. */
+            off = next_off;
+            continue;
+        }
+        if (typeflag == 'L') {
+            /* GNU long filename: data block is null-terminated. Zero-copy. */
+            if (size > 0 && off + TAR_BLOCK_SIZE < len) {
+                const char *p = (const char *)(buf + off + TAR_BLOCK_SIZE);
+                size_t pl = strnlen(p, size);
+                if (pl >= 2 && p[0] == '.' && p[1] == '/')
+                    { p += 2; pl -= 2; }
+                else if (pl >= 1 && p[0] == '/')
+                    { p += 1; pl -= 1; }
+                if (pl > 0)
+                    override_path = p;
+            }
+            off = next_off;
+            continue;
+        }
+
+        /* Resolve the effective path and file size for this entry. */
+        const char *eff_path;
+        uint32_t eff_size = override_size ? override_size : size;
+
+        if (override_path) {
+            eff_path = override_path;
+            override_path = NULL;
+            override_size = 0;
+        } else {
+            override_size = 0;
+
+            const char *name = (const char *)(hdr + TAR_NAME_OFFSET);
+            size_t name_field_len = strnlen(name, TAR_NAME_LEN);
+
+            if (name_field_len == TAR_NAME_LEN) {
+                /* Name field has no NUL — malformed entry, skip. */
+                off = next_off;
+                continue;
+            }
+            if (name[0] == '\0') {
+                off = next_off;
+                continue;
+            }
+
+            if (hdr[TAR_PREFIX_OFFSET] != '\0') {
+                /* ustar prefix+name: intern as "prefix/name". */
+                const char *prefix = (const char *)(hdr + TAR_PREFIX_OFFSET);
+                size_t prefix_len = strnlen(prefix, 155);
+                char concat[257];
+                size_t total = prefix_len + 1 + name_field_len;
+                if (total >= sizeof(concat)) {
+                    off = next_off;
+                    continue;
+                }
+                memcpy(concat, prefix, prefix_len);
+                concat[prefix_len] = '/';
+                memcpy(concat + prefix_len + 1, name, name_field_len);
+                concat[total] = '\0';
+                const char *p = InternPath(ctx, concat, total);
+                if (!p) return -ENOMEM;
+                eff_path = p;
+            } else {
+                eff_path = name;
+            }
+
+            /* Normalise leading "./" or "/" produced by some TAR writers. */
+            if (eff_path[0] == '.' && eff_path[1] == '/')
+                eff_path += 2;
+            else if (eff_path[0] == '/')
+                eff_path += 1;
+        }
+
         bool is_regular = (typeflag == '0' || typeflag == '\0');
         bool is_dir = (typeflag == '5');
 
@@ -232,13 +400,6 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
             off = next_off;
             continue;
         }
-
-        /* Normalise leading "./" or "/" produced by some TAR writers. */
-        const char *eff_path = name;
-        if (eff_path[0] == '.' && eff_path[1] == '/')
-            eff_path += 2;
-        else if (eff_path[0] == '/')
-            eff_path += 1;
 
         const char *base = Basename(eff_path);
         bool is_whiteout =
@@ -278,11 +439,11 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
             if (strcmp(entry_path, "app.wasm") == 0 &&
                 ctx->entrypoint_wasm == NULL) {
                 ctx->entrypoint_wasm = buf + data_off;
-                ctx->entrypoint_wasm_len = size;
+                ctx->entrypoint_wasm_len = eff_size;
             } else if (strcmp(entry_path, "manifest.json") == 0 &&
                        ctx->entrypoint_manifest == NULL) {
                 ctx->entrypoint_manifest = buf + data_off;
-                ctx->entrypoint_manifest_len = size;
+                ctx->entrypoint_manifest_len = eff_size;
             }
         }
 
@@ -295,7 +456,7 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
         e->path_ptr = entry_path;
         e->layer_idx = entry_layer;
         e->hdr_offset = off;
-        e->size = size;
+        e->size = eff_size;
 
         off = next_off;
     }
@@ -365,6 +526,8 @@ void TarFsDestroy(vfs_tarfs_ctx_t *ctx) {
     }
     if (ctx->index)
         WantedFree(ctx->index);
+    if (ctx->path_pool)
+        WantedFree(ctx->path_pool);
     WantedFree(ctx);
 }
 
@@ -476,13 +639,10 @@ void *TarFs_Open(vfs_tarfs_ctx_t *ctx, const char *path, vfs_oflags_t flags) {
     if (trailing_slash)
         plen--;
 
-    /* Cap normalised path at 255 bytes — TAR ustar names are 100 bytes,
-     * the prefix field gets us to 256, and we drop those entries during
-     * indexing anyway. */
-    if (plen > 255)
+    if (plen > 512)
         return NULL;
 
-    char work[257];
+    char work[514]; /* path + trailing '/' + NUL */
     if (plen > 0)
         memcpy(work, path, plen);
     work[plen] = '\0';
