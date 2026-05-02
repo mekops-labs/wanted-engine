@@ -95,6 +95,7 @@ typedef struct wantedConfig_t {
     char wappsToRun[MAX_WAPPS][WAPP_MAX_NAME_LEN];
     int nWapps;
     wapp_config_t supervisorCfg;
+    char supervisorImagePath[MAX_PATH_LEN]; /* empty = use compiled-in default */
 } wantedConfig_t;
 
 int WantedWappRun(wapp_data_t *ctx);

@@ -350,10 +350,13 @@ wapp_t *WantedGetCurrentSupervisor() {
     if (ret < 0)
         return w;
 
-    int load_ret = PlatformWappLoad(SUPERVISOR_IMAGE_PATH, w);
+    const char *img_path = (cfg && cfg->supervisorImagePath[0])
+                               ? cfg->supervisorImagePath
+                               : SUPERVISOR_IMAGE_PATH;
+    int load_ret = PlatformWappLoad(img_path, w);
     if (load_ret < 0) {
-        DEBUG_TRACE("failed to load supervisor image from %s: %d",
-                    SUPERVISOR_IMAGE_PATH, load_ret);
+        DEBUG_TRACE("failed to load supervisor image from %s: %d", img_path,
+                    load_ret);
     }
 
     return w;
