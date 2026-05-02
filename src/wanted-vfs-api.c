@@ -138,6 +138,11 @@ static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out) {
 
     json_t const *supervisor = json_getProperty(json, "supervisor");
     if (supervisor && JSON_OBJ == json_getType(supervisor)) {
+        const char *imgPath = json_getPropertyValue(supervisor, "imagePath");
+        if (imgPath)
+            strncpy(out->supervisorImagePath, imgPath,
+                    sizeof(out->supervisorImagePath) - 1);
+
         if (WantedParseCtrlAction(supervisor, NULL, NULL,
                                   &out->supervisorCfg) == 0) {
             out->supervisorCfg.valid = true;

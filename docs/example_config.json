@@ -7,6 +7,7 @@
         ]
     },
     "supervisor": {
+        "imagePath": "./wasm/supervisor/sheriff/supervisor.tar",
         "params": {
             "console": {
                 "in":  {"name": "platform"},
