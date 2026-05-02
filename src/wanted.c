@@ -17,8 +17,6 @@
 #include <wanted-vfs-api.h>
 #include <wanted.h>
 
-#include <supervisor.h>
-
 #include <platform.h>
 
 struct m3Data_t {
@@ -352,10 +350,11 @@ wapp_t *WantedGetCurrentSupervisor() {
     if (ret < 0)
         return w;
 
-    /* Expose the supervisor blob as the sole OCI layer. */
-    w->layers[0] = supervisor_wapp;
-    w->layer_lens[0] = supervisor_wapp_len;
-    w->layer_cnt = 1;
+    int load_ret = PlatformWappLoad(SUPERVISOR_IMAGE_PATH, w);
+    if (load_ret < 0) {
+        DEBUG_TRACE("failed to load supervisor image from %s: %d",
+                    SUPERVISOR_IMAGE_PATH, load_ret);
+    }
 
     return w;
 }
