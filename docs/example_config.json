@@ -15,17 +15,28 @@
             },
             "drivers": [
                 {
-                    "name": "rom",
-                    "path": "/rom"
+                    "name": "socket",
+                    "path": "/net/s",
+                    "options": "t localhost 8888"
                 },
                 {
-                    "name": "platform",
-                    "path": "/mnt",
-                    "options": "./"
+                    "name": "socket",
+                    "path": "/net/ss",
+                    "options": "T localhost 8889"
+                },
+                {
+                    "name": "9p",
+                    "path": "/dev/9p",
+                    "options": "tcp!localhost!5640"
                 },
                 {
                     "name": "wanted",
-                    "path": "/w"
+                    "path": "/dev/wanted"
+                },
+                {
+                    "name": "config",
+                    "path": "/dev/config",
+                    "options": "{\"config_file\":\"/config.json\"}"
                 }
             ]
         }
