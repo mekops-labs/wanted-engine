@@ -54,18 +54,8 @@ endif()
 # Set flags for m3, disable harmless wanings
 target_compile_options(m3 PRIVATE -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer)
 
-option(WANTED_WSH_SUPERVISOR "Use wsh app as supervisor" OFF)
-if (WANTED_WSH_SUPERVISOR)
-    set(SUPERVISOR_TYPE wsh)
-else()
-    set(SUPERVISOR_TYPE default)
-endif()
-
-message("-- Using ${SUPERVISOR_TYPE} supervisor")
-set(sources
-    ${sources}
-    "../wasm/supervisor/${SUPERVISOR_TYPE}/supervisor.h"
-)
+set(WANTED_SUPERVISOR_IMAGE_PATH "./wasm/supervisor/sheriff/supervisor.tar" CACHE STRING
+    "Supervisor TAR image path loaded at boot")
 
 add_library(${project} STATIC
     ${sources}
@@ -83,7 +73,6 @@ target_include_directories(${project}
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/json-maker/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/c9
-    PRIVATE ${CMAKE_SOURCE_DIR}/wasm/supervisor/${SUPERVISOR_TYPE}
     )
 
 
@@ -93,6 +82,10 @@ target_link_libraries(${project}
     PRIVATE m3
     PRIVATE m
     )
+
+message("-- Supervisor image: ${WANTED_SUPERVISOR_IMAGE_PATH}")
+target_compile_definitions(${project} PRIVATE
+    SUPERVISOR_IMAGE_PATH="${WANTED_SUPERVISOR_IMAGE_PATH}")
 
 # Add debug symbols
 target_compile_options(${project} PUBLIC -g)
