@@ -57,7 +57,12 @@ Build both TAR images before running:
 make -C wasm/supervisor
 ```
 
-The default image path is `./wasm/supervisor/sheriff/supervisor.tar`, resolvable relative to the working directory of the process. Override at CMake configure time:
+The image path is resolved in priority order:
+
+1. **`supervisor.imagePath` in the JSON config** — runtime override, no recompile needed.
+2. **`WANTED_SUPERVISOR_IMAGE_PATH` CMake option** — compile-time override, defaults to `./wasm/supervisor/sheriff/supervisor.tar`.
+
+To select the `wsh` debug supervisor at compile time:
 
 ```bash
 cmake -DWANTED_SUPERVISOR_IMAGE_PATH=../wasm/supervisor/wsh/supervisor.tar ..
@@ -66,11 +71,14 @@ cmake -DWANTED_SUPERVISOR_IMAGE_PATH=../wasm/supervisor/wsh/supervisor.tar ..
 ## Running
 
 ```bash
-./build/cmd/wanted                        # run with built-in default config
+./build/cmd/wanted                           # run with built-in default config
 ./build/cmd/wanted docs/example_config.json  # run with explicit config file
 ```
 
-The config file is JSON. The `supervisor` block overrides driver and console settings for the supervisor wapp; if absent, the compiled-in defaults apply (TCP socket at `localhost:8888`, TLS socket at `localhost:8889`, 9P at `localhost:5640`).
+The config file is JSON. The `supervisor` block configures the supervisor wapp:
+
+- **`imagePath`** — path to the supervisor TAR image; overrides the compiled-in default when set.
+- **`params`** — driver and console settings; if absent, compiled-in defaults apply (TCP socket at `localhost:8888`, TLS socket at `localhost:8889`, 9P at `localhost:5640`).
 
 See [`docs/example_config.json`](docs/example_config.json) for a fully annotated example.
 
