@@ -533,3 +533,251 @@ TEST(tarfs_whiteout, ShadowedFileReturnsENOENT) {
 TEST_GROUP_RUNNER(tarfs_whiteout) {
     RUN_TEST_CASE(tarfs_whiteout, ShadowedFileReturnsENOENT);
 }
+
+/***************************************/
+/* PAX and GNU long-name compatibility  */
+/***************************************/
+
+/* Path that exceeds the 100-char ustar name field limit. */
+#define PAX_LONG_PATH \
+    "level01/level02/level03/level04/level05/level06/" \
+    "level07/level08/level09/level10/level11/level12/data.txt"
+
+/* Compute the self-referential PAX record length for "path=<path>\n". */
+static size_t PaxRecordLen(size_t path_len) {
+    for (int digits = 1; digits <= 10; digits++) {
+        size_t n = (size_t)digits + 1 + 5 + path_len + 1;
+        size_t tmp = n;
+        int nd = 0;
+        do { nd++; tmp /= 10; } while (tmp > 0);
+        if (nd == digits)
+            return n;
+    }
+    return 0;
+}
+
+/* Build a PAX 'x' header + data block into out[1024].
+ * Optionally appends a size= record when pax_size > 0. */
+static void BuildPaxBlock(uint8_t *out, const char *path, uint32_t pax_size) {
+    char pax_data[512];
+    memset(pax_data, 0, sizeof(pax_data));
+    size_t path_len = strlen(path);
+    size_t rec_len = PaxRecordLen(path_len);
+    int written = snprintf(pax_data, sizeof(pax_data), "%zu path=%s\n",
+                           rec_len, path);
+    if (pax_size > 0) {
+        /* Append "NN size=DDDD\n" */
+        char size_rec[64];
+        size_t sz_val_len = (size_t)snprintf(size_rec + 16, 48, "%u", pax_size);
+        size_t sz_rec_len = PaxRecordLen(sz_val_len);
+        /* overwrite the "size=" key length calculation: digits+1+5+val+1 */
+        for (int d = 1; d <= 6; d++) {
+            size_t n = (size_t)d + 1 + 5 + sz_val_len + 1;
+            size_t tmp = n; int nd = 0;
+            do { nd++; tmp /= 10; } while (tmp > 0);
+            if (nd == d) { sz_rec_len = n; break; }
+        }
+        snprintf(pax_data + written, sizeof(pax_data) - (size_t)written,
+                 "%zu size=%u\n", sz_rec_len, pax_size);
+        written = (int)strlen(pax_data);
+    }
+
+    memset(out, 0, 1024);
+    TarHeader(out, "PaxHeader", (uint32_t)written, 'x');
+    memcpy(out + 512, pax_data, (size_t)written);
+}
+
+/* Build a GNU 'L' long-name block into out[1024]. */
+static void BuildGnuLBlock(uint8_t *out, const char *path) {
+    size_t path_len = strlen(path) + 1; /* include NUL */
+    memset(out, 0, 1024);
+    TarHeader(out, "././@LongLink", (uint32_t)path_len, 'L');
+    memcpy(out + 512, path, path_len);
+}
+
+static uint8_t pc_layer[512 * 12]; /* enough for pax+data+file+data+2 zero blks */
+static uint8_t pc_layerB[512 * 8];
+static vfs_tarfs_ctx_t *pc_ctx;
+
+TEST_GROUP(tarfs_pax_compat);
+
+TEST_SETUP(tarfs_pax_compat) {
+    memset(pc_layer, 0, sizeof(pc_layer));
+    memset(pc_layerB, 0, sizeof(pc_layerB));
+    pc_ctx = NULL;
+}
+
+TEST_TEAR_DOWN(tarfs_pax_compat) {
+    if (pc_ctx) {
+        TarFsDestroy(pc_ctx);
+        pc_ctx = NULL;
+    }
+}
+
+TEST(tarfs_pax_compat, PaxLongPathIndexed) {
+    /* PAX 'x' block + actual file entry with a >100-char path. */
+    BuildPaxBlock(pc_layer, PAX_LONG_PATH, 0);
+    /* File entry immediately follows the 1024-byte PAX block. */
+    TarHeader(pc_layer + 1024, "truncated", 5, '0');
+    memcpy(pc_layer + 1536, "hello", 5);
+
+    uint8_t *layers[1] = {pc_layer};
+    size_t lens[1] = {sizeof(pc_layer)};
+    pc_ctx = TarFsInit(layers, lens, 1);
+    TEST_ASSERT_NOT_NULL(pc_ctx);
+    TEST_ASSERT_EQUAL_UINT16(1, TarFsIndexLen(pc_ctx));
+
+    void *h = TarFs_Open(pc_ctx, "/" PAX_LONG_PATH, VFS_O_RDONLY);
+    TEST_ASSERT_NOT_NULL(h);
+
+    char buf[8] = {0};
+    TEST_ASSERT_EQUAL_INT(5, TarFs_Read(pc_ctx, h, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("hello", buf, 5);
+
+    TarFs_Close(pc_ctx, h);
+}
+
+TEST(tarfs_pax_compat, PaxLongPathWhiteout) {
+    /* PAX entry whose path= is a whiteout for a file in the base layer. */
+    static uint8_t base[512 * 4];
+    memset(base, 0, sizeof(base));
+    TarHeader(base, "secret.bin", 3, '0');
+    memcpy(base + 512, "TOP", 3);
+
+    /* Top layer: PAX whiteout for secret.bin */
+    char wh_path[] = ".wh.secret.bin";
+    BuildPaxBlock(pc_layer, wh_path, 0);
+    TarHeader(pc_layer + 1024, "truncated", 0, '0');
+
+    uint8_t *layers[2] = {pc_layer, base};
+    size_t lens[2] = {sizeof(pc_layer), sizeof(base)};
+    pc_ctx = TarFsInit(layers, lens, 2);
+    TEST_ASSERT_NOT_NULL(pc_ctx);
+
+    void *h = TarFs_Open(pc_ctx, "/secret.bin", VFS_O_RDONLY);
+    TEST_ASSERT_NULL(h);
+}
+
+TEST(tarfs_pax_compat, GnuLongNameIndexed) {
+    /* GNU 'L' block + actual file entry with a >100-char path. */
+    BuildGnuLBlock(pc_layer, PAX_LONG_PATH);
+    TarHeader(pc_layer + 1024, "truncated", 4, '0');
+    memcpy(pc_layer + 1536, "GNU!", 4);
+
+    uint8_t *layers[1] = {pc_layer};
+    size_t lens[1] = {sizeof(pc_layer)};
+    pc_ctx = TarFsInit(layers, lens, 1);
+    TEST_ASSERT_NOT_NULL(pc_ctx);
+    TEST_ASSERT_EQUAL_UINT16(1, TarFsIndexLen(pc_ctx));
+
+    void *h = TarFs_Open(pc_ctx, "/" PAX_LONG_PATH, VFS_O_RDONLY);
+    TEST_ASSERT_NOT_NULL(h);
+
+    char buf[8] = {0};
+    TEST_ASSERT_EQUAL_INT(4, TarFs_Read(pc_ctx, h, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("GNU!", buf, 4);
+
+    TarFs_Close(pc_ctx, h);
+}
+
+TEST(tarfs_pax_compat, GnuLongNameShadowedByPax) {
+    /* Base layer: file via GNU 'L'. Top layer: PAX entry shadows it. */
+    BuildGnuLBlock(pc_layerB, PAX_LONG_PATH);
+    TarHeader(pc_layerB + 1024, "truncated", 4, '0');
+    memcpy(pc_layerB + 1536, "BASE", 4);
+
+    BuildPaxBlock(pc_layer, PAX_LONG_PATH, 0);
+    TarHeader(pc_layer + 1024, "truncated", 3, '0');
+    memcpy(pc_layer + 1536, "TOP", 3);
+
+    uint8_t *layers[2] = {pc_layer, pc_layerB};
+    size_t lens[2] = {sizeof(pc_layer), sizeof(pc_layerB)};
+    pc_ctx = TarFsInit(layers, lens, 2);
+    TEST_ASSERT_NOT_NULL(pc_ctx);
+    TEST_ASSERT_EQUAL_UINT16(1, TarFsIndexLen(pc_ctx));
+
+    void *h = TarFs_Open(pc_ctx, "/" PAX_LONG_PATH, VFS_O_RDONLY);
+    TEST_ASSERT_NOT_NULL(h);
+
+    char buf[8] = {0};
+    int n = TarFs_Read(pc_ctx, h, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT(3, n);
+    TEST_ASSERT_EQUAL_STRING_LEN("TOP", buf, 3);
+
+    TarFs_Close(pc_ctx, h);
+}
+
+TEST(tarfs_pax_compat, PaxSizeOverride) {
+    /* PAX size= overrides ustar size field in the index. */
+    BuildPaxBlock(pc_layer, "data.bin", 3); /* PAX says size=3 */
+    /* ustar entry says size=5 — PAX wins for the stored index size. */
+    TarHeader(pc_layer + 1024, "data.bin", 5, '0');
+    memcpy(pc_layer + 1536, "ABCDE", 5);
+
+    uint8_t *layers[1] = {pc_layer};
+    size_t lens[1] = {sizeof(pc_layer)};
+    pc_ctx = TarFsInit(layers, lens, 1);
+    TEST_ASSERT_NOT_NULL(pc_ctx);
+
+    void *h = TarFs_Open(pc_ctx, "/data.bin", VFS_O_RDONLY);
+    TEST_ASSERT_NOT_NULL(h);
+
+    vfs_stat_t st;
+    TarFs_Stat(pc_ctx, h, &st);
+    TEST_ASSERT_EQUAL_UINT32(3, st.size);
+
+    char buf[8] = {0};
+    TEST_ASSERT_EQUAL_INT(3, TarFs_Read(pc_ctx, h, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("ABC", buf, 3);
+
+    TarFs_Close(pc_ctx, h);
+}
+
+TEST(tarfs_pax_compat, GlobalHeaderSkipped) {
+    /* 'g' block must not consume the next entry's path override. */
+    memset(pc_layer, 0, sizeof(pc_layer));
+    /* 'g' block with size=0 (empty global header). */
+    TarHeader(pc_layer, "global", 0, 'g');
+    /* Normal entry immediately follows. */
+    TarHeader(pc_layer + 512, "present.txt", 2, '0');
+    memcpy(pc_layer + 1024, "OK", 2);
+
+    uint8_t *layers[1] = {pc_layer};
+    size_t lens[1] = {sizeof(pc_layer)};
+    pc_ctx = TarFsInit(layers, lens, 1);
+    TEST_ASSERT_NOT_NULL(pc_ctx);
+    TEST_ASSERT_EQUAL_UINT16(1, TarFsIndexLen(pc_ctx));
+
+    void *h = TarFs_Open(pc_ctx, "/present.txt", VFS_O_RDONLY);
+    TEST_ASSERT_NOT_NULL(h);
+    TarFs_Close(pc_ctx, h);
+}
+
+TEST(tarfs_pax_compat, PaxAppWasmPrefetch) {
+    /* app.wasm delivered via PAX format entry still triggers pre-fetch. */
+    const char payload[] = "WASM";
+    BuildPaxBlock(pc_layer, "app.wasm", 0);
+    TarHeader(pc_layer + 1024, "app.wasm", sizeof(payload) - 1, '0');
+    memcpy(pc_layer + 1536, payload, sizeof(payload) - 1);
+
+    uint8_t *layers[1] = {pc_layer};
+    size_t lens[1] = {sizeof(pc_layer)};
+    pc_ctx = TarFsInit(layers, lens, 1);
+    TEST_ASSERT_NOT_NULL(pc_ctx);
+
+    size_t wlen = 0;
+    const uint8_t *wasm = TarFsEntrypointWasm(pc_ctx, &wlen);
+    TEST_ASSERT_NOT_NULL(wasm);
+    TEST_ASSERT_EQUAL_UINT32(sizeof(payload) - 1, wlen);
+    TEST_ASSERT_EQUAL_MEMORY(payload, wasm, sizeof(payload) - 1);
+}
+
+TEST_GROUP_RUNNER(tarfs_pax_compat) {
+    RUN_TEST_CASE(tarfs_pax_compat, PaxLongPathIndexed);
+    RUN_TEST_CASE(tarfs_pax_compat, PaxLongPathWhiteout);
+    RUN_TEST_CASE(tarfs_pax_compat, GnuLongNameIndexed);
+    RUN_TEST_CASE(tarfs_pax_compat, GnuLongNameShadowedByPax);
+    RUN_TEST_CASE(tarfs_pax_compat, PaxSizeOverride);
+    RUN_TEST_CASE(tarfs_pax_compat, GlobalHeaderSkipped);
+    RUN_TEST_CASE(tarfs_pax_compat, PaxAppWasmPrefetch);
+}
