@@ -71,13 +71,31 @@ void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
     DEBUG_TRACE("/dev/%s (0x%x)", suffix ? suffix : "(null)", flags);
 
     const vfs_driver_t *drv = LookupDrv(c, suffix);
+    const char *sub_path = NULL;
+
+    if (!drv) {
+        /* Prefix match: entry "X" matches suffix "X/rest", passes "rest" down. */
+        for (uint8_t i = 0; i < c->devfs_cnt; i++) {
+            size_t nlen = strnlen(c->devfs[i].name, MAX_ENTRY_NAME_LEN);
+            if (nlen > 0 && strncmp(c->devfs[i].name, suffix, nlen) == 0 &&
+                suffix[nlen] == '/') {
+                drv = c->devfs[i].drv;
+                sub_path = suffix + nlen + 1;
+                break;
+            }
+        }
+    }
+
     if (!drv) {
         if (out_err)
             *out_err = -ENOENT;
         return NULL;
     }
 
-    int drv_fd = TRY_DRV(drv, Open, "", flags);
+    const char *open_path =
+        sub_path ? sub_path
+                 : (drv->filetype == VFS_FILETYPE_DIRECTORY ? "/" : "");
+    int drv_fd = TRY_DRV(drv, Open, open_path, flags);
     if (drv_fd < 0) {
         if (out_err)
             *out_err = drv_fd;

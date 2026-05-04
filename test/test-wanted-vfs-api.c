@@ -42,7 +42,7 @@ TEST(wanted_vfs_api, WantedGetConfigTest) {
     WantedSetConfig(cfg);
 
     ret = WantedGetConfigJson(buf, 100);
-    TEST_ASSERT_EQUAL(26, ret);
+    TEST_ASSERT_EQUAL(53, ret);
 
     /* check that the json is valid */
     json_t const *json = json_create((char *)buf, m, sizeof m / sizeof *m);
@@ -57,9 +57,10 @@ TEST(wanted_vfs_api, WantedGetConfigTest) {
     int i;
     for (i = 0, wapp = json_getChild(wapps); wapp != 0 && i < cfg.nWapps;
          wapp = json_getSibling(wapp), i++) {
-        if (JSON_TEXT == json_getType(wapp)) {
-            TEST_ASSERT_EQUAL_STRING(cfg.wappsToRun[i], json_getValue(wapp));
-        }
+        TEST_ASSERT_EQUAL(JSON_OBJ, json_getType(wapp));
+        const char *name = json_getPropertyValue(wapp, "name");
+        TEST_ASSERT_NOT_NULL(name);
+        TEST_ASSERT_EQUAL_STRING(cfg.wappsToRun[i], name);
     }
 }
 
