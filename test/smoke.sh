@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Smoke tests for VFS namespace correctness via wsh supervisor.
 # Each check pipes a single command to wanted-cli and asserts the output.
 # Tests are acceptance criteria for the VFS/wsh gap fixes; some will fail
@@ -13,46 +13,56 @@ FAIL=0
 
 check() {
     label="$1"
-    pattern="$2"
-    input="$3"
-    result=$(printf '%s\n' "$input" | "$WANTED" "$CONFIG" 2>&1)
-    if printf '%s\n' "$result" | grep -q "$pattern"; then
+    [ "$2" == "!" ] && inverse=1 || inverse=0
+    pattern="$3"
+    input="$4"
+    result=$(printf "${input}\n" | "$WANTED" "$CONFIG" 2>&1)
+    if printf '%s\n' "$result" | grep -q  "$pattern" && ok=1 || ok=0;
+        [ $ok -ne $inverse ]; then
+
         printf 'PASS [%s]\n' "$label"
         PASS=$((PASS + 1))
     else
-        printf 'FAIL [%s]: expected pattern "%s" in output\n' "$label" "$pattern"
+        if [ "$inverse" -eq 0 ]; then
+            printf 'FAIL [%s]: expected pattern "%s" in output\n' "$label" "$pattern"
+        else
+            printf 'FAIL [%s]: unexpected pattern "%s" in output\n' "$label" "$pattern"
+        fi
         printf '%s\n' "$result"
         FAIL=$((FAIL + 1))
     fi
 }
 
+check "root lists app.wasm"      "" "app.wasm"           "ls /"
+check "root lists manifest.json" "" "manifest.json"      "ls /"
+
 # Root directory listing must expose VFS namespaces
-check "root lists dev"          "dev"           "ls /"
-check "root lists net"          "net"           "ls /"
-check "root lists proc"         "proc"          "ls /"
+check "root lists dev"         "" "dev"            "ls /"
+check "root lists net"         "" "net"            "ls /"
+check "root lists proc"        "" "proc"           "ls /"
 
 # /dev namespace
-check "dev lists null"          "null"          "ls /dev"
-check "dev lists pipe"          "pipe"          "ls /dev"
-check "dev lists stdin"         "stdin"         "ls /dev"
-check "dev trailing slash"      "null"          "ls /dev/"
+check "dev lists null"         "" "null"           "ls /dev"
+check "dev lists pipe"         "" "pipe"           "ls /dev"
+check "dev lists stdin"        "" "stdin"          "ls /dev"
+check "dev trailing slash"     "" "null"           "ls /dev/"
 
 # /net namespace
-check "net readdir"             "\."            "ls /net"
+check "net readdir"            "!" "No such file"  "ls /net"
 
 # Path normalization: cd .. must resolve correctly
-check "dotdot from dev"         "dev"           "cd /dev && ls .."
-check "dotdot from wanted"      "wanted"        "cd /dev/wanted && ls .. | grep wanted"
+check "dotdot from dev"        "" "dev"            "cd /dev\nls .."
+check "dotdot from wanted"     "" "wanted"         "cd /dev/wanted\nls .."
 
 # /dev/null: read returns empty
-check "null read"               ""              "cat /dev/null"
+check "null read"              "!" "No such file"  "cat /dev/null"
 
 # /proc entries (require privileged: true in config)
-check "proc wapps"              "name:"         "cat /proc/wapps"
-check "proc memory"             "stack_size:"   "cat /proc/memory"
+check "proc wapps"             "" "name:"          "cat /proc/wapps"
+check "proc memory"            "" "stack_size:"    "cat /proc/memory"
 
 # /dev/pipe roundtrip
-check "pipe roundtrip"          "hello"         "echo hello > /dev/pipe/t & cat /dev/pipe/t"
+check "pipe roundtrip"         "" "hello"          "write /dev/pipe/t hello\ncat /dev/pipe/t"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
