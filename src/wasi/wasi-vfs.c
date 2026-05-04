@@ -23,7 +23,6 @@ Preopen preopen[] = {
     {"<stdout>"},
     {"<stderr>"},
     {"/"},
-    {"/dev/wanted"},
 };
 
 const size_t preopen_cnt = sizeof(preopen) / sizeof(preopen[0]);
@@ -182,7 +181,7 @@ m3ApiRawFunction(m3_wasi_generic_fd_prestat_get) {
     }
 
     int host_fd =
-        VfsOpen(context->vfsCtx, preopen[fd].path, __WASI_OFLAGS_DIRECTORY);
+        VfsOpen(context->vfsCtx, preopen[fd].path, VFS_O_RDONLY | VFS_O_DIRECTORY);
 
     if (fd != host_fd) {
         VfsClose(context->vfsCtx, host_fd);
@@ -360,10 +359,42 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get) {
     memcpy(host_path, path, path_len);
     host_path[path_len] = '\0'; // NULL terminator
 
+    /* Resolve relative path against preopen dirfd, same as path_open. */
+    char abs_path[529];
+    if (fd >= 3 && fd < (int)preopen_cnt && preopen[fd].path[0] == '/') {
+        const char *dir = preopen[fd].path;
+        size_t dlen = strlen(dir);
+        if (dlen + 1 + path_len >= sizeof(abs_path))
+            m3ApiReturn(__WASI_ERRNO_NAMETOOLONG);
+        if (path_len == 0 || (path_len == 1 && host_path[0] == '.')) {
+            memcpy(abs_path, dir, dlen);
+            abs_path[dlen] = '\0';
+        } else if (dir[1] == '\0') {
+            abs_path[0] = '/';
+            memcpy(abs_path + 1, host_path, path_len);
+            abs_path[1 + path_len] = '\0';
+        } else {
+            memcpy(abs_path, dir, dlen);
+            abs_path[dlen] = '/';
+            memcpy(abs_path + dlen + 1, host_path, path_len);
+            abs_path[dlen + 1 + path_len] = '\0';
+        }
+    } else {
+        memcpy(abs_path, host_path, path_len);
+        abs_path[path_len] = '\0';
+    }
+
+    int vfd = VfsOpen(context->vfsCtx, abs_path, VFS_O_RDONLY | VFS_O_DIRECTORY);
+    if (vfd < 0)
+        vfd = VfsOpen(context->vfsCtx, abs_path, VFS_O_RDONLY);
+    if (vfd < 0)
+        m3ApiReturn(errno_to_wasi(vfd));
+
     vfs_stat_t statbuf;
     __wasi_filestat_t stat;
 
-    int ret = VfsStatAt(context->vfsCtx, fd, host_path, &statbuf);
+    int ret = VfsStat(context->vfsCtx, vfd, &statbuf);
+    VfsClose(context->vfsCtx, vfd);
     if (ret < 0) {
         m3ApiReturn(errno_to_wasi(ret));
     }
@@ -444,7 +475,11 @@ m3ApiRawFunction(m3_wasi_generic_path_open) {
         size_t dlen = strlen(dir);
         if (dlen + 1 + path_len >= sizeof(abs_path))
             m3ApiReturn(__WASI_ERRNO_NAMETOOLONG);
-        if (dir[1] == '\0') {
+        /* Empty path or bare "." means the preopen directory itself. */
+        if (path_len == 0 || (path_len == 1 && host_path[0] == '.')) {
+            memcpy(abs_path, dir, dlen);
+            abs_path[dlen] = '\0';
+        } else if (dir[1] == '\0') {
             /* dir is exactly "/" — avoid producing "//foo" */
             abs_path[0] = '/';
             memcpy(abs_path + 1, host_path, path_len);

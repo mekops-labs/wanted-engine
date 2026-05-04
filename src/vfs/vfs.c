@@ -27,7 +27,8 @@ static inline bool path_has_prefix(const char *path, const char *prefix) {
 }
 
 static inline bool path_is_routed_prefix(const char *path) {
-    return path_has_prefix(path, "/dev/") || path_has_prefix(path, "/net/");
+    return path_has_prefix(path, "/dev/") || path_has_prefix(path, "/net/") ||
+           strcmp(path, "/dev") == 0 || strcmp(path, "/net") == 0;
 }
 
 static inline bool CheckFd(struct vfs_ctx_t *c, int fd) {
@@ -55,9 +56,15 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     if (path_has_prefix(path, "/dev/")) {
         type = VFS_TYPE_DEV;
         handle = DevFs_Open(c, path + 5, flags, &open_err);
+    } else if (strcmp(path, "/dev") == 0) {
+        type = VFS_TYPE_DEV;
+        handle = DevFs_Open(c, "", flags, &open_err);
     } else if (path_has_prefix(path, "/net/")) {
         type = VFS_TYPE_NET;
         handle = NetFs_Open(c, path + 5, flags, &open_err);
+    } else if (strcmp(path, "/net") == 0) {
+        type = VFS_TYPE_NET;
+        handle = NetFs_Open(c, "", flags, &open_err);
     } else if (c->tarfs != NULL) {
         /* TarFs is read-only; reject write-mode opens before touching the
          * index so callers get -EROFS rather than a generic -ENOENT. */
