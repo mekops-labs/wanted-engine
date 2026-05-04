@@ -71,8 +71,8 @@ cmake -DWANTED_SUPERVISOR_IMAGE_PATH=../wasm/supervisor/wsh/supervisor.tar ..
 ## Running
 
 ```bash
-./build/cmd/wanted                           # run with built-in default config
-./build/cmd/wanted docs/example_config.json  # run with explicit config file
+./build/cmd/wanted-cli                           # run with built-in default config
+./build/cmd/wanted-cli docs/example_config.json  # run with explicit config file
 ```
 
 The config file is JSON. The `supervisor` block configures the supervisor wapp:

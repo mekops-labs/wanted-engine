@@ -1,0 +1,25 @@
+{
+    "system": {
+        "defaultWapps": [
+            "a",
+            "b",
+            "c"
+        ]
+    },
+    "supervisor": {
+        "imagePath": "./wasm/supervisor/wsh/supervisor.tar",
+        "params": {
+            "console": {
+                "in":  {"name": "platform"},
+                "out": {"name": "platform"},
+                "err": {"name": "platform"}
+            },
+            "drivers": [
+                {
+                    "name": "wanted",
+                    "path": "/dev/wanted"
+                }
+            ]
+        }
+    }
+}
