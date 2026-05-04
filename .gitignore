@@ -3,4 +3,3 @@ build
 wasm/*.wasm*
 wasm/supervisor/*/supervisor.tar
 *.wat
-*.romfs
