@@ -359,34 +359,11 @@ m3ApiRawFunction(m3_wasi_snapshot_preview1_path_filestat_get) {
     memcpy(host_path, path, path_len);
     host_path[path_len] = '\0'; // NULL terminator
 
-    /* Resolve relative path against preopen dirfd, same as path_open. */
-    char abs_path[529];
-    if (fd >= 3 && fd < (int)preopen_cnt && preopen[fd].path[0] == '/') {
-        const char *dir = preopen[fd].path;
-        size_t dlen = strlen(dir);
-        if (dlen + 1 + path_len >= sizeof(abs_path))
-            m3ApiReturn(__WASI_ERRNO_NAMETOOLONG);
-        if (path_len == 0 || (path_len == 1 && host_path[0] == '.')) {
-            memcpy(abs_path, dir, dlen);
-            abs_path[dlen] = '\0';
-        } else if (dir[1] == '\0') {
-            abs_path[0] = '/';
-            memcpy(abs_path + 1, host_path, path_len);
-            abs_path[1 + path_len] = '\0';
-        } else {
-            memcpy(abs_path, dir, dlen);
-            abs_path[dlen] = '/';
-            memcpy(abs_path + dlen + 1, host_path, path_len);
-            abs_path[dlen + 1 + path_len] = '\0';
-        }
-    } else {
-        memcpy(abs_path, host_path, path_len);
-        abs_path[path_len] = '\0';
-    }
-
-    int vfd = VfsOpen(context->vfsCtx, abs_path, VFS_O_RDONLY | VFS_O_DIRECTORY);
+    const char *stat_path = (path_len == 0) ? "." : host_path;
+    int vfd = VfsOpenAt(context->vfsCtx, fd, stat_path,
+                        VFS_O_RDONLY | VFS_O_DIRECTORY);
     if (vfd < 0)
-        vfd = VfsOpen(context->vfsCtx, abs_path, VFS_O_RDONLY);
+        vfd = VfsOpenAt(context->vfsCtx, fd, stat_path, VFS_O_RDONLY);
     if (vfd < 0)
         m3ApiReturn(errno_to_wasi(vfd));
 
@@ -465,37 +442,11 @@ m3ApiRawFunction(m3_wasi_generic_path_open) {
         flags |= VFS_O_RDONLY; // no-op because O_RDONLY is 0
     }
 
-    /* Resolve host_path relative to the preopened directory.  Dirfd values
-     * [3, preopen_cnt) are preopens whose path is a VFS-routable absolute
-     * path; concatenate to get the full target so VfsOpen can route it. */
-    char abs_path[529]; /* 512 (max path_len) + 11 ("/dev/wanted") + '/' + NUL */
-    if (dirfd >= 3 && dirfd < (int)preopen_cnt &&
-        preopen[dirfd].path[0] == '/') {
-        const char *dir = preopen[dirfd].path;
-        size_t dlen = strlen(dir);
-        if (dlen + 1 + path_len >= sizeof(abs_path))
-            m3ApiReturn(__WASI_ERRNO_NAMETOOLONG);
-        /* Empty path or bare "." means the preopen directory itself. */
-        if (path_len == 0 || (path_len == 1 && host_path[0] == '.')) {
-            memcpy(abs_path, dir, dlen);
-            abs_path[dlen] = '\0';
-        } else if (dir[1] == '\0') {
-            /* dir is exactly "/" — avoid producing "//foo" */
-            abs_path[0] = '/';
-            memcpy(abs_path + 1, host_path, path_len);
-            abs_path[1 + path_len] = '\0';
-        } else {
-            memcpy(abs_path, dir, dlen);
-            abs_path[dlen] = '/';
-            memcpy(abs_path + dlen + 1, host_path, path_len);
-            abs_path[dlen + 1 + path_len] = '\0';
-        }
-    } else {
-        memcpy(abs_path, host_path, path_len);
-        abs_path[path_len] = '\0';
-    }
-
-    int host_fd = VfsOpen(context->vfsCtx, abs_path, flags);
+    /* Delegate path resolution to VfsOpenAt — it uses the fd's stored path to
+     * resolve relative paths (including "..") via PathNormalize. Empty path
+     * is treated as "." (the directory itself). */
+    const char *open_path = (path_len == 0) ? "." : host_path;
+    int host_fd = VfsOpenAt(context->vfsCtx, dirfd, open_path, flags);
     if (host_fd < 0) {
         m3ApiReturn(errno_to_wasi(host_fd));
     }

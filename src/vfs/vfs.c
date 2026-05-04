@@ -14,22 +14,136 @@
 
 /* Stateless prefix router on top of a single typed-FD table.
  *
- * VfsOpen / VfsOpenAt detect "/dev/" and "/net/" prefixes and route those
- * paths through DevFs / NetFs. When the wapp has a tarfs context
- * (`c->tarfs != NULL`), every other path resolves against the layered TAR
- * index. Stdio is preregistered into c->fds[0..2] as VFS_TYPE_STREAM during
- * VfsRegister, and dispatched through the embedded driver pointer. TARFS owns
- * root, the prefix router owns /dev and /net, and everything else is
- * unsupported. */
+ * All opens go through VfsResolvePath + PathNormalize before routing, so
+ * trailing slashes, '.' and '..' are resolved universally. A mount table in
+ * vfs_ctx_t replaces the hardcoded if/else prefix chain; route_open iterates
+ * it for the longest matching prefix. Root VfsReadDir emits mount-table
+ * entries after the TarFS phase so /dev, /net and /proc appear in 'ls /'.
+ * VfsOpenAt uses the parent fd's stored path to resolve relative paths. */
 
-static inline bool path_has_prefix(const char *path, const char *prefix) {
-    return strncmp(path, prefix, strlen(prefix)) == 0;
+/* ── Path normalisation ──────────────────────────────────────────────────── */
+
+static int PathNormalize(const char *in, char *out, size_t out_size) {
+    char tmp[VFS_FD_PATH_LEN];
+    size_t in_len = strlen(in);
+    if (in_len >= VFS_FD_PATH_LEN)
+        return -ENAMETOOLONG;
+    memcpy(tmp, in, in_len + 1);
+
+    const char *segs[VFS_FD_PATH_LEN / 2];
+    int depth = 0;
+
+    char *p = tmp;
+    while (*p == '/')
+        p++;
+
+    while (*p) {
+        char *seg = p;
+        while (*p && *p != '/')
+            p++;
+        if (*p == '/')
+            *p++ = '\0';
+        while (*p == '/')
+            p++;
+
+        if (seg[0] == '\0' || (seg[0] == '.' && seg[1] == '\0')) {
+            /* skip */
+        } else if (seg[0] == '.' && seg[1] == '.' && seg[2] == '\0') {
+            if (depth > 0)
+                depth--;
+        } else {
+            segs[depth++] = seg;
+        }
+    }
+
+    if (depth == 0) {
+        if (out_size < 2)
+            return -ENAMETOOLONG;
+        out[0] = '/';
+        out[1] = '\0';
+        return 0;
+    }
+
+    size_t pos = 0;
+    for (int i = 0; i < depth; i++) {
+        size_t slen = strlen(segs[i]);
+        if (pos + 1 + slen >= out_size)
+            return -ENAMETOOLONG;
+        out[pos++] = '/';
+        memcpy(out + pos, segs[i], slen);
+        pos += slen;
+    }
+    out[pos] = '\0';
+    return 0;
 }
 
-static inline bool path_is_routed_prefix(const char *path) {
-    return path_has_prefix(path, "/dev/") || path_has_prefix(path, "/net/") ||
-           strcmp(path, "/dev") == 0 || strcmp(path, "/net") == 0;
+static int VfsResolvePath(vfs_ctx_t c, int parent_fd, const char *path,
+                          char *out, size_t out_size) {
+    if (*path == '/')
+        return PathNormalize(path, out, out_size);
+
+    /* Relative path: prepend parent fd's stored path. */
+    if (parent_fd < 0 || parent_fd >= VFS_MAX_FDS ||
+        c->fds[parent_fd].type == VFS_TYPE_NONE)
+        return -EBADF;
+
+    char combined[VFS_FD_PATH_LEN * 2];
+    const char *base = c->fds[parent_fd].path;
+    size_t base_len = strlen(base);
+    size_t path_len = strlen(path);
+
+    if (base_len + 1 + path_len >= sizeof(combined))
+        return -ENAMETOOLONG;
+
+    memcpy(combined, base, base_len);
+    if (base_len == 0 || base[base_len - 1] != '/')
+        combined[base_len++] = '/';
+    memcpy(combined + base_len, path, path_len + 1);
+
+    return PathNormalize(combined, out, out_size);
 }
+
+/* ── Mount table ─────────────────────────────────────────────────────────── */
+
+static int VfsMount(vfs_ctx_t c, const char *prefix, vfs_fd_type_t type) {
+    if (c->mounts_cnt >= VFS_MAX_MOUNTS)
+        return -ENOSPC;
+    size_t plen = strlen(prefix);
+    if (plen >= sizeof(c->mounts[0].prefix))
+        return -ENAMETOOLONG;
+    vfs_mount_t *m = &c->mounts[c->mounts_cnt++];
+    memcpy(m->prefix, prefix, plen + 1);
+    m->type = type;
+    return 0;
+}
+
+/* ── Flat-directory readdir helper ───────────────────────────────────────── */
+
+int VfsFlatDirReadDir(const vfs_dir_entry_t *entries, size_t count, void *buf,
+                      size_t bufLen, uint64_t *cookie, size_t *bufUsed) {
+    size_t used = 0;
+    uint64_t idx = *cookie;
+
+    for (; idx < count; idx++) {
+        size_t namlen = strlen(entries[idx].name);
+        if (used + sizeof(vfs_dirent_t) + namlen > bufLen)
+            break;
+        vfs_dirent_t dir = {0};
+        dir.d_ino = idx;
+        dir.d_namlen = (uint32_t)namlen;
+        dir.d_type = entries[idx].type;
+        dir.d_next = used + sizeof(vfs_dirent_t) + namlen;
+        memcpy((uint8_t *)buf + used, &dir, sizeof(dir));
+        memcpy((uint8_t *)buf + used + sizeof(dir), entries[idx].name, namlen);
+        used += sizeof(dir) + namlen;
+    }
+
+    *cookie = idx;
+    *bufUsed = used;
+    return 0;
+}
+
+/* ── Internal helpers ────────────────────────────────────────────────────── */
 
 static inline bool CheckFd(struct vfs_ctx_t *c, int fd) {
     return c && fd >= 0 && fd < VFS_MAX_FDS &&
@@ -39,7 +153,6 @@ static inline bool CheckFd(struct vfs_ctx_t *c, int fd) {
 static int FindFirstClosedFd(struct vfs_ctx_t *c) {
     if (!c)
         return -EINVAL;
-
     for (int i = ROOT_FD; i < VFS_MAX_FDS; i++) {
         if (c->fds[i].type == VFS_TYPE_NONE)
             return i;
@@ -47,44 +160,60 @@ static int FindFirstClosedFd(struct vfs_ctx_t *c) {
     return -EMFILE;
 }
 
+/* ── Route open (mount-table dispatch) ───────────────────────────────────── */
+
 static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
-    int fd;
+    /* Longest-prefix match against the mount table. */
+    vfs_fd_type_t type = VFS_TYPE_NONE;
+    size_t best_len = 0;
+
+    for (uint8_t i = 0; i < c->mounts_cnt; i++) {
+        size_t plen = strlen(c->mounts[i].prefix);
+        bool matches;
+        if (plen == 1) {
+            /* "/" matches any absolute path */
+            matches = (path[0] == '/');
+        } else {
+            matches = strncmp(path, c->mounts[i].prefix, plen) == 0 &&
+                      (path[plen] == '/' || path[plen] == '\0');
+        }
+        if (matches && plen > best_len) {
+            best_len = plen;
+            type = c->mounts[i].type;
+        }
+    }
+
+    if (type == VFS_TYPE_NONE)
+        return -ENOENT;
+
+    /* Suffix passed to subsystems: skip mount prefix and any leading slash. */
+    const char *suffix = path + best_len;
+    if (*suffix == '/')
+        suffix++;
+
     void *handle;
-    vfs_fd_type_t type;
     int open_err = -ENOENT;
 
-    if (path_has_prefix(path, "/dev/")) {
-        type = VFS_TYPE_DEV;
-        handle = DevFs_Open(c, path + 5, flags, &open_err);
-    } else if (strcmp(path, "/dev") == 0) {
-        type = VFS_TYPE_DEV;
-        handle = DevFs_Open(c, "", flags, &open_err);
-    } else if (path_has_prefix(path, "/net/")) {
-        type = VFS_TYPE_NET;
-        handle = NetFs_Open(c, path + 5, flags, &open_err);
-    } else if (strcmp(path, "/net") == 0) {
-        type = VFS_TYPE_NET;
-        handle = NetFs_Open(c, "", flags, &open_err);
-    } else if (c->tarfs != NULL) {
-        /* TarFs is read-only; reject write-mode opens before touching the
-         * index so callers get -EROFS rather than a generic -ENOENT. */
+    if (type == VFS_TYPE_DEV) {
+        handle = DevFs_Open(c, suffix, flags, &open_err);
+    } else if (type == VFS_TYPE_NET) {
+        handle = NetFs_Open(c, suffix, flags, &open_err);
+    } else if (type == VFS_TYPE_TARFS) {
+        if (c->tarfs == NULL)
+            return -ENOENT;
         if ((flags & 03) != VFS_O_RDONLY ||
             (flags & (VFS_O_CREAT | VFS_O_TRUNC))) {
             return -EROFS;
         }
-        type = VFS_TYPE_TARFS;
         handle = TarFs_Open(c->tarfs, path, flags);
-        /* TarFs_Open returns NULL for ENOENT or OOM; both surface as ENOENT to
-         * the caller — OOM is indistinguishable without an API change. */
     } else {
         return -ENOTSUP;
     }
 
-    if (handle == NULL) {
+    if (handle == NULL)
         return open_err;
-    }
 
-    fd = FindFirstClosedFd(c);
+    int fd = FindFirstClosedFd(c);
     if (fd < 0) {
         if (type == VFS_TYPE_DEV)
             DevFs_Close(c, handle);
@@ -98,10 +227,12 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     c->fds[fd].type = type;
     c->fds[fd].internal_ctx = handle;
     c->fds[fd].flags = flags;
+    strncpy(c->fds[fd].path, path, VFS_FD_PATH_LEN - 1);
+    c->fds[fd].path[VFS_FD_PATH_LEN - 1] = '\0';
     return fd;
 }
 
-/* PUBLIC INTERFACE */
+/* ── PUBLIC INTERFACE ────────────────────────────────────────────────────── */
 
 vfs_ctx_t VfsInit() {
     struct vfs_ctx_t *c;
@@ -111,6 +242,11 @@ vfs_ctx_t VfsInit() {
         return c;
 
     memset(c, 0, sizeof(*c));
+
+    VfsMount(c, "/",    VFS_TYPE_TARFS);
+    VfsMount(c, "/dev", VFS_TYPE_DEV);
+    VfsMount(c, "/net", VFS_TYPE_NET);
+    /* /proc is mounted by Phase 3 (ProcFS) when its handler is available. */
 
     return c;
 }
@@ -174,8 +310,8 @@ int VfsAttachTarfs(vfs_ctx_t c, vfs_tarfs_ctx_t *tarfs) {
     return 0;
 }
 
-/* VfsRegister wires up stdio only. TARFS owns root and the prefix router owns
- * /dev and /net. Callers who hand us anything else lose the driver they
+/* VfsRegister wires up stdio only. TARFS owns root and the mount table owns
+ * /dev, /net, /proc. Callers who hand us anything else lose the driver they
  * built; the registry layer in vfs-wanted-ctrl.c filters those before they
  * reach here, but we destroy defensively so a stale call can't leak. */
 int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver) {
@@ -216,10 +352,12 @@ int VfsOpen(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     if (!c || !path || *path == '\0')
         return -EINVAL;
 
-    if (path_is_routed_prefix(path) || c->tarfs != NULL)
-        return route_open(c, path, flags);
+    char norm[VFS_FD_PATH_LEN];
+    int r = VfsResolvePath(c, -1, path, norm, sizeof(norm));
+    if (r < 0)
+        return r;
 
-    return -ENOENT;
+    return route_open(c, norm, flags);
 }
 
 int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags) {
@@ -228,12 +366,12 @@ int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags) {
     if (!c || NULL == path || *path == '\0')
         return -EINVAL;
 
-    /* Only absolute routed paths are supported — a relative path against a
-     * typed-FD parent has no sensible mapping under DevFs/NetFs/TARFS. */
-    if (path_is_routed_prefix(path) || c->tarfs != NULL)
-        return route_open(c, path, flags);
+    char norm[VFS_FD_PATH_LEN];
+    int r = VfsResolvePath(c, fd, path, norm, sizeof(norm));
+    if (r < 0)
+        return r;
 
-    return -ENOTSUP;
+    return route_open(c, norm, flags);
 }
 
 int VfsClose(vfs_ctx_t c, int fd) {
@@ -274,8 +412,6 @@ int VfsStatAt(vfs_ctx_t c, int fd, const char *path, vfs_stat_t *stat) {
     if (!CheckFd(c, fd))
         return -EBADF;
 
-    /* The prefix router serves absolute paths directly; fd is used only
-     * to inherit the VFS context, not as a directory handle. */
     int newfd = VfsOpenAt(c, fd, path, 0);
     if (newfd < 0)
         return newfd;
@@ -388,6 +524,11 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
     }
 }
 
+/* Cookie high bit separates TarFS phase (bit=0) from mount-table phase (bit=1)
+ * during root directory listing. TarFS never produces cookies with bit 63 set
+ * so the spaces don't overlap. */
+#define MOUNT_PHASE_BIT (UINT64_C(1) << 63)
+
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
                size_t *bufUsed) {
     DEBUG_TRACE("%d (%zu) %llu", fd, bufLen, *cookie);
@@ -401,9 +542,63 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
     case VFS_TYPE_DEV:
         return DevFs_ReadDir(c, c->fds[fd].internal_ctx, buf, bufLen, cookie,
                              bufUsed);
-    case VFS_TYPE_TARFS:
-        return TarFs_ReadDir(c->tarfs, c->fds[fd].internal_ctx, buf, bufLen,
-                             cookie, bufUsed);
+    case VFS_TYPE_NET:
+        return NetFs_ReadDir(c, c->fds[fd].internal_ctx, buf, bufLen, cookie,
+                             bufUsed);
+    case VFS_TYPE_TARFS: {
+        /* Non-root subdirectory: delegate entirely to TarFS. */
+        if (c->fds[fd].path[0] != '/' || c->fds[fd].path[1] != '\0') {
+            return TarFs_ReadDir(c->tarfs, c->fds[fd].internal_ctx, buf, bufLen,
+                                 cookie, bufUsed);
+        }
+
+        /* Root fd: TarFS phase first, then mount-table phase.
+         *
+         * WASI fd_readdir contract: bufUsed < bufLen means "directory
+         * exhausted". We must therefore emit mount entries in the SAME call
+         * that TarFS returns its final batch, appending to the unused tail of
+         * the buffer. We only hand off to a pure mount phase on subsequent
+         * calls where cookie already has MOUNT_PHASE_BIT set. */
+        if (!(*cookie & MOUNT_PHASE_BIT)) {
+            int r = TarFs_ReadDir(c->tarfs, c->fds[fd].internal_ctx, buf,
+                                  bufLen, cookie, bufUsed);
+            if (r < 0)
+                return r;
+            if (*bufUsed == bufLen)
+                return 0; /* buffer full — TarFS may have more entries */
+            /* TarFS done in this segment: append mount entries to the
+             * remaining buffer space and switch to mount phase. */
+            *cookie = MOUNT_PHASE_BIT;
+        }
+
+        /* Mount-table phase: append after any existing content. */
+        uint64_t idx = *cookie & ~MOUNT_PHASE_BIT;
+        uint8_t *mbuf = (uint8_t *)buf + *bufUsed;
+        size_t mspace = bufLen - *bufUsed;
+        size_t mused = 0;
+        for (; idx < c->mounts_cnt; idx++) {
+            const char *pfx = c->mounts[idx].prefix;
+            if (pfx[1] == '\0')
+                continue; /* skip "/" */
+            const char *name = pfx + 1;
+            if (strchr(name, '/') != NULL)
+                continue; /* skip nested mounts, emit only top-level */
+            size_t namlen = strlen(name);
+            if (mused + sizeof(vfs_dirent_t) + namlen > mspace)
+                break;
+            vfs_dirent_t dir = {0};
+            dir.d_ino = (uint64_t)(0x10000 + idx);
+            dir.d_namlen = (uint32_t)namlen;
+            dir.d_type = VFS_FILETYPE_DIRECTORY;
+            dir.d_next = MOUNT_PHASE_BIT | (idx + 1);
+            memcpy(mbuf + mused, &dir, sizeof(dir));
+            memcpy(mbuf + mused + sizeof(dir), name, namlen);
+            mused += sizeof(dir) + namlen;
+        }
+        *cookie = MOUNT_PHASE_BIT | idx;
+        *bufUsed += mused;
+        return 0;
+    }
     default:
         return -ENOTSUP;
     }
