@@ -19,6 +19,7 @@
 typedef struct devfs_handle_t {
     const vfs_driver_t *drv;
     int drv_fd;
+    bool is_root; /* true when opening "/dev" itself as a directory */
 } devfs_handle_t;
 
 static const vfs_driver_t *LookupDrv(vfs_ctx_t c, const char *suffix) {
@@ -70,6 +71,22 @@ void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
                  int *out_err) {
     DEBUG_TRACE("/dev/%s (0x%x)", suffix ? suffix : "(null)", flags);
 
+    /* Empty suffix means opening "/dev" itself as a directory. */
+    if (!suffix || *suffix == '\0') {
+        devfs_handle_t *h = WantedMalloc(sizeof(*h));
+        if (!h) {
+            if (out_err)
+                *out_err = -ENOMEM;
+            return NULL;
+        }
+        h->drv = NULL;
+        h->drv_fd = -1;
+        h->is_root = true;
+        if (out_err)
+            *out_err = 0;
+        return h;
+    }
+
     const vfs_driver_t *drv = LookupDrv(c, suffix);
     const char *sub_path = NULL;
 
@@ -113,16 +130,18 @@ void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
         *out_err = 0;
     h->drv = drv;
     h->drv_fd = drv_fd;
+    h->is_root = false;
     return h;
 }
 
 int DevFs_Close(vfs_ctx_t c, void *handle) {
     (void)c;
     devfs_handle_t *h = handle;
-    if (!h) {
+    if (!h)
         return -EBADF;
-    }
-    int r = TRY_DRV(h->drv, Close, h->drv_fd);
+    int r = 0;
+    if (!h->is_root)
+        r = TRY_DRV(h->drv, Close, h->drv_fd);
     WantedFree(h);
     return r;
 }
@@ -148,8 +167,12 @@ int DevFs_Write(vfs_ctx_t c, void *handle, const void *buf, size_t nbyte) {
 int DevFs_Stat(vfs_ctx_t c, void *handle, vfs_stat_t *stat) {
     (void)c;
     devfs_handle_t *h = handle;
-    if (!h) {
+    if (!h)
         return -EBADF;
+    if (h->is_root) {
+        memset(stat, 0, sizeof(*stat));
+        stat->filetype = VFS_FILETYPE_DIRECTORY;
+        return 0;
     }
     return TRY_DRV(h->drv, Stat, h->drv_fd, stat);
 }
@@ -175,11 +198,34 @@ int DevFs_Seek(vfs_ctx_t c, void *handle, long off, vfs_whence_t whence,
 
 int DevFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
                   uint64_t *cookie, size_t *bufUsed) {
-    (void)c;
     devfs_handle_t *h = handle;
-    if (!h) {
+    if (!h)
         return -EBADF;
+
+    if (h->is_root) {
+        /* Enumerate all registered DevFs entries (e.g. "wanted"). */
+        size_t used = 0;
+        uint8_t i = (uint8_t)*cookie;
+        for (; i < c->devfs_cnt; i++) {
+            size_t namlen = strnlen(c->devfs[i].name, MAX_ENTRY_NAME_LEN);
+            if (used + sizeof(vfs_dirent_t) + namlen > bufLen)
+                break;
+            vfs_dirent_t dir = {0};
+            dir.d_ino = i;
+            dir.d_namlen = (uint32_t)namlen;
+            dir.d_type = TRY_FILETYPE(c->devfs[i].drv);
+            dir.d_next = i + 1;
+            memcpy((uint8_t *)buf + used, &dir, sizeof(dir));
+            memcpy((uint8_t *)buf + used + sizeof(dir), c->devfs[i].name,
+                   namlen);
+            used += sizeof(dir) + namlen;
+        }
+        *cookie = i;
+        *bufUsed = used;
+        return 0;
     }
+
+    (void)c;
     return TRY_DRV(h->drv, ReadDir, h->drv_fd, buf, bufLen, cookie, bufUsed);
 }
 
