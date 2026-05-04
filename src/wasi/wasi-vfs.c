@@ -23,6 +23,7 @@ Preopen preopen[] = {
     {"<stdout>"},
     {"<stderr>"},
     {"/"},
+    {"/dev/wanted"},
 };
 
 const size_t preopen_cnt = sizeof(preopen) / sizeof(preopen[0]);
@@ -433,7 +434,33 @@ m3ApiRawFunction(m3_wasi_generic_path_open) {
         flags |= VFS_O_RDONLY; // no-op because O_RDONLY is 0
     }
 
-    int host_fd = VfsOpenAt(context->vfsCtx, dirfd, host_path, flags);
+    /* Resolve host_path relative to the preopened directory.  Dirfd values
+     * [3, preopen_cnt) are preopens whose path is a VFS-routable absolute
+     * path; concatenate to get the full target so VfsOpen can route it. */
+    char abs_path[529]; /* 512 (max path_len) + 11 ("/dev/wanted") + '/' + NUL */
+    if (dirfd >= 3 && dirfd < (int)preopen_cnt &&
+        preopen[dirfd].path[0] == '/') {
+        const char *dir = preopen[dirfd].path;
+        size_t dlen = strlen(dir);
+        if (dlen + 1 + path_len >= sizeof(abs_path))
+            m3ApiReturn(__WASI_ERRNO_NAMETOOLONG);
+        if (dir[1] == '\0') {
+            /* dir is exactly "/" — avoid producing "//foo" */
+            abs_path[0] = '/';
+            memcpy(abs_path + 1, host_path, path_len);
+            abs_path[1 + path_len] = '\0';
+        } else {
+            memcpy(abs_path, dir, dlen);
+            abs_path[dlen] = '/';
+            memcpy(abs_path + dlen + 1, host_path, path_len);
+            abs_path[dlen + 1 + path_len] = '\0';
+        }
+    } else {
+        memcpy(abs_path, host_path, path_len);
+        abs_path[path_len] = '\0';
+    }
+
+    int host_fd = VfsOpen(context->vfsCtx, abs_path, flags);
     if (host_fd < 0) {
         m3ApiReturn(errno_to_wasi(host_fd));
     }

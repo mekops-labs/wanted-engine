@@ -25,7 +25,9 @@ static size_t ConfigToJson(const wantedConfig_t *cfg, uint8_t *buf,
     p = json_objOpen(p, NULL, &left);
     p = json_arrOpen(p, "wapps", &left);
     for (int i = 0; i < cfg->nWapps; i++) {
-        p = json_str(p, NULL, cfg->wappsToRun[i], &left);
+        p = json_objOpen(p, NULL, &left);
+        p = json_str(p, "name", cfg->wappsToRun[i], &left);
+        p = json_objClose(p, &left);
     }
     p = json_arrClose(p, &left);
     p = json_objClose(p, &left);
