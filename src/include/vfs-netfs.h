@@ -20,6 +20,8 @@ int NetFs_Close(vfs_ctx_t c, void *handle);
 int NetFs_Read(vfs_ctx_t c, void *handle, void *buf, size_t nbyte);
 int NetFs_Write(vfs_ctx_t c, void *handle, const void *buf, size_t nbyte);
 int NetFs_Stat(vfs_ctx_t c, void *handle, vfs_stat_t *stat);
+int NetFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
+                  uint64_t *cookie, size_t *bufUsed);
 int NetFs_SockAccept(vfs_ctx_t c, void *handle, vfs_oflags_t flags, int *newFd);
 int NetFs_SockRecv(vfs_ctx_t c, void *handle, void *buf, size_t nbyte,
                    vfs_riflags_t iflags, vfs_roflags_t *oflags);
