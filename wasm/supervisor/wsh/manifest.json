@@ -1,7 +1,7 @@
 {
     "name": "supervisor",
-    "version": [ 0, 4, 0 ],
-    "chksum": "da4bc306110f304767aa91f273c63cfad61f57a4436ad3c3aaaf43294c1efc2e",
+    "version": [ 0, 4, 1 ],
+    "chksum": "520f8e114734b647d1b292e0b0402ba171d0dac75eb8468cf40ac286db322409"
     "package": 1,
     "drivers": [
         {
