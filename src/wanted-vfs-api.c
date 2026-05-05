@@ -123,6 +123,10 @@ static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out) {
         return -EINVAL;
     }
 
+    json_t const *priv = json_getProperty(system, "privileged");
+    if (priv && JSON_BOOLEAN == json_getType(priv))
+        out->privileged = json_getBoolean(priv);
+
     json_t const *wapps = json_getProperty(system, "defaultWapps");
     if (!wapps || JSON_ARRAY != json_getType(wapps)) {
         DEBUG_TRACE(".system.defaultWapps property not found in json");

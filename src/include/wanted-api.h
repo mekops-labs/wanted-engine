@@ -96,6 +96,7 @@ typedef struct wantedConfig_t {
     int nWapps;
     wapp_config_t supervisorCfg;
     char supervisorImagePath[MAX_PATH_LEN]; /* empty = use compiled-in default */
+    bool privileged; /* enables privileged /proc entries when true */
 } wantedConfig_t;
 
 int WantedWappRun(wapp_data_t *ctx);

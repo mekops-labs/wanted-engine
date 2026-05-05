@@ -42,3 +42,4 @@ int PlatformNetFree(void *ctx) { return 0; }
 vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt) {
     return NULL;
 }
+void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) { if (heap_used) *heap_used = 0; if (heap_total) *heap_total = 0; }

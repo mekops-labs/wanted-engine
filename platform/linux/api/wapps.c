@@ -254,3 +254,10 @@ int PlatformWappGetState(wapp_state_t *wapps, size_t appsLen) {
 
     return r;
 }
+
+#include <malloc.h>
+void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
+    struct mallinfo2 mi = mallinfo2();
+    if (heap_used)  *heap_used  = mi.uordblks;
+    if (heap_total) *heap_total = mi.arena;
+}

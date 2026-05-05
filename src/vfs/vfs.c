@@ -8,6 +8,7 @@
 #include <debug_trace.h>
 #include <vfs-devfs.h>
 #include <vfs-netfs.h>
+#include <vfs-procfs.h>
 #include <vfs-tarfs.h>
 #include <vfs.h>
 #include <wanted_malloc.h>
@@ -198,6 +199,8 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
         handle = DevFs_Open(c, suffix, flags, &open_err);
     } else if (type == VFS_TYPE_NET) {
         handle = NetFs_Open(c, suffix, flags, &open_err);
+    } else if (type == VFS_TYPE_PROC) {
+        handle = ProcFs_Open(c, suffix, flags, &open_err);
     } else if (type == VFS_TYPE_TARFS) {
         if (c->tarfs == NULL)
             return -ENOENT;
@@ -219,6 +222,8 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
             DevFs_Close(c, handle);
         else if (type == VFS_TYPE_NET)
             NetFs_Close(c, handle);
+        else if (type == VFS_TYPE_PROC)
+            ProcFs_Close(c, handle);
         else
             TarFs_Close(c->tarfs, handle);
         return fd;
@@ -243,10 +248,10 @@ vfs_ctx_t VfsInit() {
 
     memset(c, 0, sizeof(*c));
 
-    VfsMount(c, "/",    VFS_TYPE_TARFS);
-    VfsMount(c, "/dev", VFS_TYPE_DEV);
-    VfsMount(c, "/net", VFS_TYPE_NET);
-    /* /proc is mounted by Phase 3 (ProcFS) when its handler is available. */
+    VfsMount(c, "/",     VFS_TYPE_TARFS);
+    VfsMount(c, "/dev",  VFS_TYPE_DEV);
+    VfsMount(c, "/net",  VFS_TYPE_NET);
+    VfsMount(c, "/proc", VFS_TYPE_PROC);
 
     return c;
 }
@@ -274,6 +279,9 @@ static void DestroyTypedFds(vfs_ctx_t c) {
         case VFS_TYPE_NET:
             NetFs_Close(c, c->fds[i].internal_ctx);
             break;
+        case VFS_TYPE_PROC:
+            ProcFs_Close(c, c->fds[i].internal_ctx);
+            break;
         case VFS_TYPE_TARFS:
             TarFs_Close(c->tarfs, c->fds[i].internal_ctx);
             break;
@@ -291,6 +299,7 @@ void VfsDestroy(vfs_ctx_t *c) {
     DestroyTypedFds(*c);
     DevFs_Destroy(*c);
     NetFs_Destroy(*c);
+    ProcFs_Destroy(*c);
     DestroyStreamFd(*c, VFS_STDERR);
     DestroyStreamFd(*c, VFS_STDOUT);
     DestroyStreamFd(*c, VFS_STDIN);
@@ -299,6 +308,11 @@ void VfsDestroy(vfs_ctx_t *c) {
 
     WantedFree(*c);
     *c = NULL;
+}
+
+void VfsSetPrivileged(vfs_ctx_t c, bool privileged) {
+    if (c)
+        c->privileged = privileged;
 }
 
 int VfsAttachTarfs(vfs_ctx_t c, vfs_tarfs_ctx_t *tarfs) {
@@ -388,6 +402,9 @@ int VfsClose(vfs_ctx_t c, int fd) {
     case VFS_TYPE_NET:
         r = NetFs_Close(c, c->fds[fd].internal_ctx);
         break;
+    case VFS_TYPE_PROC:
+        r = ProcFs_Close(c, c->fds[fd].internal_ctx);
+        break;
     case VFS_TYPE_TARFS:
         r = TarFs_Close(c->tarfs, c->fds[fd].internal_ctx);
         break;
@@ -432,6 +449,8 @@ int VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat) {
         return DevFs_Stat(c, c->fds[fd].internal_ctx, stat);
     case VFS_TYPE_NET:
         return NetFs_Stat(c, c->fds[fd].internal_ctx, stat);
+    case VFS_TYPE_PROC:
+        return ProcFs_Stat(c, c->fds[fd].internal_ctx, stat);
     case VFS_TYPE_TARFS:
         return TarFs_Stat(c->tarfs, c->fds[fd].internal_ctx, stat);
     case VFS_TYPE_STREAM:
@@ -472,6 +491,8 @@ int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte) {
         return DevFs_Read(c, c->fds[fd].internal_ctx, buf, nbyte);
     case VFS_TYPE_NET:
         return NetFs_Read(c, c->fds[fd].internal_ctx, buf, nbyte);
+    case VFS_TYPE_PROC:
+        return ProcFs_Read(c, c->fds[fd].internal_ctx, buf, nbyte);
     case VFS_TYPE_TARFS:
         return TarFs_Read(c->tarfs, c->fds[fd].internal_ctx, buf, nbyte);
     case VFS_TYPE_STREAM:
@@ -545,6 +566,9 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
     case VFS_TYPE_NET:
         return NetFs_ReadDir(c, c->fds[fd].internal_ctx, buf, bufLen, cookie,
                              bufUsed);
+    case VFS_TYPE_PROC:
+        return ProcFs_ReadDir(c, c->fds[fd].internal_ctx, buf, bufLen, cookie,
+                              bufUsed);
     case VFS_TYPE_TARFS: {
         /* Non-root subdirectory: delegate entirely to TarFS. */
         if (c->fds[fd].path[0] != '/' || c->fds[fd].path[1] != '\0') {

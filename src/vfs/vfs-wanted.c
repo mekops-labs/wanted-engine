@@ -5,7 +5,6 @@
 extern const vfs_driver_t WantedConfigDriver;
 extern const vfs_driver_t WantedControlDriver;
 extern const vfs_driver_t WantedRegistryDriver;
-extern const vfs_driver_t WantedWappsDriver;
 
 vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *opt) {
     int ret = 0;
@@ -31,12 +30,6 @@ vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *opt) {
         DEBUG_TRACE("can't register reg (%d)", ret);
         return NULL;
     }
-    ret = drv->Register(drv->ctx, "wapps", &WantedWappsDriver);
-    if (ret < 0) {
-        DEBUG_TRACE("can't register wapps (%d)", ret);
-        return NULL;
-    }
-
     /* "w" subdirectory: backward-compat for pre-overhaul paths "w/ctrl" and
      * "w/reg" used by the sheriff supervisor binary. */
     vfs_driver_t *w_compat = VfsVirtualInit(wapp, NULL);

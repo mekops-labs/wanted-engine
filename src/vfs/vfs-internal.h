@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <vfs-procfs.h>
 #include <vfs.h>
 
 #define TRY_DRV(drv_ptr, oper, ...)                                            \
@@ -67,6 +68,15 @@ struct vfs_tarfs_ctx_t;
  * the suffix against `name`. */
 #define VFS_DEVFS_MAX_ENTRIES 10
 
+/* ProcFS registration table — flat read-only entries under "/proc". */
+#define VFS_PROCFS_MAX_ENTRIES 16
+
+typedef struct vfs_proc_entry_t {
+    char name[MAX_ENTRY_NAME_LEN];
+    proc_read_fn_t read_fn;
+    bool privileged;
+} vfs_proc_entry_t;
+
 typedef struct vfs_named_drv_t {
     char name[MAX_ENTRY_NAME_LEN];
     const vfs_driver_t *drv;
@@ -93,6 +103,13 @@ struct vfs_ctx_t {
     /* Mount table — populated by VfsInit; drives routing and root listing. */
     vfs_mount_t mounts[VFS_MAX_MOUNTS];
     uint8_t mounts_cnt;
+
+    /* ProcFS registration table — populated at wapp-setup time. */
+    vfs_proc_entry_t procfs[VFS_PROCFS_MAX_ENTRIES];
+    uint8_t procfs_cnt;
+
+    /* System-level privilege flag — enables privileged /proc entries. */
+    bool privileged;
 };
 
 /* Flat-directory readdir helper — shared by DevFS root, NetFS root, ProcFS.

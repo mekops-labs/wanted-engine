@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -129,6 +130,7 @@ typedef struct vfs_ctx_t *vfs_ctx_t;
 
 vfs_ctx_t VfsInit();
 void VfsDestroy(vfs_ctx_t *c);
+void VfsSetPrivileged(vfs_ctx_t c, bool privileged);
 int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver);
 
 int VfsOpen(vfs_ctx_t c, const char *path, vfs_oflags_t flags);

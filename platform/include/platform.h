@@ -37,6 +37,7 @@ int PlatformWappStart(wapp_t *wapp);
 int PlatformWappStop(const char *name);
 void PlatformWappLoop();
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
+void PlatformMemoryStats(size_t *heap_used, size_t *heap_total);
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len);
 int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes);
