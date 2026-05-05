@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <m3_api_libc.h>
 #include <m3_env.h>
 #include <wasm3.h>
@@ -10,7 +11,9 @@
 #include <debug_trace.h>
 #include <wanted_malloc.h>
 
+#include <vfs-devfs.h>
 #include <vfs-drivers.h>
+#include <vfs-procfs.h>
 #include <vfs-tarfs.h>
 #include <vfs.h>
 #include <wanted-api.h>
@@ -24,6 +27,44 @@ struct m3Data_t {
     IM3Runtime rt;
     IM3Environment env;
 };
+
+/* /proc/wapps — plain-text wapp state, one record per wapp. */
+static int ProcReadWapps(vfs_ctx_t c, void *buf, size_t bufLen) {
+    (void)c;
+    wapp_state_t wapps[MAX_WAPPS];
+    int n = PlatformWappGetState(wapps, MAX_WAPPS);
+    if (n < 0)
+        return n;
+
+    char *p = (char *)buf;
+    size_t left = bufLen;
+    for (int i = 0; i < n && left > 0; i++) {
+        int w = snprintf(p, left, "name:\t%s\nstate:\t%s\n",
+                         wapps[i].name, statusToString(wapps[i].status));
+        if (w < 0 || (size_t)w >= left)
+            break;
+        p += w;
+        left -= (size_t)w;
+        if (i + 1 < n && left > 1) {
+            *p++ = '\n';
+            left--;
+        }
+    }
+    return (int)(bufLen - left);
+}
+
+/* /proc/memory — wasm stack size + platform heap via PlatformMemoryStats. */
+static int ProcReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
+    (void)c;
+    size_t heap_used = 0, heap_total = 0;
+    PlatformMemoryStats(&heap_used, &heap_total);
+    int w = snprintf((char *)buf, bufLen,
+                     "stack_size:\t%d B\nheap_used:\t%zu B\nheap_total:\t%zu B\n",
+                     M3_STACK_SIZE, heap_used, heap_total);
+    if (w < 0)
+        return -EIO;
+    return w < (int)bufLen ? w : (int)bufLen;
+}
 
 /* Build a one-shot tarfs ctx over the wapp's layer stack. Caller owns the
  * returned ctx and must TarFsDestroy() it. Returns NULL on bad args / OOM /
@@ -229,6 +270,14 @@ int WantedWappRun(wapp_data_t *ctx) {
     /* Hand the tarfs ctx off — VfsDestroy now frees it. */
     VfsAttachTarfs(ctx->vfs, tarfs);
     tarfs = NULL;
+
+    /* /dev/null is always present regardless of wapp manifest drivers list. */
+    DevFs_Register(ctx->vfs, "null", VfsNullInit(wapp, NULL));
+
+    /* Propagate system-level privilege flag, then register /proc entries. */
+    VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
+    ProcFs_Register(ctx->vfs, "wapps",  ProcReadWapps,  true);
+    ProcFs_Register(ctx->vfs, "memory", ProcReadMemory, true);
 
     ctx->m3->wasiCtx->argc = 0;
     ctx->m3->wasiCtx->argv = NULL;

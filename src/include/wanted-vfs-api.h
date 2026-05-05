@@ -21,6 +21,7 @@ int WantedRegistryRemove(const reg_entry_t *entry);
 int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen);
 
 int WantedReadState(uint8_t *buf, size_t bufLen);
+const char *statusToString(status_t state);
 
 int WantedParseCtrlAction(json_t const *json, char *wappName,
                           wapp_action_t *act, wapp_config_t *cfg);
