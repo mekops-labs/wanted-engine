@@ -13,7 +13,9 @@
 
 #include <vfs-devfs.h>
 #include <vfs-drivers.h>
+#include <vfs-pipe.h>
 #include <vfs-procfs.h>
+#include <vfs-stdio.h>
 #include <vfs-tarfs.h>
 #include <vfs.h>
 #include <wanted-api.h>
@@ -271,8 +273,12 @@ int WantedWappRun(wapp_data_t *ctx) {
     VfsAttachTarfs(ctx->vfs, tarfs);
     tarfs = NULL;
 
-    /* /dev/null is always present regardless of wapp manifest drivers list. */
-    DevFs_Register(ctx->vfs, "null", VfsNullInit(wapp, NULL));
+    /* Builtin /dev entries — always present regardless of wapp manifest. */
+    DevFs_Register(ctx->vfs, "null",   VfsNullInit(wapp, NULL));
+    DevFs_Register(ctx->vfs, "pipe",   PipeDriverCreate());
+    DevFs_Register(ctx->vfs, "stdin",  VfsStdinDriverGet());
+    DevFs_Register(ctx->vfs, "stdout", VfsStdoutDriverGet());
+    DevFs_Register(ctx->vfs, "stderr", VfsStderrDriverGet());
 
     /* Propagate system-level privilege flag, then register /proc entries. */
     VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
