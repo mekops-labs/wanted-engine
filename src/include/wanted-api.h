@@ -15,6 +15,8 @@
 #define MAX_PATH_LEN 256
 #define MAX_OPTIONS_SIZE 1024
 #define MAX_DRIVERS_CNT 10
+#define WAPP_MAX_REQUIREMENTS 8
+#define WAPP_MAX_REQ_NAME_LEN 32
 
 typedef struct m3Data_t *im3Data_t;
 
@@ -58,6 +60,8 @@ typedef struct wapp_t {
     uint8_t *layers[TARFS_MAX_LAYERS];
     size_t layer_lens[TARFS_MAX_LAYERS];
     uint8_t layer_cnt; /* must be >= 1 for a valid wapp */
+    char requirements[WAPP_MAX_REQUIREMENTS][WAPP_MAX_REQ_NAME_LEN];
+    uint8_t requirementsCnt;
 } wapp_t;
 
 typedef struct wapp_data_t {
