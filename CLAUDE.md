@@ -215,3 +215,12 @@ Defined in `src/include/wanted-api.h`:
 ## CI/CD
 
 GitLab CI (`.gitlab-ci.yml`) runs two compilers (gcc, clang) and a coverage build. The build image is `registry.gitlab.com/wanted-project/wanted-engine/build`. Test reports are JUnit XML; coverage is Cobertura XML.
+
+## Git Conventions
+
+- **Commit message format:** `{area}: {title}\n\n{bullet-pointed description}`
+  - Areas: `feat`, `fix`, `refactor`, `test`, `docs`, `build`, `platform`
+  - Example: `feat(vfs): add /dev/pipe named pipe support`
+- **One logical change per commit.** Do not mix unrelated areas in the same commit.
+- **No `Co-Authored-By` trailers** in commit messages.
+- **Never skip CI hooks** (`--no-verify`) or force-push `main`.
