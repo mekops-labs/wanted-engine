@@ -105,7 +105,7 @@ int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen) {
 int WantedWappParseManifestBytes(wapp_t *w, const uint8_t *manifest,
                                  size_t manifestLen) {
     int ret = 0;
-    json_t mem[32];
+    json_t mem[48];
 
     if (!w || !manifest || manifestLen == 0)
         return -1;
@@ -154,6 +154,22 @@ int WantedWappParseManifestBytes(wapp_t *w, const uint8_t *manifest,
         w->version.package = 0;
     } else {
         w->version.package = (uint8_t)json_getInteger(pkg);
+    }
+
+    json_t const *reqs = json_getProperty(json, "requirements");
+    if (reqs && JSON_ARRAY == json_getType(reqs)) {
+        json_t const *r;
+        int ri = 0;
+        for (r = json_getChild(reqs);
+             r && ri < WAPP_MAX_REQUIREMENTS;
+             r = json_getSibling(r), ri++) {
+            if (JSON_TEXT == json_getType(r)) {
+                strncpy(w->requirements[ri], json_getValue(r),
+                        WAPP_MAX_REQ_NAME_LEN - 1);
+                w->requirements[ri][WAPP_MAX_REQ_NAME_LEN - 1] = '\0';
+            }
+        }
+        w->requirementsCnt = (uint8_t)ri;
     }
 
 _exit:
