@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "vfs-internal.h"
+#include <cwalk.h>
 #include <debug_trace.h>
 #include <vfs-devfs.h>
 #include <vfs-netfs.h>
@@ -15,93 +16,50 @@
 
 /* Stateless prefix router on top of a single typed-FD table.
  *
- * All opens go through VfsResolvePath + PathNormalize before routing, so
- * trailing slashes, '.' and '..' are resolved universally. A mount table in
- * vfs_ctx_t replaces the hardcoded if/else prefix chain; route_open iterates
- * it for the longest matching prefix. Root VfsReadDir emits mount-table
- * entries after the TarFS phase so /dev, /net and /proc appear in 'ls /'.
- * VfsOpenAt uses the parent fd's stored path to resolve relative paths. */
+ * All opens go through VfsResolvePath before routing, so trailing slashes,
+ * '.' and '..' are resolved universally via cwk_path_normalize. A mount table
+ * in vfs_ctx_t replaces the hardcoded if/else prefix chain; route_open
+ * iterates it for the longest matching prefix. Root VfsReadDir emits
+ * mount-table entries after the TarFS phase so /dev, /net and /proc appear in
+ * 'ls /'. VfsOpenAt uses the parent fd's stored path to resolve relative
+ * paths. */
 
 /* ── Path normalisation ──────────────────────────────────────────────────── */
 
-static int PathNormalize(const char *in, char *out, size_t out_size) {
-    char tmp[VFS_FD_PATH_LEN];
-    size_t in_len = strlen(in);
-    if (in_len >= VFS_FD_PATH_LEN)
-        return -ENAMETOOLONG;
-    memcpy(tmp, in, in_len + 1);
-
-    const char *segs[VFS_FD_PATH_LEN / 2];
-    int depth = 0;
-
-    char *p = tmp;
-    while (*p == '/')
-        p++;
-
-    while (*p) {
-        char *seg = p;
-        while (*p && *p != '/')
-            p++;
-        if (*p == '/')
-            *p++ = '\0';
-        while (*p == '/')
-            p++;
-
-        if (seg[0] == '\0' || (seg[0] == '.' && seg[1] == '\0')) {
-            /* skip */
-        } else if (seg[0] == '.' && seg[1] == '.' && seg[2] == '\0') {
-            if (depth > 0)
-                depth--;
-        } else {
-            segs[depth++] = seg;
-        }
-    }
-
-    if (depth == 0) {
-        if (out_size < 2)
-            return -ENAMETOOLONG;
-        out[0] = '/';
-        out[1] = '\0';
-        return 0;
-    }
-
-    size_t pos = 0;
-    for (int i = 0; i < depth; i++) {
-        size_t slen = strlen(segs[i]);
-        if (pos + 1 + slen >= out_size)
-            return -ENAMETOOLONG;
-        out[pos++] = '/';
-        memcpy(out + pos, segs[i], slen);
-        pos += slen;
-    }
-    out[pos] = '\0';
-    return 0;
-}
-
 static int VfsResolvePath(vfs_ctx_t c, int parent_fd, const char *path,
                           char *out, size_t out_size) {
-    if (*path == '/')
-        return PathNormalize(path, out, out_size);
-
-    /* Relative path: prepend parent fd's stored path. */
-    if (parent_fd < 0 || parent_fd >= VFS_MAX_FDS ||
-        c->fds[parent_fd].type == VFS_TYPE_NONE)
-        return -EBADF;
-
+    const char *src = path;
     char combined[VFS_FD_PATH_LEN * 2];
-    const char *base = c->fds[parent_fd].path;
-    size_t base_len = strlen(base);
-    size_t path_len = strlen(path);
 
-    if (base_len + 1 + path_len >= sizeof(combined))
+    if (*path != '/') {
+        /* Relative path: prepend parent fd's stored path. */
+        if (parent_fd < 0 || parent_fd >= VFS_MAX_FDS ||
+            c->fds[parent_fd].type == VFS_TYPE_NONE)
+            return -EBADF;
+        const char *base = c->fds[parent_fd].path;
+        size_t base_len = strlen(base);
+        size_t path_len = strlen(path);
+        if (base_len + 1 + path_len >= sizeof(combined))
+            return -ENAMETOOLONG;
+        memcpy(combined, base, base_len);
+        if (base_len == 0 || base[base_len - 1] != '/')
+            combined[base_len++] = '/';
+        memcpy(combined + base_len, path, path_len + 1);
+        src = combined;
+    }
+
+    size_t written = cwk_path_normalize(src, out, out_size);
+    if (written >= out_size)
         return -ENAMETOOLONG;
 
-    memcpy(combined, base, base_len);
-    if (base_len == 0 || base[base_len - 1] != '/')
-        combined[base_len++] = '/';
-    memcpy(combined + base_len, path, path_len + 1);
+    /* cwk_path_normalize preserves trailing slashes; strip them to match the
+     * behaviour callers expect (mount-table prefix matching, FD path storage).
+     * Exception: root "/" must not be shortened to "". */
+    size_t n = written;
+    if (n > 1 && out[n - 1] == '/')
+        out[--n] = '\0';
 
-    return PathNormalize(combined, out, out_size);
+    return 0;
 }
 
 /* ── Mount table ─────────────────────────────────────────────────────────── */
