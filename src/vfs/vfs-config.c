@@ -28,7 +28,6 @@ struct vfs_driver_ctx_t {
 };
 
 vfs_driver_t *VfsConfigInit(const wapp_t *wapp, const char *opt) {
-    int ret;
     vfs_driver_t *driver;
 
     if (NULL == wapp || NULL == opt) {
