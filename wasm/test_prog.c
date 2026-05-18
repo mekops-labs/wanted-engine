@@ -1,4 +1,4 @@
-#include "wasm3_libc.h"
+#include "wanted_libc.h"
 
 #define WASM_EXPORT __attribute__((used)) __attribute__((visibility("default")))
 

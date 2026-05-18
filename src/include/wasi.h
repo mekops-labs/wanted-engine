@@ -7,17 +7,17 @@
 extern "C" {
 #endif
 
-typedef struct m3_wasi_context_t {
+typedef struct wasi_ctx_t {
     int32_t     exit_code;
     uint32_t    argc;
     const char **argv;
     vfs_ctx_t   vfsCtx;
-} m3_wasi_context_t;
+} wasi_ctx_t;
 
 void RegisterWASINatives(void);
 
-m3_wasi_context_t *InitWasiContext(void);
-void FreeWasiContext(m3_wasi_context_t *);
+wasi_ctx_t *InitWasiContext(void);
+void FreeWasiContext(wasi_ctx_t *);
 
 #ifdef __cplusplus
 }
