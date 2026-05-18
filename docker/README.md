@@ -19,6 +19,7 @@ docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t registry.
 
 ### 0.3.0
 
+- update WASI SDK v16 → v24 (last version compatible with the libclang_rt supplement approach; v26+ require switching to the full bundled SDK)
 - add `cmake-curses-gui` (`ccmake` interactive CMake configurator)
 - add `gdb` and `lldb-14` for native and LLVM debugging
 - add `valgrind` for heap profiling and memory leak detection

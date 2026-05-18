@@ -35,7 +35,11 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     gosu \
     && rm -rf /var/lib/apt/lists/*
 
-ARG WASI_SDK_VER=16
+# v16-v25 use the libclang_rt.builtins-wasm32-wasi-* naming convention.
+# v26+ switched to libclang_rt-*.tar.gz and bundle their own clang — upgrading
+# beyond v25 requires switching to the full wasi-sdk-*.tar.gz bundle and
+# updating wasm/Makefile to use /opt/wasi-sdk/bin/clang.
+ARG WASI_SDK_VER=24
 ARG LIBCLANG_RT_FILE=libclang_rt.builtins-wasm32-wasi-${WASI_SDK_VER}.0.tar.gz
 ADD https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VER}/${LIBCLANG_RT_FILE} /tmp
 RUN tar xzf /tmp/${LIBCLANG_RT_FILE} -C /usr/lib/clang/14/ && rm -f ${LIBCLANG_RT_FILE}
