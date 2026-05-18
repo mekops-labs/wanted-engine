@@ -218,7 +218,7 @@ int WantedWappRun(wapp_data_t *ctx) {
     const uint8_t *wasm = NULL;
     size_t manifestLen = 0, wasmLen = 0;
     char err_buf[128];
-    m3_wasi_context_t *wasiCtx = NULL;
+    wasi_ctx_t *wasiCtx = NULL;
     int ret = 0;
 
     if (ctx == NULL) {
@@ -431,8 +431,8 @@ void WantedWappStop(wapp_data_t *ctx) {
 
     VfsDestroy(&ctx->vfs);
 
-    m3_wasi_context_t *wasiCtx =
-        (m3_wasi_context_t *)wasm_runtime_get_user_data(ctx->wamr->exec_env);
+    wasi_ctx_t *wasiCtx =
+        (wasi_ctx_t *)wasm_runtime_get_user_data(ctx->wamr->exec_env);
     FreeWasiContext(wasiCtx);
 
     wasm_runtime_destroy_exec_env(ctx->wamr->exec_env);

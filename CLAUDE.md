@@ -1,6 +1,6 @@
 # WANTED Engine — AI Agent Instructions
 
-WANTED (Web Assembly Nanocontainer Technology for Embedded Devices) is a Cloud-Native VFS Router written in C that executes WebAssembly applications ("wapps") in strict memory isolation on Linux and embedded targets (ESP32). It uses the `wasm3` interpreter, a stateless prefix-based VFS router, and OCI-compatible TarFS layering.
+WANTED (Web Assembly Nanocontainer Technology for Embedded Devices) is a Cloud-Native VFS Router written in C that executes WebAssembly applications ("wapps") in strict memory isolation on Linux and embedded targets (NuttX/ESP32). It uses WAMR 2.4.4 (WebAssembly Micro Runtime) in classic interpreted mode, a stateless prefix-based VFS router, and OCI-compatible TarFS layering.
 
 Public API surface is a single function: `int WantedStart(const char *cfg, size_t cfgLen)` in `include/wanted.h`.
 
@@ -59,7 +59,6 @@ cd build && ctest -R test-tarfs --output-on-failure
 | `-DBUILD_EXECUTABLE=ON` | ON | Build standalone CLI (`cmd/wanted-cli`) |
 | `-DBUILD_TESTING=ON` | ON | Build unit test suite |
 | `-DWANTED_DEBUG_TRACES=ON` | OFF | Verbose WANTED engine output |
-| `-DM3_DEBUG_TRACES=ON` | OFF | Verbose wasm3 interpreter output |
 | `-DENABLE_CODE_COVERAGE=ON` | OFF | Gcovr coverage instrumentation |
 | `-DSECURE_SOCKETS=ON` | auto | OpenSSL TLS support |
 | `-DWANTED_SUPERVISOR_IMAGE_PATH=<path>` | sheriff tar | Compiled-in supervisor image path |
@@ -83,7 +82,7 @@ Platform-independent core. All files here must remain portable (no Linux-specifi
 
 - `wanted.c` — engine initialization, supervisor loading, wapp lifecycle orchestration
 - `wanted_malloc.c` — memory allocation wrapper (single place to swap allocators)
-- `wanted_wasm_api.c` — wasm3 M3 environment setup and WASM host function bindings
+- `wanted_wasm_api.c` — WAMR NativeSymbol registration for the `wanted` host module
 - `wanted-vfs-api.c` — VFS calls exposed to the WASM/WASI layer
 - `default_supervisor_cfg.json.h` — compiled-in default config (generated header)
 - `include/` — internal headers; `wanted-api.h` is the primary internal API surface
@@ -123,9 +122,9 @@ Production Linux target. Implements:
 - `api/clock.c`, `api/random.c`, `api/registry.c` — system primitives
 - `vfs/vfs-linux.c` — Linux VFS integration
 
-#### `platform/esp-idf/`
+#### `platform/nuttx/`
 
-ESP32 target (FreeRTOS). Contains its own `CMakeLists.txt` structured as an IDF component. See `platform/esp-idf/README.md` for ESP-IDF build instructions. Flash partition layout is in `partition_table.csv`.
+NuttX target stub — skeleton for the embedded port. Not yet functional; exists to validate the platform boundary contract without ESP-IDF.
 
 #### `platform/dummy/`
 
@@ -137,7 +136,7 @@ WebAssembly toolchain, test apps, and supervisor variants.
 
 - `Makefile` — compiles `.c` → `.wasm` → `.wasm.h` (C header via `xxd`); targets: `NAME=<file>` with optional `WASI=1`
 - `build_all.sh` — rebuilds all WASM targets
-- `wasm3_libc.h` — libc stubs for bare (non-WASI) WASM apps
+- `wanted_libc.h` — host function import declarations for bare (non-WASI) wapps
 - `test_prog.c`, `test_wasi.c`, `test_wasi_read_sleep.c` — minimal test apps
 
 #### `wasm/supervisor/`
@@ -173,7 +172,7 @@ All external dependencies as git submodules. Do not modify these directly.
 
 | Submodule | Purpose |
 |---|---|
-| `wasm3` | WebAssembly interpreter (core runtime) |
+| `wamr` | WebAssembly Micro Runtime 2.4.4 (core interpreter) |
 | `tiny-json` | JSON parsing |
 | `json-maker` | JSON generation |
 | `cwalk` | Cross-platform path manipulation |
@@ -199,7 +198,7 @@ CMake helper modules. `VersionFromGit.cmake` derives version from git tags; `Cod
 
 - **Platform boundary is strict.** `src/` must not call OS primitives directly. All platform-specific operations go through `platform/include/` headers.
 - **VFS is the only I/O path.** Wapps interact with the outside world exclusively through VFS. Adding direct syscalls from WASM host functions bypasses isolation and is not allowed.
-- **Fixed resource limits.** MAX_WAPPS=3, WAPP_MAX_NAME_LEN=15, MAX_PATH_LEN=256, M3_STACK_SIZE=8192. Changes require audit of all array-sized structures.
+- **Fixed resource limits.** MAX_WAPPS=3, WAPP_MAX_NAME_LEN=15, MAX_PATH_LEN=256, WASM_STACK_SIZE=8192, WASM_HEAP_SIZE=8192. Changes require audit of all array-sized structures.
 - **No dynamic allocation in wapp context after init.** Memory budget is constrained on embedded targets.
 
 ## Key Constants and Status Codes
@@ -210,7 +209,7 @@ Defined in `src/include/wanted-api.h`:
 - `MAX_WAPPS` = 3
 - `WAPP_MAX_NAME_LEN` = 15
 - `MAX_PATH_LEN` = 256
-- `M3_STACK_SIZE` = 8192
+- `WASM_STACK_SIZE` = 8192, `WASM_HEAP_SIZE` = 8192
 
 ## CI/CD
 
