@@ -18,7 +18,7 @@
 #define WAPP_MAX_REQUIREMENTS 8
 #define WAPP_MAX_REQ_NAME_LEN 32
 
-typedef struct m3Data_t *im3Data_t;
+struct wamrData_t;
 
 typedef struct wapp_version_t {
     union {
@@ -68,7 +68,7 @@ typedef struct wapp_data_t {
     uint8_t id;
     wapp_t *wapp;
     vfs_ctx_t vfs;
-    im3Data_t m3;
+    struct wamrData_t *wamr;
     int lastStatus;
 } wapp_data_t;
 
