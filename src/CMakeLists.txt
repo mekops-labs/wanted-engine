@@ -55,6 +55,10 @@ set(WAMR_BUILD_LIBC_BUILTIN 1)
 set(WAMR_BUILD_MULTI_MODULE 0)
 set(WAMR_BUILD_SHARED_MEMORY 0)
 include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
+add_library(vmlib STATIC ${WAMR_RUNTIME_LIB_SOURCE})
+target_include_directories(vmlib INTERFACE
+    ${WAMR_ROOT_DIR}/core/iwasm/include
+)
 
 set(WANTED_SUPERVISOR_IMAGE_PATH "./wasm/supervisor/sheriff/supervisor.tar" CACHE STRING
     "Supervisor TAR image path loaded at boot")
