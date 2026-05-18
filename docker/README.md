@@ -17,6 +17,17 @@ docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t registry.
 
 ## Changelog
 
+### 0.3.0
+
+- add `cmake-curses-gui` (`ccmake` interactive CMake configurator)
+- add `gdb` and `lldb-14` for native and LLVM debugging
+- add `valgrind` for heap profiling and memory leak detection
+- add `strace` for syscall tracing
+- add `clang-format-14` and `clang-tidy-14` for formatting and static analysis
+- add `wabt` (WebAssembly Binary Toolkit: `wasm-objdump`, `wasm2wat`, `wat2wasm`)
+- add `jq` for JSON manipulation
+- group `apt-get` package list with inline comments by category
+
 ### 0.2.0
 
 - add `gcovr` for generating code coverage report in CI
