@@ -179,7 +179,7 @@ int WantedGetConfigJson(uint8_t *buf, size_t bufLen) {
 
 int WantedReadRegistry(uint8_t *buf, size_t bufLen) {
     reg_entry_t entries[MAX_WAPPS];
-    int n, ret;
+    int n;
 
     if (buf == NULL)
         return -EINVAL;
@@ -423,7 +423,6 @@ int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
     if (NULL == buf)
         return -EINVAL;
 
-    int i = 0;
     // TODO: how to allocate it dynamically
     json_t m[100];
     char b[bufLen];

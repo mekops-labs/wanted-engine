@@ -313,11 +313,8 @@ static C9aux *start(vfs_driver_ctx_t ctx) {
 
 static int proc(C9aux *a) {
     struct timeval t;
-    int n, sz, sz0;
     fd_set r, e;
-    C9tag tag;
     C9ctx *ctx;
-    char *s;
 
     FD_ZERO(&r);
     FD_SET(a->f, &r);
@@ -526,9 +523,7 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     C9stat *s;
-    uint8_t *b;
     C9aux *a = &d->aux;
-    uint32_t sz;
 
     // stat
     DEBUG_TRACE("9p Stat: %d", fd);

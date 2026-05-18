@@ -65,27 +65,6 @@ static named_pipe_t *AllocPipe(pipe_ctx_t *ctx, const char *name) {
     return NULL;
 }
 
-static int _pipe_Open(vfs_driver_ctx_t dctx, const char *path,
-                      vfs_oflags_t flags) {
-    /* This is never called; PipeDriverCreate returns a driver whose Open
-     * is called via the wrapper below.  Satisfy the interface. */
-    (void)dctx; (void)path; (void)flags;
-    return 0;
-}
-
-static int _pipe_Close(vfs_driver_ctx_t dctx, int fd) {
-    (void)dctx; (void)fd;
-    return 0;
-}
-
-static int _pipe_Destroy(vfs_driver_t *drv) {
-    if (drv && drv->ctx)
-        WantedFree(drv->ctx);
-    if (drv)
-        WantedFree(drv);
-    return 0;
-}
-
 /* Template used by bridge helpers to forward calls into the typed API. */
 static void BuildTmpDriver(vfs_driver_t *drv, vfs_driver_ctx_t ctx) {
     memset(drv, 0, sizeof(*drv));
@@ -256,15 +235,6 @@ int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
  * DevFS passes sub-paths like "t" (for /dev/pipe/t) or "/" (for /dev/pipe)
  * to drv->Open.  We store the pipe_ctx_t in drv->ctx and reconstruct handles
  * by allocating them ourselves — no per-call fd integer. */
-
-static int _bridge_Open(vfs_driver_ctx_t dctx, const char *path,
-                        vfs_oflags_t flags) {
-    /* DevFS calls this but passes the driver's ctx directly; the result
-     * (an int fd) is unused — PipeDriver_Open is called through DevFS's
-     * sub-driver path.  Just return 0. */
-    (void)dctx; (void)path; (void)flags;
-    return 0;
-}
 
 /* The actual Open/Close/Read/Write/Stat/ReadDir path goes through DevFS which
  * calls the driver->Open returning an int fd, then the other ops with that fd.
