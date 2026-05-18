@@ -45,17 +45,16 @@ set(c9-src
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
 
-# WAMS3 related things
-add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/wasm3/source ${CMAKE_BINARY_DIR}/m3)
-
-option(M3_DEBUG_TRACES "Enable wasm3 tracing" OFF)
-if (M3_DEBUG_TRACES)
-    message("Trace for WASM3 enabled")
-    target_compile_definitions(m3 PRIVATE d_m3EnableStrace=1 DEBUG=1 d_m3LogHeapOps=0)
-endif()
-
-# Set flags for m3, disable harmless wanings
-target_compile_options(m3 PRIVATE -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers -Wno-extern-initializer)
+# WAMR runtime
+set(WAMR_ROOT_DIR ${CMAKE_SOURCE_DIR}/vendor/wamr)
+set(WAMR_BUILD_PLATFORM "linux")
+set(WAMR_BUILD_INTERP 1)
+set(WAMR_BUILD_AOT 0)
+set(WAMR_BUILD_LIBC_WASI 0)
+set(WAMR_BUILD_LIBC_BUILTIN 1)
+set(WAMR_BUILD_MULTI_MODULE 0)
+set(WAMR_BUILD_SHARED_MEMORY 0)
+include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 
 set(WANTED_SUPERVISOR_IMAGE_PATH "./wasm/supervisor/sheriff/supervisor.tar" CACHE STRING
     "Supervisor TAR image path loaded at boot")
@@ -76,13 +75,14 @@ target_include_directories(${project}
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/json-maker/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/c9
+    PRIVATE ${WAMR_ROOT_DIR}/core/iwasm/include
     )
 
 
 
 target_link_libraries(${project}
     PRIVATE cwalk
-    PRIVATE m3
+    PRIVATE vmlib
     PRIVATE m
     )
 
