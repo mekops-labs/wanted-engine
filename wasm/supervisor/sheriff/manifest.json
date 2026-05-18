@@ -2,5 +2,6 @@
     "name": "supervisor",
     "version": [ 0, 1, 0 ],
     "chksum": "8455069858baa6f12c859696389c5e9613a6d35ce8b099a04bf1a0af9427d30e",
-    "package": 5
+    "package": 5,
+    "requirements": ["wanted_api", "registry"]
 }

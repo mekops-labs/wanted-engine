@@ -1,8 +1,9 @@
 {
     "name": "supervisor",
     "version": [ 0, 4, 1 ],
-    "chksum": "520f8e114734b647d1b292e0b0402ba171d0dac75eb8468cf40ac286db322409"
+    "chksum": "520f8e114734b647d1b292e0b0402ba171d0dac75eb8468cf40ac286db322409",
     "package": 1,
+    "requirements": [],
     "drivers": [
         {
             "path": "stdin",
