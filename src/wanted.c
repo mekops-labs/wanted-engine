@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stdbool.h>
 #include <string.h>
 #include <wasm_export.h>
 
@@ -27,7 +28,28 @@ struct wamrData_t {
     wasm_module_t      module;
     wasm_module_inst_t instance;
     wasm_exec_env_t    exec_env;
+    uint8_t           *wasm_bytes; /* writable copy passed to wasm_runtime_load */
 };
+
+/* WAMR runtime init is global and one-shot. Called lazily from both
+ * WantedStart and WantedWappRun so direct callers (tests) work too. */
+static int EnsureWamrInit(void) {
+    static bool initialized = false;
+    if (initialized)
+        return 0;
+
+    RuntimeInitArgs init_args;
+    memset(&init_args, 0, sizeof(init_args));
+    init_args.mem_alloc_type = Alloc_With_System_Allocator;
+    if (!wasm_runtime_full_init(&init_args)) {
+        DEBUG_TRACE("wasm_runtime_full_init failed");
+        return -1;
+    }
+    RegisterWASINatives();
+    RegisterWantedNatives();
+    initialized = true;
+    return 0;
+}
 
 /* /proc/wapps — plain-text wapp state, one record per wapp. */
 static int ProcReadWapps(vfs_ctx_t c, void *buf, size_t bufLen) {
@@ -204,6 +226,17 @@ int WantedWappRun(wapp_data_t *ctx) {
         return -1;
     }
 
+    if (EnsureWamrInit() < 0)
+        return -1;
+
+    /* WAMR's hardware bound check installs per-thread SIGSEGV trap
+     * environment. Each worker thread that calls into wasm must initialise
+     * its own env (idempotent if already done). */
+    if (!wasm_runtime_init_thread_env()) {
+        DEBUG_TRACE("wasm_runtime_init_thread_env failed");
+        return -1;
+    }
+
     wapp = ctx->wapp;
 
     DEBUG_TRACE("entering thread: %d", ctx->id);
@@ -246,13 +279,26 @@ int WantedWappRun(wapp_data_t *ctx) {
     }
     memset(ctx->wamr, 0, sizeof(struct wamrData_t));
 
-    DEBUG_TRACE("loading wasm: %p (%zu)", wasm, wasmLen);
-    ctx->wamr->module = wasm_runtime_load((uint8_t *)wasm, (uint32_t)wasmLen,
+    /* WAMR's loader may modify the buffer in-place (LEB128 patching) and
+     * holds references into it for the module's lifetime. TarFS-mapped layer
+     * memory is shared with other consumers and unsafe to mutate, so copy
+     * to a heap buffer freed after wasm_runtime_unload. */
+    ctx->wamr->wasm_bytes = WantedMalloc(wasmLen);
+    if (!ctx->wamr->wasm_bytes) {
+        DEBUG_TRACE("Can't allocate writable wasm buffer");
+        ret = -1;
+        goto _freeWamr;
+    }
+    memcpy(ctx->wamr->wasm_bytes, wasm, wasmLen);
+
+    DEBUG_TRACE("loading wasm: %p (%zu)", ctx->wamr->wasm_bytes, wasmLen);
+    ctx->wamr->module = wasm_runtime_load(ctx->wamr->wasm_bytes,
+                                          (uint32_t)wasmLen,
                                           err_buf, sizeof(err_buf));
     if (!ctx->wamr->module) {
         DEBUG_TRACE("wasm_runtime_load[%d]: %s", ctx->id, err_buf);
         ret = -1;
-        goto _freeWamr;
+        goto _freeWasmBytes;
     }
 
     ctx->wamr->instance = wasm_runtime_instantiate(ctx->wamr->module,
@@ -364,6 +410,8 @@ _deinstantiate:
     wasm_runtime_deinstantiate(ctx->wamr->instance);
 _unloadModule:
     wasm_runtime_unload(ctx->wamr->module);
+_freeWasmBytes:
+    WantedFree(ctx->wamr->wasm_bytes);
 _freeWamr:
     WantedFree(ctx->wamr);
 _freeTarfs:
@@ -390,6 +438,7 @@ void WantedWappStop(wapp_data_t *ctx) {
     wasm_runtime_destroy_exec_env(ctx->wamr->exec_env);
     wasm_runtime_deinstantiate(ctx->wamr->instance);
     wasm_runtime_unload(ctx->wamr->module);
+    WantedFree(ctx->wamr->wasm_bytes);
     WantedFree(ctx->wamr);
 
     DEBUG_TRACE("end");
@@ -452,16 +501,8 @@ int WantedStart(const char *json, size_t jsonLen) {
     if (ret < 0)
         return ret;
 
-    RuntimeInitArgs init_args;
-    memset(&init_args, 0, sizeof(init_args));
-    init_args.mem_alloc_type = Alloc_With_System_Allocator;
-    if (!wasm_runtime_full_init(&init_args)) {
-        DEBUG_TRACE("wasm_runtime_full_init failed");
+    if (EnsureWamrInit() < 0)
         return -1;
-    }
-
-    RegisterWASINatives();
-    RegisterWantedNatives();
 
     app = WantedGetCurrentSupervisor();
 
