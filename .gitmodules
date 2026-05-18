@@ -1,9 +1,6 @@
 [submodule "vendor/tiny-json"]
 	path = vendor/tiny-json
 	url = https://github.com/rafagafe/tiny-json
-[submodule "vendor/romfs-lib"]
-	path = vendor/romfs-lib
-	url =  https://github.com/mek-x/romfs-lib
 [submodule "test/unity"]
 	path = test/unity
 	url = https://github.com/ThrowTheSwitch/Unity.git
