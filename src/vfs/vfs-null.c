@@ -15,7 +15,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 
 static vfs_driver_t NullDriver = {
     .id = ID,
-    .filetype = VFS_FILETYPE_REGULAR_FILE,
+    .filetype = VFS_FILETYPE_CHARACTER_DEVICE,
     .ctx = NULL,
     .Destroy = _Destroy,
     .Open = _Open,
