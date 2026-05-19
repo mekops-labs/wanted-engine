@@ -64,5 +64,24 @@ check "proc memory"            "" "stack_size:"    "cat /proc/memory"
 # /dev/pipe roundtrip
 check "pipe roundtrip"         "" "hello"          "write /dev/pipe/t hello\ncat /dev/pipe/t"
 
+# TarFS file read: content of manifest.json must be returned verbatim
+check "tarfs cat manifest"     "" "supervisor"     "cat /manifest.json"
+
+# /proc directory listing
+check "proc lists wapps"       "" "wapps"          "ls /proc"
+check "proc lists memory"      "" "memory"         "ls /proc"
+
+# /dev/pipe readdir: pipe created by write must appear in directory listing
+check "pipe appears in ls"     "" "smkpipe"        "write /dev/pipe/smkpipe x\nls /dev/pipe"
+
+# TarFS is read-only: rm must be rejected
+check "tarfs rm rejected"      "" "Read-only"      "rm /app.wasm"
+
+# Negative: cat on a missing file must report an error
+check "cat missing file"       "" "No such file"   "cat /no-such-file.txt"
+
+# Negative: cd to a non-existent path must report an error
+check "cd missing dir"         "" "No such file"   "cd /no-such-dir"
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
