@@ -17,6 +17,7 @@ stages:
   artifacts:
     paths:
     - $BUILD_DIR
+    - wasm/supervisor
     expire_in: 20 minutes
   script:
     - echo -n "Building version:"
@@ -25,6 +26,7 @@ stages:
     - cd "$BUILD_DIR"
     - cmake -GNinja $CMAKE_EXTRA_ARGS ..
     - ninja
+    - ninja supervisor
 
 .unit_test_job_template: &unit_defs
   stage: test
@@ -35,6 +37,7 @@ stages:
     when: always
     paths:
       - "$BUILD_DIR/rspec.xml"
+      - "$BUILD_DIR/Testing/Temporary/LastTest.log"
     reports:
       junit: "$BUILD_DIR/rspec.xml"
 

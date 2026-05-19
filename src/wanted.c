@@ -1,7 +1,7 @@
 #include <errno.h>
-#include <m3_api_libc.h>
-#include <m3_env.h>
-#include <wasm3.h>
+#include <stdbool.h>
+#include <string.h>
+#include <wasm_export.h>
 
 #include <tiny-json.h>
 
@@ -24,11 +24,32 @@
 
 #include <platform.h>
 
-struct m3Data_t {
-    m3_wasi_context_t *wasiCtx;
-    IM3Runtime rt;
-    IM3Environment env;
+struct wamrData_t {
+    wasm_module_t      module;
+    wasm_module_inst_t instance;
+    wasm_exec_env_t    exec_env;
+    uint8_t           *wasm_bytes; /* writable copy passed to wasm_runtime_load */
 };
+
+/* WAMR runtime init is global and one-shot. Called lazily from both
+ * WantedStart and WantedWappRun so direct callers (tests) work too. */
+static int EnsureWamrInit(void) {
+    static bool initialized = false;
+    if (initialized)
+        return 0;
+
+    RuntimeInitArgs init_args;
+    memset(&init_args, 0, sizeof(init_args));
+    init_args.mem_alloc_type = Alloc_With_System_Allocator;
+    if (!wasm_runtime_full_init(&init_args)) {
+        DEBUG_TRACE("wasm_runtime_full_init failed");
+        return -1;
+    }
+    RegisterWASINatives();
+    RegisterWantedNatives();
+    initialized = true;
+    return 0;
+}
 
 /* /proc/wapps — plain-text wapp state, one record per wapp. */
 static int ProcReadWapps(vfs_ctx_t c, void *buf, size_t bufLen) {
@@ -62,7 +83,7 @@ static int ProcReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
     PlatformMemoryStats(&heap_used, &heap_total);
     int w = snprintf((char *)buf, bufLen,
                      "stack_size:\t%d B\nheap_used:\t%zu B\nheap_total:\t%zu B\n",
-                     M3_STACK_SIZE, heap_used, heap_total);
+                     WASM_STACK_SIZE, heap_used, heap_total);
     if (w < 0)
         return -EIO;
     return w < (int)bufLen ? w : (int)bufLen;
@@ -190,18 +211,29 @@ int WantedWappParseManifest(wapp_t *w) {
 }
 
 int WantedWappRun(wapp_data_t *ctx) {
-    M3Result status;
-    IM3Module mod;
-    IM3Function f;
+    wasm_function_inst_t f = NULL;
     wapp_t *wapp;
     vfs_tarfs_ctx_t *tarfs = NULL;
     const uint8_t *manifest = NULL;
     const uint8_t *wasm = NULL;
     size_t manifestLen = 0, wasmLen = 0;
+    char err_buf[128];
+    wasi_ctx_t *wasiCtx = NULL;
     int ret = 0;
 
     if (ctx == NULL) {
         DEBUG_TRACE("ctx is NULL");
+        return -1;
+    }
+
+    if (EnsureWamrInit() < 0)
+        return -1;
+
+    /* WAMR's hardware bound check installs per-thread SIGSEGV trap
+     * environment. Each worker thread that calls into wasm must initialise
+     * its own env (idempotent if already done). */
+    if (!wasm_runtime_init_thread_env()) {
+        DEBUG_TRACE("wasm_runtime_init_thread_env failed");
         return -1;
     }
 
@@ -239,50 +271,67 @@ int WantedWappRun(wapp_data_t *ctx) {
         goto _freeTarfs;
     }
 
-    ctx->m3 = (struct m3Data_t *)WantedMalloc(sizeof(struct m3Data_t));
-    if (!ctx->m3) {
-        DEBUG_TRACE("Can't allocate data for m3");
+    ctx->wamr = (struct wamrData_t *)WantedMalloc(sizeof(struct wamrData_t));
+    if (!ctx->wamr) {
+        DEBUG_TRACE("Can't allocate wamrData_t");
         ret = -1;
         goto _freeTarfs;
     }
-    memset(ctx->m3, 0, sizeof(struct m3Data_t));
+    memset(ctx->wamr, 0, sizeof(struct wamrData_t));
 
-    ctx->m3->env = m3_NewEnvironment();
-    if (!ctx->m3->env) {
-        DEBUG_TRACE("Can't allocate data for m3 env");
+    /* WAMR's loader may modify the buffer in-place (LEB128 patching) and
+     * holds references into it for the module's lifetime. TarFS-mapped layer
+     * memory is shared with other consumers and unsafe to mutate, so copy
+     * to a heap buffer freed after wasm_runtime_unload. */
+    ctx->wamr->wasm_bytes = WantedMalloc(wasmLen);
+    if (!ctx->wamr->wasm_bytes) {
+        DEBUG_TRACE("Can't allocate writable wasm buffer");
         ret = -1;
-        goto _freeM3;
+        goto _freeWamr;
     }
-    ctx->m3->rt = m3_NewRuntime(ctx->m3->env, M3_STACK_SIZE, NULL);
-    if (!ctx->m3->rt) {
-        DEBUG_TRACE("Can't allocate data for m3 rt");
+    memcpy(ctx->wamr->wasm_bytes, wasm, wasmLen);
+
+    DEBUG_TRACE("loading wasm: %p (%zu)", ctx->wamr->wasm_bytes, wasmLen);
+    ctx->wamr->module = wasm_runtime_load(ctx->wamr->wasm_bytes,
+                                          (uint32_t)wasmLen,
+                                          err_buf, sizeof(err_buf));
+    if (!ctx->wamr->module) {
+        DEBUG_TRACE("wasm_runtime_load[%d]: %s", ctx->id, err_buf);
         ret = -1;
-        goto _freeM3;
+        goto _freeWasmBytes;
     }
 
-    DEBUG_TRACE("parsing wasm: %p (%zu)", wasm, wasmLen);
-    status = m3_ParseModule(ctx->m3->env, &mod, wasm, wasmLen);
-    if (status) {
-        DEBUG_TRACE("m3_ParseModule[%d]: %s", ctx->id, status);
+    ctx->wamr->instance = wasm_runtime_instantiate(ctx->wamr->module,
+                                                   WASM_STACK_SIZE,
+                                                   WASM_HEAP_SIZE,
+                                                   err_buf, sizeof(err_buf));
+    if (!ctx->wamr->instance) {
+        DEBUG_TRACE("wasm_runtime_instantiate[%d]: %s", ctx->id, err_buf);
+        ret = -1;
+        goto _unloadModule;
     }
 
-    DEBUG_TRACE("loading wasm");
-    status = m3_LoadModule(ctx->m3->rt, mod);
-    if (status) {
-        DEBUG_TRACE("m3_LoadModule[%d]: %s", ctx->id, status);
+    ctx->wamr->exec_env = wasm_runtime_create_exec_env(ctx->wamr->instance,
+                                                       WASM_STACK_SIZE);
+    if (!ctx->wamr->exec_env) {
+        DEBUG_TRACE("wasm_runtime_create_exec_env[%d] failed", ctx->id);
+        ret = -1;
+        goto _deinstantiate;
     }
 
     DEBUG_TRACE("getting context");
-    ctx->m3->wasiCtx = InitWasiContext();
-    if (!ctx->m3->wasiCtx) {
+    wasiCtx = InitWasiContext();
+    if (!wasiCtx) {
         DEBUG_TRACE("InitWasiContext: can't allocate");
-        goto _freeM3;
+        ret = -1;
+        goto _destroyExecEnv;
     }
 
     ctx->vfs = VfsInit();
     if (!ctx->vfs) {
         DEBUG_TRACE("VfsInit: can't allocate");
-        goto _freeCtx;
+        ret = -1;
+        goto _freeWasiCtx;
     }
 
     /* Hand the tarfs ctx off — VfsDestroy now frees it. */
@@ -301,13 +350,10 @@ int WantedWappRun(wapp_data_t *ctx) {
     ProcFs_Register(ctx->vfs, "wapps",  ProcReadWapps,  true);
     ProcFs_Register(ctx->vfs, "memory", ProcReadMemory, true);
 
-    ctx->m3->wasiCtx->argc = 0;
-    ctx->m3->wasiCtx->argv = NULL;
-    ctx->m3->wasiCtx->vfsCtx = ctx->vfs;
-
-    LinkWASI(mod, ctx->m3->wasiCtx);
-    LinkWantedApi(mod);
-    m3_LinkLibC(mod);
+    wasiCtx->argc   = 0;
+    wasiCtx->argv   = NULL;
+    wasiCtx->vfsCtx = ctx->vfs;
+    wasm_runtime_set_user_data(ctx->wamr->exec_env, wasiCtx);
 
     /* install console */
     ret = WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[0].name,
@@ -329,21 +375,25 @@ int WantedWappRun(wapp_data_t *ctx) {
         goto _freeVfs;
     }
 
-    status = m3_FindFunction(&f, ctx->m3->rt, "entry");
-    if (status) {
-        status = m3_FindFunction(&f, ctx->m3->rt, "_start");
-        if (status) {
-            DEBUG_TRACE("m3_FindFunction[%d]: %s", ctx->id, status);
-            goto _freeVfs;
-        }
+    f = wasm_runtime_lookup_function(ctx->wamr->instance, "entry");
+    if (!f)
+        f = wasm_runtime_lookup_function(ctx->wamr->instance, "_start");
+    if (!f) {
+        DEBUG_TRACE("wasm_runtime_lookup_function[%d]: entry/_start not found",
+                    ctx->id);
+        goto _freeVfs;
     }
 
     DEBUG_TRACE("starting wapp: %d", ctx->id);
-    status = m3_CallV(f, (int32_t)ctx->id);
-    if (status) {
-        M3ErrorInfo info;
-        m3_GetErrorInfo(ctx->m3->rt, &info);
-        DEBUG_TRACE("m3_CallV[%d]: %s - %s", ctx->id, status, info.message);
+    uint32_t argv[1] = {(uint32_t)ctx->id};
+    if (!wasm_runtime_call_wasm(ctx->wamr->exec_env, f, 1, argv)) {
+        const char *exc = wasm_runtime_get_exception(ctx->wamr->instance);
+        if (exc && strcmp(exc, "proc_exit") == 0) {
+            DEBUG_TRACE("normal exit via proc_exit");
+        } else {
+            DEBUG_TRACE("wasm_runtime_call_wasm[%d]: %s", ctx->id,
+                        exc ? exc : "(no exception)");
+        }
     }
 
     DEBUG_TRACE("normal exit");
@@ -352,14 +402,18 @@ int WantedWappRun(wapp_data_t *ctx) {
 
 _freeVfs:
     VfsDestroy(&ctx->vfs);
-_freeCtx:
-    FreeWasiContext(ctx->m3->wasiCtx);
-_freeM3:
-    if (ctx->m3->rt)
-        m3_FreeRuntime(ctx->m3->rt);
-    if (ctx->m3->env)
-        m3_FreeEnvironment(ctx->m3->env);
-    WantedFree(ctx->m3);
+_freeWasiCtx:
+    FreeWasiContext(wasiCtx);
+_destroyExecEnv:
+    wasm_runtime_destroy_exec_env(ctx->wamr->exec_env);
+_deinstantiate:
+    wasm_runtime_deinstantiate(ctx->wamr->instance);
+_unloadModule:
+    wasm_runtime_unload(ctx->wamr->module);
+_freeWasmBytes:
+    WantedFree(ctx->wamr->wasm_bytes);
+_freeWamr:
+    WantedFree(ctx->wamr);
 _freeTarfs:
     if (tarfs)
         TarFsDestroy(tarfs);
@@ -376,10 +430,16 @@ void WantedWappStop(wapp_data_t *ctx) {
     DEBUG_TRACE("start");
 
     VfsDestroy(&ctx->vfs);
-    FreeWasiContext(ctx->m3->wasiCtx);
-    m3_FreeRuntime(ctx->m3->rt);
-    m3_FreeEnvironment(ctx->m3->env);
-    WantedFree(ctx->m3);
+
+    wasi_ctx_t *wasiCtx =
+        (wasi_ctx_t *)wasm_runtime_get_user_data(ctx->wamr->exec_env);
+    FreeWasiContext(wasiCtx);
+
+    wasm_runtime_destroy_exec_env(ctx->wamr->exec_env);
+    wasm_runtime_deinstantiate(ctx->wamr->instance);
+    wasm_runtime_unload(ctx->wamr->module);
+    WantedFree(ctx->wamr->wasm_bytes);
+    WantedFree(ctx->wamr);
 
     DEBUG_TRACE("end");
 }
@@ -440,6 +500,9 @@ int WantedStart(const char *json, size_t jsonLen) {
     ret = WantedParseConfig(json, jsonLen);
     if (ret < 0)
         return ret;
+
+    if (EnsureWamrInit() < 0)
+        return -1;
 
     app = WantedGetCurrentSupervisor();
 

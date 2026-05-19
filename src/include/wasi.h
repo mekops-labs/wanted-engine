@@ -1,20 +1,24 @@
 #pragma once
 
-#include "m3_core.h"
+#include <stdint.h>
 #include <vfs.h>
 
-d_m3BeginExternC
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-    typedef struct m3_wasi_context_t {
-    i32 exit_code;
-    u32 argc;
-    ccstr_t *argv;
-    vfs_ctx_t vfsCtx;
-} m3_wasi_context_t;
+typedef struct wasi_ctx_t {
+    int32_t     exit_code;
+    uint32_t    argc;
+    const char **argv;
+    vfs_ctx_t   vfsCtx;
+} wasi_ctx_t;
 
-M3Result LinkWASI(IM3Module io_module, m3_wasi_context_t *ctx);
+void RegisterWASINatives(void);
 
-m3_wasi_context_t *InitWasiContext();
-void FreeWasiContext(m3_wasi_context_t *);
+wasi_ctx_t *InitWasiContext(void);
+void FreeWasiContext(wasi_ctx_t *);
 
-d_m3EndExternC
+#ifdef __cplusplus
+}
+#endif

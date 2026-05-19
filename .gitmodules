@@ -1,12 +1,6 @@
-[submodule "vendor/wasm3"]
-	path = vendor/wasm3
-	url = ../../wanted-project/wasm3.git
 [submodule "vendor/tiny-json"]
 	path = vendor/tiny-json
 	url = https://github.com/rafagafe/tiny-json
-[submodule "vendor/romfs-lib"]
-	path = vendor/romfs-lib
-	url =  https://github.com/mek-x/romfs-lib
 [submodule "test/unity"]
 	path = test/unity
 	url = https://github.com/ThrowTheSwitch/Unity.git
@@ -19,3 +13,6 @@
 [submodule "vendor/c9"]
 	path = vendor/c9
 	url = https://github.com/mek-x/c9.git
+[submodule "vendor/wamr"]
+	path = vendor/wamr
+	url = https://github.com/bytecodealliance/wasm-micro-runtime

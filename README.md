@@ -5,7 +5,7 @@
 
 > [CHANGELOG](CHANGELOG.md)
 
-- **Interpreter:** Uses `wasm3` as the WebAssembly interpreter.
+- **Interpreter:** Uses [WAMR 2.4.4](https://github.com/bytecodealliance/wasm-micro-runtime) (WebAssembly Micro Runtime) in classic interpreted mode (`WAMR_BUILD_INTERP=1`, `WAMR_BUILD_AOT=0`).
 - **Concurrency:** Runs multiple [wapps](#wapp-overview) simultaneously as isolated threads.
 - **Isolation:** Strict memory isolation via WebAssembly; all external interactions are mediated exclusively through the VFS.
 - **Mount-table VFS Router:** Path normalization (`..`, `.`, double-slash), typed FD table, and a mount table routing `/dev/`, `/net/`, `/proc/`, and `/` independently.
@@ -101,7 +101,7 @@ See [`docs/example_config.json`](docs/example_config.json) for a fully annotated
 
 ## Build and Verification
 
-The development environment is standardized via Podman to ensure toolchain consistency.
+The development environment is standardized via Podman to ensure toolchain consistency. A devcontainer configuration (`.devcontainer/`) is also provided for VS Code and JetBrains remote development.
 
 ### Build
 
@@ -129,7 +129,13 @@ podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
 ### Test
 
 ```bash
+# Unit tests (20 tests via ctest)
 podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
     registry.gitlab.com/wanted-project/wanted-engine/build \
     -c "cd /src/build && ctest --output-on-failure"
+
+# Smoke tests (16 end-to-end tests via wsh)
+podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
+    registry.gitlab.com/wanted-project/wanted-engine/build \
+    -c "cd /src && test/smoke.sh"
 ```
