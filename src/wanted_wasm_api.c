@@ -1,28 +1,21 @@
-#include <wasm3.h>
+#include <stddef.h>
+
+#include <wasm_export.h>
 
 #include "wanted_wasm_api.h"
 
-m3ApiRawFunction(my_func) {
-    m3ApiReturnType(int32_t) m3ApiGetArg(int, a) m3ApiGetArg(int, b)
-        m3ApiGetArg(int, c)
-
-            m3ApiReturn((int32_t)0);
+static int32_t wanted_func(wasm_exec_env_t exec_env,
+                           int32_t a, int32_t b, int32_t c) {
+    (void)exec_env; (void)a; (void)b; (void)c;
+    return 0;
 }
 
-static M3Result SuppressLookupFailure(M3Result i_result) {
-    if (i_result == m3Err_functionLookupFailed)
-        return m3Err_none;
-    else
-        return i_result;
-}
+static NativeSymbol wanted_natives[] = {
+    { "func", wanted_func, "(iii)i", NULL },
+};
 
-M3Result LinkWantedApi(IM3Module module) {
-    M3Result result = m3Err_none;
-
-    const char *env = "wanted";
-
-    (SuppressLookupFailure(
-        m3_LinkRawFunction(module, env, "func", "i(iii)", &my_func)));
-
-    return result;
+void RegisterWantedNatives(void) {
+    wasm_runtime_register_natives(
+        "wanted", wanted_natives,
+        sizeof(wanted_natives) / sizeof(wanted_natives[0]));
 }

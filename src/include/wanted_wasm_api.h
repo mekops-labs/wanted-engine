@@ -1,10 +1,11 @@
 #pragma once
 
-#include "m3_core.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-d_m3BeginExternC
+void RegisterWantedNatives(void);
 
-    M3Result
-    LinkWantedApi(IM3Module io_module);
-
-d_m3EndExternC
+#ifdef __cplusplus
+}
+#endif
