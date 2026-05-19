@@ -25,6 +25,7 @@ stages:
     - cd "$BUILD_DIR"
     - cmake -GNinja $CMAKE_EXTRA_ARGS ..
     - ninja
+    - ninja supervisor
 
 .unit_test_job_template: &unit_defs
   stage: test
