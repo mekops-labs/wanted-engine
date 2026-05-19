@@ -146,8 +146,6 @@ static int _Destroy(struct vfs_driver_t *d) {
 }
 
 static int _Open(vfs_driver_ctx_t c, const char *path, vfs_oflags_t flags) {
-    int ret;
-
     if (c->connected) {
         return 0;
     }
