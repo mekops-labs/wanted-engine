@@ -4,6 +4,10 @@ WANTED (Web Assembly Nanocontainer Technology for Embedded Devices) is a Cloud-N
 
 Public API surface is a single function: `int WantedStart(const char *cfg, size_t cfgLen)` in `include/wanted.h`.
 
+## First Steps
+
+Before executing any build or test command, read `README.md`. It is the authoritative source for build instructions, test procedures, and run commands. Do not guess or reconstruct commands from memory.
+
 ## Build Environment
 
 All builds run inside the standardized Podman container. Do **not** build natively — the toolchain requires WASI SDK v16, clang 14, CMake, and Ninja.
