@@ -17,6 +17,7 @@ stages:
   artifacts:
     paths:
     - $BUILD_DIR
+    - wasm/supervisor
     expire_in: 20 minutes
   script:
     - echo -n "Building version:"
@@ -36,6 +37,7 @@ stages:
     when: always
     paths:
       - "$BUILD_DIR/rspec.xml"
+      - "$BUILD_DIR/Testing/Temporary/LastTest.log"
     reports:
       junit: "$BUILD_DIR/rspec.xml"
 
