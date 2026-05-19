@@ -194,6 +194,17 @@ Dockerfile and entry point for the build image. The image is published to the Gi
 
 CMake helper modules. `VersionFromGit.cmake` derives version from git tags; `CodeCoverage.cmake` wires gcovr into the build.
 
+## C Standards Compliance
+
+All code in this repository must conform to the **ISO C standard** (C99 or later). Compiler-specific and GNU extensions are forbidden.
+
+- **No GNU extensions.** Do not use `__attribute__`, `__typeof__`, statement expressions, or any other GCC/Clang extension.
+- **No compiler-specific built-ins.** `__builtin_*` functions are forbidden; use standard library equivalents or explicit implementations.
+- **No non-standard library functions.** Functions that require `_GNU_SOURCE`, `_POSIX_C_SOURCE`, or any other feature-test macro are forbidden. Use only functions guaranteed by the C standard (e.g. use `memcmp` in a loop instead of `memmem`).
+- **No VLAs.** Variable-length arrays are absent on many embedded toolchains; use fixed-size arrays or explicit allocation instead.
+
+This applies to all of `src/`, `platform/`, `cmd/`, and `test/`. Vendor code under `vendor/` is exempt.
+
 ## Architecture Constraints
 
 - **Platform boundary is strict.** `src/` must not call OS primitives directly. All platform-specific operations go through `platform/include/` headers.
