@@ -25,6 +25,7 @@ JSON({
             {"name" : "config", "path" : "/dev/config",
                 "options" : "{\"config_file\":\"/config.json\"}"
             }
-        ]
+        ],
+        "preopens" : ["/var/lib/sheriff"]
     }
 })

@@ -130,9 +130,23 @@ TEST(wanted_ctrl_driver, OpenSucceeds) {
     TEST_ASSERT_EQUAL_INT(0, CTRL_OPEN());
 }
 
-TEST(wanted_ctrl_driver, DoubleOpenReturnsBusy) {
-    CTRL_OPEN();
-    TEST_ASSERT_EQUAL_INT(-EBUSY, CTRL_OPEN());
+TEST(wanted_ctrl_driver, DoubleOpenSucceeds) {
+    /* The ctrl driver supports reference-counted concurrent opens — the
+     * supervisor opens /dev/wanted/ctrl on every tick while other consumers
+     * may also hold it open. Both opens must succeed; close-and-reopen must
+     * also work. */
+    TEST_ASSERT_EQUAL_INT(0, CTRL_OPEN());
+    TEST_ASSERT_EQUAL_INT(0, CTRL_OPEN());
+    /* Single close leaves the driver open under the second holder. */
+    CTRL_CLOSE();
+    /* Subsequent open by another holder still succeeds. */
+    TEST_ASSERT_EQUAL_INT(0, CTRL_OPEN());
+    /* Drain refcount to zero. */
+    CTRL_CLOSE();
+    CTRL_CLOSE();
+    CTRL_CLOSE();
+    /* Reopen after full close still succeeds. */
+    TEST_ASSERT_EQUAL_INT(0, CTRL_OPEN());
 }
 
 TEST(wanted_ctrl_driver, ReadNullBufReturnsEinval) {
@@ -176,7 +190,7 @@ TEST(wanted_ctrl_driver, CloseResetsState) {
 
 TEST_GROUP_RUNNER(wanted_ctrl_driver) {
     RUN_TEST_CASE(wanted_ctrl_driver, OpenSucceeds);
-    RUN_TEST_CASE(wanted_ctrl_driver, DoubleOpenReturnsBusy);
+    RUN_TEST_CASE(wanted_ctrl_driver, DoubleOpenSucceeds);
     RUN_TEST_CASE(wanted_ctrl_driver, ReadNullBufReturnsEinval);
     RUN_TEST_CASE(wanted_ctrl_driver, ReadBeforeOpenReturnsEbadf);
     RUN_TEST_CASE(wanted_ctrl_driver, ReadReturnsState);

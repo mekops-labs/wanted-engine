@@ -18,6 +18,13 @@
 #define WAPP_MAX_REQUIREMENTS 8
 #define WAPP_MAX_REQ_NAME_LEN 32
 
+/* Per-wapp persistent state preopens. Each entry is a host directory path
+ * that the Engine will create (if absent), open, and expose to the wapp as a
+ * WASI preopen at the same path. Any wapp can declare these via its launch
+ * config (params.preopens). */
+#define WAPP_MAX_PREOPENS 4
+#define WAPP_MAX_PREOPEN_LEN 64
+
 struct wamrData_t;
 
 typedef struct wapp_version_t {
@@ -45,6 +52,8 @@ typedef struct wapp_config_t {
     wapp_driver_t console[3];
     size_t driversCnt;
     wapp_driver_t drivers[MAX_DRIVERS_CNT];
+    char preopens[WAPP_MAX_PREOPENS][WAPP_MAX_PREOPEN_LEN];
+    size_t preopensCnt;
 } wapp_config_t;
 
 typedef enum wapp_action_t {

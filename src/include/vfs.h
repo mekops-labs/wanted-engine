@@ -111,6 +111,11 @@ typedef struct vfs_driver_t {
     int (*ReadDir)(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                    uint64_t *cookie, size_t *bufUsed);
 
+    /* Optional. NULL = -ENOSYS. */
+    int (*Rename)(vfs_driver_ctx_t d, int old_fd, const char *old_path,
+                  int new_fd, const char *new_path);
+    int (*Mkdir)(vfs_driver_ctx_t d, int fd, const char *path);
+
     /* Network operations */
 
     int (*SockAccept)(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags,
@@ -152,3 +157,16 @@ int VfsSockRecv(vfs_ctx_t c, int fd, void *buf, size_t nbyte,
 int VfsSockSend(vfs_ctx_t c, int fd, const void *buf, size_t nbyte,
                 vfs_sdflags_t flags);
 int VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags);
+
+int VfsRename(vfs_ctx_t c, int old_fd, const char *old_path,
+              int new_fd, const char *new_path);
+int VfsMkdir(vfs_ctx_t c, int fd, const char *path);
+
+/* Bind a pre-opened host directory fd into the VFS table as a PLATFORM fd.
+ * `driver` provides the dispatch surface (OpenAt/Read/Write/...). `host_fd`
+ * is stored as drv_fd so subsequent ops on this slot or anything OpenAt'd
+ * from it reach the right host object. `path` is the wapp-visible absolute
+ * path (e.g. "/var/lib/sheriff"). Returns the allocated VFS fd or -errno.
+ * The VFS takes ownership of `driver` — VfsDestroy will call Destroy. */
+int VfsBindPlatformFd(vfs_ctx_t c, const char *path,
+                      const vfs_driver_t *driver, int host_fd);
