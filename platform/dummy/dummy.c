@@ -26,6 +26,12 @@ int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
 int PlatformRegistryRemove(const reg_entry_t *entry) { return 0; }
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) { return 0; }
 
+int PlatformOpenStateDir(const char *path) { (void)path; return -1; }
+int PlatformFsRename(int o, const char *op, int n, const char *np) {
+    (void)o; (void)op; (void)n; (void)np; return -1;
+}
+int PlatformFsMkdir(int fd, const char *p) { (void)fd; (void)p; return -1; }
+
 void *PlatformNetOpen(int socket_type) { return NULL; }
 int PlatformNetConnect(void *ctx, const char *hostname, uint16_t port) {
     return 0;

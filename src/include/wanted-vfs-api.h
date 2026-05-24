@@ -27,3 +27,22 @@ int WantedParseCtrlAction(json_t const *json, char *wappName,
                           wapp_action_t *act, wapp_config_t *cfg);
 int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
                               wapp_action_t *action, wapp_config_t *cfg);
+
+/* Engine clock-quality state. The byte exposed at /proc/clock_quality
+ * reflects how the platform clock is calibrated. Wapp readers (e.g. agents
+ * deciding whether to trust the wall clock for security decisions) consume
+ * it as authoritative. Byte values:
+ *   0 = HARDWARE_RTC         backed by a battery-backed RTC
+ *   1 = SNTP_CALIBRATED      synced via SNTP
+ *   2 = SIMPLE_CALIBRATION   set by a host-side time provider (no RTC, no NTP)
+ *   3 = UNCALIBRATED         default; wall clock is meaningless
+ * Updaters (RTC probe, SNTP daemon, host time provider) call
+ * WantedSetClockQuality whenever the calibration state changes. */
+#define WANTED_CLOCK_HARDWARE_RTC       0
+#define WANTED_CLOCK_SNTP_CALIBRATED    1
+#define WANTED_CLOCK_SIMPLE_CALIBRATION 2
+#define WANTED_CLOCK_UNCALIBRATED       3
+
+void    WantedSetClockQuality(uint8_t q);
+uint8_t WantedGetClockQuality(void);
+int     WantedProcReadClockQuality(vfs_ctx_t c, void *buf, size_t bufLen);

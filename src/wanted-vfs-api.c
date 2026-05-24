@@ -17,6 +17,28 @@
 
 static wantedConfig_t currentConfig;
 
+/* Engine clock-quality byte. Defaults to UNCALIBRATED so wapps that consult
+ * it before any platform timing subsystem has come up get the safe answer.
+ * The byte is single-aligned so reads/writes are naturally atomic on every
+ * relevant target; `volatile` prevents the compiler from caching a stale
+ * value across the boundary between updater and reader threads. */
+static volatile uint8_t clockQuality = WANTED_CLOCK_UNCALIBRATED;
+
+void WantedSetClockQuality(uint8_t q) {
+    if (q <= WANTED_CLOCK_UNCALIBRATED)
+        clockQuality = q;
+}
+
+uint8_t WantedGetClockQuality(void) { return clockQuality; }
+
+int WantedProcReadClockQuality(vfs_ctx_t c, void *buf, size_t bufLen) {
+    (void)c;
+    if (!buf || bufLen < 1)
+        return -EINVAL;
+    *(uint8_t *)buf = clockQuality;
+    return 1;
+}
+
 static size_t ConfigToJson(const wantedConfig_t *cfg, uint8_t *buf,
                            size_t bufLen) {
     char *p = (char *)buf;
@@ -413,6 +435,32 @@ int WantedParseCtrlAction(json_t const *json, char *wappName,
             }
         }
         cfg->driversCnt = i;
+    }
+
+    /* preopens[]: an optional array of absolute host directory paths. The
+     * Engine creates each (if absent), opens, and binds as a WASI preopen at
+     * the same path. This is how any wapp declares persistent state needs —
+     * the supervisor isn't special. */
+    json_t const *preopens = json_getProperty(params, "preopens");
+    if (preopens && JSON_ARRAY == json_getType(preopens)) {
+        json_t const *po;
+        int pi = 0;
+        for (po = json_getChild(preopens);
+             po && pi < WAPP_MAX_PREOPENS;
+             po = json_getSibling(po)) {
+            if (JSON_TEXT != json_getType(po))
+                continue;
+            const char *v = json_getValue(po);
+            if (!v || v[0] != '/')
+                continue;
+            size_t vlen = strnlen(v, WAPP_MAX_PREOPEN_LEN);
+            if (vlen >= WAPP_MAX_PREOPEN_LEN)
+                continue;
+            memcpy(cfg->preopens[pi], v, vlen);
+            cfg->preopens[pi][vlen] = '\0';
+            pi++;
+        }
+        cfg->preopensCnt = (size_t)pi;
     }
 
     return 0;

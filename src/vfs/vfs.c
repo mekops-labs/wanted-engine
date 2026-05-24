@@ -228,6 +228,45 @@ static void DestroyStreamFd(vfs_ctx_t c, unsigned fd) {
     c->fds[fd].driver = NULL;
 }
 
+/* PLATFORM-type slots can either be preopens (own the driver — Destroy on
+ * teardown) or children produced by OpenAt against a preopen (share the
+ * parent's driver — close only the host fd). Distinguish via the `driver`
+ * pointer being shared with another slot of higher precedence. To keep this
+ * simple we Destroy the driver only once: walk the table, dedup driver
+ * pointers, and Destroy each unique driver after closing all slots. */
+static void DestroyPlatformFds(vfs_ctx_t c) {
+    /* First pass: close every host fd. */
+    for (int i = 0; i < VFS_MAX_FDS; i++) {
+        if (c->fds[i].type != VFS_TYPE_PLATFORM)
+            continue;
+        const vfs_driver_t *drv = c->fds[i].driver;
+        if (drv && drv->Close)
+            drv->Close(drv->ctx, c->fds[i].drv_fd);
+    }
+    /* Second pass: Destroy each unique driver and clear slots. */
+    for (int i = 0; i < VFS_MAX_FDS; i++) {
+        if (c->fds[i].type != VFS_TYPE_PLATFORM)
+            continue;
+        const vfs_driver_t *drv = c->fds[i].driver;
+        if (drv) {
+            /* Clear all slots sharing this driver before Destroy so the
+             * second-pass loop won't double-call Destroy. */
+            for (int j = i; j < VFS_MAX_FDS; j++) {
+                if (c->fds[j].type == VFS_TYPE_PLATFORM &&
+                    c->fds[j].driver == drv) {
+                    c->fds[j].type = VFS_TYPE_NONE;
+                    c->fds[j].driver = NULL;
+                    c->fds[j].drv_fd = -1;
+                }
+            }
+            if (drv->Destroy)
+                drv->Destroy((vfs_driver_t *)drv);
+        } else {
+            c->fds[i].type = VFS_TYPE_NONE;
+        }
+    }
+}
+
 static void DestroyTypedFds(vfs_ctx_t c) {
     for (int i = 0; i < VFS_MAX_FDS; i++) {
         switch (c->fds[i].type) {
@@ -249,6 +288,7 @@ static void DestroyTypedFds(vfs_ctx_t c) {
         c->fds[i].type = VFS_TYPE_NONE;
         c->fds[i].internal_ctx = NULL;
     }
+    DestroyPlatformFds(c);
 }
 
 void VfsDestroy(vfs_ctx_t *c) {
@@ -338,6 +378,42 @@ int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags) {
     if (!c || NULL == path || *path == '\0')
         return -EINVAL;
 
+    /* PLATFORM parent: bypass the mount-table router. Relative paths resolve
+     * against the host directory fd directly via the driver's OpenAt. */
+    if (fd >= 0 && fd < VFS_MAX_FDS &&
+        c->fds[fd].type == VFS_TYPE_PLATFORM && path[0] != '/') {
+        const vfs_driver_t *drv = c->fds[fd].driver;
+        if (!drv || !drv->OpenAt)
+            return -ENOTSUP;
+        int host_fd = drv->OpenAt(drv->ctx, c->fds[fd].drv_fd, path, flags);
+        if (host_fd < 0)
+            return host_fd;
+
+        int new_slot = FindFirstClosedFd(c);
+        if (new_slot < 0) {
+            if (drv->Close)
+                drv->Close(drv->ctx, host_fd);
+            return new_slot;
+        }
+        c->fds[new_slot].type = VFS_TYPE_PLATFORM;
+        c->fds[new_slot].driver = drv;
+        c->fds[new_slot].drv_fd = host_fd;
+        c->fds[new_slot].flags = flags;
+        /* Store the wapp-visible absolute path so subsequent relative OpenAt
+         * resolutions (rare for files; common for subdirs) work cleanly. */
+        const char *parent = c->fds[fd].path;
+        size_t plen = strlen(parent);
+        size_t slen = strlen(path);
+        if (plen + 1 + slen < VFS_FD_PATH_LEN) {
+            memcpy(c->fds[new_slot].path, parent, plen);
+            c->fds[new_slot].path[plen] = '/';
+            memcpy(c->fds[new_slot].path + plen + 1, path, slen + 1);
+        } else {
+            c->fds[new_slot].path[0] = '\0';
+        }
+        return new_slot;
+    }
+
     char norm[VFS_FD_PATH_LEN];
     int r = VfsResolvePath(c, fd, path, norm, sizeof(norm));
     if (r < 0)
@@ -371,6 +447,35 @@ int VfsClose(vfs_ctx_t c, int fd) {
         r = (drv && drv->Close) ? drv->Close(drv->ctx, c->fds[fd].drv_fd)
                                 : 0;
         /* Stream slots are preopens — VfsDestroy still owns the driver. */
+        return r;
+    }
+    case VFS_TYPE_PLATFORM: {
+        const vfs_driver_t *drv = c->fds[fd].driver;
+        /* Preopen slots (those registered via VfsBindPlatformFd) are torn down
+         * by VfsDestroy — closing them mid-wapp would orphan the preopen and
+         * break Zig's openDirAbsolute lookup. Detect a preopen by checking if
+         * the slot's path matches a registered preopen path. Simpler: if drv
+         * is shared with another live PLATFORM slot, this one is a child fd
+         * created by OpenAt and safe to close fully. */
+        bool is_preopen = false;
+        for (int i = 0; i < VFS_MAX_FDS; i++) {
+            if (i != fd && c->fds[i].type == VFS_TYPE_PLATFORM &&
+                c->fds[i].driver == drv) {
+                /* Driver shared — this slot is a child; safe to close. */
+                is_preopen = false;
+                goto close_platform;
+            }
+        }
+        /* No other slot uses this driver: this is the preopen itself. Keep it
+         * open so the wapp can continue to find the preopen via prestat. */
+        is_preopen = true;
+    close_platform:
+        if (is_preopen)
+            return 0;
+        r = (drv && drv->Close) ? drv->Close(drv->ctx, c->fds[fd].drv_fd) : 0;
+        c->fds[fd].type = VFS_TYPE_NONE;
+        c->fds[fd].driver = NULL;
+        c->fds[fd].drv_fd = -1;
         return r;
     }
     default:
@@ -412,6 +517,7 @@ int VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat) {
     case VFS_TYPE_TARFS:
         return TarFs_Stat(c->tarfs, c->fds[fd].internal_ctx, stat);
     case VFS_TYPE_STREAM:
+    case VFS_TYPE_PLATFORM:
         return TRY_DRV(c->fds[fd].driver, Stat, c->fds[fd].drv_fd, stat);
     default:
         return -EBADF;
@@ -454,6 +560,7 @@ int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte) {
     case VFS_TYPE_TARFS:
         return TarFs_Read(c->tarfs, c->fds[fd].internal_ctx, buf, nbyte);
     case VFS_TYPE_STREAM:
+    case VFS_TYPE_PLATFORM:
         return TRY_DRV(c->fds[fd].driver, Read, c->fds[fd].drv_fd, buf, nbyte);
     default:
         return -EBADF;
@@ -476,6 +583,7 @@ int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte) {
     case VFS_TYPE_TARFS:
         return -EROFS;
     case VFS_TYPE_STREAM:
+    case VFS_TYPE_PLATFORM:
         return TRY_DRV(c->fds[fd].driver, Write, c->fds[fd].drv_fd, buf, nbyte);
     default:
         return -EBADF;
@@ -496,6 +604,7 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
     case VFS_TYPE_TARFS:
         return TarFs_Seek(c->tarfs, c->fds[fd].internal_ctx, off, whence, pos);
     case VFS_TYPE_STREAM:
+    case VFS_TYPE_PLATFORM:
         return TRY_DRV(c->fds[fd].driver, Seek, c->fds[fd].drv_fd, off, whence,
                        pos);
     default:
@@ -510,12 +619,14 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
 
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
                size_t *bufUsed) {
-    DEBUG_TRACE("%d (%zu) %llu", fd, bufLen, *cookie);
-
     if (!CheckFd(c, fd))
         return -EBADF;
     if (NULL == buf || NULL == cookie || NULL == bufUsed)
         return -EINVAL;
+
+    /* Trace AFTER the NULL guard so the test cases that probe NULL inputs
+     * don't dereference here. */
+    DEBUG_TRACE("%d (%zu) %llu", fd, bufLen, *cookie);
 
     switch (c->fds[fd].type) {
     case VFS_TYPE_DEV:
@@ -527,6 +638,9 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
     case VFS_TYPE_PROC:
         return ProcFs_ReadDir(c, c->fds[fd].internal_ctx, buf, bufLen, cookie,
                               bufUsed);
+    case VFS_TYPE_PLATFORM:
+        return TRY_DRV(c->fds[fd].driver, ReadDir, c->fds[fd].drv_fd, buf,
+                       bufLen, cookie, bufUsed);
     case VFS_TYPE_TARFS: {
         /* Non-root subdirectory: delegate entirely to TarFS. */
         if (c->fds[fd].path[0] != '/' || c->fds[fd].path[1] != '\0') {
@@ -649,4 +763,87 @@ int VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags) {
     if (c->fds[fd].type == VFS_TYPE_NET)
         return NetFs_SockShutdown(c, c->fds[fd].internal_ctx, flags);
     return -ENOTSOCK;
+}
+
+int VfsBindPlatformFd(vfs_ctx_t c, const char *path,
+                      const vfs_driver_t *driver, int host_fd) {
+    if (!c || !path || !driver)
+        return -EINVAL;
+
+    int slot = FindFirstClosedFd(c);
+    if (slot < 0)
+        return slot;
+
+    c->fds[slot].type = VFS_TYPE_PLATFORM;
+    c->fds[slot].driver = driver;
+    c->fds[slot].drv_fd = host_fd;
+    c->fds[slot].flags = VFS_O_RDWR | VFS_O_DIRECTORY;
+    size_t plen = strlen(path);
+    if (plen >= VFS_FD_PATH_LEN)
+        plen = VFS_FD_PATH_LEN - 1;
+    memcpy(c->fds[slot].path, path, plen);
+    c->fds[slot].path[plen] = '\0';
+    DEBUG_TRACE("preopen %s -> fd=%d (host_fd=%d)", path, slot, host_fd);
+    return slot;
+}
+
+int VfsRename(vfs_ctx_t c, int old_fd, const char *old_path,
+              int new_fd, const char *new_path) {
+    DEBUG_TRACE("%d, %s -> %d, %s", old_fd, old_path, new_fd, new_path);
+
+    if (!CheckFd(c, old_fd) || !CheckFd(c, new_fd))
+        return -EBADF;
+    if (!old_path || !new_path)
+        return -EINVAL;
+
+    /* Both fds must reach the same writable backing store. Only PLATFORM
+     * (preopen-backed host fs) supports rename today; TarFS is read-only,
+     * ProcFS is read-only, NetFS doesn't define directory semantics. */
+    if (c->fds[old_fd].type != c->fds[new_fd].type)
+        return -EXDEV;
+
+    switch (c->fds[old_fd].type) {
+    case VFS_TYPE_TARFS:
+    case VFS_TYPE_PROC:
+        return -EROFS;
+    case VFS_TYPE_NET:
+        return -EINVAL;
+    case VFS_TYPE_PLATFORM: {
+        const vfs_driver_t *old_drv = c->fds[old_fd].driver;
+        const vfs_driver_t *new_drv = c->fds[new_fd].driver;
+        if (old_drv != new_drv)
+            return -EXDEV;
+        if (!old_drv || !old_drv->Rename)
+            return -ENOSYS;
+        return old_drv->Rename(old_drv->ctx, c->fds[old_fd].drv_fd, old_path,
+                               c->fds[new_fd].drv_fd, new_path);
+    }
+    default:
+        return -ENOTSUP;
+    }
+}
+
+int VfsMkdir(vfs_ctx_t c, int fd, const char *path) {
+    DEBUG_TRACE("%d, %s", fd, path);
+
+    if (!CheckFd(c, fd))
+        return -EBADF;
+    if (!path)
+        return -EINVAL;
+
+    switch (c->fds[fd].type) {
+    case VFS_TYPE_TARFS:
+    case VFS_TYPE_PROC:
+        return -EROFS;
+    case VFS_TYPE_NET:
+        return -EINVAL;
+    case VFS_TYPE_PLATFORM: {
+        const vfs_driver_t *drv = c->fds[fd].driver;
+        if (!drv || !drv->Mkdir)
+            return -ENOSYS;
+        return drv->Mkdir(drv->ctx, c->fds[fd].drv_fd, path);
+    }
+    default:
+        return -ENOTSUP;
+    }
 }

@@ -31,3 +31,27 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 set_tests_properties(smoke PROPERTIES TIMEOUT 30)
+
+# Supervisor wapp smoke test. Always available as a manual target. Only added
+# to ctest when WANTED_DEBUG_TRACES is on — without traces the engine is
+# silent on failures (FATAL is a no-op), so a passing ctest run with traces
+# off would be a false signal of correctness.
+add_custom_target(smoke-engine
+    COMMAND ${CMAKE_SOURCE_DIR}/test/smoke-engine.sh
+            $<TARGET_FILE:${project}-cli>
+            ${CMAKE_SOURCE_DIR}/test/smoke-engine-config.json
+    DEPENDS ${project}-cli
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Running supervisor wapp smoke test"
+)
+
+if (WANTED_DEBUG_TRACES)
+    add_test(
+        NAME smoke-engine
+        COMMAND ${CMAKE_SOURCE_DIR}/test/smoke-engine.sh
+                $<TARGET_FILE:${project}-cli>
+                ${CMAKE_SOURCE_DIR}/test/smoke-engine-config.json
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(smoke-engine PROPERTIES TIMEOUT 30)
+endif()
