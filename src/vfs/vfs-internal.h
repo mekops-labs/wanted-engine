@@ -38,6 +38,11 @@ typedef enum {
     VFS_TYPE_NET,
     VFS_TYPE_PROC,
     VFS_TYPE_STREAM,
+    /* Host-backed fd reached via a WASI preopen. All ops delegate to a driver
+     * (typically PlatformFs) using drv_fd as the host kernel fd. OpenAt against
+     * a PLATFORM fd bypasses the mount table — the driver resolves relative
+     * paths against the host directory directly. */
+    VFS_TYPE_PLATFORM,
 } vfs_fd_type_t;
 
 typedef struct vfs_fd_t {

@@ -8,6 +8,7 @@
 #include <vfs-procfs.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
+#include <wanted-vfs-api.h>
 
 static vfs_ctx_t vfs;
 
@@ -351,4 +352,66 @@ TEST_GROUP_RUNNER(procfs_via_vfs) {
     RUN_TEST_CASE(procfs_via_vfs, UnprivilegedCannotOpenSecretEntry);
     RUN_TEST_CASE(procfs_via_vfs, PrivilegedCanOpenSecretEntry);
     RUN_TEST_CASE(procfs_via_vfs, MissingEntryReturnsEnoent);
+}
+
+/***************************************/
+TEST_GROUP(procfs_clock_quality);
+/***************************************/
+
+TEST_SETUP(procfs_clock_quality) {
+    vfs = VfsInit();
+    ProcFs_Register(vfs, "clock_quality",
+                    WantedProcReadClockQuality, false);
+    WantedSetClockQuality(WANTED_CLOCK_UNCALIBRATED);
+}
+
+TEST_TEAR_DOWN(procfs_clock_quality) {
+    VfsDestroy(&vfs);
+    WantedSetClockQuality(WANTED_CLOCK_UNCALIBRATED);
+}
+
+TEST(procfs_clock_quality, DefaultIsUncalibrated) {
+    int fd = VfsOpen(vfs, "/proc/clock_quality", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+
+    uint8_t b = 0xFF;
+    int n = VfsRead(vfs, fd, &b, 1);
+    TEST_ASSERT_EQUAL_INT(1, n);
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_UNCALIBRATED, b);
+    TEST_ASSERT_TRUE(b <= 3);
+
+    VfsClose(vfs, fd);
+}
+
+TEST(procfs_clock_quality, ReflectsCalibrationUpdate) {
+    WantedSetClockQuality(WANTED_CLOCK_SNTP_CALIBRATED);
+    int fd = VfsOpen(vfs, "/proc/clock_quality", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+
+    uint8_t b = 0xFF;
+    TEST_ASSERT_EQUAL_INT(1, VfsRead(vfs, fd, &b, 1));
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_SNTP_CALIBRATED, b);
+    VfsClose(vfs, fd);
+
+    /* Re-open and re-read to observe the new value. */
+    WantedSetClockQuality(WANTED_CLOCK_SIMPLE_CALIBRATION);
+    fd = VfsOpen(vfs, "/proc/clock_quality", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    b = 0xFF;
+    TEST_ASSERT_EQUAL_INT(1, VfsRead(vfs, fd, &b, 1));
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_SIMPLE_CALIBRATION, b);
+    VfsClose(vfs, fd);
+}
+
+TEST(procfs_clock_quality, RejectsOutOfRangeWrite) {
+    WantedSetClockQuality(WANTED_CLOCK_HARDWARE_RTC);
+    WantedSetClockQuality(99); /* must be ignored */
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_HARDWARE_RTC,
+                            WantedGetClockQuality());
+}
+
+TEST_GROUP_RUNNER(procfs_clock_quality) {
+    RUN_TEST_CASE(procfs_clock_quality, DefaultIsUncalibrated);
+    RUN_TEST_CASE(procfs_clock_quality, ReflectsCalibrationUpdate);
+    RUN_TEST_CASE(procfs_clock_quality, RejectsOutOfRangeWrite);
 }

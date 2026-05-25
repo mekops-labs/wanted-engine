@@ -350,11 +350,33 @@ int WantedWappRun(wapp_data_t *ctx) {
     VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
     ProcFs_Register(ctx->vfs, "wapps",  ProcReadWapps,  true);
     ProcFs_Register(ctx->vfs, "memory", ProcReadMemory, true);
+    /* clock_quality is unprivileged — any wapp may read it to decide whether
+     * to trust the wall clock. */
+    ProcFs_Register(ctx->vfs, "clock_quality",
+                    WantedProcReadClockQuality, false);
 
     wasiCtx->argc   = 0;
     wasiCtx->argv   = NULL;
     wasiCtx->vfsCtx = ctx->vfs;
     wasm_runtime_set_user_data(ctx->wamr->exec_env, wasiCtx);
+
+    /* Persistent-state preopens: any wapp can declare host directories via
+     * params.preopens in its launch config. The Engine creates each (if
+     * absent), opens it, and exposes it to the wapp as a WASI preopen at the
+     * same path. Failures are non-fatal — the wapp will surface a missing-
+     * preopen error itself if the state is actually required. */
+    for (size_t pi = 0; pi < wapp->cfg.preopensCnt; pi++) {
+        const char *p = wapp->cfg.preopens[pi];
+        int host_fd = PlatformOpenStateDir(p);
+        if (host_fd < 0) {
+            DEBUG_TRACE("PlatformOpenStateDir(%s) failed: %d", p, host_fd);
+            continue;
+        }
+        int rc = WasiCtxAddPreopen(wasiCtx, p, host_fd);
+        if (rc < 0) {
+            DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", p, rc);
+        }
+    }
 
     /* install console */
     ret = WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[0].name,

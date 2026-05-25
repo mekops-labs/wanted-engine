@@ -44,6 +44,19 @@ int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes);
 int PlatformRegistryRemove(const reg_entry_t *entry);
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);
 
+/* Open (and create-if-absent) a host-side directory that will be exposed to a
+ * wapp as a WASI preopen. Returns a native fd usable with openat(2)-class
+ * APIs, or a negative errno on failure. The returned fd's lifetime is owned
+ * by the VFS layer (closed at VfsDestroy). */
+int PlatformOpenStateDir(const char *path);
+
+/* Thin wrappers over native fs primitives, used by VFS path_rename and
+ * path_create_directory to operate on preopen-rooted directories. Both fds
+ * are native (openat-class) directory descriptors. */
+int PlatformFsRename(int old_fd, const char *old_path,
+                     int new_fd, const char *new_path);
+int PlatformFsMkdir(int fd, const char *path);
+
 void *PlatformNetOpen(int socket_type);
 int PlatformNetConnect(void *ctx, const char *hostname, uint16_t port);
 int PlatformNetClose(void *ctx);
