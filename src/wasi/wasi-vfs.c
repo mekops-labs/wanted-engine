@@ -6,6 +6,7 @@
 /* wanted includes */
 #include <platform.h>
 #include <vfs.h>
+#include <vfs-drivers.h>
 #include <wanted_malloc.h>
 #include <wasi.h>
 
@@ -15,19 +16,6 @@ typedef struct wasi_iovec_t {
     uint32_t buf;     /* wasm linear-memory offset */
     uint32_t buf_len;
 } wasi_iovec_t;
-
-typedef struct Preopen {
-    const char *path;
-} Preopen;
-
-static Preopen preopen[] = {
-    {"<stdin>"},
-    {"<stdout>"},
-    {"<stderr>"},
-    {"/"},
-};
-
-static const size_t preopen_cnt = sizeof(preopen) / sizeof(preopen[0]);
 
 #define CASE_RET(e1, e2)                                                       \
     case e1:                                                                   \
@@ -171,18 +159,46 @@ static int32_t wasi_environ_sizes_get(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
+/* Lazily resolve preopens[fd] to a real VFS fd. The 4 standard entries
+ * (stdin/stdout/stderr/root) start with fd=-1; the first prestat_get on the
+ * root preopen triggers a VfsOpen("/"). Engine-injected preopens added via
+ * WasiCtxAddPreopen are eagerly bound and skip this path. */
+static wasi_preopen_t *resolve_preopen(wasi_ctx_t *ctx, int fd) {
+    for (uint8_t i = 0; i < ctx->preopens_cnt; i++) {
+        wasi_preopen_t *p = &ctx->preopens[i];
+        if (p->fd == fd)
+            return p;
+        if (p->fd == -1) {
+            /* Lazy entry — bind now. */
+            int host_fd = VfsOpen(ctx->vfsCtx, p->path,
+                                  VFS_O_RDONLY | VFS_O_DIRECTORY);
+            if (host_fd < 0)
+                continue;
+            p->fd = host_fd;
+            if (p->fd == fd)
+                return p;
+        }
+    }
+    return NULL;
+}
+
 static int32_t wasi_fd_prestat_dir_name(wasm_exec_env_t exec_env,
                                         int32_t fd, int32_t path_app,
                                         int32_t path_len) {
-    if (fd < 3 || (size_t)fd >= preopen_cnt)
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+
+    wasi_preopen_t *p = resolve_preopen(ctx, fd);
+    if (!p)
         return __WASI_ERRNO_BADF;
 
     char *path = vaddr(exec_env, path_app, (uint32_t)path_len);
     if (!path)
         return __WASI_ERRNO_FAULT;
 
-    size_t slen = strlen(preopen[fd].path) + 1;
-    memcpy(path, preopen[fd].path, slen < (size_t)path_len ? slen : (size_t)path_len);
+    size_t slen = strlen(p->path) + 1;
+    memcpy(path, p->path, slen < (size_t)path_len ? slen : (size_t)path_len);
     return __WASI_ERRNO_SUCCESS;
 }
 
@@ -192,22 +208,22 @@ static int32_t wasi_fd_prestat_get(wasm_exec_env_t exec_env,
     if (!ctx)
         return __WASI_ERRNO_INVAL;
 
-    if (fd < 3 || (size_t)fd >= preopen_cnt)
+    /* stdin/stdout/stderr live as STREAM slots at fds 0–2 and are not preopens
+     * from the wapp's perspective — Zig iterates from fd=3. Reject explicitly
+     * so a buggy iterator doesn't get a misleading SUCCESS. */
+    if (fd < 3)
+        return __WASI_ERRNO_BADF;
+
+    wasi_preopen_t *p = resolve_preopen(ctx, fd);
+    if (!p)
         return __WASI_ERRNO_BADF;
 
     uint8_t *buf = vaddr(exec_env, buf_app, 8);
     if (!buf)
         return __WASI_ERRNO_FAULT;
 
-    int host_fd = VfsOpen(ctx->vfsCtx, preopen[fd].path,
-                          VFS_O_RDONLY | VFS_O_DIRECTORY);
-    if (fd != host_fd) {
-        VfsClose(ctx->vfsCtx, host_fd);
-        return __WASI_ERRNO_BADF;
-    }
-
     *(uint32_t *)(buf + 0) = __WASI_PREOPENTYPE_DIR;
-    *(uint32_t *)(buf + 4) = (uint32_t)(strlen(preopen[fd].path) + 1);
+    *(uint32_t *)(buf + 4) = (uint32_t)(strlen(p->path) + 1);
     return __WASI_ERRNO_SUCCESS;
 }
 
@@ -458,6 +474,64 @@ static int32_t wasi_path_unlink_file(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
+static int32_t wasi_path_rename(wasm_exec_env_t exec_env,
+                                int32_t old_fd,
+                                int32_t old_path_app, int32_t old_path_len,
+                                int32_t new_fd,
+                                int32_t new_path_app, int32_t new_path_len) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+
+    if (old_path_len < 0 || old_path_len >= 512 ||
+        new_path_len < 0 || new_path_len >= 512)
+        return __WASI_ERRNO_INVAL;
+
+    char *op = vaddr(exec_env, old_path_app, (uint32_t)old_path_len);
+    char *np = vaddr(exec_env, new_path_app, (uint32_t)new_path_len);
+    if ((!op && old_path_len > 0) || (!np && new_path_len > 0))
+        return __WASI_ERRNO_FAULT;
+
+    char old_buf[513];
+    char new_buf[513];
+    if (old_path_len > 0)
+        memcpy(old_buf, op, (size_t)old_path_len);
+    old_buf[old_path_len] = '\0';
+    if (new_path_len > 0)
+        memcpy(new_buf, np, (size_t)new_path_len);
+    new_buf[new_path_len] = '\0';
+
+    int ret = VfsRename(ctx->vfsCtx, old_fd, old_buf, new_fd, new_buf);
+    if (ret < 0)
+        return errno_to_wasi(ret);
+    return __WASI_ERRNO_SUCCESS;
+}
+
+static int32_t wasi_path_create_directory(wasm_exec_env_t exec_env,
+                                          int32_t fd, int32_t path_app,
+                                          int32_t path_len) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+
+    if (path_len < 0 || path_len >= 512)
+        return __WASI_ERRNO_INVAL;
+
+    char *p = vaddr(exec_env, path_app, (uint32_t)path_len);
+    if (!p && path_len > 0)
+        return __WASI_ERRNO_FAULT;
+
+    char host_path[513];
+    if (path_len > 0)
+        memcpy(host_path, p, (size_t)path_len);
+    host_path[path_len] = '\0';
+
+    int ret = VfsMkdir(ctx->vfsCtx, fd, host_path);
+    if (ret < 0)
+        return errno_to_wasi(ret);
+    return __WASI_ERRNO_SUCCESS;
+}
+
 static int32_t wasi_fd_read(wasm_exec_env_t exec_env,
                             int32_t fd, int32_t iovs_app,
                             int32_t iovs_len, int32_t nread_app) {
@@ -632,7 +706,7 @@ static int32_t wasi_poll_oneoff(wasm_exec_env_t exec_env,
     const __wasi_subscription_t *in =
         vaddr(exec_env, in_app,
               (uint32_t)nsubscriptions * sizeof(__wasi_subscription_t));
-    void *out =
+    uint8_t *out =
         vaddr(exec_env, out_app,
               (uint32_t)nsubscriptions * sizeof(__wasi_event_t));
     __wasi_size_t *nevents =
@@ -640,15 +714,31 @@ static int32_t wasi_poll_oneoff(wasm_exec_env_t exec_env,
     if (!in || !out || !nevents)
         return __WASI_ERRNO_FAULT;
 
-    if (in->type == __WASI_EVENTTYPE_CLOCK) {
-        int ret = PlatformClockNanoSleep(in->u.clock.id, in->u.clock.timeout,
-                                         in->u.clock.flags);
-        if (ret < 0)
-            return errno_to_wasi(ret);
-    }
+    /* Only clock subscriptions are supported. fd_read / fd_write
+     * subscriptions return NOSYS — wapps that need them must poll the fd
+     * directly until full readiness support lands. */
+    if (in->type != __WASI_EVENTTYPE_CLOCK)
+        return __WASI_ERRNO_NOSYS;
 
-    /* TODO: full poll_oneoff implementation */
-    return __WASI_ERRNO_NOSYS;
+    int ret = PlatformClockNanoSleep(in->u.clock.id, in->u.clock.timeout,
+                                     in->u.clock.flags);
+    if (ret < 0)
+        return errno_to_wasi(ret);
+
+    /* Synthesise a single clock event so the caller's tick loop unblocks.
+     * The __wasi_event_t layout (snapshot-preview1):
+     *   offset  0: userdata        (u64)
+     *   offset  8: error           (u16)
+     *   offset 10: type            (u8)   — must mirror the subscription type
+     *   offset 11: _pad[5]
+     *   offset 16: fd_readwrite    (u64 nbytes + u16 flags) — unused for clock
+     * Zero-initialise first, then fill the fields the wapp inspects. */
+    memset(out, 0, sizeof(__wasi_event_t));
+    *(uint64_t *)(out + 0) = in->userdata;
+    *(uint16_t *)(out + 8) = __WASI_ERRNO_SUCCESS;
+    *(uint8_t  *)(out + 10) = __WASI_EVENTTYPE_CLOCK;
+    *nevents = 1;
+    return __WASI_ERRNO_SUCCESS;
 }
 
 static void wasi_proc_exit(wasm_exec_env_t exec_env, int32_t code) {
@@ -795,6 +885,8 @@ static int32_t wasi_sock_shutdown(wasm_exec_env_t exec_env,
     { "path_filestat_get",   wasi_path_filestat_get,   "(iiiii)i", NULL },     \
     { "path_open",           wasi_path_open,           "(iiiiiIIii)i", NULL }, \
     { "path_unlink_file",    wasi_path_unlink_file,    "(iii)i",   NULL },     \
+    { "path_rename",         wasi_path_rename,         "(iiiiii)i", NULL },    \
+    { "path_create_directory", wasi_path_create_directory, "(iii)i", NULL },   \
     { "fd_read",             wasi_fd_read,             "(iiii)i",  NULL },     \
     { "fd_write",            wasi_fd_write,            "(iiii)i",  NULL },     \
     { "fd_readdir",          wasi_fd_readdir,          "(iiiIi)i", NULL },     \
@@ -823,12 +915,66 @@ static NativeSymbol wasi_preview1_natives[] = {
 wasi_ctx_t *InitWasiContext(void) {
     wasi_ctx_t *ctx =
         (wasi_ctx_t *)WantedMalloc(sizeof(wasi_ctx_t));
-    if (ctx)
-        memset(ctx, 0, sizeof(*ctx));
+    if (!ctx)
+        return ctx;
+    memset(ctx, 0, sizeof(*ctx));
+
+    /* The stdio slots and the root preopen mirror the layout the wapp will see
+     * via fd_prestat enumeration. stdio fds 0-2 are registered separately as
+     * STREAM slots by VfsRegister — we record them here only so the table is
+     * dense for the resolve_preopen scan. The root preopen at fd=3 is lazy:
+     * the first prestat_get triggers VfsOpen("/") which will succeed once the
+     * wapp setup has called VfsAttachTarfs. */
+    static const struct { const char *path; int fd; } seed[] = {
+        {"<stdin>",  0},
+        {"<stdout>", 1},
+        {"<stderr>", 2},
+        {"/",       -1},
+    };
+    for (size_t i = 0; i < sizeof(seed) / sizeof(seed[0]); i++) {
+        wasi_preopen_t *p = &ctx->preopens[ctx->preopens_cnt++];
+        size_t plen = strlen(seed[i].path);
+        if (plen >= sizeof(p->path))
+            plen = sizeof(p->path) - 1;
+        memcpy(p->path, seed[i].path, plen);
+        p->path[plen] = '\0';
+        p->fd = seed[i].fd;
+    }
     return ctx;
 }
 
 void FreeWasiContext(wasi_ctx_t *c) { WantedFree(c); }
+
+int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, int host_fd) {
+    if (!ctx || !path || !ctx->vfsCtx)
+        return -EINVAL;
+    if (ctx->preopens_cnt >= WASI_MAX_PREOPENS)
+        return -ENOSPC;
+
+    /* The PlatformFs driver owns conversion from VFS ops to host syscalls on
+     * `host_fd`. Passing `path` as the rootPath isn't load-bearing — for
+     * openat-relative paths the host kernel resolves against `host_fd` itself
+     * — but it keeps the driver self-describing for debugging. */
+    vfs_driver_t *drv = VfsPlatformFsInit(NULL, path);
+    if (!drv)
+        return -ENOMEM;
+
+    int fd = VfsBindPlatformFd(ctx->vfsCtx, path, drv, host_fd);
+    if (fd < 0) {
+        if (drv->Destroy)
+            drv->Destroy(drv);
+        return fd;
+    }
+
+    wasi_preopen_t *p = &ctx->preopens[ctx->preopens_cnt++];
+    size_t plen = strlen(path);
+    if (plen >= sizeof(p->path))
+        plen = sizeof(p->path) - 1;
+    memcpy(p->path, path, plen);
+    p->path[plen] = '\0';
+    p->fd = fd;
+    return 0;
+}
 
 void RegisterWASINatives(void) {
     wasm_runtime_register_natives(

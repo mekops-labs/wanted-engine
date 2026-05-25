@@ -32,24 +32,27 @@ const vfs_driver_t WantedControlDriver = {
     .Write = _Write,
 };
 
-static bool opened = false;
+/* Reference counted so the supervisor (which re-opens on every tick) can
+ * coexist with other readers/writers. The driver itself is stateless beyond
+ * this count — every op routes through Wanted{Read,Write}State which use
+ * shared engine state. The count just guards Read/Write from operating on a
+ * fully-closed driver, which would indicate a logic bug elsewhere. */
+static int open_refcount = 0;
 
 static int _Destroy(struct vfs_driver_t *d) {
-    opened = false;
+    open_refcount = 0;
 
     return 0;
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
-    if (opened)
-        return -EBUSY;
-    opened = true;
-
+    open_refcount++;
     return 0;
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
-    opened = false;
+    if (open_refcount > 0)
+        open_refcount--;
     return 0;
 }
 
@@ -69,7 +72,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     if (buf == NULL)
         return -EINVAL;
-    if (!opened)
+    if (open_refcount <= 0)
         return -EBADF;
 
     static int read = 0;
@@ -90,7 +93,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
     if (buf == NULL)
         return -EINVAL;
-    if (!opened)
+    if (open_refcount <= 0)
         return -EBADF;
 
     wapp_t *wapp = WantedMalloc(sizeof(wapp_t));

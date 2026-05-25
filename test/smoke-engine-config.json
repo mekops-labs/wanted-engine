@@ -1,0 +1,19 @@
+{
+    "system": {
+        "defaultWapps": [],
+        "privileged": true
+    },
+    "supervisor": {
+        "imagePath": "./wasm/supervisor/sheriff/supervisor.tar",
+        "params": {
+            "console": {
+                "in":  {"name": "platform"},
+                "out": {"name": "platform"},
+                "err": {"name": "platform"}
+            },
+            "drivers": [
+                {"name": "wanted", "path": "/dev/wanted"}
+            ]
+        }
+    }
+}

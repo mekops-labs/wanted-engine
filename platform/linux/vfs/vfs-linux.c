@@ -10,6 +10,7 @@
 #include <config-linux.h>
 #include <cwalk.h>
 #include <debug_trace.h>
+#include <platform.h>
 #include <vfs.h>
 #include <wanted-api.h>
 #include <wanted_malloc.h>
@@ -29,6 +30,9 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
                  long *pos);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed);
+static int _Rename(vfs_driver_ctx_t d, int old_fd, const char *old_path,
+                   int new_fd, const char *new_path);
+static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path);
 
 struct vfs_driver_ctx_t {
     const char *rootPath;
@@ -84,6 +88,8 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options) {
     driver->Write = _Write;
     driver->Seek = _Seek;
     driver->ReadDir = _ReadDir;
+    driver->Rename = _Rename;
+    driver->Mkdir = _Mkdir;
 
     return driver;
 }
@@ -267,6 +273,17 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
         return -errno;
 
     return 0;
+}
+
+static int _Rename(vfs_driver_ctx_t d, int old_fd, const char *old_path,
+                   int new_fd, const char *new_path) {
+    (void)d;
+    return PlatformFsRename(old_fd, old_path, new_fd, new_path);
+}
+
+static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path) {
+    (void)d;
+    return PlatformFsMkdir(fd, path);
 }
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
