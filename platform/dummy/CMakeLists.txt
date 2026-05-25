@@ -1,5 +1,6 @@
 set(sources
     dummy.c
+    dummy-fs.c
 )
 add_library(platform_dummy STATIC
     ${sources}
