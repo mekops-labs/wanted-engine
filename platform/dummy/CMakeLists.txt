@@ -2,6 +2,7 @@ set(sources
     dummy.c
     dummy-fs.c
     dummy-registry.c
+    dummy-net.c
 )
 add_library(platform_dummy STATIC
     ${sources}
