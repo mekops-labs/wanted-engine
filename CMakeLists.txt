@@ -17,6 +17,17 @@ include(CTest)
 set(project ${CMAKE_PROJECT_NAME})
 message("Building ${project} v${SEMVER}")
 
+# Instrument every target for gcov when coverage is requested. Must be set
+# before any target is defined so the wanted library itself is covered, not
+# just the test binary. The `coverage` report target is wired in test/.
+option(ENABLE_CODE_COVERAGE "Enable build with code coverage analysis." OFF)
+if(ENABLE_CODE_COVERAGE)
+    message("-- Code coverage build enabled")
+    add_compile_options(--coverage -O0 -g)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
+endif()
+
 # Build Wanted static library
 add_subdirectory(${CMAKE_SOURCE_DIR}/src)
 
