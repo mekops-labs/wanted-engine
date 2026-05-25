@@ -151,8 +151,10 @@ FUNCTION(SETUP_TARGET_FOR_COVERAGE_COBERTURA _targetname _testrunner _outputname
 		# Run tests
 		${_testrunner} ${ARGV3}
 
-		# Running gcovr
-		COMMAND ${GCOVR_PATH} --xml-pretty --exclude-unreachable-branches --print-summary -r ${CMAKE_SOURCE_DIR} -f '${CMAKE_SOURCE_DIR}/src/' -o ${_outputname}.xml
+		# Running gcovr. Filter path must NOT be quoted here: CMake passes the
+		# argument verbatim, so embedded quotes become literal and match nothing.
+		COMMAND ${GCOVR_PATH} --exclude-unreachable-branches --print-summary --txt -r ${CMAKE_SOURCE_DIR} -f ${CMAKE_SOURCE_DIR}/src/
+		COMMAND ${GCOVR_PATH} --xml-pretty --exclude-unreachable-branches -r ${CMAKE_SOURCE_DIR} -f ${CMAKE_SOURCE_DIR}/src/ -o ${_outputname}.xml
 
 		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 		COMMENT "Running gcovr to produce Cobertura code coverage report."

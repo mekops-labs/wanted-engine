@@ -59,7 +59,7 @@ build-coverage:
   variables:
     BUILD_DIR: build
     CC: gcc
-    CMAKE_EXTRA_ARGS: -DENABLE_CODE_COVERAGE=on -DCMAKE_BUILD_TYPE=Coverage
+    CMAKE_EXTRA_ARGS: -DENABLE_CODE_COVERAGE=on
 
 unit-test-gcc:
   <<: *unit_defs
