@@ -1,6 +1,9 @@
+#include <errno.h>
+
 #include <platform.h>
 
-/* Clock, PRNG, VFS platform driver, and fs functions live in dummy-fs.c. */
+/* Clock, PRNG, VFS platform driver, and fs functions live in dummy-fs.c.
+ * In-memory registry (Read/Remove) lives in dummy-registry.c. */
 
 int PlatformWappLoad(const char *name, wapp_t *wapp) { (void)name; (void)wapp; return 0; }
 int PlatformWappUnload(const wapp_t *wapp) { (void)wapp; return 0; }
@@ -9,12 +12,14 @@ int PlatformWappStop(const char *name) { (void)name; return 0; }
 void PlatformWappLoop() {}
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen) { (void)apps; (void)appsLen; return 0; }
 
-int PlatformRegistryRead(reg_entry_t *registryList, size_t len) { (void)registryList; (void)len; return 0; }
+/* PlatformRegistryWrite requires parsing a WASM manifest to derive name and
+ * version (FINISH_WRITE); WASM loading is out of scope for the dummy, so this
+ * remains a stub. PlatformRegistryWappLoad chains a WASM load for the same
+ * reason. Read/Remove are implemented in dummy-registry.c. */
 int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
-    (void)s; (void)buf; (void)nbytes; return 0;
+    (void)s; (void)buf; (void)nbytes; return -ENOSYS;
 }
-int PlatformRegistryRemove(const reg_entry_t *entry) { (void)entry; return 0; }
-int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) { (void)entry; (void)w; return 0; }
+int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) { (void)entry; (void)w; return -ENOSYS; }
 
 void *PlatformNetOpen(int socket_type) { (void)socket_type; return NULL; }
 int PlatformNetConnect(void *ctx, const char *hostname, uint16_t port) {
