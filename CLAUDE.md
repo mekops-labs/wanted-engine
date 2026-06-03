@@ -10,49 +10,21 @@ Before executing any build or test command, read `README.md`. It is the authorit
 
 ## Build Environment
 
-All builds run inside the standardized Podman container. Do **not** build natively — the toolchain requires WASI SDK v16, clang 14, CMake, and Ninja.
-
-**Interactive shell (for iterative work):**
+All builds run inside the standardized build container — do **not** build natively. The root `Makefile` wraps the containerized commands (run `make help` for the full list); the container provides the toolchain (CMake, Ninja, host clang/gcc, and the bundled wasi-sdk for wapps).
 
 ```bash
-./run-podman.sh
+make build         # supervisor TAR images + engine (sheriff supervisor)
+make wsh           # engine with the wsh debug supervisor
+make test          # unit + smoke suite via ctest
+make smoke         # VFS/control-plane smoke via wsh
+make shell         # interactive shell in the build container
 ```
 
-**Full build (supervisor TAR images + engine):**
+Override the container runtime or image with `RUNNER=docker` / `IMAGE=...`.
+
+**Run a single test group** (from `make shell` or any container shell):
 
 ```bash
-# Step 1: build supervisor TAR images (required before cmake)
-make -C wasm/supervisor
-
-# Step 2: build the engine
-podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
-    registry.gitlab.com/wanted-project/wanted-engine/build \
-    -c "mkdir -p /src/build && cd /src/build && cmake -G Ninja /src && ninja"
-```
-
-**Build with debug supervisor (`wsh`) instead of production (`sheriff`):**
-
-```bash
-podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
-    registry.gitlab.com/wanted-project/wanted-engine/build \
-    -c "mkdir -p /src/build && cd /src/build && \
-        cmake -G Ninja /src \
-              -DWANTED_SUPERVISOR_IMAGE_PATH=../wasm/supervisor/wsh/supervisor.tar \
-        && ninja"
-```
-
-**Run unit tests:**
-
-```bash
-podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
-    registry.gitlab.com/wanted-project/wanted-engine/build \
-    -c "cd /src/build && ctest --output-on-failure"
-```
-
-**Run a single test group:**
-
-```bash
-# Inside the container or after build:
 cd build && ctest -R test-tarfs --output-on-failure
 ```
 
