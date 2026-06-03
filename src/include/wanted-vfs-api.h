@@ -23,10 +23,21 @@ int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen);
 int WantedReadState(uint8_t *buf, size_t bufLen);
 const char *statusToString(status_t state);
 
+/* Upper bound (including NUL) on a control/config JSON payload the engine will
+ * copy onto the stack to parse. Bounds the parse buffers so a write never
+ * drives an unbounded (VLA) allocation. The compiled-in supervisor bootstrap
+ * config and any per-wapp launch config sit comfortably under this. */
+#define WANTED_CTRL_JSON_MAX 2048
+
 int WantedParseCtrlAction(json_t const *json, char *wappName,
                           wapp_action_t *act, wapp_config_t *cfg);
 int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
                               wapp_action_t *action, wapp_config_t *cfg);
+
+/* Parse the bare launch-config body { console, drivers[], preopens } written
+ * to wapps/<name>/config. Identity is supplied by the path, not the payload. */
+int WantedParseWappConfigJson(const char *buf, size_t bufLen,
+                              wapp_config_t *cfg);
 
 /* Engine clock-quality state. The byte exposed at /proc/clock_quality
  * reflects how the platform clock is calibrated. Wapp readers (e.g. agents
