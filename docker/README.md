@@ -12,13 +12,19 @@ Just run it without parameters. Your `$PWD` needs to be set in the root director
 One of the easiest way to build the image for multiple platfroms is to use `buildx` with `binfmt-qemu-static` and `qemu-user-static` installed.
 
 ```sh
-docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t registry.gitlab.com/wanted-project/wanted-engine/build:latest --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t registry.gitlab.com/wanted-project/wanted-engine/build:latest --push .
 ```
+
+Platforms are limited to `amd64` and `arm64` — the bundled wasi-sdk ships host
+binaries for those two Linux arches only.
 
 ## Changelog
 
 ### 0.4.0
 
+- rebase on `debian:trixie-slim` (was `ubuntu:22.04`); smaller base, current toolchain (clang/lld 19, gcc 14)
+- unversioned LLVM packages track the distro default; install with `--no-install-recommends`
+- select the wasi-sdk bundle per build arch (`TARGETARCH`); drop the `arm/v7` image (no wasi-sdk host build)
 - switch the wapp toolchain to the full bundled wasi-sdk v24 at `/opt/wasi-sdk` (its own clang + lld), replacing the system-clang-14 + supplemental `libclang_rt`/`wasi-sysroot` approach — the bundled lld defines `__heap_end`, which wasi-libc's allocator requires, so wapps that use `malloc` now link
 
 ### 0.3.0
