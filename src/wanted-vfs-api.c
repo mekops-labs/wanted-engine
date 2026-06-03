@@ -338,43 +338,14 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
     return ret;
 }
 
-int WantedParseCtrlAction(json_t const *json, char *wappName,
-                          wapp_action_t *act, wapp_config_t *cfg) {
+/* Parse the launch-config body — console redirections, driver mounts, and
+ * persistent-state preopens — out of `params`. Shared by the legacy
+ * {action,params} envelope (WantedParseCtrlAction) and the decomposed
+ * per-wapp config node (WantedParseWappConfigJson), where the object passed in
+ * *is* the config. Identity (the wapp name) is never read here — in the
+ * decomposed model it travels in the path. */
+static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
     int i;
-    if (NULL == cfg)
-        return -EINVAL;
-
-    if (NULL != act) {
-        json_t const *action = json_getProperty(json, "action");
-        if (!action || JSON_TEXT != json_getType(action)) {
-            DEBUG_TRACE(".action property not found in json");
-            return -EINVAL;
-        }
-        if (strcmp("start", json_getValue(action)) == 0) {
-            *act = WAPP_START;
-        } else if (strcmp("stop", json_getValue(action)) == 0) {
-            *act = WAPP_STOP;
-        } else {
-            DEBUG_TRACE(".action property has wrong value");
-            return -EINVAL;
-        }
-    }
-
-    json_t const *params = json_getProperty(json, "params");
-    if (!params || JSON_OBJ != json_getType(params)) {
-        DEBUG_TRACE(".params property not found in json");
-        return -EINVAL;
-    }
-
-    if (wappName != NULL) {
-        json_t const *name = json_getProperty(params, "name");
-        if (!name || JSON_TEXT != json_getType(name)) {
-            DEBUG_TRACE(".params.name property not found in json");
-            return -EINVAL;
-        }
-        strcpy(wappName, json_getValue(name));
-    }
-
     json_t const *console = json_getProperty(params, "console");
     if (console && JSON_OBJ == json_getType(console)) {
         json_t const *in = json_getProperty(console, "in");
@@ -462,20 +433,63 @@ int WantedParseCtrlAction(json_t const *json, char *wappName,
         }
         cfg->preopensCnt = (size_t)pi;
     }
+}
+
+int WantedParseCtrlAction(json_t const *json, char *wappName,
+                          wapp_action_t *act, wapp_config_t *cfg) {
+    if (NULL == cfg)
+        return -EINVAL;
+
+    if (NULL != act) {
+        json_t const *action = json_getProperty(json, "action");
+        if (!action || JSON_TEXT != json_getType(action)) {
+            DEBUG_TRACE(".action property not found in json");
+            return -EINVAL;
+        }
+        if (strcmp("start", json_getValue(action)) == 0) {
+            *act = WAPP_START;
+        } else if (strcmp("stop", json_getValue(action)) == 0) {
+            *act = WAPP_STOP;
+        } else {
+            DEBUG_TRACE(".action property has wrong value");
+            return -EINVAL;
+        }
+    }
+
+    json_t const *params = json_getProperty(json, "params");
+    if (!params || JSON_OBJ != json_getType(params)) {
+        DEBUG_TRACE(".params property not found in json");
+        return -EINVAL;
+    }
+
+    if (wappName != NULL) {
+        json_t const *name = json_getProperty(params, "name");
+        if (!name || JSON_TEXT != json_getType(name)) {
+            DEBUG_TRACE(".params.name property not found in json");
+            return -EINVAL;
+        }
+        strcpy(wappName, json_getValue(name));
+    }
+
+    ParseWappParams(params, cfg);
 
     return 0;
 }
 
 int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
                               wapp_action_t *act, wapp_config_t *cfg) {
-    if (NULL == buf)
+    if (NULL == buf || NULL == cfg)
         return -EINVAL;
+    /* Bounded copy — never a VLA. This now parses only the compiled-in
+     * supervisor bootstrap config, which is far smaller than the cap. */
+    if (bufLen >= WANTED_CTRL_JSON_MAX)
+        return -EMSGSIZE;
 
-    // TODO: how to allocate it dynamically
     json_t m[100];
-    char b[bufLen];
+    char b[WANTED_CTRL_JSON_MAX];
 
     memcpy(b, buf, bufLen);
+    b[bufLen] = '\0';
     memset(cfg, 0, sizeof(wapp_config_t));
 
     json_t const *json = json_create(b, m, sizeof m / sizeof *m);
@@ -485,5 +499,31 @@ int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
     }
 
     return WantedParseCtrlAction(json, wappName, act, cfg);
-    ;
+}
+
+int WantedParseWappConfigJson(const char *buf, size_t bufLen,
+                              wapp_config_t *cfg) {
+    if (NULL == buf || NULL == cfg)
+        return -EINVAL;
+    if (bufLen >= WANTED_CTRL_JSON_MAX)
+        return -EMSGSIZE;
+
+    json_t m[100];
+    char b[WANTED_CTRL_JSON_MAX];
+
+    memcpy(b, buf, bufLen);
+    b[bufLen] = '\0';
+    memset(cfg, 0, sizeof(wapp_config_t));
+
+    json_t const *json = json_create(b, m, sizeof m / sizeof *m);
+    if (!json || JSON_OBJ != json_getType(json)) {
+        DEBUG_TRACE("can't initialize json parser");
+        return -EINVAL;
+    }
+
+    /* The decomposed config node carries the bare launch-config body — the
+     * object itself plays the role the legacy `params` block did. */
+    ParseWappParams(json, cfg);
+
+    return 0;
 }
