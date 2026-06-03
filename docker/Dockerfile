@@ -1,7 +1,7 @@
 FROM ubuntu:22.04
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.3.0"
+LABEL version="0.4.0"
 
 RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update \
     && export DEBIAN_FRONTEND=noninteractive \
@@ -35,18 +35,18 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     gosu \
     && rm -rf /var/lib/apt/lists/*
 
-# v16-v25 use the libclang_rt.builtins-wasm32-wasi-* naming convention.
-# v26+ switched to libclang_rt-*.tar.gz and bundle their own clang — upgrading
-# beyond v25 requires switching to the full wasi-sdk-*.tar.gz bundle and
-# updating wasm/Makefile to use /opt/wasi-sdk/bin/clang.
+# Wapp (WebAssembly) toolchain: the full wasi-sdk bundle ships its own clang
+# and lld plus the wasi-sysroot. wapps are built with /opt/wasi-sdk/bin/clang
+# (see wasm/Makefile, wapps/*/Makefile); the host engine still builds with the
+# system clang above. The bundled lld defines __heap_end, which wasi-libc's
+# allocator requires — the system lld-14 does not, so wapps that use malloc
+# only link against this toolchain.
 ARG WASI_SDK_VER=24
-ARG LIBCLANG_RT_FILE=libclang_rt.builtins-wasm32-wasi-${WASI_SDK_VER}.0.tar.gz
-ADD https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VER}/${LIBCLANG_RT_FILE} /tmp
-RUN tar xzf /tmp/${LIBCLANG_RT_FILE} -C /usr/lib/clang/14/ && rm -f ${LIBCLANG_RT_FILE}
-
-ARG WASI_SYSROOT_FILE=wasi-sysroot-${WASI_SDK_VER}.0.tar.gz
-ADD https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VER}/${WASI_SYSROOT_FILE} /tmp
-RUN tar xzf /tmp/${WASI_SYSROOT_FILE} -C /usr/share/ && rm -f ${WASI_SYSROOT_FILE}
+ARG WASI_SDK_DIR=wasi-sdk-${WASI_SDK_VER}.0-x86_64-linux
+ADD https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VER}/${WASI_SDK_DIR}.tar.gz /tmp
+RUN tar xzf /tmp/${WASI_SDK_DIR}.tar.gz -C /opt/ \
+    && ln -s /opt/${WASI_SDK_DIR} /opt/wasi-sdk \
+    && rm -f /tmp/${WASI_SDK_DIR}.tar.gz
 
 ADD entry.sh /
 

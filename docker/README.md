@@ -17,6 +17,10 @@ docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t registry.
 
 ## Changelog
 
+### 0.4.0
+
+- switch the wapp toolchain to the full bundled wasi-sdk v24 at `/opt/wasi-sdk` (its own clang + lld), replacing the system-clang-14 + supplemental `libclang_rt`/`wasi-sysroot` approach — the bundled lld defines `__heap_end`, which wasi-libc's allocator requires, so wapps that use `malloc` now link
+
 ### 0.3.0
 
 - update WASI SDK v16 → v24 (last version compatible with the libclang_rt supplement approach; v26+ require switching to the full bundled SDK)
