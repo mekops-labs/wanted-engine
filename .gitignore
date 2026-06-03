@@ -7,4 +7,6 @@ wasm/supervisor/wsh/app.wasm
 wapps/*/*.wasm
 wapps/*/*.wasm.h
 wapps/*/*.o
+# Packaged registry images (REGISTRY_ROOT); built/staged by smoke-multiwapp.
+wapps/*.wapp
 *.wat
