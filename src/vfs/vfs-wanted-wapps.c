@@ -215,11 +215,11 @@ static int StartWapp(struct vfs_driver_ctx_t *d, const char *name) {
 
     ret = PlatformRegistryWappLoad(&e, wapp);
     if (ret < 0)
-        goto END;
+        goto FREE; /* nothing mapped yet */
 
     ret = WantedWappParseManifest(wapp);
     if (ret < 0)
-        goto END;
+        goto UNLOAD;
 
     wapps_pending_t *p = pending_find(d, name);
     if (p != NULL)
@@ -227,14 +227,22 @@ static int StartWapp(struct vfs_driver_ctx_t *d, const char *name) {
 
     ret = PlatformWappStart(wapp);
     if (ret < 0)
-        goto END;
+        goto UNLOAD;
 
     /* Config consumed by the launch — clear it so a later start does not
      * silently reuse stale grants. */
     if (p != NULL)
         memset(p, 0, sizeof(*p));
 
-END:
+    /* Ownership of `wapp` and its mapped image transfers to the platform
+     * thread slot; the worker thread dereferences it for the wapp's whole
+     * lifetime. The slot releases it when later reused (see PlatformWappStart).
+     * Freeing here would be a use-after-free against the just-spawned thread. */
+    return ret;
+
+UNLOAD:
+    PlatformWappUnload(wapp);
+FREE:
     WantedFree(wapp);
     return ret;
 }
