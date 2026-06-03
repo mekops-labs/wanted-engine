@@ -62,12 +62,13 @@ WANTED boots a privileged wapp called the **supervisor** (Sheriff role). The sup
 
 Two variants ship under `wasm/supervisor/`:
 
-| Variant | Path | Purpose |
-|---|---|---|
-| `sheriff` | `wasm/supervisor/sheriff/` | Production control-plane agent |
-| `wsh` | `wasm/supervisor/wsh/` | Debug shell for interactive inspection |
+| Variant | Path | Source | Purpose |
+|---|---|---|---|
+| `sheriff` | `wasm/supervisor/sheriff/` | prebuilt `app.wasm` (separate repo) | Production control-plane agent |
+| `wsh` | `wasm/supervisor/wsh/` | compiled from `wapps/wsh/` | Debug shell for interactive inspection |
 
-Build both TAR images before running:
+Build both TAR images before running (this compiles `wsh` from `wapps/wsh/` and
+bundles each variant's `app.wasm` + `manifest.json`):
 
 ```bash
 make -C wasm/supervisor
@@ -129,12 +130,12 @@ podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
 ### Test
 
 ```bash
-# Unit tests (20 tests via ctest)
+# Unit tests (via ctest)
 podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
     registry.gitlab.com/wanted-project/wanted-engine/build \
     -c "cd /src/build && ctest --output-on-failure"
 
-# Smoke tests (16 end-to-end tests via wsh)
+# Smoke tests (end-to-end via the wsh debug supervisor)
 podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
     registry.gitlab.com/wanted-project/wanted-engine/build \
     -c "cd /src && test/smoke.sh"
