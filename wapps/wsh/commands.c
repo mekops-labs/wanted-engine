@@ -9,6 +9,16 @@
 
 #include "commands.h"
 
+/* Control-plane paths used by the start/stop/status commands. Edit these to
+ * match where the WANTED driver is mounted in this wapp's namespace; the
+ * %s fields take the wapp name (and, for WANTED_WAPP_FIELD, the node name). */
+#define WANTED_BASE        "/dev/wanted"
+#define WANTED_CTL         WANTED_BASE "/ctl"          /* root create/launch */
+#define WANTED_WAPPS       WANTED_BASE "/wapps"        /* wapp enumeration   */
+#define WANTED_WAPP_CTL    WANTED_WAPPS "/%s/ctl"      /* per-wapp verb node */
+#define WANTED_WAPP_STATE  WANTED_WAPPS "/%s/state"    /* per-wapp state     */
+#define WANTED_WAPP_FIELD  WANTED_WAPPS "/%s/%s"       /* per-wapp read node */
+
 /*
   Function Declarations for builtin shell commands:
  */
@@ -21,6 +31,9 @@ int wsh_cat(char **args);
 int wsh_write(char **args);
 int wsh_cp(char **args);
 int wsh_rm(char **args);
+int wsh_start(char **args);
+int wsh_stop(char **args);
+int wsh_status(char **args);
 
 /*
   List of builtin commands, followed by their corresponding functions.
@@ -35,6 +48,9 @@ cmd_t cmds[] = {
     { "write", wsh_write },
     { "cp", wsh_cp },
     { "rm", wsh_rm },
+    { "start", wsh_start },
+    { "stop", wsh_stop },
+    { "status", wsh_status },
 };
 
 int wsh_num_cmds() {
@@ -209,6 +225,8 @@ int wsh_cat(char **args)
 int wsh_write(char **args)
 {
     int fd, cnt;
+    char content[256];
+    size_t pos = 0;
 
     if (args[1] == NULL) {
         fputs("write: expected filename\n", stderr);
@@ -220,6 +238,19 @@ int wsh_write(char **args)
         return 1;
     }
 
+    /* Join the remaining tokens with single spaces so multi-word payloads
+     * (e.g. "start app1") survive the shell's whitespace tokenizer. */
+    for (int i = 2; args[i] != NULL && pos < sizeof(content) - 1; i++) {
+        if (i > 2 && pos < sizeof(content) - 1)
+            content[pos++] = ' ';
+        size_t len = strlen(args[i]);
+        if (pos + len > sizeof(content) - 1)
+            len = sizeof(content) - 1 - pos;
+        memcpy(content + pos, args[i], len);
+        pos += len;
+    }
+    content[pos] = '\0';
+
     fd = open(args[1], O_WRONLY);
     if(fd < 0) {
         fputs("write: ", stderr);
@@ -227,7 +258,7 @@ int wsh_write(char **args)
         return 1;
     }
 
-    cnt = write(fd, args[2], strlen(args[2]));
+    cnt = write(fd, content, pos);
     if (cnt < 0) {
         perror(args[1]);
     }
@@ -300,5 +331,117 @@ int wsh_rm(char **args)
         perror(args[1]);
     }
 
+    return 1;
+}
+
+/* Read a control-plane node into `buf` (NUL-terminated, trailing newline
+ * stripped). Returns the byte count, or -1 on error. */
+static int wanted_read(const char *path, char *buf, size_t cap)
+{
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return -1;
+
+    ssize_t n = read(fd, buf, cap - 1);
+    close(fd);
+    if (n < 0)
+        return -1;
+
+    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+        n--;
+    buf[n] = '\0';
+    return (int)n;
+}
+
+/* Write a verb/payload to a control-plane node. Returns bytes written or -1. */
+static int wanted_write(const char *path, const char *payload)
+{
+    int fd = open(path, O_WRONLY);
+    if (fd < 0)
+        return -1;
+
+    int n = write(fd, payload, strlen(payload));
+    close(fd);
+    return n;
+}
+
+/**
+   @brief Create-and-launch a wapp via the root control node.
+   @param args args[1] is the wapp name.
+ */
+int wsh_start(char **args)
+{
+    char payload[64];
+
+    if (args[1] == NULL) {
+        fputs("start: need a wapp name\n", stderr);
+        return 1;
+    }
+
+    snprintf(payload, sizeof(payload), "start %s", args[1]);
+    if (wanted_write(WANTED_CTL, payload) < 0) {
+        fputs("start: ", stderr);
+        perror(WANTED_CTL);
+    }
+    return 1;
+}
+
+/**
+   @brief Stop a wapp via its per-wapp control node.
+   @param args args[1] is the wapp name.
+ */
+int wsh_stop(char **args)
+{
+    char path[128];
+
+    if (args[1] == NULL) {
+        fputs("stop: need a wapp name\n", stderr);
+        return 1;
+    }
+
+    snprintf(path, sizeof(path), WANTED_WAPP_CTL, args[1]);
+    if (wanted_write(path, "stop") < 0) {
+        fputs("stop: ", stderr);
+        perror(path);
+    }
+    return 1;
+}
+
+/**
+   @brief Report wapp state. With a name, print that wapp's state/version/id;
+          without one, list every wapp under wapps/ with its state.
+ */
+int wsh_status(char **args)
+{
+    char path[160];
+    char val[64];
+
+    if (args[1] != NULL) {
+        static const char *fields[] = { "state", "version", "id" };
+        printf("%s:\n", args[1]);
+        for (int i = 0; i < 3; i++) {
+            snprintf(path, sizeof(path), WANTED_WAPP_FIELD, args[1], fields[i]);
+            if (wanted_read(path, val, sizeof(val)) >= 0)
+                printf("  %-8s %s\n", fields[i], val);
+            else
+                printf("  %-8s <unavailable>\n", fields[i]);
+        }
+        return 1;
+    }
+
+    DIR *dr = opendir(WANTED_WAPPS);
+    if (dr == NULL) {
+        fputs("status: ", stderr);
+        perror(WANTED_WAPPS);
+        return 1;
+    }
+
+    struct dirent *de;
+    while ((de = readdir(dr)) != NULL) {
+        snprintf(path, sizeof(path), WANTED_WAPP_STATE, de->d_name);
+        if (wanted_read(path, val, sizeof(val)) >= 0)
+            printf("%-15s %s\n", de->d_name, val);
+    }
+    closedir(dr);
     return 1;
 }
