@@ -158,8 +158,7 @@ TEST(vfs_wanted_wapps, ReadEof_IsPerFd) {
     DummyWappStateSeed(&seed, 1);
 
     /* Two independent fds on the same node. Draining one to EOF must not
-     * latch EOF on the other — the old single-ctl node used a process-global
-     * static for this and corrupted concurrent readers. */
+     * latch EOF on the other — each fd keeps an independent read cursor. */
     int a = OpenLeaf("alpha/state");
     int b = OpenLeaf("alpha/state");
     char buf[32];

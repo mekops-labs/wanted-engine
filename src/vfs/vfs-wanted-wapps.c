@@ -15,10 +15,9 @@
 
 /* ── WantedWappsDriver ───────────────────────────────────────────────────────
  *
- * The per-wapp control namespace mounted at /dev/wanted/wapps. Replaces the
- * single multiplexed /dev/wanted/ctrl JSON-RPC node ratified out by MDR-0005:
- * the PATH now carries wapp identity, reads are composable plain text, and
- * only the start config stays JSON.
+ * The per-wapp control namespace mounted at /dev/wanted/wapps. The path
+ * carries wapp identity, reads are composable plain text, and only the start
+ * config is JSON.
  *
  *   wapps/                 ReadDir → one entry per known (running) wapp
  *     <name>/              synthetic dir; ReadDir → the control files below
@@ -28,9 +27,9 @@
  *       id        (r)      plain-text engine wapp id
  *       config    (w)      JSON start config: { console, drivers[], preopens }
  *
- * Every open allocates its own slot in the fd table below — read EOF is
- * latched per-fd, never in a process-global static, so concurrent readers
- * (the supervisor reopens on every tick) do not corrupt each other's cursor.
+ * Every open allocates its own slot in the fd table below; read EOF is latched
+ * per-fd, so concurrent readers (the supervisor reopens on every tick) keep
+ * independent cursors.
  * ───────────────────────────────────────────────────────────────────────── */
 
 #define ID                                                                     \
@@ -199,8 +198,7 @@ static bool LookupState(const char *name, wapp_state_t *out) {
 }
 
 /* Create-and-launch a wapp by name, applying a buffered config if present.
- * Mirrors the legacy ctrl WAPP_START chain; identity comes from `name`, never
- * a payload field. */
+ * Identity comes from `name` (supplied by the path), not a payload field. */
 static int StartWapp(struct vfs_driver_ctx_t *d, const char *name) {
     int ret;
     reg_entry_t e;
@@ -357,9 +355,8 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     const char *name = d->fds[fd].name;
 
     if (node == NODE_CTL) {
-        /* Line-oriented verb. Bounded copy — a control line never legitimately
-         * exceeds a short token, so anything longer is rejected rather than
-         * driving an unbounded stack buffer. */
+        /* Line-oriented verb. A control line is a short token; anything that
+         * fills the fixed line buffer is rejected. */
         if (nbyte >= WAPPS_LINE_MAX)
             return -EMSGSIZE;
         char line[WAPPS_LINE_MAX];
