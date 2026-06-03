@@ -96,31 +96,6 @@ const char *statusToString(status_t state) {
     }
 }
 
-static size_t StateToJson(const wapp_state_t *stateList, size_t stateLen,
-                          uint8_t *buf, size_t bufLen) {
-    char *p = (char *)buf;
-    size_t left = bufLen;
-    char ver[12];
-
-    p = json_objOpen(p, NULL, &left);
-    p = json_arrOpen(p, "wapps", &left);
-    for (int i = 0; i < stateLen; i++) {
-        p = json_objOpen(p, NULL, &left);
-        p = json_str(p, "name", stateList[i].name, &left);
-        p = json_int(p, "id", stateList[i].id, &left);
-        p = json_str(p, "state", statusToString(stateList[i].status), &left);
-        const uint8_t *v = stateList[i].version.v;
-        snprintf(ver, 12, "%X.%X.%X-%X", v[0], v[1], v[2], v[3]);
-        p = json_nstr(p, "version", ver, 9, &left);
-        p = json_objClose(p, &left);
-    }
-    p = json_arrClose(p, &left);
-    p = json_objClose(p, &left);
-    p = json_end(p, &left);
-
-    return bufLen - left;
-}
-
 static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out) {
     int i = 0;
     json_t m[100];
@@ -236,16 +211,6 @@ int WantedCloseRegistry() {
     return PlatformRegistryWrite(FINISH_WRITE, NULL, 0);
 }
 
-int WantedReadState(uint8_t *buf, size_t bufLen) {
-    wapp_state_t wapps[MAX_WAPPS];
-
-    int ret = PlatformWappGetState(wapps, MAX_WAPPS);
-    if (ret < 0)
-        return ret;
-
-    return StateToJson(wapps, ret, buf, bufLen);
-}
-
 int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen) {
     int ret;
     wapp_t *w = WantedMalloc(sizeof(wapp_t));
@@ -339,11 +304,11 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
 }
 
 /* Parse the launch-config body — console redirections, driver mounts, and
- * persistent-state preopens — out of `params`. Shared by the legacy
- * {action,params} envelope (WantedParseCtrlAction) and the decomposed
- * per-wapp config node (WantedParseWappConfigJson), where the object passed in
- * *is* the config. Identity (the wapp name) is never read here — in the
- * decomposed model it travels in the path. */
+ * persistent-state preopens — out of `params`. Shared by the {action,params}
+ * bootstrap envelope (WantedParseCtrlAction) and the per-wapp config node
+ * (WantedParseWappConfigJson), where the object passed in *is* the config.
+ * Wapp identity is not read here — for the config node it travels in the
+ * path. */
 static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
     int i;
     json_t const *console = json_getProperty(params, "console");
@@ -480,8 +445,8 @@ int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
                               wapp_action_t *act, wapp_config_t *cfg) {
     if (NULL == buf || NULL == cfg)
         return -EINVAL;
-    /* Bounded copy — never a VLA. This now parses only the compiled-in
-     * supervisor bootstrap config, which is far smaller than the cap. */
+    /* Parses the compiled-in supervisor bootstrap config, which sits well
+     * under the cap. */
     if (bufLen >= WANTED_CTRL_JSON_MAX)
         return -EMSGSIZE;
 

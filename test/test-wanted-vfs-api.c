@@ -12,7 +12,6 @@ int WantedSetConfig(wantedConfig_t cfg);
 int WantedGetConfigJson(uint8_t *buf, size_t bufLen);
 
 int WantedReadRegistry(uint8_t *buf, size_t bufLen);
-int WantedReadState(uint8_t *buf, size_t bufLen);
 */
 
 /***************************************/
