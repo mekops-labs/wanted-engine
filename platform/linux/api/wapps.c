@@ -10,6 +10,7 @@
 #include <platform.h>
 #include <wanted-api.h>
 #include <wanted.h>
+#include <wanted_malloc.h>
 
 #include <debug_trace.h>
 
@@ -167,6 +168,17 @@ int PlatformWappStart(wapp_t *wapp) {
             state.threads[slot].status == EXITED ||
             state.threads[slot].status == FAILURE)
             break;
+    }
+
+    /* The slot owns the previous occupant's wapp_t for its whole lifetime
+     * (StartWapp hands ownership here, not freeing at the call site). Its
+     * thread has fully terminated by the time the slot is reusable, so release
+     * the image + struct now. The supervisor's image is a persistent singleton
+     * reused across respawns — never free that one. */
+    wapp_t *prev = state.threads[slot].data.wapp;
+    if (prev != NULL && prev != wapp && prev != WantedGetCurrentSupervisor()) {
+        PlatformWappUnload(prev);
+        WantedFree(prev);
     }
 
     state.threads[slot].data.id = slot;
