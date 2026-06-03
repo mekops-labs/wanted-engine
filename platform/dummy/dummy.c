@@ -4,14 +4,9 @@
 
 /* Clock, PRNG, VFS platform driver, and fs functions live in dummy-fs.c.
  * In-memory registry (Read/Remove) lives in dummy-registry.c.
+ * In-memory wapp runtime state (Load/Unload/Start/Stop/Loop/GetState) lives
+ * in dummy-wapps.c.
  * Network mock (PlatformNet*) lives in dummy-net.c. */
-
-int PlatformWappLoad(const char *name, wapp_t *wapp) { (void)name; (void)wapp; return 0; }
-int PlatformWappUnload(const wapp_t *wapp) { (void)wapp; return 0; }
-int PlatformWappStart(wapp_t *app) { (void)app; return 0; }
-int PlatformWappStop(const char *name) { (void)name; return 0; }
-void PlatformWappLoop() {}
-int PlatformWappGetState(wapp_state_t *apps, size_t appsLen) { (void)apps; (void)appsLen; return 0; }
 
 /* PlatformRegistryWrite requires parsing a WASM manifest to derive name and
  * version (FINISH_WRITE); WASM loading is out of scope for the dummy, so this
