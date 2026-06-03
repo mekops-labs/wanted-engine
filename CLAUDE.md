@@ -102,7 +102,7 @@ The VFS router. Routes WASI syscalls to the correct driver via prefix matching:
 - `vfs-virtual.c` — platform-independent virtual drivers (`/dev/null`, `/dev/config`, etc.)
 - `vfs-socket.c` — raw socket I/O
 - `vfs-9p.c` — 9P protocol driver (host communication)
-- `vfs-wanted.c`, `vfs-wanted-config.c`, `vfs-wanted-ctrl.c`, `vfs-wanted-registry.c` — supervisor control-plane drivers
+- `vfs-wanted.c`, `vfs-wanted-config.c`, `vfs-wanted-wapps.c`, `vfs-wanted-registry.c` — supervisor control-plane drivers (`vfs-wanted-wapps.c` is the per-wapp `wapps/` namespace plus the root `ctl` node)
 
 When adding a new VFS driver: implement the driver in `vfs/`, register it in `vfs-devfs.c` or `vfs-netfs.c`, add the header to `src/include/`.
 
@@ -145,18 +145,21 @@ WebAssembly toolchain, test apps, and supervisor variants.
 
 #### `wasm/supervisor/`
 
-Two supervisor variants. Each contains `app.wasm` + `manifest.json` + generated `supervisor.tar`.
+Two supervisor variants, each bundled into `supervisor.tar` from `app.wasm` + `manifest.json`.
 
-| Variant | Purpose |
-|---|---|
-| `sheriff/` | Production control-plane agent — default |
-| `wsh/` | Interactive debug shell |
+| Variant | Purpose | `app.wasm` source |
+|---|---|---|
+| `sheriff/` | Production control-plane agent — default | prebuilt blob (separate repo) |
+| `wsh/` | Interactive debug shell | compiled from `wapps/wsh/` |
 
-Rebuild after any supervisor source change:
+Rebuild after any supervisor source change (compiles `wsh` from `wapps/wsh/`,
+re-tars both variants):
 
 ```bash
 make -C wasm/supervisor
 ```
+
+`wapps/wsh/` holds the wsh shell source (built with `/opt/wasi-sdk/bin/clang`); its `start`/`stop`/`status` builtins exercise the `/dev/wanted` control plane.
 
 ### `test/`
 
