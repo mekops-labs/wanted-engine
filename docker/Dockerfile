@@ -1,31 +1,36 @@
-FROM ubuntu:22.04
+FROM debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
 LABEL version="0.4.0"
 
+# Unversioned LLVM packages track the distro default (clang/lld/lldb 19 on
+# trixie). The host engine builds with gcc (build-essential) and this clang;
+# the wapp toolchain is the separate bundled wasi-sdk installed below.
 RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update \
     && export DEBIAN_FRONTEND=noninteractive \
-    && apt-get install -y \
+    && apt-get install -y --no-install-recommends \
     # Core build toolchain
     build-essential \
     clang \
     cmake \
     cmake-curses-gui \
-    lld-14 \
+    lld \
     ninja-build \
     # Debuggers and runtime analysis
     gdb \
-    lldb-14 \
+    lldb \
     strace \
     valgrind \
     # Static analysis and formatting
-    clang-format-14 \
-    clang-tidy-14 \
+    clang-format \
+    clang-tidy \
     # WebAssembly tooling
     wabt \
     # Coverage reporting
     gcovr \
     # Utilities
+    ca-certificates \
+    curl \
     git \
     jq \
     python-is-python3 \
@@ -37,16 +42,26 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
 
 # Wapp (WebAssembly) toolchain: the full wasi-sdk bundle ships its own clang
 # and lld plus the wasi-sysroot. wapps are built with /opt/wasi-sdk/bin/clang
-# (see wasm/Makefile, wapps/*/Makefile); the host engine still builds with the
-# system clang above. The bundled lld defines __heap_end, which wasi-libc's
-# allocator requires — the system lld-14 does not, so wapps that use malloc
-# only link against this toolchain.
+# (see wasm/Makefile, wapps/*/Makefile); the host engine builds with the system
+# clang above. The bundled lld defines __heap_end, which wasi-libc's allocator
+# requires, so wapps that use malloc link against this toolchain.
+#
+# The bundle ships a host-arch clang binary, so the right one is selected per
+# build platform. wasi-sdk publishes x86_64 and arm64 Linux builds only.
 ARG WASI_SDK_VER=24
-ARG WASI_SDK_DIR=wasi-sdk-${WASI_SDK_VER}.0-x86_64-linux
-ADD https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VER}/${WASI_SDK_DIR}.tar.gz /tmp
-RUN tar xzf /tmp/${WASI_SDK_DIR}.tar.gz -C /opt/ \
-    && ln -s /opt/${WASI_SDK_DIR} /opt/wasi-sdk \
-    && rm -f /tmp/${WASI_SDK_DIR}.tar.gz
+ARG TARGETARCH=amd64
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) wasi_arch=x86_64 ;; \
+      arm64) wasi_arch=arm64 ;; \
+      *) echo "no wasi-sdk build for TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    dir="wasi-sdk-${WASI_SDK_VER}.0-${wasi_arch}-linux"; \
+    curl -fsSL "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VER}/${dir}.tar.gz" \
+        -o /tmp/wasi-sdk.tar.gz; \
+    tar xzf /tmp/wasi-sdk.tar.gz -C /opt/; \
+    ln -s "/opt/${dir}" /opt/wasi-sdk; \
+    rm -f /tmp/wasi-sdk.tar.gz
 
 ADD entry.sh /
 
