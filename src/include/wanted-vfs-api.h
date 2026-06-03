@@ -20,13 +20,12 @@ int WantedCloseRegistry();
 int WantedRegistryRemove(const reg_entry_t *entry);
 int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen);
 
-int WantedReadState(uint8_t *buf, size_t bufLen);
 const char *statusToString(status_t state);
 
-/* Upper bound (including NUL) on a control/config JSON payload the engine will
- * copy onto the stack to parse. Bounds the parse buffers so a write never
- * drives an unbounded (VLA) allocation. The compiled-in supervisor bootstrap
- * config and any per-wapp launch config sit comfortably under this. */
+/* Upper bound (including NUL) on a control/config JSON payload the engine
+ * copies onto the stack to parse, sizing the fixed parse buffer. The
+ * compiled-in supervisor bootstrap config and any per-wapp launch config sit
+ * comfortably under this. */
 #define WANTED_CTRL_JSON_MAX 2048
 
 int WantedParseCtrlAction(json_t const *json, char *wappName,
