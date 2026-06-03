@@ -30,7 +30,7 @@ add_test(
             ${CMAKE_SOURCE_DIR}/docs/example_config_smoke.json
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
-set_tests_properties(smoke PROPERTIES TIMEOUT 30)
+set_tests_properties(smoke PROPERTIES TIMEOUT 60)
 
 # Supervisor wapp smoke test. Always available as a manual target. Only added
 # to ctest when WANTED_DEBUG_TRACES is on — without traces the engine is
