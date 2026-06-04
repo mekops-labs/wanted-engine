@@ -31,6 +31,16 @@ int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout,
                            plat_clk_flags_t flags);
 int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len);
 
+/* Opaque cross-platform mutex. src/ must not call native threading directly,
+ * so shared state (e.g. the inter-wapp pipe store) guards itself through these.
+ * Lock/Unlock/Free tolerate a NULL handle so callers need not special-case an
+ * allocation failure from PlatformMutexNew. */
+typedef struct platform_mutex_t platform_mutex_t;
+platform_mutex_t *PlatformMutexNew(void);
+void PlatformMutexLock(platform_mutex_t *m);
+void PlatformMutexUnlock(platform_mutex_t *m);
+void PlatformMutexFree(platform_mutex_t *m);
+
 int PlatformWappLoad(const char *name, wapp_t *wapp);
 int PlatformWappUnload(const wapp_t *wapp);
 int PlatformWappStart(wapp_t *wapp);

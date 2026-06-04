@@ -10,6 +10,7 @@ image:
 stages:
   - build
   - test
+  - integration-tests
 
 
 .build_job_template: &build_defs  # Hidden yaml configuration that defines an anchor named 'job_configuration'
@@ -41,14 +42,6 @@ stages:
     reports:
       junit: "$BUILD_DIR/rspec.xml"
 
-# Smoke jobs run the engine end-to-end against a built CLI. They assume the
-# repo CWD is the project root: the compiled-in supervisor image path
-# (./wasm/supervisor/<variant>/supervisor.tar) resolves relative to it, and
-# wasm/supervisor is carried over from the build job's artifacts.
-.smoke_job_template: &smoke_defs
-  stage: test
-
-
 build-gcc:
   <<: *build_defs
   variables:
@@ -68,8 +61,10 @@ build-coverage:
     CC: gcc
     CMAKE_EXTRA_ARGS: -DENABLE_CODE_COVERAGE=on
 
-# wsh debug-supervisor build: drives the interactive VFS/control-plane and
-# multi-wapp smoke tests, which need the wsh shell compiled in as the boot wapp.
+# Build-validation for the alternate supervisor-image cmake option
+# (-DWANTED_SUPERVISOR_IMAGE_PATH). The smoke tests select the wsh image at
+# runtime via config, so they don't depend on this job — it only asserts the
+# wsh-compiled-in build still links.
 build-wsh:
   <<: *build_defs
   variables:
@@ -110,33 +105,29 @@ coverage:
         coverage_format: cobertura
         path: "$BUILD_DIR/coverage.xml"
 
-# Boot the production (sheriff) supervisor and assert it instantiates without
-# crashing. Runs against the default build, which embeds the sheriff image.
-smoke-engine:
-  <<: *smoke_defs
+# End-to-end smoke tests: run every test/smoke*.sh against the built CLI. Each
+# script supplies its own default config (and thus its supervisor image, via
+# the runtime supervisor.imagePath override), so the sheriff and wsh variants
+# are both exercised off a single build — adding a new test/smoke*.sh needs no
+# change here. Both supervisor TAR variants and the CLI come from build-gcc's
+# artifacts (`ninja supervisor` builds sheriff + wsh). Scripts assume the repo
+# CWD is the project root, which is the CI default.
+integration-tests:
+  stage: integration-tests
   dependencies:
     - build-gcc
   variables:
     BUILD_DIR: build-gcc
   script:
-    - ./test/smoke-engine.sh ./$BUILD_DIR/cmd/wanted-cli ./test/smoke-engine-config.json
-
-# Drive the wsh shell to exercise VFS namespaces and the control plane.
-smoke-vfs:
-  <<: *smoke_defs
-  dependencies:
-    - build-wsh
-  variables:
-    BUILD_DIR: build-wsh
-  script:
-    - ./test/smoke.sh ./$BUILD_DIR/cmd/wanted-cli ./docs/example_config_smoke.json
-
-# Drive the wsh shell to launch a second wapp and assert both run concurrently.
-smoke-multiwapp:
-  <<: *smoke_defs
-  dependencies:
-    - build-wsh
-  variables:
-    BUILD_DIR: build-wsh
-  script:
-    - ./test/smoke-multiwapp.sh ./$BUILD_DIR/cmd/wanted-cli ./docs/example_config_smoke.json
+    - |
+      status=0
+      for s in test/smoke*.sh; do
+        echo "========== $s =========="
+        if bash "$s" "./$BUILD_DIR/cmd/wanted-cli"; then
+          echo "PASS: $s"
+        else
+          echo "FAIL: $s"
+          status=1
+        fi
+      done
+      exit $status

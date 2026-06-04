@@ -7,6 +7,7 @@ set(sources
     vfs/vfs-linux.c
     api/clock.c
     api/fs.c
+    api/mutex.c
     api/random.c
     api/registry.c
     api/wapps.c
