@@ -12,7 +12,7 @@ Unreleased
 - `_bDestroy` now closes a wapp's still-open pipe handles (decrementing the shared refcounts) before freeing its handle table, so an exiting writer no longer leaks its `writers` count and readers in other wapps reach EOF.
 - `PipeDriverCreate()` takes a `pipe_store_t *`; added `PipeStoreNew()`/`PipeStoreFree()`.
 - Fixed a pre-existing preopen bug surfaced by the test: `_OpenAt` joined the relative path against `rootPath` via `cwk_path_change_root`, which dropped the separator (`"/dir" + "file"` → `"/dirfile"`), so a launched wapp could never create a file in a preopen subdirectory. It now `openat()`s the path directly against the preopen directory fd.
-- Extended `wapps/hello/` with config-selected `reader`/`writer` roles; added `test/smoke-pipe.sh` and `make smoke-pipe`, which exchange a payload between two `hello` instances through one named pipe and assert delivery via a host result file. Added an inter-driver `pipe_shared` unit-test group.
+- Extended `wapps/hello/` with `reader`/`writer` roles read from `/etc/role` in the wapp's own rootfs (each smoke image bakes its role there); added `test/smoke-pipe.sh` and `make smoke-pipe`, which exchange a payload between two `hello` instances through one named pipe and assert delivery via a host result file. Added an inter-driver `pipe_shared` unit-test group.
 
 ### Control plane — per-wapp namespace decomposition (breaking)
 

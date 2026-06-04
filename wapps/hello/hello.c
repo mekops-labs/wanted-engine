@@ -1,14 +1,13 @@
 /* hello — a minimal WASI sample wapp with three behaviours selected by the
- * role string mounted at /dev/role (via the launch config's config-map
- * driver). It talks to the outside world only through the VFS its launch
- * config grants it.
+ * role string read from /etc/role in its own (read-only) rootfs. It talks to
+ * the outside world only through the VFS its launch config grants it.
  *
  *   role "writer": open /dev/pipe/smoke and write PAYLOAD, then exit.
  *   role "reader": blocking-read /dev/pipe/smoke and copy what it received to a
  *                  host result file (a preopen), then exit. The result file —
  *                  not stdout — is the observation point, because the stdio
  *                  teardown drops a launched wapp's late stdout.
- *   no role (mount absent): write an alive marker, stay alive briefly so a
+ *   no role (file absent): write an alive marker, stay alive briefly so a
  *                  concurrent `status` sees it, then write an exit marker. Used
  *                  by the multi-wapp concurrency smoke test.
  *
@@ -18,7 +17,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define ROLE_PATH   "/dev/role"
+#define ROLE_PATH   "/etc/role"
 #define PIPE_PATH   "/dev/pipe/smoke"
 #define RESULT_DIR  "/tmp/wanted-smoke-pipe"
 #define RESULT_PATH RESULT_DIR "/result"
