@@ -10,49 +10,21 @@ Before executing any build or test command, read `README.md`. It is the authorit
 
 ## Build Environment
 
-All builds run inside the standardized Podman container. Do **not** build natively — the toolchain requires WASI SDK v16, clang 14, CMake, and Ninja.
-
-**Interactive shell (for iterative work):**
+All builds run inside the standardized build container — do **not** build natively. The root `Makefile` wraps the containerized commands (run `make help` for the full list); the container provides the toolchain (CMake, Ninja, host clang/gcc, and the bundled wasi-sdk for wapps).
 
 ```bash
-./run-podman.sh
+make build         # supervisor TAR images + engine (sheriff supervisor)
+make wsh           # engine with the wsh debug supervisor
+make test          # unit + smoke suite via ctest
+make smoke         # VFS/control-plane smoke via wsh
+make shell         # interactive shell in the build container
 ```
 
-**Full build (supervisor TAR images + engine):**
+Override the container runtime or image with `RUNNER=docker` / `IMAGE=...`.
+
+**Run a single test group** (from `make shell` or any container shell):
 
 ```bash
-# Step 1: build supervisor TAR images (required before cmake)
-make -C wasm/supervisor
-
-# Step 2: build the engine
-podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
-    registry.gitlab.com/wanted-project/wanted-engine/build \
-    -c "mkdir -p /src/build && cd /src/build && cmake -G Ninja /src && ninja"
-```
-
-**Build with debug supervisor (`wsh`) instead of production (`sheriff`):**
-
-```bash
-podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
-    registry.gitlab.com/wanted-project/wanted-engine/build \
-    -c "mkdir -p /src/build && cd /src/build && \
-        cmake -G Ninja /src \
-              -DWANTED_SUPERVISOR_IMAGE_PATH=../wasm/supervisor/wsh/supervisor.tar \
-        && ninja"
-```
-
-**Run unit tests:**
-
-```bash
-podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
-    registry.gitlab.com/wanted-project/wanted-engine/build \
-    -c "cd /src/build && ctest --output-on-failure"
-```
-
-**Run a single test group:**
-
-```bash
-# Inside the container or after build:
 cd build && ctest -R test-tarfs --output-on-failure
 ```
 
@@ -102,7 +74,7 @@ The VFS router. Routes WASI syscalls to the correct driver via prefix matching:
 - `vfs-virtual.c` — platform-independent virtual drivers (`/dev/null`, `/dev/config`, etc.)
 - `vfs-socket.c` — raw socket I/O
 - `vfs-9p.c` — 9P protocol driver (host communication)
-- `vfs-wanted.c`, `vfs-wanted-config.c`, `vfs-wanted-ctrl.c`, `vfs-wanted-registry.c` — supervisor control-plane drivers
+- `vfs-wanted.c`, `vfs-wanted-config.c`, `vfs-wanted-wapps.c`, `vfs-wanted-registry.c` — supervisor control-plane drivers (`vfs-wanted-wapps.c` is the per-wapp `wapps/` namespace plus the root `ctl` node)
 
 When adding a new VFS driver: implement the driver in `vfs/`, register it in `vfs-devfs.c` or `vfs-netfs.c`, add the header to `src/include/`.
 
@@ -145,18 +117,21 @@ WebAssembly toolchain, test apps, and supervisor variants.
 
 #### `wasm/supervisor/`
 
-Two supervisor variants. Each contains `app.wasm` + `manifest.json` + generated `supervisor.tar`.
+Two supervisor variants, each bundled into `supervisor.tar` from `app.wasm` + `manifest.json`.
 
-| Variant | Purpose |
-|---|---|
-| `sheriff/` | Production control-plane agent — default |
-| `wsh/` | Interactive debug shell |
+| Variant | Purpose | `app.wasm` source |
+|---|---|---|
+| `sheriff/` | Production control-plane agent — default | prebuilt blob (separate repo) |
+| `wsh/` | Interactive debug shell | compiled from `wapps/wsh/` |
 
-Rebuild after any supervisor source change:
+Rebuild after any supervisor source change (compiles `wsh` from `wapps/wsh/`,
+re-tars both variants):
 
 ```bash
 make -C wasm/supervisor
 ```
+
+`wapps/wsh/` holds the wsh shell source (built with `/opt/wasi-sdk/bin/clang`); its `start`/`stop`/`status` builtins exercise the `/dev/wanted` control plane.
 
 ### `test/`
 

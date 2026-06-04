@@ -23,6 +23,18 @@ void DummyRegistryReset(void);
  * manifest, which the dummy platform cannot do. */
 int DummyRegistrySeed(const reg_entry_t *entries, size_t count);
 
+/* ── Wapp runtime-state mock control (dummy-wapps.c) ────────────────────── */
+
+/* Clear the in-memory wapp runtime-state table. Call in TEST_SETUP. */
+void DummyWappStateReset(void);
+
+/* Populate the wapp runtime-state table from `states`, upserting by name.
+ * Returns the number stored, or -ENOSPC if the table is full. Lets a test put
+ * a wapp into a known status (e.g. RUNNING) without a real WASM runtime, so
+ * PlatformWappGetState — and the control-plane reads layered on it — return
+ * deterministic data. */
+int DummyWappStateSeed(const wapp_state_t *states, size_t count);
+
 /* ── Network mock control (dummy-net.c) ─────────────────────────────────── */
 
 /* Reset socket pool, buffers, and controllable results. Call in TEST_SETUP. */

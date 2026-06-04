@@ -2,4 +2,9 @@
 build
 wasm/*.wasm*
 wasm/supervisor/*/supervisor.tar
+# wsh's app.wasm is compiled from wapps/wsh/ (sheriff's is a committed blob).
+wasm/supervisor/wsh/app.wasm
+wapps/*/*.wasm
+wapps/*/*.wasm.h
+wapps/*/*.o
 *.wat

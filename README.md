@@ -62,12 +62,13 @@ WANTED boots a privileged wapp called the **supervisor** (Sheriff role). The sup
 
 Two variants ship under `wasm/supervisor/`:
 
-| Variant | Path | Purpose |
-|---|---|---|
-| `sheriff` | `wasm/supervisor/sheriff/` | Production control-plane agent |
-| `wsh` | `wasm/supervisor/wsh/` | Debug shell for interactive inspection |
+| Variant | Path | Source | Purpose |
+|---|---|---|---|
+| `sheriff` | `wasm/supervisor/sheriff/` | prebuilt `app.wasm` (separate repo) | Production control-plane agent |
+| `wsh` | `wasm/supervisor/wsh/` | compiled from `wapps/wsh/` | Debug shell for interactive inspection |
 
-Build both TAR images before running:
+Build both TAR images before running (this compiles `wsh` from `wapps/wsh/` and
+bundles each variant's `app.wasm` + `manifest.json`):
 
 ```bash
 make -C wasm/supervisor
@@ -103,39 +104,25 @@ See [`docs/example_config.json`](docs/example_config.json) for a fully annotated
 
 The development environment is standardized via Podman to ensure toolchain consistency. A devcontainer configuration (`.devcontainer/`) is also provided for VS Code and JetBrains remote development.
 
+The root `Makefile` wraps the containerized build and test commands — every target runs inside the build container, so the host only needs a container runtime. Run `make help` to list them. Override the runtime or image when needed, e.g. `make test RUNNER=docker` or `make build IMAGE=localhost/wanted-build:dev`.
+
 ### Build
 
 ```bash
-# 1. Build supervisor TAR images
-make -C wasm/supervisor
-
-# 2. Build the engine
-podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
-    registry.gitlab.com/wanted-project/wanted-engine/build \
-    -c "mkdir -p /src/build && cd /src/build && cmake -G Ninja /src && ninja"
-```
-
-To use the `wsh` debug supervisor instead of `sheriff`:
-
-```bash
-podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
-    registry.gitlab.com/wanted-project/wanted-engine/build \
-    -c "mkdir -p /src/build && cd /src/build && \
-        cmake -G Ninja /src \
-              -DWANTED_SUPERVISOR_IMAGE_PATH=../wasm/supervisor/wsh/supervisor.tar \
-        && ninja"
+make build        # supervisor TAR images + engine (production sheriff supervisor)
+make wsh          # engine with the wsh debug supervisor compiled in
 ```
 
 ### Test
 
 ```bash
-# Unit tests (20 tests via ctest)
-podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
-    registry.gitlab.com/wanted-project/wanted-engine/build \
-    -c "cd /src/build && ctest --output-on-failure"
+make test         # unit + smoke suite via ctest
+make smoke        # VFS/control-plane smoke tests through the wsh supervisor
+make smoke-engine # boot the production supervisor; assert a clean instantiate
+```
 
-# Smoke tests (16 end-to-end tests via wsh)
-podman run --rm -v "$PWD:/src:Z" --entrypoint=/bin/sh \
-    registry.gitlab.com/wanted-project/wanted-engine/build \
-    -c "cd /src && test/smoke.sh"
+### Interactive shell
+
+```bash
+make shell        # interactive shell in the build container (equivalent to run-podman.sh)
 ```

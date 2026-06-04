@@ -83,5 +83,17 @@ check "cat missing file"       "" "No such file"   "cat /no-such-file.txt"
 # Negative: cd to a non-existent path must report an error
 check "cd missing dir"         "" "No such file"   "cd /no-such-dir"
 
+# WANTED control-plane namespace: path-addressed per-wapp control plane.
+# The running supervisor is always present, so it is a stable probe target.
+check "wanted lists ctl"       "" "ctl"          "ls /dev/wanted"
+check "wanted lists wapps"     "" "wapps"        "ls /dev/wanted"
+check "wapps lists supervisor" "" "supervisor"   "ls /dev/wanted/wapps"
+check "wapp dir lists ctl"     "" "ctl"          "ls /dev/wanted/wapps/supervisor"
+check "wapp dir lists state"   "" "state"        "ls /dev/wanted/wapps/supervisor"
+check "supervisor state read"  "" "running"      "cat /dev/wanted/wapps/supervisor/state"
+check "status enumerates"      "" "supervisor"   "status"
+check "status names state"     "" "running"      "status supervisor"
+check "absent wapp state"      "" "not_started"  "status no-such-wapp"
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
