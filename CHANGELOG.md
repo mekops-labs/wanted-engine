@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.6.0 (2026-06-04)
+------------------
 
 ### Named pipes — inter-wapp IPC (breaking internal change)
 
