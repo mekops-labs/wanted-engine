@@ -52,6 +52,18 @@ static int EnsureWamrInit(void) {
     return 0;
 }
 
+/* Process-wide pipe store shared by every wapp's /dev/pipe driver — this is
+ * what makes named pipes an inter-wapp channel rather than per-wapp scratch.
+ * Created lazily on first use, which is the supervisor's thread before any
+ * other wapp exists, so the lazy init is race-free. The store lives for the
+ * process lifetime (never freed). */
+static pipe_store_t *WantedPipeStore(void) {
+    static pipe_store_t *store = NULL;
+    if (!store)
+        store = PipeStoreNew();
+    return store;
+}
+
 /* /proc/wapps — plain-text wapp state, one record per wapp. */
 static int ProcReadWapps(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
@@ -341,7 +353,7 @@ int WantedWappRun(wapp_data_t *ctx) {
 
     /* Builtin /dev entries — always present regardless of wapp manifest. */
     DevFs_Register(ctx->vfs, "null",   VfsNullInit(wapp, NULL));
-    DevFs_Register(ctx->vfs, "pipe",   PipeDriverCreate());
+    DevFs_Register(ctx->vfs, "pipe",   PipeDriverCreate(WantedPipeStore()));
     DevFs_Register(ctx->vfs, "stdin",  VfsStdinDriverGet());
     DevFs_Register(ctx->vfs, "stdout", VfsStdoutDriverGet());
     DevFs_Register(ctx->vfs, "stderr", VfsStderrDriverGet());

@@ -5,6 +5,7 @@
 
 #include "vfs-internal.h"
 #include <debug_trace.h>
+#include <platform.h>
 #include <vfs-pipe.h>
 #include <vfs.h>
 #include <wanted_malloc.h>
@@ -12,13 +13,26 @@
 /* Named pipe DevFS sub-driver for /dev/pipe/<name>.
  *
  * Each named pipe is a fixed-size ring buffer. Write creates the pipe if
- * absent; read creates it too (idempotent). A pipe is destroyed when both
- * the last reader and last writer close. The driver itself is a directory
- * driver registered under the name "pipe" in DevFS; DevFS prefix-matches
- * "/dev/pipe/t" → sub_path "t" and calls PipeDriver_Open("t", flags). */
+ * absent; read creates it too (idempotent). A pipe is destroyed when the last
+ * reader and last writer close and no data remains buffered. The driver itself
+ * is a directory driver registered under the name "pipe" in DevFS; DevFS
+ * prefix-matches "/dev/pipe/t" → sub_path "t" and calls PipeDriver_Open("t").
+ *
+ * The ring buffers live in a process-wide pipe_store_t shared by every wapp's
+ * driver instance, so a pipe opened by one wapp is visible to another — this is
+ * the inter-wapp IPC channel. Every access to that shared storage is bracketed
+ * by store->lock. The per-wapp handle table (in bridge_state_t) is touched only
+ * by its own wapp's thread and needs no lock. */
 
 #define PIPE_BUF_SIZE  4096
 #define PIPE_MAX_PIPES 8
+
+/* Blocking-read poll cadence. A read with no data sleeps unlocked between
+ * rechecks (cancellation-safe, unlike a cond_wait that could be cancelled while
+ * holding the lock). The cap bounds the wait so a never-arriving peer becomes a
+ * test failure (-EAGAIN) rather than a process hang. */
+#define PIPE_POLL_INTERVAL_NS 1000000ULL /* 1 ms */
+#define PIPE_POLL_MAX_ITERS   5000       /* ~5 s safety cap */
 
 typedef struct named_pipe_t {
     char    name[MAX_ENTRY_NAME_LEN];
@@ -27,12 +41,15 @@ typedef struct named_pipe_t {
     size_t  data_len;
     int     writers;
     int     readers;
+    bool    writer_seen; /* a writer has attached at least once → enables EOF */
     bool    active;
 } named_pipe_t;
 
-typedef struct pipe_ctx_t {
-    named_pipe_t pipes[PIPE_MAX_PIPES];
-} pipe_ctx_t;
+/* Shared, engine-owned storage. One instance backs every wapp's /dev/pipe. */
+struct pipe_store_t {
+    named_pipe_t      pipes[PIPE_MAX_PIPES];
+    platform_mutex_t *lock;
+};
 
 typedef struct pipe_handle_t {
     named_pipe_t *pipe; /* NULL for root directory handle */
@@ -40,21 +57,39 @@ typedef struct pipe_handle_t {
     bool          is_root;
 } pipe_handle_t;
 
-/* ── Driver operations ─────────────────────────────────────────────────────── */
+/* ── Shared store lifecycle ────────────────────────────────────────────────── */
 
-static named_pipe_t *FindPipe(pipe_ctx_t *ctx, const char *name) {
+pipe_store_t *PipeStoreNew(void) {
+    pipe_store_t *store = WantedMalloc(sizeof(*store));
+    if (!store)
+        return NULL;
+    memset(store, 0, sizeof(*store));
+    store->lock = PlatformMutexNew(); /* NULL-tolerant downstream */
+    return store;
+}
+
+void PipeStoreFree(pipe_store_t *store) {
+    if (!store)
+        return;
+    PlatformMutexFree(store->lock);
+    WantedFree(store);
+}
+
+/* ── Ring helpers (caller holds store->lock) ───────────────────────────────── */
+
+static named_pipe_t *FindPipe(pipe_store_t *store, const char *name) {
     for (int i = 0; i < PIPE_MAX_PIPES; i++) {
-        if (ctx->pipes[i].active &&
-            strncmp(ctx->pipes[i].name, name, MAX_ENTRY_NAME_LEN) == 0)
-            return &ctx->pipes[i];
+        if (store->pipes[i].active &&
+            strncmp(store->pipes[i].name, name, MAX_ENTRY_NAME_LEN) == 0)
+            return &store->pipes[i];
     }
     return NULL;
 }
 
-static named_pipe_t *AllocPipe(pipe_ctx_t *ctx, const char *name) {
+static named_pipe_t *AllocPipe(pipe_store_t *store, const char *name) {
     for (int i = 0; i < PIPE_MAX_PIPES; i++) {
-        if (!ctx->pipes[i].active) {
-            named_pipe_t *p = &ctx->pipes[i];
+        if (!store->pipes[i].active) {
+            named_pipe_t *p = &store->pipes[i];
             memset(p, 0, sizeof(*p));
             strncpy(p->name, name, MAX_ENTRY_NAME_LEN - 1);
             p->name[MAX_ENTRY_NAME_LEN - 1] = '\0';
@@ -63,6 +98,38 @@ static named_pipe_t *AllocPipe(pipe_ctx_t *ctx, const char *name) {
         }
     }
     return NULL;
+}
+
+static int RingRead(named_pipe_t *p, void *buf, size_t nbyte) {
+    size_t n     = nbyte < p->data_len ? nbyte : p->data_len;
+    size_t first = PIPE_BUF_SIZE - p->rpos;
+    if (n <= first) {
+        memcpy(buf, p->buf + p->rpos, n);
+    } else {
+        memcpy(buf, p->buf + p->rpos, first);
+        memcpy((uint8_t *)buf + first, p->buf, n - first);
+    }
+    p->rpos = (p->rpos + n) % PIPE_BUF_SIZE;
+    p->data_len -= n;
+    return (int)n;
+}
+
+static int RingWrite(named_pipe_t *p, const void *buf, size_t nbyte) {
+    size_t space = PIPE_BUF_SIZE - p->data_len;
+    size_t n     = nbyte < space ? nbyte : space;
+    if (n == 0)
+        return -EAGAIN;
+
+    size_t wpos  = (p->rpos + p->data_len) % PIPE_BUF_SIZE;
+    size_t first = PIPE_BUF_SIZE - wpos;
+    if (n <= first) {
+        memcpy(p->buf + wpos, buf, n);
+    } else {
+        memcpy(p->buf + wpos, buf, first);
+        memcpy(p->buf, (const uint8_t *)buf + first, n - first);
+    }
+    p->data_len += n;
+    return (int)n;
 }
 
 /* Template used by bridge helpers to forward calls into the typed API. */
@@ -75,11 +142,12 @@ static void BuildTmpDriver(vfs_driver_t *drv, vfs_driver_ctx_t ctx) {
 
 /* ── Public DevFS-sub-driver interface ─────────────────────────────────────── */
 
-/* Called by DevFS with the suffix AFTER the "pipe" prefix, e.g. "t" or "/". */
+/* Called by DevFS with the suffix AFTER the "pipe" prefix, e.g. "t" or "/".
+ * drv->ctx is the shared pipe_store_t. */
 void *PipeDriver_Open(vfs_ctx_t c, const vfs_driver_t *drv,
                       const char *suffix, vfs_oflags_t flags, int *out_err) {
     (void)c;
-    pipe_ctx_t *ctx = (pipe_ctx_t *)drv->ctx;
+    pipe_store_t *store = (pipe_store_t *)drv->ctx;
 
     pipe_handle_t *h = WantedMalloc(sizeof(*h));
     if (!h) {
@@ -96,25 +164,33 @@ void *PipeDriver_Open(vfs_ctx_t c, const vfs_driver_t *drv,
         return h;
     }
 
-    named_pipe_t *p = FindPipe(ctx, suffix);
-    if (!p)
-        p = AllocPipe(ctx, suffix);
-    if (!p) {
-        WantedFree(h);
-        if (out_err) *out_err = -ENOSPC;
-        return NULL;
-    }
-
     if ((flags & VFS_O_RDWR) == VFS_O_RDWR) {
         WantedFree(h);
         if (out_err) *out_err = -EINVAL;
         return NULL;
     }
 
-    if ((flags & 3) == VFS_O_WRONLY)
+    PlatformMutexLock(store->lock);
+    named_pipe_t *p = FindPipe(store, suffix);
+    if (!p)
+        p = AllocPipe(store, suffix);
+    if (!p) {
+        PlatformMutexUnlock(store->lock);
+        WantedFree(h);
+        if (out_err) *out_err = -ENOSPC;
+        return NULL;
+    }
+
+    if ((flags & 3) == VFS_O_WRONLY) {
         p->writers++;
-    else
+        /* As soon as any writer attaches, a later reader's EOF becomes
+         * meaningful: writer_seen distinguishes "all writers closed" (EOF)
+         * from "no writer has ever attached" (keep blocking). */
+        p->writer_seen = true;
+    } else {
         p->readers++;
+    }
+    PlatformMutexUnlock(store->lock);
 
     h->pipe    = p;
     h->flags   = flags;
@@ -124,19 +200,23 @@ void *PipeDriver_Open(vfs_ctx_t c, const vfs_driver_t *drv,
 }
 
 int PipeDriver_Close(vfs_ctx_t c, const vfs_driver_t *drv, void *handle) {
-    (void)c; (void)drv;
+    (void)c;
     pipe_handle_t *h = handle;
     if (!h) return -EBADF;
 
     if (!h->is_root && h->pipe) {
-        named_pipe_t *p = h->pipe;
+        pipe_store_t *store = (pipe_store_t *)drv->ctx;
+        named_pipe_t *p     = h->pipe;
+        PlatformMutexLock(store->lock);
         if ((h->flags & 3) == VFS_O_WRONLY)
             p->writers--;
         else
             p->readers--;
-        /* Keep pipe alive while data is pending so a later reader can drain it. */
+        /* Keep the pipe alive while data is pending so a later reader (possibly
+         * in another wapp) can still drain it. */
         if (p->writers <= 0 && p->readers <= 0 && p->data_len == 0)
             p->active = false;
+        PlatformMutexUnlock(store->lock);
     }
     WantedFree(h);
     return 0;
@@ -144,55 +224,50 @@ int PipeDriver_Close(vfs_ctx_t c, const vfs_driver_t *drv, void *handle) {
 
 int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
                     void *buf, size_t nbyte) {
-    (void)c; (void)drv;
+    (void)c;
     pipe_handle_t *h = handle;
     if (!h || h->is_root || !h->pipe) return -EBADF;
 
-    named_pipe_t *p = h->pipe;
-    if (p->data_len == 0) {
-        if (p->writers <= 0) {
-            /* All data consumed, no writers — destroy if no other readers. */
-            if (p->readers <= 1 /* this handle */ && p->writers <= 0)
-                p->active = false;
+    pipe_store_t *store = (pipe_store_t *)drv->ctx;
+    named_pipe_t *p     = h->pipe;
+    bool nonblock       = (h->flags & VFS_O_NONBLOCK) != 0;
+
+    for (size_t iter = 0;; iter++) {
+        PlatformMutexLock(store->lock);
+        if (p->data_len > 0) {
+            int n = RingRead(p, buf, nbyte);
+            PlatformMutexUnlock(store->lock);
+            return n;
+        }
+        /* No data buffered. EOF only once a writer has existed and all closed;
+         * otherwise this is a would-block (a writer is attached, or none has
+         * ever attached and we wait for the first). */
+        if (p->writer_seen && p->writers <= 0) {
+            PlatformMutexUnlock(store->lock);
             return 0;
         }
-        return -EAGAIN;
-    }
+        PlatformMutexUnlock(store->lock);
 
-    size_t n = nbyte < p->data_len ? nbyte : p->data_len;
-    size_t first = PIPE_BUF_SIZE - p->rpos;
-    if (n <= first) {
-        memcpy(buf, p->buf + p->rpos, n);
-    } else {
-        memcpy(buf, p->buf + p->rpos, first);
-        memcpy((uint8_t *)buf + first, p->buf, n - first);
+        if (nonblock || iter >= PIPE_POLL_MAX_ITERS)
+            return -EAGAIN;
+        /* Sleep UNLOCKED: async pthread_cancel on a worker thread must never
+         * strand the shared mutex. */
+        PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC, PIPE_POLL_INTERVAL_NS, 0);
     }
-    p->rpos = (p->rpos + n) % PIPE_BUF_SIZE;
-    p->data_len -= n;
-    return (int)n;
 }
 
 int PipeDriver_Write(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
                      const void *buf, size_t nbyte) {
-    (void)c; (void)drv;
+    (void)c;
     pipe_handle_t *h = handle;
     if (!h || h->is_root || !h->pipe) return -EBADF;
 
-    named_pipe_t *p = h->pipe;
-    size_t space = PIPE_BUF_SIZE - p->data_len;
-    size_t n = nbyte < space ? nbyte : space;
-    if (n == 0) return -EAGAIN;
-
-    size_t wpos  = (p->rpos + p->data_len) % PIPE_BUF_SIZE;
-    size_t first = PIPE_BUF_SIZE - wpos;
-    if (n <= first) {
-        memcpy(p->buf + wpos, buf, n);
-    } else {
-        memcpy(p->buf + wpos, buf, first);
-        memcpy(p->buf, (const uint8_t *)buf + first, n - first);
-    }
-    p->data_len += n;
-    return (int)n;
+    pipe_store_t *store = (pipe_store_t *)drv->ctx;
+    named_pipe_t *p     = h->pipe;
+    PlatformMutexLock(store->lock);
+    int n = RingWrite(p, buf, nbyte);
+    PlatformMutexUnlock(store->lock);
+    return n;
 }
 
 int PipeDriver_Stat(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
@@ -213,41 +288,37 @@ int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
     pipe_handle_t *h = handle;
     if (!h || !h->is_root) return -EBADF;
 
-    pipe_ctx_t *ctx = (pipe_ctx_t *)drv->ctx;
+    pipe_store_t *store = (pipe_store_t *)drv->ctx;
     vfs_dir_entry_t entries[PIPE_MAX_PIPES];
     size_t count = 0;
+    /* Hold the lock across the snapshot AND the serialisation: entries[].name
+     * point into store->pipes[i].name, valid only while locked. */
+    PlatformMutexLock(store->lock);
     for (int i = 0; i < PIPE_MAX_PIPES; i++) {
-        if (ctx->pipes[i].active) {
-            entries[count].name = ctx->pipes[i].name;
+        if (store->pipes[i].active) {
+            entries[count].name = store->pipes[i].name;
             entries[count].type = VFS_FILETYPE_CHARACTER_DEVICE;
             count++;
         }
     }
-    return VfsFlatDirReadDir(entries, count, buf, bufLen, cookie, bufUsed);
+    int r = VfsFlatDirReadDir(entries, count, buf, bufLen, cookie, bufUsed);
+    PlatformMutexUnlock(store->lock);
+    return r;
 }
 
 /* ── DevFS integration bridge ──────────────────────────────────────────────── */
 
-/* The pipe driver is registered in DevFS under the name "pipe".  DevFS calls
- * the generic vfs_driver_t interface, so we need a thin wrapper that unpacks
- * the pipe-specific handle and calls the typed functions above.
- *
- * DevFS passes sub-paths like "t" (for /dev/pipe/t) or "/" (for /dev/pipe)
- * to drv->Open.  We store the pipe_ctx_t in drv->ctx and reconstruct handles
- * by allocating them ourselves — no per-call fd integer. */
-
-/* The actual Open/Close/Read/Write/Stat/ReadDir path goes through DevFS which
- * calls the driver->Open returning an int fd, then the other ops with that fd.
- * Pipes need pointer-typed handles.  We smuggle the handle pointer through the
- * int fd by allocating handle on heap and casting to int — only valid on
- * platforms where sizeof(void*) <= sizeof(int) is NOT guaranteed, so instead
- * we use a flat handle table per driver. */
+/* The pipe driver is registered in DevFS under the name "pipe". DevFS calls the
+ * generic vfs_driver_t interface with integer fds, so this thin wrapper maps an
+ * fd to a heap pipe_handle_t through a per-driver handle table and forwards to
+ * the typed functions above. The shared pipe_store_t is passed through a
+ * temporary vfs_driver_t whose ctx is the store. */
 
 #define BRIDGE_MAX_HANDLES 16
 
 typedef struct bridge_state_t {
-    pipe_ctx_t      pipe_ctx;
-    void           *handles[BRIDGE_MAX_HANDLES];
+    pipe_store_t *store; /* shared, engine-owned; NOT freed here */
+    void         *handles[BRIDGE_MAX_HANDLES];
 } bridge_state_t;
 
 static int AllocHandle(bridge_state_t *s, void *h) {
@@ -274,9 +345,7 @@ static void *GetHandle(bridge_state_t *s, int fd) {
 static int _bOpen(vfs_driver_ctx_t dctx, const char *path, vfs_oflags_t flags) {
     bridge_state_t *s = (bridge_state_t *)dctx;
     int out_err = 0;
-    /* Build a temporary vfs_driver_t pointing at our pipe_ctx to pass through
-     * PipeDriver_Open's interface. */
-    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)&s->pipe_ctx);
+    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     void *h = PipeDriver_Open(NULL, &tmp, path, flags, &out_err);
     if (!h) return out_err;
     int fd = AllocHandle(s, h);
@@ -291,7 +360,7 @@ static int _bClose(vfs_driver_ctx_t dctx, int fd) {
     bridge_state_t *s = (bridge_state_t *)dctx;
     void *h = GetHandle(s, fd);
     if (!h) return -EBADF;
-    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)&s->pipe_ctx);
+    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     int r = PipeDriver_Close(NULL, &tmp, h);
     FreeHandle(s, fd);
     return r;
@@ -301,7 +370,7 @@ static int _bRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
     bridge_state_t *s = (bridge_state_t *)dctx;
     void *h = GetHandle(s, fd);
     if (!h) return -EBADF;
-    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)&s->pipe_ctx);
+    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     return PipeDriver_Read(NULL, &tmp, h, buf, nbyte);
 }
 
@@ -310,7 +379,7 @@ static int _bWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
     bridge_state_t *s = (bridge_state_t *)dctx;
     void *h = GetHandle(s, fd);
     if (!h) return -EBADF;
-    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)&s->pipe_ctx);
+    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     return PipeDriver_Write(NULL, &tmp, h, buf, nbyte);
 }
 
@@ -318,7 +387,7 @@ static int _bStat(vfs_driver_ctx_t dctx, int fd, vfs_stat_t *stat) {
     bridge_state_t *s = (bridge_state_t *)dctx;
     void *h = GetHandle(s, fd);
     if (!h) return -EBADF;
-    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)&s->pipe_ctx);
+    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     return PipeDriver_Stat(NULL, &tmp, h, stat);
 }
 
@@ -327,20 +396,36 @@ static int _bReadDir(vfs_driver_ctx_t dctx, int fd, void *buf, size_t bufLen,
     bridge_state_t *s = (bridge_state_t *)dctx;
     void *h = GetHandle(s, fd);
     if (!h) return -EBADF;
-    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)&s->pipe_ctx);
+    vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     return PipeDriver_ReadDir(NULL, &tmp, h, buf, bufLen, cookie, bufUsed);
 }
 
 static int _bDestroy(vfs_driver_t *drv) {
-    if (drv) {
-        if (drv->ctx)
-            WantedFree(drv->ctx);
-        WantedFree(drv);
+    if (!drv)
+        return 0;
+    bridge_state_t *s = (bridge_state_t *)drv->ctx;
+    if (s) {
+        /* Close any handles this wapp left open before freeing its table.
+         * Sharing the store makes this mandatory: an exiting writer that leaks
+         * its `writers` count would keep readers in other wapps from ever
+         * reaching EOF. PipeDriver_Close takes store->lock per handle. */
+        vfs_driver_t tmp; BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
+        for (int i = 0; i < BRIDGE_MAX_HANDLES; i++) {
+            if (s->handles[i]) {
+                PipeDriver_Close(NULL, &tmp, s->handles[i]);
+                s->handles[i] = NULL;
+            }
+        }
+        WantedFree(s); /* the store is engine-owned and outlives the driver */
     }
+    WantedFree(drv);
     return 0;
 }
 
-vfs_driver_t *PipeDriverCreate(void) {
+vfs_driver_t *PipeDriverCreate(pipe_store_t *store) {
+    if (!store)
+        return NULL;
+
     vfs_driver_t *drv = WantedMalloc(sizeof(*drv));
     if (!drv) return NULL;
 
@@ -350,6 +435,7 @@ vfs_driver_t *PipeDriverCreate(void) {
         return NULL;
     }
     memset(s, 0, sizeof(*s));
+    s->store = store;
 
     memset(drv, 0, sizeof(*drv));
     drv->bytesId  = 0x65706950; /* 'Pipe' LE */

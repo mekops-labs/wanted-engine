@@ -19,7 +19,7 @@ RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c
 
 .DEFAULT_GOAL := help
 
-.PHONY: all supervisor wapps build wsh test smoke smoke-engine smoke-multiwapp shell clean help
+.PHONY: all supervisor wapps build wsh test smoke smoke-engine smoke-multiwapp smoke-pipe shell clean help
 
 all: build test ## build the engine and run the test suite
 
@@ -46,6 +46,9 @@ smoke-engine: ## boot the production supervisor and assert a clean instantiate
 
 smoke-multiwapp: ## drive wsh to launch a sample wapp; assert it runs concurrently with the supervisor
 	$(RUN) 'cd /src && ./test/smoke-multiwapp.sh ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_smoke.json'
+
+smoke-pipe: ## exchange a payload between two wapps over /dev/pipe; assert inter-wapp delivery
+	$(RUN) 'cd /src && ./test/smoke-pipe.sh ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_smoke.json'
 
 shell: ## open an interactive shell in the build container
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" --entrypoint="" $(IMAGE) bash

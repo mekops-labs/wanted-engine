@@ -23,3 +23,15 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
     if (heap_used) *heap_used = 0;
     if (heap_total) *heap_total = 0;
 }
+
+/* The dummy platform is single-threaded (unit tests), so the mutex is a no-op.
+ * A non-NULL sentinel is returned so callers can still distinguish allocation
+ * failure (NULL) from a successfully created lock. */
+static int dummy_mutex_sentinel;
+
+platform_mutex_t *PlatformMutexNew(void) {
+    return (platform_mutex_t *)&dummy_mutex_sentinel;
+}
+void PlatformMutexLock(platform_mutex_t *m) { (void)m; }
+void PlatformMutexUnlock(platform_mutex_t *m) { (void)m; }
+void PlatformMutexFree(platform_mutex_t *m) { (void)m; }
