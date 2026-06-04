@@ -10,13 +10,23 @@
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
 
-/* Each test group that needs a VFS with a pipe driver gets its own fixture. */
-static vfs_ctx_t vfs;
+/* Each test group that needs a VFS with a pipe driver gets its own fixture.
+ * The pipe storage now lives in a shared pipe_store_t the fixture owns; the
+ * driver only references it, so the store is freed separately in teardown. */
+static vfs_ctx_t      vfs;
+static pipe_store_t  *store;
 
 static void SetupPipeVfs(void) {
     vfs = VfsInit();
-    vfs_driver_t *pipe_drv = PipeDriverCreate();
+    store = PipeStoreNew();
+    vfs_driver_t *pipe_drv = PipeDriverCreate(store);
     DevFs_Register(vfs, "pipe", pipe_drv);
+}
+
+static void TeardownPipeVfs(void) {
+    VfsDestroy(&vfs);
+    PipeStoreFree(store);
+    store = NULL;
 }
 
 /***************************************/
@@ -28,9 +38,12 @@ TEST_SETUP(pipe_create) {}
 TEST_TEAR_DOWN(pipe_create) {}
 
 TEST(pipe_create, ReturnsNonNull) {
-    vfs_driver_t *drv = PipeDriverCreate();
+    pipe_store_t *st = PipeStoreNew();
+    TEST_ASSERT_NOT_NULL(st);
+    vfs_driver_t *drv = PipeDriverCreate(st);
     TEST_ASSERT_NOT_NULL(drv);
     drv->Destroy(drv);
+    PipeStoreFree(st);
 }
 
 TEST_GROUP_RUNNER(pipe_create) {
@@ -43,7 +56,7 @@ TEST_GROUP(pipe_open_close);
 
 TEST_SETUP(pipe_open_close) { SetupPipeVfs(); }
 
-TEST_TEAR_DOWN(pipe_open_close) { VfsDestroy(&vfs); }
+TEST_TEAR_DOWN(pipe_open_close) { TeardownPipeVfs(); }
 
 TEST(pipe_open_close, OpenRootDirectorySucceeds) {
     int fd = VfsOpen(vfs, "/dev/pipe", VFS_O_RDONLY);
@@ -93,7 +106,7 @@ TEST_GROUP(pipe_rw);
 
 TEST_SETUP(pipe_rw) { SetupPipeVfs(); }
 
-TEST_TEAR_DOWN(pipe_rw) { VfsDestroy(&vfs); }
+TEST_TEAR_DOWN(pipe_rw) { TeardownPipeVfs(); }
 
 TEST(pipe_rw, WriteAndReadBasic) {
     int writer = VfsOpen(vfs, "/dev/pipe/basic", VFS_O_WRONLY);
@@ -116,7 +129,9 @@ TEST(pipe_rw, WriteAndReadBasic) {
 
 TEST(pipe_rw, ReadWithNoDataAndWriterActiveReturnsEagain) {
     int writer = VfsOpen(vfs, "/dev/pipe/empty", VFS_O_WRONLY);
-    int reader = VfsOpen(vfs, "/dev/pipe/empty", VFS_O_RDONLY);
+    /* O_NONBLOCK: a blocking read would poll-loop to the safety cap here, since
+     * a writer is attached but has produced no data. */
+    int reader = VfsOpen(vfs, "/dev/pipe/empty", VFS_O_RDONLY | VFS_O_NONBLOCK);
     TEST_ASSERT_TRUE(writer >= 0);
     TEST_ASSERT_TRUE(reader >= 0);
 
@@ -220,7 +235,7 @@ TEST_GROUP(pipe_stat);
 
 TEST_SETUP(pipe_stat) { SetupPipeVfs(); }
 
-TEST_TEAR_DOWN(pipe_stat) { VfsDestroy(&vfs); }
+TEST_TEAR_DOWN(pipe_stat) { TeardownPipeVfs(); }
 
 TEST(pipe_stat, RootIsDirectory) {
     int fd = VfsOpen(vfs, "/dev/pipe", VFS_O_RDONLY);
@@ -255,7 +270,7 @@ TEST_GROUP(pipe_readdir);
 
 TEST_SETUP(pipe_readdir) { SetupPipeVfs(); }
 
-TEST_TEAR_DOWN(pipe_readdir) { VfsDestroy(&vfs); }
+TEST_TEAR_DOWN(pipe_readdir) { TeardownPipeVfs(); }
 
 TEST(pipe_readdir, EmptyDirectoryReturnsZeroUsed) {
     int fd = VfsOpen(vfs, "/dev/pipe", VFS_O_RDONLY);
@@ -292,4 +307,86 @@ TEST(pipe_readdir, OpenedPipeAppearsInListing) {
 TEST_GROUP_RUNNER(pipe_readdir) {
     RUN_TEST_CASE(pipe_readdir, EmptyDirectoryReturnsZeroUsed);
     RUN_TEST_CASE(pipe_readdir, OpenedPipeAppearsInListing);
+}
+
+/***************************************/
+TEST_GROUP(pipe_shared);
+/***************************************/
+
+/* Two independent driver instances over ONE shared store model two wapps:
+ * each wapp has its own /dev/pipe driver + handle table, but the named pipes
+ * live in the engine-owned store both reference. */
+static pipe_store_t *shared;
+static vfs_ctx_t     vfs_a;
+static vfs_ctx_t     vfs_b;
+
+TEST_SETUP(pipe_shared) {
+    shared = PipeStoreNew();
+    vfs_a  = VfsInit();
+    vfs_b  = VfsInit();
+    DevFs_Register(vfs_a, "pipe", PipeDriverCreate(shared));
+    DevFs_Register(vfs_b, "pipe", PipeDriverCreate(shared));
+}
+
+TEST_TEAR_DOWN(pipe_shared) {
+    VfsDestroy(&vfs_a);
+    VfsDestroy(&vfs_b);
+    PipeStoreFree(shared);
+    shared = NULL;
+}
+
+TEST(pipe_shared, WriteOnOneDriverReadOnAnother) {
+    int writer = VfsOpen(vfs_a, "/dev/pipe/xchan", VFS_O_WRONLY);
+    int reader = VfsOpen(vfs_b, "/dev/pipe/xchan", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(writer >= 0);
+    TEST_ASSERT_TRUE(reader >= 0);
+
+    const char msg[] = "cross-wapp";
+    int n = VfsWrite(vfs_a, writer, msg, sizeof(msg) - 1);
+    TEST_ASSERT_EQUAL_INT((int)(sizeof(msg) - 1), n);
+
+    /* Data is already buffered, so this blocking read returns immediately. */
+    char buf[32] = {0};
+    n = VfsRead(vfs_b, reader, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT((int)(sizeof(msg) - 1), n);
+    TEST_ASSERT_EQUAL_STRING_LEN(msg, buf, sizeof(msg) - 1);
+
+    VfsClose(vfs_a, writer);
+    VfsClose(vfs_b, reader);
+}
+
+TEST(pipe_shared, ReaderSeesEofAfterWriterInOtherWappCloses) {
+    int writer = VfsOpen(vfs_a, "/dev/pipe/eofx", VFS_O_WRONLY);
+    int reader = VfsOpen(vfs_b, "/dev/pipe/eofx", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(writer >= 0);
+    TEST_ASSERT_TRUE(reader >= 0);
+
+    /* writer_seen spans wapps: once the only writer (in vfs_a) closes, the
+     * reader in vfs_b gets EOF rather than blocking. */
+    VfsClose(vfs_a, writer);
+
+    char buf[8];
+    int n = VfsRead(vfs_b, reader, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT(0, n);
+
+    VfsClose(vfs_b, reader);
+}
+
+TEST(pipe_shared, NonblockReadBeforeAnyWriterReturnsEagain) {
+    /* No writer has ever attached → writer_seen is false → not EOF. O_NONBLOCK
+     * surfaces the would-block as -EAGAIN instead of polling. */
+    int reader = VfsOpen(vfs_b, "/dev/pipe/early", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    TEST_ASSERT_TRUE(reader >= 0);
+
+    char buf[8];
+    int n = VfsRead(vfs_b, reader, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, n);
+
+    VfsClose(vfs_b, reader);
+}
+
+TEST_GROUP_RUNNER(pipe_shared) {
+    RUN_TEST_CASE(pipe_shared, WriteOnOneDriverReadOnAnother);
+    RUN_TEST_CASE(pipe_shared, ReaderSeesEofAfterWriterInOtherWappCloses);
+    RUN_TEST_CASE(pipe_shared, NonblockReadBeforeAnyWriterReturnsEagain);
 }
