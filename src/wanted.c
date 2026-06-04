@@ -447,24 +447,35 @@ _freeTarfs:
 }
 
 void WantedWappStop(wapp_data_t *ctx) {
-    if (ctx->lastStatus != 0)
-        return;
+    /* Instance teardown only applies to a wapp that ran to completion; on the
+     * failure path WantedWappRun has already unwound the WAMR instance. */
+    if (ctx->lastStatus == 0) {
+        DEBUG_TRACE("start");
 
-    DEBUG_TRACE("start");
+        VfsDestroy(&ctx->vfs);
 
-    VfsDestroy(&ctx->vfs);
+        wasi_ctx_t *wasiCtx =
+            (wasi_ctx_t *)wasm_runtime_get_user_data(ctx->wamr->exec_env);
+        FreeWasiContext(wasiCtx);
 
-    wasi_ctx_t *wasiCtx =
-        (wasi_ctx_t *)wasm_runtime_get_user_data(ctx->wamr->exec_env);
-    FreeWasiContext(wasiCtx);
+        wasm_runtime_destroy_exec_env(ctx->wamr->exec_env);
+        wasm_runtime_deinstantiate(ctx->wamr->instance);
+        wasm_runtime_unload(ctx->wamr->module);
+        WantedFree(ctx->wamr->wasm_bytes);
+        WantedFree(ctx->wamr);
 
-    wasm_runtime_destroy_exec_env(ctx->wamr->exec_env);
-    wasm_runtime_deinstantiate(ctx->wamr->instance);
-    wasm_runtime_unload(ctx->wamr->module);
-    WantedFree(ctx->wamr->wasm_bytes);
-    WantedFree(ctx->wamr);
+        DEBUG_TRACE("end");
+    }
 
-    DEBUG_TRACE("end");
+    /* Tear down the per-thread WAMR env that WantedWappRun initialised on this
+     * worker thread. This runs on every exit (success or failure) and is the
+     * symmetric counterpart to wasm_runtime_init_thread_env(): it restores the
+     * stack guard pages this thread mprotect()'d to PROT_NONE and frees its
+     * signal alternate stack. Skipping it leaves a detached thread's (glibc-
+     * cached, later reused) stack with unreadable guard pages — the next
+     * worker's init_thread_env then faults touching them. The call self-guards
+     * when no env was initialised, so it is safe on the early-failure path. */
+    wasm_runtime_destroy_thread_env();
 }
 
 wapp_t *WantedGetCurrentSupervisor() {

@@ -111,14 +111,16 @@ The root `Makefile` wraps the containerized build and test commands — every ta
 ```bash
 make build        # supervisor TAR images + engine (production sheriff supervisor)
 make wsh          # engine with the wsh debug supervisor compiled in
+make wapps        # compile the sample wapp images under wapps/ (e.g. wapps/hello/)
 ```
 
 ### Test
 
 ```bash
-make test         # unit + smoke suite via ctest
-make smoke        # VFS/control-plane smoke tests through the wsh supervisor
-make smoke-engine # boot the production supervisor; assert a clean instantiate
+make test            # unit + smoke suite via ctest
+make smoke           # VFS/control-plane smoke tests through the wsh supervisor
+make smoke-engine    # boot the production supervisor; assert a clean instantiate
+make smoke-multiwapp # wsh launches a sample wapp; assert it runs concurrently
 ```
 
 ### Interactive shell

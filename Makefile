@@ -19,12 +19,15 @@ RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c
 
 .DEFAULT_GOAL := help
 
-.PHONY: all supervisor build wsh test smoke smoke-engine shell clean help
+.PHONY: all supervisor wapps build wsh test smoke smoke-engine smoke-multiwapp shell clean help
 
 all: build test ## build the engine and run the test suite
 
 supervisor: ## compile the supervisor TAR images (wsh from wapps/wsh/ source)
 	$(RUN) 'make -C /src/wasm/supervisor'
+
+wapps: ## compile the sample wapp images under wapps/ (excludes the wsh supervisor, built by `supervisor`)
+	$(RUN) 'set -e; for d in /src/wapps/*/; do if [ "$$d" = /src/wapps/wsh/ ]; then continue; fi; if [ -f "$${d}Makefile" ]; then make -C "$$d"; fi; done'
 
 build: supervisor ## build the engine + CLI with the production (sheriff) supervisor
 	$(RUN) 'mkdir -p /src/$(BUILD_DIR) && cd /src/$(BUILD_DIR) && cmake -G Ninja /src && ninja'
@@ -40,6 +43,9 @@ smoke: ## run the VFS/control-plane smoke tests through the wsh supervisor
 
 smoke-engine: ## boot the production supervisor and assert a clean instantiate
 	$(RUN) 'cd /src && ./test/smoke-engine.sh ./$(BUILD_DIR)/cmd/wanted-cli ./test/smoke-engine-config.json'
+
+smoke-multiwapp: ## drive wsh to launch a sample wapp; assert it runs concurrently with the supervisor
+	$(RUN) 'cd /src && ./test/smoke-multiwapp.sh ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_smoke.json'
 
 shell: ## open an interactive shell in the build container
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" --entrypoint="" $(IMAGE) bash
