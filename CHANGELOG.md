@@ -1,6 +1,18 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Control plane — per-wapp namespace decomposition (breaking)
+
+- Replaced the single multiplexed `/dev/wanted/ctrl` JSON-RPC node with a path-addressed per-wapp namespace under `/dev/wanted/wapps/` plus a root `/dev/wanted/ctl` create-and-launch node.
+- `wapps/` enumerates known wapps (`ReadDir`); each `wapps/<name>/` exposes plain-text read nodes `state`, `version`, `id` and write nodes `ctl` (line verb `start`/`stop`) and `config` (JSON `{ console, drivers[], preopens }`). Wapp identity travels in the path, not a payload field.
+- Root `ctl` accepts `start <name>` as a create-and-launch shorthand, applying any config previously buffered at `wapps/<name>/config`.
+- Removed the legacy `WantedControlDriver`, its `w/ctrl` alias, and the now-unused `WantedReadState`/`StateToJson` all-wapps JSON blob. `w/reg` is retained for the supervisor binary.
+- Hardened the parse path: bounded on-stack JSON buffers (`WANTED_CTRL_JSON_MAX`) instead of variable-length arrays; per-fd read EOF state so concurrent readers keep independent cursors; oversized control writes rejected with `EMSGSIZE`.
+- Added a controllable in-memory wapp-state mock to the dummy platform (`DummyWappStateSeed`/`DummyWappStateReset`).
+
 0.5.0 (2026-05-19)
 ------------------
 

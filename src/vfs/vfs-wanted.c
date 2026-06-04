@@ -3,8 +3,9 @@
 #include <vfs.h>
 
 extern const vfs_driver_t WantedConfigDriver;
-extern const vfs_driver_t WantedControlDriver;
 extern const vfs_driver_t WantedRegistryDriver;
+extern const vfs_driver_t WantedWappsDriver;
+extern const vfs_driver_t WantedCtlDriver;
 
 vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *opt) {
     int ret = 0;
@@ -20,26 +21,27 @@ vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *opt) {
         DEBUG_TRACE("can't register config (%d)", ret);
         return NULL;
     }
-    ret = drv->Register(drv->ctx, "ctrl", &WantedControlDriver);
-    if (ret < 0) {
-        DEBUG_TRACE("can't register ctrl (%d)", ret);
-        return NULL;
-    }
     ret = drv->Register(drv->ctx, "reg", &WantedRegistryDriver);
     if (ret < 0) {
         DEBUG_TRACE("can't register reg (%d)", ret);
         return NULL;
     }
-    /* "w" subdirectory: backward-compat for pre-overhaul paths "w/ctrl" and
-     * "w/reg" used by the sheriff supervisor binary. */
+    /* Control plane: a path-addressed per-wapp namespace (wapps/<name>/...)
+     * plus a root create-and-launch node (ctl). */
+    ret = drv->Register(drv->ctx, "ctl", &WantedCtlDriver);
+    if (ret < 0) {
+        DEBUG_TRACE("can't register ctl (%d)", ret);
+        return NULL;
+    }
+    ret = drv->Register(drv->ctx, "wapps", &WantedWappsDriver);
+    if (ret < 0) {
+        DEBUG_TRACE("can't register wapps (%d)", ret);
+        return NULL;
+    }
+    /* "w" subdirectory: exposes "w/reg" for the supervisor binary. */
     vfs_driver_t *w_compat = VfsVirtualInit(wapp, NULL);
     if (NULL == w_compat) {
         DEBUG_TRACE("can't load w compat virtual driver");
-        return NULL;
-    }
-    ret = w_compat->Register(w_compat->ctx, "ctrl", &WantedControlDriver);
-    if (ret < 0) {
-        DEBUG_TRACE("can't register w/ctrl (%d)", ret);
         return NULL;
     }
     ret = w_compat->Register(w_compat->ctx, "reg", &WantedRegistryDriver);
