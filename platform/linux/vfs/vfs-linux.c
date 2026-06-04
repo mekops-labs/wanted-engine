@@ -197,15 +197,17 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
-    char joined[PATH_MAX];
-    cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
-
+    (void)d;
+    /* `fd` is the preopen directory's host fd and `path` is already relative to
+     * it, so the kernel resolves against `fd` directly. Prepending d->rootPath
+     * would be both redundant and wrong (cwk_path_change_root drops the
+     * separator, yielding e.g. "/dir" + "file" → "/dirfile"). */
     int fl = convertVfsFlagsToLinux(flags);
 
-    DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, joined);
+    DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, path);
 
     int mode = 0644;
-    int ret = openat(fd, joined, fl, mode);
+    int ret = openat(fd, path, fl, mode);
     if (ret < 0)
         return -errno;
 

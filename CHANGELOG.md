@@ -4,6 +4,16 @@ Changelog
 Unreleased
 ----------
 
+### Named pipes — inter-wapp IPC (breaking internal change)
+
+- Promoted `/dev/pipe/<name>` from per-wapp scratch storage to a process-wide inter-wapp channel. The engine owns one shared `pipe_store_t` (lazily created on the supervisor's thread); every wapp's pipe driver references it, so a pipe opened in one wapp is visible in another. Previously each wapp got an independent ring buffer and pipes could not cross the boundary.
+- Reads now **block** by default: with no data and a writer attached (or none yet seen) the read sleeps and retries instead of returning `EAGAIN`. `O_NONBLOCK` restores the non-blocking behaviour; a safety cap bounds the wait. EOF (`0`) is returned only once a writer has attached and all writers have closed (`writer_seen`). The blocking wait sleeps unlocked, so async thread cancellation cannot strand the lock.
+- All shared-store access is guarded by a new platform mutex primitive (`PlatformMutexNew/Lock/Unlock/Free`): pthread-backed on linux, no-op on the single-threaded dummy.
+- `_bDestroy` now closes a wapp's still-open pipe handles (decrementing the shared refcounts) before freeing its handle table, so an exiting writer no longer leaks its `writers` count and readers in other wapps reach EOF.
+- `PipeDriverCreate()` takes a `pipe_store_t *`; added `PipeStoreNew()`/`PipeStoreFree()`.
+- Fixed a pre-existing preopen bug surfaced by the test: `_OpenAt` joined the relative path against `rootPath` via `cwk_path_change_root`, which dropped the separator (`"/dir" + "file"` → `"/dirfile"`), so a launched wapp could never create a file in a preopen subdirectory. It now `openat()`s the path directly against the preopen directory fd.
+- Extended `wapps/hello/` with config-selected `reader`/`writer` roles; added `test/smoke-pipe.sh` and `make smoke-pipe`, which exchange a payload between two `hello` instances through one named pipe and assert delivery via a host result file. Added an inter-driver `pipe_shared` unit-test group.
+
 ### Control plane — per-wapp namespace decomposition (breaking)
 
 - Replaced the single multiplexed `/dev/wanted/ctrl` JSON-RPC node with a path-addressed per-wapp namespace under `/dev/wanted/wapps/` plus a root `/dev/wanted/ctl` create-and-launch node.

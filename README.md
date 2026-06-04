@@ -51,7 +51,7 @@ The following devices are always registered in every wapp's `/dev/` namespace, r
 | Path | Purpose |
 |------|---------|
 | `/dev/null` | Reads return 0; writes are no-ops |
-| `/dev/pipe/<name>` | Named pipe IPC; 4096-byte ring buffer; up to 8 concurrent pipes |
+| `/dev/pipe/<name>` | Inter-wapp named pipe IPC over a process-wide shared store; 4096-byte ring buffer; up to 8 concurrent pipes; blocking reads by default (`O_NONBLOCK` opts out) |
 | `/dev/stdin` | Stub; reads return EOF |
 | `/dev/stdout` | Stub; writes are no-ops |
 | `/dev/stderr` | Stub; writes are no-ops |
@@ -121,6 +121,7 @@ make test            # unit + smoke suite via ctest
 make smoke           # VFS/control-plane smoke tests through the wsh supervisor
 make smoke-engine    # boot the production supervisor; assert a clean instantiate
 make smoke-multiwapp # wsh launches a sample wapp; assert it runs concurrently
+make smoke-pipe      # two wapps exchange a payload over /dev/pipe; assert inter-wapp delivery
 ```
 
 ### Interactive shell
