@@ -41,6 +41,13 @@ stages:
     reports:
       junit: "$BUILD_DIR/rspec.xml"
 
+# Smoke jobs run the engine end-to-end against a built CLI. They assume the
+# repo CWD is the project root: the compiled-in supervisor image path
+# (./wasm/supervisor/<variant>/supervisor.tar) resolves relative to it, and
+# wasm/supervisor is carried over from the build job's artifacts.
+.smoke_job_template: &smoke_defs
+  stage: test
+
 
 build-gcc:
   <<: *build_defs
@@ -60,6 +67,15 @@ build-coverage:
     BUILD_DIR: build
     CC: gcc
     CMAKE_EXTRA_ARGS: -DENABLE_CODE_COVERAGE=on
+
+# wsh debug-supervisor build: drives the interactive VFS/control-plane and
+# multi-wapp smoke tests, which need the wsh shell compiled in as the boot wapp.
+build-wsh:
+  <<: *build_defs
+  variables:
+    BUILD_DIR: build-wsh
+    CC: gcc
+    CMAKE_EXTRA_ARGS: -DWANTED_SUPERVISOR_IMAGE_PATH=./wasm/supervisor/wsh/supervisor.tar
 
 unit-test-gcc:
   <<: *unit_defs
@@ -93,3 +109,34 @@ coverage:
       coverage_report:
         coverage_format: cobertura
         path: "$BUILD_DIR/coverage.xml"
+
+# Boot the production (sheriff) supervisor and assert it instantiates without
+# crashing. Runs against the default build, which embeds the sheriff image.
+smoke-engine:
+  <<: *smoke_defs
+  dependencies:
+    - build-gcc
+  variables:
+    BUILD_DIR: build-gcc
+  script:
+    - ./test/smoke-engine.sh ./$BUILD_DIR/cmd/wanted-cli ./test/smoke-engine-config.json
+
+# Drive the wsh shell to exercise VFS namespaces and the control plane.
+smoke-vfs:
+  <<: *smoke_defs
+  dependencies:
+    - build-wsh
+  variables:
+    BUILD_DIR: build-wsh
+  script:
+    - ./test/smoke.sh ./$BUILD_DIR/cmd/wanted-cli ./docs/example_config_smoke.json
+
+# Drive the wsh shell to launch a second wapp and assert both run concurrently.
+smoke-multiwapp:
+  <<: *smoke_defs
+  dependencies:
+    - build-wsh
+  variables:
+    BUILD_DIR: build-wsh
+  script:
+    - ./test/smoke-multiwapp.sh ./$BUILD_DIR/cmd/wanted-cli ./docs/example_config_smoke.json
