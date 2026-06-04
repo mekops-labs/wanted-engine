@@ -33,7 +33,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 #define ID                                                                     \
-    { 'W', 'w', 'p', 's' }
+    { 'W', 'a', 'p', 'p' }
 
 /* Longest control verb / read token we emit; bounds the write line buffer so
  * a write() never drives an unbounded (VLA) stack allocation. */
