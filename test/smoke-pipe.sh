@@ -5,11 +5,11 @@
 # Flow:
 #   1. Build the `hello` sample wapp once, then package its wasm into TWO
 #      registry images under REGISTRY_ROOT (./wapps) — `hello-reader` and
-#      `hello-writer`. Same binary; the role is injected at launch.
+#      `hello-writer`. Same binary; each image bakes its role string into its
+#      own rootfs at /etc/role, which the wapp reads via TarFS.
 #   2. Boot wanted-cli with the wsh supervisor and feed it:
-#        - a launch config for each instance whose config-map driver mounts the
-#          role string ("reader"/"writer") at /dev/role; the reader also gets a
-#          host preopen at RESULT_DIR to drop its result file;
+#        - a launch config for each instance; the reader also gets a host
+#          preopen at RESULT_DIR to drop its result file;
 #        - `start hello-reader` — the reader blocks reading /dev/pipe/smoke;
 #        - `start hello-writer` — the writer writes PAYLOAD to the same pipe;
 #        - `status`, then `exit`.
@@ -68,25 +68,29 @@ trap cleanup EXIT
 
 # Package one registry image per role. The manifest name must equal the image
 # basename so the registry resolves `start <name>` to it; the same app.wasm
-# backs both.
+# backs both. The role is baked into the image's own rootfs at /etc/role.
 package_image() {
     name=$1
     image=$2
+    role=$3
     cp "$WAPP_SRC_DIR/hello.wasm" "$STAGE/app.wasm"
     printf '{"name":"%s","version":[0,0,1],"package":1,"requirements":["console"]}\n' \
         "$name" > "$STAGE/manifest.json"
+    mkdir -p "$STAGE/etc"
+    printf '%s' "$role" > "$STAGE/etc/role"
     tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
-        -C "$STAGE" -cf "$image" app.wasm manifest.json
+        -C "$STAGE" -cf "$image" app.wasm manifest.json etc/role
 }
-package_image "$READER_NAME" "$READER_IMAGE"
-package_image "$WRITER_NAME" "$WRITER_IMAGE"
+package_image "$READER_NAME" "$READER_IMAGE" reader
+package_image "$WRITER_NAME" "$WRITER_IMAGE" writer
 
 rm -rf "$RESULT_DIR"
 
 # Launch configs (no interior whitespace so the wsh tokenizer passes each as a
-# single argument). The config-map driver mounts the role at /dev/role.
-READER_CFG='{"console":{"in":{"name":"null"},"out":{"name":"platform"},"err":{"name":"platform"}},"drivers":[{"name":"config","path":"/dev/role","options":"reader"}],"preopens":["'$RESULT_DIR'"]}'
-WRITER_CFG='{"console":{"in":{"name":"null"},"out":{"name":"platform"},"err":{"name":"platform"}},"drivers":[{"name":"config","path":"/dev/role","options":"writer"}]}'
+# single argument). The reader gets a host preopen for its result file; the
+# role itself comes from each image's /etc/role, not the launch config.
+READER_CFG='{"console":{"in":{"name":"null"},"out":{"name":"platform"},"err":{"name":"platform"}},"preopens":["'$RESULT_DIR'"]}'
+WRITER_CFG='{"console":{"in":{"name":"null"},"out":{"name":"platform"},"err":{"name":"platform"}}}'
 
 # Reader first (it blocks on the pipe), then the writer (it produces the data).
 OUT=$(printf 'write /dev/wanted/wapps/%s/config %s\nwrite /dev/wanted/wapps/%s/config %s\nstart %s\nstart %s\nstatus\nexit\n' \
