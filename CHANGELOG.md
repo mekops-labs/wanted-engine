@@ -13,6 +13,17 @@ Unreleased
 - Hardened the parse path: bounded on-stack JSON buffers (`WANTED_CTRL_JSON_MAX`) instead of variable-length arrays; per-fd read EOF state so concurrent readers keep independent cursors; oversized control writes rejected with `EMSGSIZE`.
 - Added a controllable in-memory wapp-state mock to the dummy platform (`DummyWappStateSeed`/`DummyWappStateReset`).
 
+### Control plane — multi-wapp launch lifecycle fixes
+
+- Fixed a use-after-free on the control-plane start path: `StartWapp()` freed the `wapp_t` immediately after `PlatformWappStart()` while the just-spawned worker thread still dereferenced it (manifesting as a garbled wapp name stuck at `not_started`). Ownership now transfers to the platform thread slot and is released when that slot is later reused; the persistent supervisor image is never freed. The error path also unmaps the wapp image before freeing the struct.
+- Fixed a teardown segfault during supervisor respawn: worker threads called `wasm_runtime_init_thread_env()` but never the matching destroy, leaving the stack guard pages mprotect'd `PROT_NONE` on a detached thread's (later glibc-reused) stack — the next worker's `init_thread_env` faulted touching them. `WantedWappStop()` now calls `wasm_runtime_destroy_thread_env()` on every worker exit (success or failure), restoring the guard pages and freeing the signal alternate stack.
+
+### Tooling — sample wapp + multi-wapp smoke test
+
+- Added `wapps/hello/` — a minimal WASI sample wapp (source, manifest, Makefile) used to exercise concurrent multi-wapp execution through wsh.
+- Added `test/smoke-multiwapp.sh` — packages the sample into the registry (`REGISTRY_ROOT`), drives wsh to write a launch config and `start` the wapp, then asserts `status` reports it running alongside the supervisor.
+- Added `make wapps` (compile sample wapp images) and `make smoke-multiwapp` targets.
+
 0.5.0 (2026-05-19)
 ------------------
 
