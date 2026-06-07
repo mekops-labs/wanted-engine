@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -150,6 +151,46 @@ int PlatformWappUnload(const wapp_t *wapp) {
     return 0;
 }
 
+/* Init task's scheduling priority, captured on the first wapp start (which runs
+ * in that task). Wapps run at this base; the supervisor one step above it. */
+static int basePriority = -1;
+
+/* Start a worker thread for a wapp. The supervisor runs one scheduling step
+ * above the wapps it manages so it can always preempt and terminate a runaway
+ * (e.g. a never-yielding wapp). Priorities are set explicitly rather than
+ * inherited: a wapp is launched from the supervisor's own (elevated) thread, so
+ * inheriting would lift it to the supervisor's priority and defeat preemption.
+ * A host that forbids real-time scheduling (Linux without CAP_SYS_NICE) returns
+ * EPERM, so all threads fall back to default scheduling, where the host
+ * scheduler time-slices regardless. */
+static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
+    pthread_attr_t attr;
+    struct sched_param sp;
+    int policy, hi, rc;
+
+    if (basePriority < 0) {
+        pthread_getschedparam(pthread_self(), &policy, &sp);
+        basePriority = sp.sched_priority;
+    }
+
+    hi = sched_get_priority_max(SCHED_RR);
+    sp.sched_priority = basePriority + (isSupervisor ? 1 : 0);
+    if (hi > 0 && sp.sched_priority > hi)
+        sp.sched_priority = hi;
+
+    pthread_attr_init(&attr);
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+    pthread_attr_setschedpolicy(&attr, SCHED_RR);
+    pthread_attr_setschedparam(&attr, &sp);
+    rc = pthread_create(t, &attr, WA_thread, (void *)data);
+    pthread_attr_destroy(&attr);
+    if (rc == 0)
+        return 0;
+
+    /* No privilege for real-time scheduling: use default scheduling. */
+    return pthread_create(t, NULL, WA_thread, (void *)data);
+}
+
 int PlatformWappStart(wapp_t *wapp) {
     int slot;
 
@@ -185,8 +226,9 @@ int PlatformWappStart(wapp_t *wapp) {
     state.threads[slot].data.wapp = wapp;
     state.threads[slot].status = STARTING;
 
-    pthread_create((pthread_t *)&state.threads[slot].t, NULL, WA_thread,
-                   (void *)&state.threads[slot].data);
+    startWorker((pthread_t *)&state.threads[slot].t,
+                (wapp_data_t *)&state.threads[slot].data,
+                wapp == WantedGetCurrentSupervisor());
     pthread_detach(state.threads[slot].t);
     state.n++;
 

@@ -2,6 +2,10 @@ variables:
   GIT_SUBMODULE_STRATEGY: recursive
   GIT_FETCH_EXTRA_FLAGS: --tags
   GIT_DEPTH: none
+  # The NuttX + apps submodules are large and only the sim job needs them, so
+  # exclude them from the default recursive fetch and let that job init them
+  # shallow. Other jobs still get the vendored submodules (wamr, etc.).
+  GIT_SUBMODULE_PATHS: ':(exclude)third_party/nuttx :(exclude)third_party/nuttx-apps'
 
 image:
   name: registry.gitlab.com/wanted-project/wanted-engine/build
@@ -105,13 +109,13 @@ coverage:
         coverage_format: cobertura
         path: "$BUILD_DIR/coverage.xml"
 
-# End-to-end smoke tests: run every test/smoke*.sh against the built CLI. Each
-# script supplies its own default config (and thus its supervisor image, via
-# the runtime supervisor.imagePath override), so the sheriff and wsh variants
-# are both exercised off a single build — adding a new test/smoke*.sh needs no
-# change here. Both supervisor TAR variants and the CLI come from build-gcc's
-# artifacts (`ninja supervisor` builds sheriff + wsh). Scripts assume the repo
-# CWD is the project root, which is the CI default.
+# End-to-end engine tests. The in-WASM selftest suite (test/selftest.sh) is the
+# canonical functional suite — it boots the selftest supervisor and asserts the
+# VFS/control-plane/sandbox/robustness behaviour from inside WASM, identically on
+# Linux and the sim. smoke-engine.sh remains as the one thing selftest does not
+# cover: that the production (sheriff) supervisor image instantiates cleanly. The
+# CLI and supervisor TARs come from build-gcc (`ninja supervisor`). Scripts
+# assume the repo CWD is the project root, which is the CI default.
 integration-tests:
   stage: integration-tests
   dependencies:
@@ -130,4 +134,24 @@ integration-tests:
           status=1
         fi
       done
+      echo "========== test/selftest.sh =========="
+      if bash test/selftest.sh "./$BUILD_DIR/cmd/wanted-cli"; then
+        echo "PASS: test/selftest.sh"
+      else
+        echo "FAIL: test/selftest.sh"
+        status=1
+      fi
       exit $status
+# NuttX simulator: build the engine as a NuttX built-in (the selftest supervisor
+# as the init task over hostfs) and run the in-WASM selftest suite against the
+# sim via the shared recipe in test/nuttx-sim.sh ("all" = deps; selftest). It
+# shallow-inits the third_party/nuttx{,-apps} submodules (excluded from the
+# global fetch above).
+# The build image already carries the sim prerequisites. Depends on build-gcc
+# for the supervisor TARs (wasm/supervisor, built by `ninja supervisor`).
+nuttx-integration-tests:
+  stage: integration-tests
+  dependencies:
+    - build-gcc
+  script:
+    - bash test/nuttx-sim.sh all

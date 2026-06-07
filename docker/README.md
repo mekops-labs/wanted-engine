@@ -20,6 +20,10 @@ binaries for those two Linux arches only.
 
 ## Changelog
 
+### 0.5.0
+
+- add nuttx tooling
+
 ### 0.4.0
 
 - rebase on `debian:trixie-slim` (was `ubuntu:22.04`); smaller base, current toolchain (clang/lld 19, gcc 14)
