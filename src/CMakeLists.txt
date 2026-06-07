@@ -3,6 +3,7 @@ set(sources
     "wanted.c"
     "wanted_wasm_api.c"
     "wanted-vfs-api.c"
+    "log-store.c"
     "default_supervisor_cfg.json.h"
 )
 
@@ -13,6 +14,7 @@ set(vfs-srcs
     "vfs/vfs-devfs.c"
     "vfs/vfs-netfs.c"
     "vfs/vfs-null.c"
+    "vfs/vfs-log.c"
     "vfs/vfs-pipe.c"
     "vfs/vfs-procfs.c"
     "vfs/vfs-stdio.c"
@@ -45,9 +47,15 @@ set(c9-src
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
 
+# Target platform selection. Picks the platform/<name> implementation linked by
+# cmd/ and the WAMR platform layer. Linux is the default; nuttx is the embedded
+# port.
+set(WANTED_PLATFORM "linux" CACHE STRING "Target platform (linux, nuttx)")
+set_property(CACHE WANTED_PLATFORM PROPERTY STRINGS linux nuttx)
+
 # WAMR runtime
 set(WAMR_ROOT_DIR ${CMAKE_SOURCE_DIR}/vendor/wamr)
-set(WAMR_BUILD_PLATFORM "linux")
+set(WAMR_BUILD_PLATFORM "${WANTED_PLATFORM}")
 set(WAMR_BUILD_INTERP 1)
 set(WAMR_BUILD_AOT 0)
 set(WAMR_BUILD_LIBC_WASI 0)

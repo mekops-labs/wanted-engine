@@ -1,7 +1,7 @@
 FROM debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.4.0"
+LABEL version="0.5.0"
 
 # Unversioned LLVM packages track the distro default (clang/lld/lldb 19 on
 # trixie). The host engine builds with gcc (build-essential) and this clang;
@@ -38,6 +38,16 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     # Container plumbing
     dumb-init \
     gosu \
+    # NuttX simulator build prerequisites (configure + build of sim:nsh).
+    # kconfig-frontends provides kconfig-conf/kconfig-tweak; the sim target
+    # compiles with the host gcc above, so no cross-compiler is needed.
+    kconfig-frontends \
+    genromfs \
+    gperf \
+    flex \
+    bison \
+    gettext \
+    libelf-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Wapp (WebAssembly) toolchain: the full wasi-sdk bundle ships its own clang

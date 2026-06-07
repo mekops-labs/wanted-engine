@@ -174,14 +174,6 @@ static inline uint64_t convertTimespec(const struct timespec *ts) {
 static int _Start(vfs_driver_ctx_t d) { return 0; }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
-    /* TODO: ugly hack to make driver generic */
-    if (memcmp(path, "<stdin>", 8) == 0)
-        return VFS_STDIN;
-    if (memcmp(path, "<stdout>", 9) == 0)
-        return VFS_STDOUT;
-    if (memcmp(path, "<stderr>", 9) == 0)
-        return VFS_STDERR;
-
     char joined[PATH_MAX];
     cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
 

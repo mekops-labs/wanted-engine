@@ -117,12 +117,37 @@ make wapps        # compile the sample wapp images under wapps/ (e.g. wapps/hell
 ### Test
 
 ```bash
-make test            # unit + smoke suite via ctest
-make smoke           # VFS/control-plane smoke tests through the wsh supervisor
+make test            # unit suite via ctest
+make selftest        # in-WASM functional/robustness suite (TAP) on Linux
+make nuttx-selftest  # the same in-WASM suite on the NuttX simulator
 make smoke-engine    # boot the production supervisor; assert a clean instantiate
-make smoke-multiwapp # wsh launches a sample wapp; assert it runs concurrently
-make smoke-pipe      # two wapps exchange a payload over /dev/pipe; assert inter-wapp delivery
 ```
+
+#### Selftest suite
+
+`make selftest` and `make nuttx-selftest` run an identical suite from inside WASM using the `selftest` supervisor variant (built from `wapps/selftest/`). Because the suite uses only the WASI and WANTED VFS/control-plane ABI, it runs unchanged on Linux and the NuttX simulator — no platform-specific shell scripting.
+
+Results are reported as TAP (Test Anything Protocol) on the supervisor's stdout; the runner checks for a plan line and the absence of `not ok` entries.
+
+The suite covers four categories:
+
+| Category | What is tested |
+|----------|---------------|
+| **VFS / namespace** | Path normalization, read-only TarFS, parent-traversal denial (`..` blocked at root), `/proc` access, control-plane node enumeration |
+| **Inter-wapp IPC** | Two-wapp `/dev/pipe` round-trip: `preader` blocks on the channel while `pwriter` writes from a separate namespace; the supervisor verifies the payload via the log console |
+| **Concurrency and stop** | `looper` wapp running concurrently with the supervisor; stopped via the control plane and confirmed terminated; edge cases (stop of a dead or unknown wapp) |
+| **Negative / robustness** | WASM trap containment (`trapper`), CPU runaway (`cpuhog`), memory exhaustion (`membomb`), stack overflow (`stackbomb`), blocking-syscall stop (`blocker`, `pblock`), sandbox escape denial (`escaper`), fd table bounds (`fdhog`), crash-loop stability (`crasher`), malformed-image loader battery (missing manifest, missing `app.wasm`, invalid WASM, invalid JSON, truncated TAR) |
+
+### NuttX simulator
+
+```bash
+make nuttx-deps      # clone NuttX + apps submodules; link the engine app package
+make nuttx-build     # configure and build the NuttX sim from a clean tree
+make nuttx-selftest  # run the selftest suite on the sim
+make nuttx-shell     # boot the sim to an interactive wsh prompt
+```
+
+The simulator uses the `sim:wanted` board config from the NuttX fork. NuttX and nuttx-apps are vendored as shallow git submodules at `third_party/`. `make nuttx-deps` is idempotent and must run once before `nuttx-build`.
 
 ### Interactive shell
 

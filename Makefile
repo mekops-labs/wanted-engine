@@ -17,9 +17,16 @@ WSH_TAR   := ./wasm/supervisor/wsh/supervisor.tar
 # Run a shell command inside the build container with the repo at /src.
 RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c
 
+# --- NuttX simulator ------------------------------------------------------
+# nuttx + nuttx-apps are shallow git submodules under third_party/ (the mekops
+# forks). Everything builds under the engine (third_party/ + build-nuttx/), so
+# the standard $(RUN) mount at /src is all that's needed. The build/test recipe
+# lives in test/nuttx-sim.sh (shared with CI).
+
 .DEFAULT_GOAL := help
 
-.PHONY: all supervisor wapps build wsh test smoke smoke-engine smoke-multiwapp smoke-pipe shell clean help
+.PHONY: all supervisor wapps build wsh test smoke-engine shell clean help \
+        nuttx-deps nuttx-build nuttx-selftest nuttx-shell wsh-shell selftest
 
 all: build test ## build the engine and run the test suite
 
@@ -38,17 +45,30 @@ wsh: supervisor ## build the engine + CLI with the wsh debug supervisor compiled
 test: ## run the unit + smoke suite via ctest
 	$(RUN) 'cd /src/$(BUILD_DIR) && ctest --output-on-failure'
 
-smoke: ## run the VFS/control-plane smoke tests through the wsh supervisor
-	$(RUN) 'cd /src && ./test/smoke.sh ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_smoke.json'
-
 smoke-engine: ## boot the production supervisor and assert a clean instantiate
 	$(RUN) 'cd /src && ./test/smoke-engine.sh ./$(BUILD_DIR)/cmd/wanted-cli ./test/smoke-engine-config.json'
 
-smoke-multiwapp: ## drive wsh to launch a sample wapp; assert it runs concurrently with the supervisor
-	$(RUN) 'cd /src && ./test/smoke-multiwapp.sh ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_smoke.json'
+selftest: build ## run the in-WASM selftest supervisor (TAP) on Linux
+	$(RUN) 'cd /src && ./test/selftest.sh ./$(BUILD_DIR)/cmd/wanted-cli ./test/selftest-config.json'
 
-smoke-pipe: ## exchange a payload between two wapps over /dev/pipe; assert inter-wapp delivery
-	$(RUN) 'cd /src && ./test/smoke-pipe.sh ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_smoke.json'
+wsh-shell: wsh ## build wsh and open the interactive wsh prompt on Linux (wanted-cli)
+	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c \
+	    'cd /src && ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_smoke.json'
+
+# The recipe lives in test/nuttx-sim.sh so the Makefile (which wraps it in the
+# build container) and GitLab CI (already inside it) share one source of truth.
+nuttx-deps: ## init the pinned NuttX + apps submodules (shallow) and link the app
+	$(RUN) 'cd /src && ./test/nuttx-sim.sh deps'
+
+nuttx-build: supervisor ## configure + build the NuttX sim (wsh as init over hostfs)
+	$(RUN) 'cd /src && ./test/nuttx-sim.sh deps build'
+
+nuttx-selftest: supervisor ## run the in-WASM selftest suite (TAP) on the NuttX sim
+	$(RUN) 'cd /src && ./test/nuttx-sim.sh selftest'
+
+nuttx-shell: nuttx-build ## build the wsh sim and drop into the interactive wsh prompt
+	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" -w /src/build-nuttx/simroot \
+	    --entrypoint=/bin/sh $(IMAGE) -c '/src/third_party/nuttx/nuttx'
 
 shell: ## open an interactive shell in the build container
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" --entrypoint="" $(IMAGE) bash

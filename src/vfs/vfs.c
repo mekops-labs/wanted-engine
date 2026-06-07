@@ -350,10 +350,11 @@ int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver) {
         return -EINVAL;
     }
 
-    int drv_fd = TRY_DRV(driver, Open, path, open_flags);
+    /* stdio slots 0/1/2 equal the POSIX native fds — platform drivers use drv_fd
+     * directly as the native fd; non-platform drivers (log, null) ignore it. */
     c->fds[slot].type = VFS_TYPE_STREAM;
     c->fds[slot].driver = driver;
-    c->fds[slot].drv_fd = drv_fd;
+    c->fds[slot].drv_fd = slot;
     c->fds[slot].flags = open_flags;
     return 0;
 }

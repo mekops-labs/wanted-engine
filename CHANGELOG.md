@@ -1,6 +1,39 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### NuttX platform port — (Linux sim, CI-gated)
+
+- `platform/nuttx/` is fully implemented — every `Platform*` symbol has a working body with no `-ENOSYS` stubs remaining. Covers: pthreads wapp lifecycle, `opendir`/`readdir`/`qsort` registry (no scandir/VLA), NuttX VFS driver, `clock_gettime`/`clock_nanosleep`, `/dev/urandom` random, BSD sockets (TLS not supported), `wanted_main` built-in app entry point, pthread mutex.
+- The NuttX sim (host-stack `sim:wanted` defconfig) is a first-class build target: `make nuttx-{deps,build,smoke,selftest,shell}`. NuttX + apps forks vendored as shallow submodules at `third_party/`.
+- `nuttx-integration-tests` CI job builds the engine as a NuttX built-in and runs `smoke-engine` + selftest on the sim.
+- Two NuttX-specific bugs fixed: `CONFIG_INTERPRETERS_WAMR_THREAD_MGR` required for `wasm_runtime_terminate` to have effect; `pthread_cleanup_push/pop` is a no-op without `CONFIG_PTHREAD_CLEANUP` — wapp reaping now calls `WA_threadEnd` directly.
+- `wanted_sim_main` calls `boardctl(BOARDIOC_POWEROFF)` after `wanted_main` returns so the sim exits cleanly.
+
+### In-WASM selftest suite
+
+- Added a `selftest` supervisor variant (`wapps/selftest/`) that orchestrates the full test suite from inside WASM. Runs identically on Linux and the NuttX sim via `make selftest` / `make nuttx-selftest`; output is TAP.
+- 29 test scenarios across VFS/namespace, inter-wapp IPC, concurrency/stop, and negative/robustness categories.
+- Shell smoke scripts (`smoke.sh`, `smoke-multiwapp.sh`, `smoke-pipe.sh`, `smoke-driver.sh`) retired in favour of the in-WASM suite. `smoke-engine.sh` kept for production-supervisor sanity.
+
+### Engine — log console driver
+
+- Added a per-wapp log console driver (`src/vfs/vfs-log.c` + `src/log-store.c`): a ring-buffer store captures a wapp's stdout/stderr and exposes it at `/dev/wanted/wapps/<name>/log`. Wapps configured with `console:log` no longer share the platform console; the supervisor reads their output via the control plane. LRU eviction when all name slots are full.
+- `debug_trace` now emits via a raw `write()` syscall so it reaches the console on every target.
+
+### Engine — supervisor priority and interruptible stop
+
+- Supervisor thread is created one priority step above worker threads on both Linux and NuttX; worker priorities are set explicitly to prevent inheritance.
+- Added interruptible stop on NuttX: `PlatformWappStop` sends `SIGUSR2` to the worker after `WantedWappTerminate` so a wapp blocked in a host syscall is interrupted and the stop flag checked on return. A per-worker `interrupted` flag bridges `clock_nanosleep`'s success-on-signal quirk. Linux retains `pthread_cancel(ASYNCHRONOUS)`.
+
+### Test baseline
+
+- ctest: **52/52** (one wsh-smoke ctest retired alongside the shell scripts).
+- selftest: **29/29** on Linux and the NuttX sim.
+- `smoke-engine.sh`: green on Linux; run on the NuttX sim via `nuttx-sim.sh`.
+
 0.6.0 (2026-06-04)
 ------------------
 
