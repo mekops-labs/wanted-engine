@@ -2,11 +2,17 @@
 build
 wasm/*.wasm*
 wasm/supervisor/*/supervisor.tar
-# wsh's app.wasm is compiled from wapps/wsh/ (sheriff's is a committed blob).
+# wsh's + selftest's app.wasm are compiled from wapps/ (sheriff's is a
+# committed blob).
 wasm/supervisor/wsh/app.wasm
+wasm/supervisor/selftest/app.wasm
 wapps/*/*.wasm
 wapps/*/*.wasm.h
 wapps/*/*.o
 # Packaged registry images (REGISTRY_ROOT); built/staged by smoke-multiwapp.
 wapps/*.wapp
 *.wat
+
+# NuttX sim scratch (staged hostfs root; test/nuttx-sim.sh). The nuttx +
+# nuttx-apps trees themselves are the third_party/ submodules.
+/build-nuttx/

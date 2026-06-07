@@ -11,7 +11,7 @@
 #   make -C wasm/supervisor                   # rebuilds both variants
 #   make -C wasm/supervisor VARIANT=wsh       # rebuild a single variant
 
-VARIANTS ?= sheriff wsh
+VARIANTS ?= sheriff wsh selftest
 
 DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
@@ -42,6 +42,14 @@ WSH_SRC := $(DIR)../../wapps/wsh
 $(VARIANT_DIR)/app.wasm: $(wildcard $(WSH_SRC)/*.c) $(wildcard $(WSH_SRC)/*.h) $(WSH_SRC)/Makefile
 	$(MAKE) -C $(WSH_SRC)
 	cp $(WSH_SRC)/wsh.wasm $@
+endif
+
+# selftest (the test supervisor) is compiled from the wapps/selftest/ source.
+ifeq ($(VARIANT),selftest)
+SELFTEST_SRC := $(DIR)../../wapps/selftest
+$(VARIANT_DIR)/app.wasm: $(wildcard $(SELFTEST_SRC)/*.c) $(wildcard $(SELFTEST_SRC)/*.h) $(SELFTEST_SRC)/Makefile
+	$(MAKE) -C $(SELFTEST_SRC)
+	cp $(SELFTEST_SRC)/selftest.wasm $@
 endif
 
 endif

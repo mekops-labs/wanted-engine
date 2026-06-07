@@ -45,9 +45,23 @@ add_custom_target(supervisor
     COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm/supervisor
     )
 
-option (BUILD_EXECUTABLE "Build standalone executable. Linux only" ON)
+# The standalone CLI (cmd/main.c) is a host/Linux artifact. On NuttX the entry
+# point is platform/nuttx/wanted_main.c, built as a NuttX built-in app, so the
+# CLI is off by default there.
+if (WANTED_PLATFORM STREQUAL "nuttx")
+    option (BUILD_EXECUTABLE "Build standalone executable. Linux only" OFF)
+else()
+    option (BUILD_EXECUTABLE "Build standalone executable. Linux only" ON)
+endif()
+
 if (BUILD_EXECUTABLE)
+    # cmd/ also pulls in the selected platform library and links the CLI.
     add_subdirectory(${CMAKE_SOURCE_DIR}/cmd)
+elseif (WANTED_PLATFORM STREQUAL "nuttx")
+    # Without the CLI, still build the platform layer so the NuttX scaffolding
+    # link is exercised; the NuttX app build compiles wanted_main.c separately.
+    add_subdirectory(${CMAKE_SOURCE_DIR}/platform/nuttx
+                     ${CMAKE_BINARY_DIR}/platform/nuttx)
 endif()
 
 if (BUILD_TESTING)

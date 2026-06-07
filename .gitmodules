@@ -16,3 +16,13 @@
 [submodule "vendor/wamr"]
 	path = vendor/wamr
 	url = https://github.com/bytecodealliance/wasm-micro-runtime
+[submodule "third_party/nuttx-apps"]
+	path = third_party/nuttx-apps
+	url = https://github.com/mekops-labs/nuttx-apps.git
+	branch = wanted
+	shallow = true
+[submodule "third_party/nuttx"]
+	path = third_party/nuttx
+	url = https://github.com/mekops-labs/nuttx.git
+	branch = wanted
+	shallow = true
