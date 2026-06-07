@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include <cwalk.h>
+#include <log-store.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
 
@@ -48,6 +49,7 @@ typedef enum {
     NODE_VERSION, /* wapps/<name>/version */
     NODE_ID,      /* wapps/<name>/id      */
     NODE_CONFIG,  /* wapps/<name>/config  */
+    NODE_LOG,     /* wapps/<name>/log     */
 } wapp_node_t;
 
 #define WAPPS_MAX_OPEN 8
@@ -101,7 +103,7 @@ static const struct {
     wapp_node_t node;
 } LEAVES[] = {
     {"ctl", NODE_CTL},     {"state", NODE_STATE}, {"version", NODE_VERSION},
-    {"id", NODE_ID},       {"config", NODE_CONFIG},
+    {"id", NODE_ID},       {"config", NODE_CONFIG}, {"log", NODE_LOG},
 };
 #define N_LEAVES (sizeof(LEAVES) / sizeof(LEAVES[0]))
 
@@ -341,6 +343,14 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
 
     if (d->fds[fd].read_done)
         return 0; /* EOF, latched per-fd */
+
+    /* The log can be larger than a control line, so read it straight from the
+     * log store into the caller's buffer rather than via the line buffer. */
+    if (node == NODE_LOG) {
+        size_t n = LogStoreRead(LogStore(), d->fds[fd].name, (char *)buf, nbyte);
+        d->fds[fd].read_done = true;
+        return (int)n;
+    }
 
     char line[WAPPS_LINE_MAX];
     size_t n = RenderRead(node, d->fds[fd].name, line, sizeof(line));

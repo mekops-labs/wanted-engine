@@ -125,19 +125,16 @@ static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out) {
         out->privileged = json_getBoolean(priv);
 
     json_t const *wapps = json_getProperty(system, "defaultWapps");
-    if (!wapps || JSON_ARRAY != json_getType(wapps)) {
-        DEBUG_TRACE(".system.defaultWapps property not found in json");
-        return -EINVAL;
-    }
-    json_t const *wapp;
-
-    for (i = 0, wapp = json_getChild(wapps); wapp && i < MAX_WAPPS;
-         wapp = json_getSibling(wapp), i++) {
-        if (JSON_TEXT == json_getType(wapp)) {
-            strcpy(out->wappsToRun[i], json_getValue(wapp));
+    if (wapps && JSON_ARRAY == json_getType(wapps)) {
+        json_t const *wapp;
+        for (i = 0, wapp = json_getChild(wapps); wapp && i < MAX_WAPPS;
+             wapp = json_getSibling(wapp), i++) {
+            if (JSON_TEXT == json_getType(wapp)) {
+                strcpy(out->wappsToRun[i], json_getValue(wapp));
+            }
         }
+        out->nWapps = i;
     }
-    out->nWapps = i;
 
     json_t const *supervisor = json_getProperty(json, "supervisor");
     if (supervisor && JSON_OBJ == json_getType(supervisor)) {
@@ -244,10 +241,11 @@ int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen) {
 /* Global driver table — single registry used by WantedInstallDriver to resolve
  * a config driver name into an init callback. */
 static const vfs_driver_table_t global_driver_table[] = {
-    {"null", VfsNullInit},     {"9p", Vfs9PInit},
-    {"config", VfsConfigInit}, {"platform", VfsPlatformFsInit},
-    {"socket", VfsSocketInit}, {"virt", VfsVirtualInit},
-    {"wanted", VfsWantedInit}, {NULL, NULL},
+    {"null", VfsNullInit},           {"log", VfsLogInit},
+    {"9p", Vfs9PInit},               {"config", VfsConfigInit},
+    {"platform", VfsPlatformFsInit}, {"socket", VfsSocketInit},
+    {"virt", VfsVirtualInit},        {"wanted", VfsWantedInit},
+    {NULL, NULL},
 };
 
 /* Every wapp mount must terminate at one of three sinks:

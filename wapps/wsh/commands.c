@@ -172,7 +172,7 @@ int wsh_ls(char **args)
             return 1;
         }
 
-        printf("%c%-20s   %4d   %8lld   %8llx   %8llu\n", type, de->d_name, de->d_type, s.st_size, s.st_dev, s.st_ino);
+        printf("%c%-20s   %4d   %8lld   %-4.4s   %8llu\n", type, de->d_name, de->d_type, s.st_size, (char*)&s.st_dev, s.st_ino);
     }
 
     closedir(dr);

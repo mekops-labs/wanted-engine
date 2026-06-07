@@ -490,6 +490,18 @@ void WantedWappStop(wapp_data_t *ctx) {
     wasm_runtime_destroy_thread_env();
 }
 
+void WantedWappTerminate(wapp_data_t *ctx) {
+    /* Signal a running instance to abort its in-flight WASM execution:
+     * wasm_runtime_call_wasm on the worker thread returns false, so the thread
+     * unwinds through its cleanup handler and WantedWappStop. This is the stop
+     * path for platforms that cannot rely on forced thread cancellation.
+     * Self-guards when the wapp has no live instance. */
+    if (ctx == NULL || ctx->wamr == NULL || ctx->wamr->instance == NULL) {
+        return;
+    }
+    wasm_runtime_terminate(ctx->wamr->instance);
+}
+
 wapp_t *WantedGetCurrentSupervisor() {
     /* TODO: in the future we need to update the image if downloaded new version
      */
