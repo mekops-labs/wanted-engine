@@ -79,7 +79,7 @@ A **driver spec** (used by each `console` slot and each `drivers[]` entry):
 |--------|-----------|---------|-------------------|
 | `null` | `/dev/*` | Bit bucket. | — |
 | `log` | console slot | Ring-buffer console; output readable at `/dev/wanted/wapps/<name>/log`. | — |
-| `platform` | console slot / `/dev/*` | The engine's native stdio console. | — |
+| `platform` | console slot / path | As a console slot: the engine's native stdio (fds 0/1/2). Mounted at a path: the host filesystem. | — |
 | `socket` | `/net/*` | TCP/UDP, plain or TLS. | `t localhost 8888`, `T localhost 8889` |
 | `9p` | `/dev/*` | 9P2000 client for an external FS plugin. | `tcp!localhost!5640` |
 | `config` | `/dev/*` | Read-only config-file injection. | `{"config_file":"/config.json"}` |

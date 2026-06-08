@@ -19,7 +19,7 @@ A wapp's entire view of the world is the VFS. This page is the exhaustive refere
 | `/dev/stdin` | stdio | r | yes | Stub; reads return EOF. |
 | `/dev/stdout` | stdio | w | yes | Stub; writes are discarded. |
 | `/dev/stderr` | stdio | w | yes | Stub; writes are discarded. |
-| `/dev/platform` | platform console | rw | config | The engine's own stdio; the platform console backing a wapp's stdio slots. |
+| `/dev/platform` | platform | rw | config | Host filesystem access — the `platform` driver mounted at a path. (As a *console* backing instead, `platform` redirects the engine's native stdio.) |
 | `/dev/wanted` | wanted | rw | config | The control-plane namespace; privileged supervisors only. See [Control Plane Reference](control-plane-reference.md). |
 
 The stdio stubs exist so a wapp's standard descriptors always resolve; a wapp that wants real stdout is given a `platform` or `log` console in its launch config (see [Control Plane Reference](control-plane-reference.md)), not by writing to `/dev/stdout`.
