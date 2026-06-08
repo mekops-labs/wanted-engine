@@ -22,15 +22,14 @@ SIMROOT=${SIMROOT:-$ENGINE_DIR/build-nuttx/simroot}
 SUPERVISOR_VARIANT=${SUPERVISOR_VARIANT:-wsh}
 SUPERVISOR_TAR=$ENGINE_DIR/wasm/supervisor/$SUPERVISOR_VARIANT/supervisor.tar
 
-# Shallow-init the pinned NuttX + apps forks (wanted branch). The sim board
+# Link the engine/wamr sources into the nuttx-apps app package. The sim board
 # config (boards/sim/.../configs/wanted) lives in the nuttx fork and the app
 # package (system/wanted: Make.defs/Makefile/Kconfig) in the nuttx-apps fork.
+# The forks' checked-out commit is left as-is — whatever the user has in
+# third_party/nuttx{,-apps} is used; this does not move or re-pin the submodules.
 # Only the engine/wamr source symlinks are checkout-location specific, so create
 # those in the app package here and keep them out of the apps submodule status.
 deps() {
-    git -C "$ENGINE_DIR" submodule update --init --depth 1 -- \
-        third_party/nuttx third_party/nuttx-apps
-
     local appdir="$APPS_DIR/system/wanted"
     ( cd "$appdir"
       rel=$(realpath --relative-to="$appdir" "$ENGINE_DIR")
