@@ -4,6 +4,11 @@ Changelog
 Unreleased
 ----------
 
+### Engine — default console backing
+
+- A wapp whose launch config omits a stdio slot no longer fails to start. An unset `console.in`/`out`/`err` now resolves to a default backing — `stdin` to `null`, `stdout`/`stderr` to `log` — so a wapp launches without an explicit console and its output is captured to the per-wapp log ring buffer instead of being lost. A slot set explicitly still overrides its default.
+- selftest covers the default and all-null console backings.
+
 ### NuttX platform port — (Linux sim, CI-gated)
 
 - `platform/nuttx/` is fully implemented — every `Platform*` symbol has a working body with no `-ENOSYS` stubs remaining. Covers: pthreads wapp lifecycle, `opendir`/`readdir`/`qsort` registry (no scandir/VLA), NuttX VFS driver, `clock_gettime`/`clock_nanosleep`, `/dev/urandom` random, BSD sockets (TLS not supported), `wanted_main` built-in app entry point, pthread mutex.
