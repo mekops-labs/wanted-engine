@@ -134,12 +134,64 @@ selftest() {
     echo "PASS: selftest on the NuttX sim"
 }
 
+# Build the sim with the wsh supervisor and exercise the system-control paths
+# (poweroff / reboot / exit) over the console, mirroring test/syscontrol.sh on
+# Linux. The sim has no BOARDIOC_RESET, so reboot falls through to a poweroff —
+# both end the run without respawning; only the exit case must respawn wsh, and
+# it must come back with a working console (the borrowed-stdio fix).
+syscontrol() {
+    SUPERVISOR_VARIANT=wsh
+    SUPERVISOR_TAR=$ENGINE_DIR/wasm/supervisor/wsh/supervisor.tar
+    build
+
+    local rc=0 marker="Following commands are available"
+
+    # Boot the sim with a console FIFO, run the timed "delay:cmd" steps, and set
+    # SIM_ALIVE (1/0) + SIM_OUT. The sim is killed by PID, never orphaned.
+    SIM_OUT=""; SIM_ALIVE=0
+    drive_sim() {
+        local fifo ep
+        SIM_OUT=$(mktemp); fifo=$(mktemp -u); mkfifo "$fifo"
+        ( cd "$SIMROOT" && exec "$NUTTX_DIR/nuttx" ) <"$fifo" >"$SIM_OUT" 2>&1 &
+        ep=$!
+        exec 9>"$fifo"
+        local spec
+        for spec in "$@"; do sleep "${spec%%:*}"; printf '%s\n' "${spec#*:}" >&9; done
+        sleep 2
+        if kill -0 "$ep" 2>/dev/null; then SIM_ALIVE=1; else SIM_ALIVE=0; fi
+        exec 9>&-
+        kill -9 "$ep" 2>/dev/null || true
+        wait "$ep" 2>/dev/null || true
+        rm -f "$fifo"
+    }
+
+    drive_sim "2:poweroff"
+    if [ "$SIM_ALIVE" -eq 0 ]; then echo "ok   - poweroff exits the sim (no respawn)";
+    else echo "FAIL - poweroff did not exit the sim"; rc=1; fi
+    rm -f "$SIM_OUT"
+
+    drive_sim "2:exit" "3:help"
+    if [ "$SIM_ALIVE" -eq 1 ] && grep -q "$marker" "$SIM_OUT"; then
+        echo "ok   - exit respawns wsh with a working console"
+    else echo "FAIL - exit did not respawn with a working console"; rc=1; fi
+    rm -f "$SIM_OUT"
+
+    drive_sim "2:reboot"
+    if [ "$SIM_ALIVE" -eq 0 ]; then echo "ok   - reboot does not respawn (sim resets/exits)";
+    else echo "FAIL - reboot left the sim respawning"; rc=1; fi
+    rm -f "$SIM_OUT"
+
+    if [ "$rc" -eq 0 ]; then echo "PASS: syscontrol on the NuttX sim";
+    else echo "FAIL: syscontrol on the NuttX sim"; exit 1; fi
+}
+
 for cmd in "${@:-all}"; do
     case "$cmd" in
-        deps)     deps ;;
-        build)    build ;;
-        selftest) deps; selftest ;;
-        all)      deps; selftest ;;
-        *) echo "usage: $0 [deps|build|selftest|all ...]" >&2; exit 2 ;;
+        deps)       deps ;;
+        build)      build ;;
+        selftest)   deps; selftest ;;
+        syscontrol) deps; syscontrol ;;
+        all)        deps; selftest; syscontrol ;;
+        *) echo "usage: $0 [deps|build|selftest|syscontrol|all ...]" >&2; exit 2 ;;
     esac
 done
