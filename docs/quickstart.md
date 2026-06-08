@@ -90,16 +90,10 @@ List the running wapps. The supervisor is itself a wapp, so it appears in the li
 supervisor      running
 ```
 
-A wapp's standard streams must be backed by a **console** — a wapp started without one fails to launch. Give `hello` a **log console**: its stdout/stderr are captured into a ring buffer you can read back through the control plane. Write the launch config to `hello`'s `config` node, then start it:
+Start `hello` by name. `wsh start` writes `start hello` to the root control node `/dev/wanted/ctl`, which resolves the name in the registry, loads the image, and launches the wapp as its own thread. Check its state — it is running:
 
 ```
-> write /dev/wanted/wapps/hello/config {"console":{"in":{"name":"platform"},"out":{"name":"log"},"err":{"name":"log"}}}
 > start hello
-```
-
-`wsh start` writes `start hello` to the root control node `/dev/wanted/ctl`, which resolves the name in the registry, applies the buffered config, loads the image, and launches the wapp as its own thread. Check its state — it is running:
-
-```
 > status hello
 hello:
   state    running
@@ -107,7 +101,7 @@ hello:
   id       1
 ```
 
-The `hello` sample (launched with no role file) writes an alive marker, lives for two seconds, then exits. A moment later its state is `exited`, and its captured output is readable at the `log` node:
+The `hello` sample (launched with no role file) writes an alive marker, lives for two seconds, then exits. A moment later its state is `exited`. By default a wapp's stdout and stderr are captured to a per-wapp **log console**, readable at its `log` node:
 
 ```
 > status hello
@@ -126,7 +120,7 @@ A wapp that runs indefinitely is stopped explicitly — `wsh stop` writes `stop`
 > stop hello
 ```
 
-The config schema and every control-plane node are documented in the [Control Plane Reference](control-plane-reference.md).
+To override a wapp's console — share the engine's terminal, discard output, or point a slot elsewhere — write a launch config to its `config` node before `start`. The console schema and every control-plane node are documented in the [Control Plane Reference](control-plane-reference.md).
 
 ## Next steps
 
