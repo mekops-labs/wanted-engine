@@ -28,11 +28,11 @@ int wanted_sim_main(int argc, char *argv[]) {
 
     int rc = wanted_main(argc, argv);
 
-    /* The engine loop returned — every wapp, including the supervisor, has ended
-     * (e.g. the user typed `exit` in wsh). Power the simulator off so the host
-     * process exits and the controlling terminal is restored; otherwise NuttX
-     * idles as init returns and the raw-mode tty hangs. Falls through if the
-     * config lacks BOARDCTL_POWEROFF (then init just returns, as before). */
+    /* The engine loop returned without powering the board off itself — e.g. a
+     * reboot request on a sim that has no BOARDIOC_RESET. Power the simulator
+     * off so the host process exits and the controlling terminal is restored;
+     * otherwise NuttX idles as init returns and the raw-mode tty hangs. Falls
+     * through if the config lacks BOARDCTL_POWEROFF (then init just returns). */
     boardctl(BOARDIOC_POWEROFF, rc);
     return rc;
 }

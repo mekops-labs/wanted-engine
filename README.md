@@ -118,10 +118,12 @@ make wapps        # compile the sample wapp images under wapps/ (e.g. wapps/hell
 
 ```bash
 make test            # unit suite via ctest
-make selftest        # in-WASM functional/robustness suite (TAP) on Linux
+make selftest        # in-WASM functional/robustness suite (TAP) + system-control checks on Linux
 make nuttx-selftest  # the same in-WASM suite on the NuttX simulator
 make smoke-engine    # boot the production supervisor; assert a clean instantiate
 ```
+
+`make selftest` also runs `test/syscontrol.sh`, which drives the `wsh` supervisor through poweroff / reboot / exit and asserts the engine-process lifecycle the in-WASM suite cannot observe — including that a respawned supervisor keeps a working console. The sim counterpart runs via `test/nuttx-sim.sh all`.
 
 #### Selftest suite
 

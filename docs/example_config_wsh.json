@@ -1,5 +1,7 @@
 {
-    "system": {},
+    "system": {
+        "privileged": true
+    },
     "supervisor": {
         "imagePath": "./wasm/supervisor/wsh/supervisor.tar",
         "params": {

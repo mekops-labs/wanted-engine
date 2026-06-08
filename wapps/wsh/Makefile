@@ -4,7 +4,7 @@ NAME ?= $(current_dir)
 WASM = $(NAME).wasm
 HEADER = $(NAME).wasm.h
 CLANG ?= /opt/wasi-sdk/bin/clang
-VERSION = 0.4.1
+VERSION = 0.5.0
 
 # The wasi-sdk clang defaults to its own sysroot and compiler-rt for the
 # wasm32-wasi target, so no explicit --sysroot / --rtlib is needed.
@@ -20,6 +20,8 @@ clean:
 
 .PHONY: all clean
 
-$(WASM): $(SRCS)
-	$(CLANG) $(CLANG_FLAGS) $^ -o $@
+# Depend on the Makefile too: VERSION is compiled in via -DVERSION, so a version
+# bump must force a rebuild even when no source changed.
+$(WASM): $(SRCS) Makefile
+	$(CLANG) $(CLANG_FLAGS) $(SRCS) -o $@
 

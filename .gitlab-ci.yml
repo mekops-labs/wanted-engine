@@ -112,9 +112,11 @@ coverage:
 # End-to-end engine tests. The in-WASM selftest suite (test/selftest.sh) is the
 # canonical functional suite — it boots the selftest supervisor and asserts the
 # VFS/control-plane/sandbox/robustness behaviour from inside WASM, identically on
-# Linux and the sim. smoke-engine.sh remains as the one thing selftest does not
-# cover: that the production (sheriff) supervisor image instantiates cleanly. The
-# CLI and supervisor TARs come from build-gcc (`ninja supervisor`). Scripts
+# Linux and the sim. smoke-engine.sh covers what selftest does not: that the
+# production (sheriff) supervisor image instantiates cleanly. syscontrol.sh
+# covers the engine-process lifecycle the in-WASM suite cannot observe —
+# poweroff/reboot/exit and that a respawned supervisor keeps a working console.
+# The CLI and supervisor TARs come from build-gcc (`ninja supervisor`). Scripts
 # assume the repo CWD is the project root, which is the CI default.
 integration-tests:
   stage: integration-tests
@@ -141,10 +143,18 @@ integration-tests:
         echo "FAIL: test/selftest.sh"
         status=1
       fi
+      echo "========== test/syscontrol.sh =========="
+      if bash test/syscontrol.sh "./$BUILD_DIR/cmd/wanted-cli"; then
+        echo "PASS: test/syscontrol.sh"
+      else
+        echo "FAIL: test/syscontrol.sh"
+        status=1
+      fi
       exit $status
 # NuttX simulator: build the engine as a NuttX built-in (the selftest supervisor
-# as the init task over hostfs) and run the in-WASM selftest suite against the
-# sim via the shared recipe in test/nuttx-sim.sh ("all" = deps; selftest). It
+# as the init task over hostfs) and run the in-WASM selftest suite plus the
+# system-control checks against the sim via the shared recipe in
+# test/nuttx-sim.sh ("all" = deps; selftest; syscontrol). It
 # shallow-inits the third_party/nuttx{,-apps} submodules (excluded from the
 # global fetch above).
 # The build image already carries the sim prerequisites. Depends on build-gcc

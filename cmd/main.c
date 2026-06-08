@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <platform.h>
 #include <wanted.h>
 
 #define STR(...) #__VA_ARGS__
@@ -11,6 +12,9 @@ char *defCfg = STR({"system" : {}});
 int main(int argc, char *argv[]) {
     int ret;
     char *cfg;
+
+    /* Hand argv to the platform so a reboot request can re-exec this image. */
+    PlatformSetProcessArgs(argc, argv);
 
     if (argc > 1) {
         long sz;
