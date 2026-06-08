@@ -48,12 +48,13 @@ test: ## run the unit + smoke suite via ctest
 smoke-engine: ## boot the production supervisor and assert a clean instantiate
 	$(RUN) 'cd /src && ./test/smoke-engine.sh ./$(BUILD_DIR)/cmd/wanted-cli ./test/smoke-engine-config.json'
 
-selftest: build ## run the in-WASM selftest supervisor (TAP) on Linux
-	$(RUN) 'cd /src && ./test/selftest.sh ./$(BUILD_DIR)/cmd/wanted-cli ./test/selftest-config.json'
+selftest: build ## run the in-WASM selftest suite + system-control checks on Linux
+	$(RUN) 'cd /src && ./test/selftest.sh ./$(BUILD_DIR)/cmd/wanted-cli ./test/selftest-config.json \
+	    && ./test/syscontrol.sh ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_wsh.json'
 
 wsh-shell: wsh ## build wsh and open the interactive wsh prompt on Linux (wanted-cli)
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c \
-	    'cd /src && ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_smoke.json'
+	    'cd /src && ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_wsh.json'
 
 # The recipe lives in test/nuttx-sim.sh so the Makefile (which wraps it in the
 # build container) and GitLab CI (already inside it) share one source of truth.
