@@ -21,7 +21,7 @@ ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 cd "$ROOT"
 
 WANTED=${1:-./build/cmd/wanted-cli}
-CONFIG=${2:-./docs/example_config_wsh.json}
+CONFIG=${2:-./configs/example_config_wsh.json}
 
 if [ ! -x "$WANTED" ]; then
     echo "FAIL: wsh engine not found at $WANTED (run 'make wsh')"

@@ -43,7 +43,7 @@ cd build && ctest -R test-tarfs --output-on-failure
 
 ```bash
 ./build/cmd/wanted-cli                           # built-in default config
-./build/cmd/wanted-cli docs/example_config.json  # explicit config file
+./build/cmd/wanted-cli configs/example_config.json  # explicit config file
 ```
 
 ## Directory Structure
@@ -153,17 +153,18 @@ All external dependencies as git submodules. Do not modify these directly.
 |---|---|
 | `wamr` | WebAssembly Micro Runtime 2.4.4 (core interpreter) |
 | `tiny-json` | JSON parsing |
-| `json-maker` | JSON generation |
 | `cwalk` | Cross-platform path manipulation |
-| `romfs-lib` | ROM filesystem |
-| `c9` | Internal utility library |
+| `c9` | 9P2000 protocol client (`vfs-9p`) |
 
 After cloning: `git submodule update --init --recursive`
 
 ### `docs/`
 
-- `example_config.json` — fully annotated runtime config; use as reference for config schema
-- `secure_socket_test.md` — TLS/secure socket testing procedure
+Published developer/user documentation. Flat tree of Hugo-front-matter `.md` files (one `_index.md` landing page plus one file per topic), synced to the MekOps blog with `make docs-sync DOCS_DEST=<path>`. Update the relevant `docs/*.md` in the same change as the feature it documents.
+
+### `configs/`
+
+Reference and test run configs: `sheriff.json`, `example_config.json` (config-schema reference), `example_config_wsh.json` (wsh debug supervisor; used by `make wsh-shell` and `test/syscontrol.sh`).
 
 ### `docker/`
 
