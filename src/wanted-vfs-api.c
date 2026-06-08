@@ -12,7 +12,6 @@
 #include <wanted-vfs-api.h>
 #include <wanted_malloc.h>
 
-#include <json-maker/json-maker.h>
 #include <tiny-json.h>
 
 static wantedConfig_t currentConfig;
@@ -39,46 +38,6 @@ int WantedProcReadClockQuality(vfs_ctx_t c, void *buf, size_t bufLen) {
     return 1;
 }
 
-static size_t ConfigToJson(const wantedConfig_t *cfg, uint8_t *buf,
-                           size_t bufLen) {
-    char *p = (char *)buf;
-    size_t left = bufLen;
-
-    p = json_objOpen(p, NULL, &left);
-    p = json_arrOpen(p, "wapps", &left);
-    for (int i = 0; i < cfg->nWapps; i++) {
-        p = json_objOpen(p, NULL, &left);
-        p = json_str(p, "name", cfg->wappsToRun[i], &left);
-        p = json_objClose(p, &left);
-    }
-    p = json_arrClose(p, &left);
-    p = json_objClose(p, &left);
-    p = json_end(p, &left);
-
-    return bufLen - left;
-}
-
-static size_t RegistryToJson(const reg_entry_t *reg, size_t regLen,
-                             uint8_t *buf, size_t bufLen) {
-    char *p = (char *)buf;
-    size_t left = bufLen;
-
-    p = json_objOpen(p, NULL, &left);
-    p = json_arrOpen(p, "wapps", &left);
-    for (int i = 0; i < regLen; i++) {
-        p = json_objOpen(p, NULL, &left);
-        p = json_str(p, "name", reg[i].name, &left);
-        p = json_str(p, "version", reg[i].version, &left);
-        p = json_int(p, "size", reg[i].size, &left);
-        p = json_objClose(p, &left);
-    }
-    p = json_arrClose(p, &left);
-    p = json_objClose(p, &left);
-    p = json_end(p, &left);
-
-    return bufLen - left;
-}
-
 const char *statusToString(status_t state) {
     switch (state) {
     case NOT_STARTED:
@@ -97,7 +56,6 @@ const char *statusToString(status_t state) {
 }
 
 static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out) {
-    int i = 0;
     json_t m[100];
     char b[len];
 
@@ -124,18 +82,6 @@ static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out) {
     if (priv && JSON_BOOLEAN == json_getType(priv))
         out->privileged = json_getBoolean(priv);
 
-    json_t const *wapps = json_getProperty(system, "defaultWapps");
-    if (wapps && JSON_ARRAY == json_getType(wapps)) {
-        json_t const *wapp;
-        for (i = 0, wapp = json_getChild(wapps); wapp && i < MAX_WAPPS;
-             wapp = json_getSibling(wapp), i++) {
-            if (JSON_TEXT == json_getType(wapp)) {
-                strcpy(out->wappsToRun[i], json_getValue(wapp));
-            }
-        }
-        out->nWapps = i;
-    }
-
     json_t const *supervisor = json_getProperty(json, "supervisor");
     if (supervisor && JSON_OBJ == json_getType(supervisor)) {
         const char *imgPath = json_getPropertyValue(supervisor, "imagePath");
@@ -160,30 +106,7 @@ int WantedParseConfig(const char *buf, size_t bufLen) {
     return ParseConfig(buf, bufLen, &currentConfig);
 }
 
-// This function is intended only for testing purposes
-void WantedSetConfig(wantedConfig_t cfg) { currentConfig = cfg; }
-
 const wantedConfig_t *WantedGetConfig() { return &currentConfig; }
-
-int WantedGetConfigJson(uint8_t *buf, size_t bufLen) {
-    if (buf == NULL)
-        return -EINVAL;
-    return ConfigToJson(&currentConfig, buf, bufLen);
-}
-
-int WantedReadRegistry(uint8_t *buf, size_t bufLen) {
-    reg_entry_t entries[MAX_WAPPS];
-    int n;
-
-    if (buf == NULL)
-        return -EINVAL;
-
-    n = PlatformRegistryRead(entries, MAX_WAPPS);
-    if (n < 0)
-        return n;
-
-    return RegistryToJson((const reg_entry_t *)&entries, n, buf, bufLen);
-}
 
 int WantedWriteRegistry(bool *cont, const uint8_t *buf, size_t bufLen) {
     if (buf == NULL)

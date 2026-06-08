@@ -1,6 +1,5 @@
 {
     "system": {
-        "defaultWapps": [],
         "privileged": true
     },
     "supervisor": {

@@ -7,10 +7,10 @@
 
 /* ── In-memory registry ─────────────────────────────────────────────────────
  * Deterministic, dependency-free stand-in for the host registry. Backs
- * PlatformRegistryRead / PlatformRegistryRemove and the higher-level
- * WantedReadRegistry API. The real PlatformRegistryWrite is a chunked state
- * machine whose FINISH_WRITE step parses a WASM manifest to derive name and
- * version — out of scope for the dummy. Tests populate via DummyRegistrySeed.
+ * PlatformRegistryRead / PlatformRegistryRemove. The real PlatformRegistryWrite
+ * is a chunked state machine whose FINISH_WRITE step parses a WASM manifest to
+ * derive name and version — out of scope for the dummy. Tests populate via
+ * DummyRegistrySeed.
  * ───────────────────────────────────────────────────────────────────────── */
 
 #define DUMMY_REG_MAX_ENTRIES 8

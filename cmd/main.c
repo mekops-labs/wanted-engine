@@ -6,7 +6,7 @@
 
 #define STR(...) #__VA_ARGS__
 
-char *defCfg = STR({"system" : {"defaultWapps" : [ "a", "bb", "ccc" ]}});
+char *defCfg = STR({"system" : {}});
 
 int main(int argc, char *argv[]) {
     int ret;

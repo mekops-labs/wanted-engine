@@ -12,9 +12,7 @@ int WantedInstallDriver(vfs_ctx_t c, const wapp_t *w, const char *name,
 
 int WantedParseConfig(const char *buf, size_t bufLen);
 const wantedConfig_t *WantedGetConfig();
-int WantedGetConfigJson(uint8_t *buf, size_t bufLen);
 
-int WantedReadRegistry(uint8_t *buf, size_t bufLen);
 int WantedWriteRegistry(bool *cont, const uint8_t *buf, size_t bufLen);
 int WantedCloseRegistry();
 int WantedRegistryRemove(const reg_entry_t *entry);

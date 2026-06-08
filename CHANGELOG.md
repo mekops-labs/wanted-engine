@@ -28,9 +28,16 @@ Unreleased
 - Supervisor thread is created one priority step above worker threads on both Linux and NuttX; worker priorities are set explicitly to prevent inheritance.
 - Added interruptible stop on NuttX: `PlatformWappStop` sends `SIGUSR2` to the worker after `WantedWappTerminate` so a wapp blocked in a host syscall is interrupted and the stop flag checked on return. A per-worker `interrupted` flag bridges `clock_nanosleep`'s success-on-signal quirk. Linux retains `pthread_cancel(ASYNCHRONOUS)`.
 
+### Engine — config and registry cleanup
+
+- Removed the `system.defaultWapps` config field. It was parsed into the config struct but never started any wapp — all wapp lifecycle runs through the control plane. Drop the key from existing configs; `{"system": {}}` is a valid config.
+- Reading `/dev/wanted/reg` as a file now returns `-EISDIR`. The registry is a directory; enumerate it with `readdir` (name:version entries). The former JSON-listing read had no consumer.
+- Removed the duplicate `/dev/wanted/w/reg` mount; the registry is reachable only at `/dev/wanted/reg`.
+- Dropped the `json-maker` dependency (no longer used by the engine).
+
 ### Test baseline
 
-- ctest: **52/52** (one wsh-smoke ctest retired alongside the shell scripts).
+- ctest: **53/53**.
 - selftest: **29/29** on Linux and the NuttX sim.
 - `smoke-engine.sh`: green on Linux; run on the NuttX sim via `nuttx-sim.sh`.
 
