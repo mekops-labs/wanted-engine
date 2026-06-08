@@ -27,12 +27,31 @@ ifdef VARIANT
 
 VARIANT_DIR := $(DIR)$(VARIANT)
 TAR         := $(VARIANT_DIR)/supervisor.tar
+MANIFEST    := $(VARIANT_DIR)/manifest.json
 INPUTS      := app.wasm manifest.json
+
+# Variants compiled from source keep their manifest "chksum" in sync with the
+# freshly built app.wasm (chksum = sha256(app.wasm)). The prebuilt sheriff blob
+# owns its manifest upstream, so it is never rewritten here.
+ifneq ($(filter $(VARIANT),wsh selftest),)
+SYNC_CHKSUM := 1
+endif
 
 .PHONY: build
 build: $(TAR)
 
+# Pack app.wasm + manifest.json into a ustar archive. For built-from-source
+# variants, first refresh the manifest's chksum to sha256(app.wasm) — only when
+# a "chksum" field is present and its value actually changed, so an unchanged
+# build does not churn the manifest mtime (which would re-trigger the tar).
 $(TAR): $(addprefix $(VARIANT_DIR)/,$(INPUTS))
+ifdef SYNC_CHKSUM
+	@sum=$$(sha256sum $(VARIANT_DIR)/app.wasm | cut -d' ' -f1); \
+	if grep -q '"chksum"' $(MANIFEST) && ! grep -q "\"$$sum\"" $(MANIFEST); then \
+	    sed -i "s/\"chksum\": \"[0-9a-f]*\"/\"chksum\": \"$$sum\"/" $(MANIFEST); \
+	    echo "supervisor[$(VARIANT)]: synced chksum -> $$sum"; \
+	fi
+endif
 	tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
 	    -C $(VARIANT_DIR) -cf $@ $(INPUTS)
 
