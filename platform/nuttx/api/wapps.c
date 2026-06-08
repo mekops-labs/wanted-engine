@@ -22,6 +22,10 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#ifdef __NuttX__
+#include <sys/boardctl.h>
+#endif
+
 #include <platform.h>
 #include <wanted-api.h>
 #include <wanted.h>
@@ -55,6 +59,11 @@ volatile struct {
     size_t n;
     thread_data_t threads[MAX_WAPPS];
 } state;
+
+/* System-control requests, raised by a privileged wapp and consumed by
+ * PlatformWappLoop: shutdown powers the board off, reboot resets it. */
+static int shutdown_requested = 0;
+static int reboot_requested = 0;
 
 static void updateState(uint8_t id, int ret) {
     pthread_mutex_lock(&state_mtx);
@@ -313,15 +322,46 @@ int PlatformWappStop(const char *name) {
     return 0;
 }
 
+/* NuttX reboot re-execs nothing — a board reset replaces the whole image — so
+ * the captured argv is unused. Kept for platform-API symmetry with the host. */
+void PlatformSetProcessArgs(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+}
+
+void PlatformRequestShutdown(void) {
+    pthread_mutex_lock(&state_mtx);
+    shutdown_requested = 1;
+    pthread_mutex_unlock(&state_mtx);
+}
+
+void PlatformRequestReboot(void) {
+    pthread_mutex_lock(&state_mtx);
+    reboot_requested = 1;
+    pthread_mutex_unlock(&state_mtx);
+}
+
 void PlatformWappLoop() {
     uint8_t supervisorOk;
 
     for (;;) {
         sleep(1);
 
-        if (!state.n) {
-            /* when only supervisor was running and it ended, let's exit */
-            /* TODO: maybe this needs to be removed */
+        pthread_mutex_lock(&state_mtx);
+        int shutdown = shutdown_requested;
+        int reboot = reboot_requested;
+        pthread_mutex_unlock(&state_mtx);
+
+        if (shutdown) {
+#ifdef __NuttX__
+            boardctl(BOARDIOC_POWEROFF, 0);
+#endif
+            return;
+        }
+        if (reboot) {
+#ifdef __NuttX__
+            boardctl(BOARDIOC_RESET, 0);
+#endif
             return;
         }
 

@@ -34,6 +34,8 @@ int wsh_rm(char **args);
 int wsh_start(char **args);
 int wsh_stop(char **args);
 int wsh_status(char **args);
+int wsh_poweroff(char **args);
+int wsh_reboot(char **args);
 
 /*
   List of builtin commands, followed by their corresponding functions.
@@ -51,6 +53,8 @@ cmd_t cmds[] = {
     { "start", wsh_start },
     { "stop", wsh_stop },
     { "status", wsh_status },
+    { "poweroff", wsh_poweroff },
+    { "reboot", wsh_reboot },
 };
 
 int wsh_num_cmds() {
@@ -444,4 +448,59 @@ int wsh_status(char **args)
     }
     closedir(dr);
     return 1;
+}
+
+/* Stop every running child wapp (everything but the supervisor itself) via the
+ * control plane, so a poweroff/reboot drains cleanly. Best-effort: a failed
+ * stop is ignored — the engine tears remaining wapps down when the run loop
+ * ends regardless. */
+static void wsh_stop_children(void)
+{
+    DIR *dr = opendir(WANTED_WAPPS);
+    if (dr == NULL)
+        return;
+
+    struct dirent *de;
+    char path[160];
+    while ((de = readdir(dr)) != NULL) {
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0 ||
+            strcmp(de->d_name, "supervisor") == 0)
+            continue;
+        snprintf(path, sizeof(path), WANTED_WAPP_CTL, de->d_name);
+        wanted_write(path, "stop");
+    }
+    closedir(dr);
+}
+
+/**
+   @brief Drain child wapps, then ask the engine to power off. Returns 0 so the
+          shell loop exits; the engine stops without respawning the supervisor.
+ */
+int wsh_poweroff(char **args)
+{
+    (void)args;
+    wsh_stop_children();
+    if (wanted_write(WANTED_CTL, "poweroff") < 0) {
+        fputs("poweroff: ", stderr);
+        perror(WANTED_CTL);
+        return 1;
+    }
+    return 0;
+}
+
+/**
+   @brief Drain child wapps, then ask the engine to reboot (host re-exec / board
+          reset). Returns 0 so the shell loop exits; this wsh instance is not
+          respawned.
+ */
+int wsh_reboot(char **args)
+{
+    (void)args;
+    wsh_stop_children();
+    if (wanted_write(WANTED_CTL, "reboot") < 0) {
+        fputs("reboot: ", stderr);
+        perror(WANTED_CTL);
+        return 1;
+    }
+    return 0;
 }

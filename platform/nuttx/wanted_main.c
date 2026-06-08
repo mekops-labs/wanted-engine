@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <platform.h>
 #include <wanted.h>
 
 /* FAR is a NuttX pointer qualifier (empty on flat-memory targets such as the
@@ -27,6 +28,8 @@ int wanted_main(int argc, FAR char *argv[]) {
     char *cfg;
     size_t cfgLen;
     bool allocated = false;
+
+    PlatformSetProcessArgs(argc, argv);
 
     if (argc > 1) {
         long sz;

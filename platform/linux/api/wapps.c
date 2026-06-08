@@ -39,6 +39,13 @@ volatile struct {
     thread_data_t threads[MAX_WAPPS];
 } state;
 
+/* System-control requests, raised by a privileged wapp and consumed by
+ * PlatformWappLoop. argv is captured at startup so a reboot re-execs the same
+ * binary. */
+static int shutdown_requested = 0;
+static int reboot_requested = 0;
+static char **process_argv = NULL;
+
 static void updateState(uint8_t id, int ret) {
     pthread_mutex_lock(&state_mtx);
     if (ret == 0) {
@@ -259,15 +266,47 @@ int PlatformWappStop(const char *name) {
 #endif
 }
 
+void PlatformSetProcessArgs(int argc, char **argv) {
+    (void)argc;
+    process_argv = argv;
+}
+
+void PlatformRequestShutdown(void) {
+    pthread_mutex_lock(&state_mtx);
+    shutdown_requested = 1;
+    pthread_mutex_unlock(&state_mtx);
+}
+
+void PlatformRequestReboot(void) {
+    pthread_mutex_lock(&state_mtx);
+    reboot_requested = 1;
+    pthread_mutex_unlock(&state_mtx);
+}
+
 void PlatformWappLoop() {
     uint8_t supervisorOk;
 
     for (;;) {
         sleep(1);
 
-        if (!state.n) {
-            /* when only supervisor was running and it ended, let's exit */
-            /* TODO: maybe this needs to be removed */
+        pthread_mutex_lock(&state_mtx);
+        int shutdown = shutdown_requested;
+        int reboot = reboot_requested;
+        pthread_mutex_unlock(&state_mtx);
+
+        if (shutdown) {
+            /* Return so WantedStart and main unwind to a normal process exit. */
+            return;
+        }
+        if (reboot) {
+            /* Engine-level restart: re-exec the same binary. This is not a
+             * system reboot — argv[0] is the original image captured at
+             * startup. If exec fails, fall through to a clean exit. */
+            if (process_argv && process_argv[0]) {
+                execv(process_argv[0], process_argv);
+                DEBUG_TRACE("reboot execv(%s) failed: %d", process_argv[0],
+                            errno);
+            }
             return;
         }
 
