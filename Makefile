@@ -57,7 +57,7 @@ wsh-shell: wsh ## build wsh and open the interactive wsh prompt on Linux (wanted
 
 # The recipe lives in test/nuttx-sim.sh so the Makefile (which wraps it in the
 # build container) and GitLab CI (already inside it) share one source of truth.
-nuttx-deps: ## init the pinned NuttX + apps submodules (shallow) and link the app
+nuttx-deps: ## link the engine app package into the checked-out nuttx-apps submodule
 	$(RUN) 'cd /src && ./test/nuttx-sim.sh deps'
 
 nuttx-build: supervisor ## configure + build the NuttX sim (wsh as init over hostfs)
