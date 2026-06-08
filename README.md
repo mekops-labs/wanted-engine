@@ -5,7 +5,7 @@
 
 > [CHANGELOG](CHANGELOG.md)
 
-- **Interpreter:** Uses [WAMR 2.4.4](https://github.com/bytecodealliance/wasm-micro-runtime) (WebAssembly Micro Runtime) in classic interpreted mode (`WAMR_BUILD_INTERP=1`, `WAMR_BUILD_AOT=0`).
+- **Interpreter:** Uses [WAMR 2.4.4](https://github.com/bytecodealliance/wasm-micro-runtime) (WebAssembly Micro Runtime) in fast interpreted mode (`WAMR_BUILD_INTERP=1`, `WAMR_BUILD_FAST_INTERP=1`, `WAMR_BUILD_AOT=0`).
 - **Concurrency:** Runs multiple [wapps](#wapp-overview) simultaneously as isolated threads.
 - **Isolation:** Strict memory isolation via WebAssembly; all external interactions are mediated exclusively through the VFS.
 - **Mount-table VFS Router:** Path normalization (`..`, `.`, double-slash), typed FD table, and a mount table routing `/dev/`, `/net/`, `/proc/`, and `/` independently.
@@ -89,7 +89,7 @@ cmake -DWANTED_SUPERVISOR_IMAGE_PATH=../wasm/supervisor/wsh/supervisor.tar ..
 
 ```bash
 ./build/cmd/wanted-cli                           # run with built-in default config
-./build/cmd/wanted-cli docs/example_config.json  # run with explicit config file
+./build/cmd/wanted-cli configs/example_config.json  # run with explicit config file
 ```
 
 The config file is JSON. Relevant top-level fields:
@@ -98,7 +98,7 @@ The config file is JSON. Relevant top-level fields:
 - **`supervisor.imagePath`** — path to the supervisor TAR image; overrides the compiled-in default when set.
 - **`supervisor.params`** — driver and console settings; if absent, compiled-in defaults apply (TCP socket at `localhost:8888`, TLS socket at `localhost:8889`, 9P at `localhost:5640`).
 
-See [`docs/example_config.json`](docs/example_config.json) for a fully annotated example.
+See [`configs/example_config.json`](configs/example_config.json) for a reference example.
 
 ## Build and Verification
 
