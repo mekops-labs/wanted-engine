@@ -107,6 +107,15 @@ int PlatformWappStop(const char *name) {
 
 void PlatformWappLoop(void) {}
 
+void PlatformSetProcessArgs(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+}
+
+void PlatformRequestShutdown(void) {}
+
+void PlatformRequestReboot(void) {}
+
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen) {
     int n = 0;
     for (int i = 0; i < DUMMY_WAPP_MAX_ENTRIES; i++) {

@@ -1,6 +1,8 @@
 add_executable(${project}-cli ${CMAKE_CURRENT_SOURCE_DIR}/main.c)
 
-target_include_directories(${project}-cli PRIVATE ${CMAKE_SOURCE_DIR}/src/include)
+target_include_directories(${project}-cli
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/platform/include)
 
 option(STATIC_EXECUTABLE "Static build of the executable" OFF)
 if (STATIC_EXECUTABLE)
