@@ -12,6 +12,18 @@
 - **Layered TarFS:** OCI-compatible filesystem supporting multiple TAR layers with shadowing and whiteout (`.wh.`) semantics.
 - **Efficient Indexing:** Zero-copy filesystem indexing in memory with O(log N) lookup performance and boot-time pre-fetching.
 
+## Documentation
+
+Full developer and user documentation lives in [`docs/`](docs/):
+
+- [Quick Start](docs/quickstart.md) — build, package, and launch a wapp in about ten minutes.
+- [Architecture](docs/architecture.md) — the VFS router, wapp model, supervisor, platform seam, and WAMR runtime.
+- [VFS Reference](docs/vfs-reference.md) — every `/dev`, `/net`, `/proc`, and TarFS path and its semantics.
+- [Control Plane Reference](docs/control-plane-reference.md) — the `/dev/wanted` contract: nodes, verbs, state machine.
+- [Configuration Reference](docs/configuration-reference.md) — the engine JSON config, field by field.
+- [Platform Guide](docs/platform-guide.md) — Linux, the NuttX simulator, and the porting checklist.
+- [Testing Guide](docs/testing-guide.md) — the unit, in-WASM selftest, and smoke tiers.
+
 ## General architecture
 
 WANTED implements a Cloud-Native VFS Router. Path resolution is split into four primary namespaces:
