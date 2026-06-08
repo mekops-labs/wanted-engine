@@ -148,6 +148,6 @@ The filesystem builtins (`ls`, `cat`, `write`) operate on any node directly — 
 
 ## See also
 
-- [Quick Start]({{< relref "quickstart" >}}) — a worked launch from the `wsh` shell.
-- [Configuration Reference]({{< relref "configuration-reference" >}}) — the engine-level config that boots the supervisor.
-- [VFS Reference]({{< relref "vfs-reference" >}}) — every other namespace a wapp can see.
+- [Quick Start](quickstart.md) — a worked launch from the `wsh` shell.
+- [Configuration Reference](configuration-reference.md) — the engine-level config that boots the supervisor.
+- [VFS Reference](vfs-reference.md) — every other namespace a wapp can see.

@@ -128,10 +128,10 @@ hello-wapp: alive
 hello-wapp: exit
 ```
 
-The config schema and every control-plane node are documented in the [Control Plane Reference]({{< relref "control-plane-reference" >}}).
+The config schema and every control-plane node are documented in the [Control Plane Reference](control-plane-reference.md).
 
 ## Next steps
 
-- [Architecture]({{< relref "architecture" >}}) — how the VFS router, wapp model, and supervisor fit together.
-- [Wapp Authoring]({{< relref "wapp-authoring" >}}) — write and package your own wapp.
-- [Control Plane Reference]({{< relref "control-plane-reference" >}}) — the complete `/dev/wanted/*` contract.
+- [Architecture](architecture.md) — how the VFS router, wapp model, and supervisor fit together.
+- [Wapp Authoring](wapp-authoring.md) — write and package your own wapp.
+- [Control Plane Reference](control-plane-reference.md) — the complete `/dev/wanted/*` contract.
