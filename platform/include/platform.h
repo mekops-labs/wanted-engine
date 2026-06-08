@@ -49,6 +49,17 @@ void PlatformWappLoop();
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total);
 
+/* System control. A privileged wapp triggers these through the wanted host
+ * module; PlatformWappLoop normally respawns a vanished supervisor forever, so
+ * they are the only paths that end the engine. The request just sets a flag —
+ * PlatformWappLoop performs the action after the current iteration so the
+ * calling worker unwinds first. Shutdown stops the engine; reboot re-execs it
+ * (host) or resets the board (NuttX). PlatformSetProcessArgs hands main()'s
+ * argv to the platform so the host re-exec can target the same image. */
+void PlatformSetProcessArgs(int argc, char **argv);
+void PlatformRequestShutdown(void);
+void PlatformRequestReboot(void);
+
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len);
 int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes);
 int PlatformRegistryRemove(const reg_entry_t *entry);

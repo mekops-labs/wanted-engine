@@ -481,12 +481,17 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
 
 /* ── WantedCtlDriver ─────────────────────────────────────────────────────────
  *
- * The root /dev/wanted/ctl node. Write-only create-and-launch shorthand:
+ * The root /dev/wanted/ctl node. Write-only engine command channel:
  *
- *   echo "start <name>" > /dev/wanted/ctl
+ *   echo "start <name>" > /dev/wanted/ctl   create-and-launch a wapp
+ *   echo "poweroff"     > /dev/wanted/ctl   stop the engine (no respawn)
+ *   echo "reboot"       > /dev/wanted/ctl   restart the engine / reset the board
  *
- * Identity travels in the verb argument, not a JSON payload. Any config
- * previously buffered at wapps/<name>/config is applied to the launch.
+ * Identity for "start" travels in the verb argument, not a JSON payload; any
+ * config previously buffered at wapps/<name>/config is applied to the launch.
+ * poweroff/reboot take no argument. This node is the supervisor's capability:
+ * it is reachable only by a wapp whose launch grants the /dev/wanted driver, so
+ * an ordinary wapp cannot issue these commands.
  * ───────────────────────────────────────────────────────────────────────── */
 
 #define CTL_ID                                                                 \
@@ -545,6 +550,19 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
     while (end > 0 && (line[end - 1] == '\n' || line[end - 1] == '\r' ||
                        line[end - 1] == ' ' || line[end - 1] == '\t'))
         line[--end] = '\0';
+
+    /* System control: no argument. The engine respawns a vanished supervisor
+     * forever, so these are the only paths that end the run loop. Match the
+     * whole token (sizeof includes the NUL) so the bounded line buffer is never
+     * read past its terminator. */
+    if (strncmp(line, "poweroff", sizeof("poweroff")) == 0) {
+        PlatformRequestShutdown();
+        return (int)nbyte;
+    }
+    if (strncmp(line, "reboot", sizeof("reboot")) == 0) {
+        PlatformRequestReboot();
+        return (int)nbyte;
+    }
 
     /* expect: "start <name>" */
     static const char VERB[] = "start ";
