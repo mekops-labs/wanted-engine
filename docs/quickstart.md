@@ -83,16 +83,23 @@ Wsh v 0.5.0
 
 ## Launch your first wapp
 
-List the running wapps — none yet:
+List the running wapps. The supervisor is itself a wapp, so it appears in the list:
 
 ```
 > status
+supervisor      running
 ```
 
-Start `hello` by name. `wsh start` writes `start hello` to the root control node `/dev/wanted/ctl`, which resolves the name in the registry, loads the image, and launches it as its own thread:
+A wapp's standard streams must be backed by a **console** — a wapp started without one fails to launch. Give `hello` a **log console**: its stdout/stderr are captured into a ring buffer you can read back through the control plane. Write the launch config to `hello`'s `config` node, then start it:
 
 ```
+> write /dev/wanted/wapps/hello/config {"console":{"in":{"name":"platform"},"out":{"name":"log"},"err":{"name":"log"}}}
 > start hello
+```
+
+`wsh start` writes `start hello` to the root control node `/dev/wanted/ctl`, which resolves the name in the registry, applies the buffered config, loads the image, and launches the wapp as its own thread. Check its state — it is running:
+
+```
 > status hello
 hello:
   state    running
@@ -100,7 +107,7 @@ hello:
   id       1
 ```
 
-The `hello` sample, launched with no role file, writes an alive marker, lives for two seconds, then exits. Read its state again and it has finished:
+The `hello` sample (launched with no role file) writes an alive marker, lives for two seconds, then exits. A moment later its state is `exited`, and its captured output is readable at the `log` node:
 
 ```
 > status hello
@@ -108,24 +115,15 @@ hello:
   state    exited
   version  0.0.1-1
   id       1
-```
-
-For a wapp that runs indefinitely, stop it explicitly — `wsh stop` writes `stop` to that wapp's own control node `/dev/wanted/wapps/<name>/ctl`:
-
-```
-> stop hello
-```
-
-### Capturing a wapp's output
-
-`status` reports lifecycle state, not stdout. To capture what a wapp prints, launch it with a **log console**: write a one-line config to its `config` node before starting it, then read the buffered output from its `log` node.
-
-```
-> write /dev/wanted/wapps/hello/config {"console":{"out":{"name":"log"},"err":{"name":"log"}}}
-> start hello
 > cat /dev/wanted/wapps/hello/log
 hello-wapp: alive
 hello-wapp: exit
+```
+
+A wapp that runs indefinitely is stopped explicitly — `wsh stop` writes `stop` to that wapp's own control node `/dev/wanted/wapps/<name>/ctl`:
+
+```
+> stop hello
 ```
 
 The config schema and every control-plane node are documented in the [Control Plane Reference](control-plane-reference.md).

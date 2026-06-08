@@ -118,7 +118,7 @@ A wapp that needs drivers, console redirection, or preopens has its config writt
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `console` | object | Slots `in` / `out` / `err`, each a driver spec — the backing for the wapp's stdio. A `log` console buffers output to the `log` node; a `platform` console shares the engine's stdio. |
+| `console` | object | Slots `in` / `out` / `err`, each a driver spec — the backing for the wapp's stdio. **Required**: a wapp started without a console fails to launch. A `log` console buffers output to the `log` node; a `platform` console shares the engine's stdio. |
 | `drivers` | array | Up to 10 entries. VFS drivers mounted into the wapp's namespace. |
 | `preopens` | array | Up to 4 absolute paths (must start with `/`, ≤63 chars). The engine creates/opens each and binds it as a WASI preopen — the wapp's read-write state storage. |
 
