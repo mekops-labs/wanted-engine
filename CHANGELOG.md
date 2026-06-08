@@ -28,6 +28,15 @@ Unreleased
 - Supervisor thread is created one priority step above worker threads on both Linux and NuttX; worker priorities are set explicitly to prevent inheritance.
 - Added interruptible stop on NuttX: `PlatformWappStop` sends `SIGUSR2` to the worker after `WantedWappTerminate` so a wapp blocked in a host syscall is interrupted and the stop flag checked on return. A per-worker `interrupted` flag bridges `clock_nanosleep`'s success-on-signal quirk. Linux retains `pthread_cancel(ASYNCHRONOUS)`.
 
+### Engine — system control (poweroff / reboot)
+
+- The supervisor can shut the engine down or restart it through the control plane by writing a verb to the existing root control node: `poweroff` to `/dev/wanted/ctl` stops the engine without respawning the supervisor; `reboot` restarts it. No new wapp ABI — both are ordinary writes alongside the existing `start <name>` verb, so the `/dev/wanted` grant remains the capability gate (an ordinary wapp cannot reach the node).
+- The engine run loop now only exits on an explicit poweroff/reboot request; a supervisor that exits on its own (e.g. `wsh` `exit` or EOF) is respawned. Previously the loop exited whenever no wapps were left.
+- `wsh` gains `poweroff` and `reboot` builtins: each drains the child wapps, then writes the verb to `/dev/wanted/ctl`. `exit` simply returns from the shell and is respawned by the engine.
+- Platform behaviour: poweroff exits the process (host) / `boardctl(BOARDIOC_POWEROFF)` (NuttX); reboot re-execs the engine image (host) / `boardctl(BOARDIOC_RESET)` (NuttX).
+- Fixed: a wapp's console (`/dev/stdin`/`/dev/stdout`/`/dev/stderr` wired to the engine's native stdio) is no longer closed when that wapp is torn down. The stream fds (0/1/2) belong to the engine process and are shared across supervisor respawns; closing them left a respawned or re-exec'd supervisor without a console. The platform VFS driver now spares the native stdio fds on close.
+- Added `test/syscontrol.sh` (and a NuttX-sim counterpart) covering poweroff/reboot/exit end to end, including that a respawned supervisor keeps a working console. Wired into the Linux `selftest` flow and the sim `nuttx-sim.sh all`.
+
 ### Engine — config and registry cleanup
 
 - Removed the `system.defaultWapps` config field. It was parsed into the config struct but never started any wapp — all wapp lifecycle runs through the control plane. Drop the key from existing configs; `{"system": {}}` is a valid config.
