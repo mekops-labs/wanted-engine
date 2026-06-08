@@ -133,17 +133,17 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     if (!d->opened)
         return -EBADF;
 
+    /* fd 0 is the registry root directory; enumerate it with ReadDir. */
+    if (fd == 0)
+        return -EISDIR;
+
     static int read = 0;
     if (read > 0) {
         read = 0;
         return read;
     }
 
-    if (fd == 0) {
-        read = WantedReadRegistry(buf, nbyte);
-    } else {
-        read = WantedReadManifest(&d->entries[fd - 1], buf, nbyte);
-    }
+    read = WantedReadManifest(&d->entries[fd - 1], buf, nbyte);
 
     return read;
 }

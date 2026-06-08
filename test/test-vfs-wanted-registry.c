@@ -103,18 +103,14 @@ TEST(vfs_registry_driver, Stat_BadFd_ReturnsEbadf) {
     TEST_ASSERT_EQUAL_INT(-EBADF, drv->Stat(drv->ctx, 99, &st));
 }
 
-TEST(vfs_registry_driver, ReadRoot_EmitsRegistryJson) {
+TEST(vfs_registry_driver, ReadRoot_IsDirectory) {
     SeedTwo();
     drv->Open(drv->ctx, "/", VFS_O_RDONLY);
 
+    /* The registry root is a directory; reading it as a file is rejected.
+     * Enumeration is via ReadDir. */
     uint8_t buf[256] = {0};
-    int n = drv->Read(drv->ctx, 0, buf, sizeof(buf));
-    TEST_ASSERT_TRUE(n > 0);
-    TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "app1", 4));
-    TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "app2", 4));
-
-    /* Second read returns EOF (0) and clears the static read flag. */
-    TEST_ASSERT_EQUAL_INT(0, drv->Read(drv->ctx, 0, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_INT(-EISDIR, drv->Read(drv->ctx, 0, buf, sizeof(buf)));
 }
 
 TEST(vfs_registry_driver, ReadEntry_ManifestLoadUnsupported) {
@@ -247,7 +243,7 @@ TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, OpenUnknown_ReturnsEnoent);
     RUN_TEST_CASE(vfs_registry_driver, StatEntry_IsRegularFile);
     RUN_TEST_CASE(vfs_registry_driver, Stat_BadFd_ReturnsEbadf);
-    RUN_TEST_CASE(vfs_registry_driver, ReadRoot_EmitsRegistryJson);
+    RUN_TEST_CASE(vfs_registry_driver, ReadRoot_IsDirectory);
     RUN_TEST_CASE(vfs_registry_driver, ReadEntry_ManifestLoadUnsupported);
     RUN_TEST_CASE(vfs_registry_driver, Read_NullBuf_ReturnsEinval);
     RUN_TEST_CASE(vfs_registry_driver, Read_NotOpened_ReturnsEbadf);

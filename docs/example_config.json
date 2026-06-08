@@ -1,11 +1,5 @@
 {
-    "system": {
-        "defaultWapps": [
-            "a",
-            "b",
-            "c"
-        ]
-    },
+    "system": {},
     "supervisor": {
         "imagePath": "./wasm/supervisor/sheriff/supervisor.tar",
         "params": {

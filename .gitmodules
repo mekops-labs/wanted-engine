@@ -7,9 +7,6 @@
 [submodule "vendor/cwalk"]
 	path = vendor/cwalk
 	url = https://github.com/likle/cwalk
-[submodule "vendor/json-maker"]
-	path = vendor/json-maker
-	url = https://github.com/rafagafe/json-maker.git
 [submodule "vendor/c9"]
 	path = vendor/c9
 	url = https://github.com/mek-x/c9.git

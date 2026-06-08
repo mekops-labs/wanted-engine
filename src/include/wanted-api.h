@@ -102,11 +102,7 @@ typedef struct reg_entry_t {
     size_t size;
 } reg_entry_t;
 
-// TODO: this is somewhat too simple, make it more dynamic
-
 typedef struct wantedConfig_t {
-    char wappsToRun[MAX_WAPPS][WAPP_MAX_NAME_LEN];
-    int nWapps;
     wapp_config_t supervisorCfg;
     char supervisorImagePath[MAX_PATH_LEN]; /* empty = use compiled-in default */
     bool privileged; /* enables privileged /proc entries when true */

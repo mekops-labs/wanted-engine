@@ -36,10 +36,6 @@ set(tiny-json-src
     ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c
 )
 
-set(json-maker-src
-    ${CMAKE_SOURCE_DIR}/vendor/json-maker/src/json-maker.c
-)
-
 # Add c9
 set(c9-src
     ${CMAKE_SOURCE_DIR}/vendor/c9/c9.c
@@ -76,7 +72,6 @@ add_library(${project} STATIC
     ${vfs-srcs}
     ${wasi-src}
     ${tiny-json-src}
-    ${json-maker-src}
     ${c9-src}
 )
 
@@ -85,7 +80,6 @@ target_include_directories(${project}
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
-    PRIVATE ${CMAKE_SOURCE_DIR}/vendor/json-maker/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/c9
     PRIVATE ${WAMR_ROOT_DIR}/core/iwasm/include
     )

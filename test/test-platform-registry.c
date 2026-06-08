@@ -8,8 +8,6 @@
 #include <wanted-api.h>
 #include <wanted-vfs-api.h>
 
-#include <tiny-json.h>
-
 #include "dummy-fs.h"
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -136,66 +134,3 @@ TEST_GROUP_RUNNER(platform_registry) {
     RUN_TEST_CASE(platform_registry, Overfill_ReturnsEnospc);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * wanted_registry_api — WantedReadRegistry over seeded dummy data
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-TEST_GROUP(wanted_registry_api);
-
-TEST_SETUP(wanted_registry_api)    { DummyRegistryReset(); }
-TEST_TEAR_DOWN(wanted_registry_api) {}
-
-TEST(wanted_registry_api, ReadRegistry_EmitsSeededEntries) {
-    /* Stay within MAX_WAPPS: WantedReadRegistry copies into a MAX_WAPPS-sized
-     * stack array, so seeding more would over-read. */
-    reg_entry_t seed[2] = {
-        MakeEntry("app1", "1.0.0", 42),
-        MakeEntry("app2", "2.3.4", 84),
-    };
-    TEST_ASSERT_EQUAL_INT(2, DummyRegistrySeed(seed, 2));
-
-    uint8_t buf[256] = {0};
-    int len = WantedReadRegistry(buf, sizeof(buf));
-    TEST_ASSERT_TRUE(len > 0);
-
-    json_t pool[32];
-    json_t const *root = json_create((char *)buf, pool, sizeof(pool) / sizeof(*pool));
-    TEST_ASSERT_NOT_NULL(root);
-
-    json_t const *wapps = json_getProperty(root, "wapps");
-    TEST_ASSERT_NOT_NULL(wapps);
-    TEST_ASSERT_EQUAL(JSON_ARRAY, json_getType(wapps));
-
-    json_t const *item = json_getChild(wapps);
-    TEST_ASSERT_NOT_NULL(item);
-    TEST_ASSERT_EQUAL_STRING("app1", json_getPropertyValue(item, "name"));
-    TEST_ASSERT_EQUAL_STRING("1.0.0", json_getPropertyValue(item, "version"));
-
-    item = json_getSibling(item);
-    TEST_ASSERT_NOT_NULL(item);
-    TEST_ASSERT_EQUAL_STRING("app2", json_getPropertyValue(item, "name"));
-    TEST_ASSERT_EQUAL_STRING("2.3.4", json_getPropertyValue(item, "version"));
-
-    /* exactly two entries */
-    TEST_ASSERT_NULL(json_getSibling(item));
-}
-
-TEST(wanted_registry_api, ReadRegistry_EmptyEmitsEmptyArray) {
-    uint8_t buf[256] = {0};
-    int len = WantedReadRegistry(buf, sizeof(buf));
-    TEST_ASSERT_TRUE(len > 0);
-
-    json_t pool[16];
-    json_t const *root = json_create((char *)buf, pool, sizeof(pool) / sizeof(*pool));
-    TEST_ASSERT_NOT_NULL(root);
-
-    json_t const *wapps = json_getProperty(root, "wapps");
-    TEST_ASSERT_NOT_NULL(wapps);
-    TEST_ASSERT_EQUAL(JSON_ARRAY, json_getType(wapps));
-    TEST_ASSERT_NULL(json_getChild(wapps));
-}
-
-TEST_GROUP_RUNNER(wanted_registry_api) {
-    RUN_TEST_CASE(wanted_registry_api, ReadRegistry_EmitsSeededEntries);
-    RUN_TEST_CASE(wanted_registry_api, ReadRegistry_EmptyEmitsEmptyArray);
-}
