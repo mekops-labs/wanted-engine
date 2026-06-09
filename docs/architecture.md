@@ -6,7 +6,8 @@ toc: true
 description: "How the engine isolates and runs wapps: the VFS router, the wapp model, the supervisor, the platform seam, and the WAMR runtime."
 ---
 
-WANTED runs multiple WebAssembly applications — **wapps** — as isolated threads inside one process. A wapp's only interface to the outside world is a virtual filesystem: every device, socket, IPC channel, and control-plane node is a path. This page is the conceptual anchor; the reference pages drill into each surface.
+WANTED (_WebAssembly Nanocontainer Technology for Embedded Devices_) runs multiple WebAssembly applications — **wapps** — as isolated threads inside one process. A wapp's only interface to the outside world is a virtual filesystem: every device, socket, IPC channel, and control-plane node is a path. This page is the conceptual anchor; the reference pages drill into each surface.
+This architecture was inspired by Plan 9 operating system design and tries to be compliant with POSIX specification, so that wapps can be easily portable.
 
 ## Wapp model
 
@@ -34,7 +35,7 @@ graph LR
   VFS_ROUTER --> TARFS["/ — TarFS (OCI layers)"]
 ```
 
-- **`/dev/`** — device capability namespace; prefix-routes to registered sub-drivers (`null`, `log`, named pipes, stdio stubs, the platform console, the `wanted` control plane, and any wapp-configured drivers).
+- **`/dev/`** — device capability namespace; prefix-routes to registered sub-drivers (`null`, named pipes, stdio stubs, the `wanted` control plane, and any wapp-configured drivers).
 - **`/net/`** — network namespace; the socket driver for TCP/UDP, plain and TLS.
 - **`/proc/`** — read-only system state; privileged entries are hidden unless `system.privileged` is set.
 - **`/`** — TarFS, the merged read-only OCI layer stack — the wapp's root filesystem.
@@ -67,7 +68,7 @@ The [Platform Guide](platform-guide.md) covers each target and the porting check
 
 ## WAMR runtime
 
-The WebAssembly core is [WAMR](https://github.com/bytecodealliance/wasm-micro-runtime) 2.4.4 in **fast interpreter** mode (`WAMR_BUILD_INTERP=1`, `WAMR_BUILD_FAST_INTERP=1`, no AOT/JIT) — no per-target code generation, which is what lets the same engine run on Linux and a microcontroller-class RTOS. Per wapp, the engine loads the pre-fetched module, instantiates it, creates an execution environment, and registers the native symbols: the WASI `snapshot_preview1` bridge (routed to the VFS) plus the small set of WANTED host functions. Native registration is global-once; each wapp gets its own instance, execution environment, and thread.
+The WebAssembly core is [WAMR](https://github.com/bytecodealliance/wasm-micro-runtime) 2.4.4 in **fast interpreter** mode (`WAMR_BUILD_INTERP=1`, `WAMR_BUILD_FAST_INTERP=1`, no AOT/JIT) — no per-target code generation, which is what lets the same engine and the same wapps run on Linux and a microcontroller-class RTOS. Per wapp, the engine loads the pre-fetched module, instantiates it, creates an execution environment, and registers the native symbols: the WASI `snapshot_preview1` bridge (routed to the VFS) plus the small set of WANTED host functions. Native registration is global-once; each wapp gets its own instance, execution environment, and thread.
 
 ## Boot sequence
 

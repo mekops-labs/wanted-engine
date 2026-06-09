@@ -49,6 +49,8 @@ A supervisor is granted the namespace by a `drivers[]` entry in its launch confi
 
 The root `ctl` accepts **only** `start <name>`, `poweroff`, and `reboot`; any other token returns `-EINVAL`. There is no root `stop` — `stop` exists only per-wapp. `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.
 
+The `start` verb carries **only** the wapp name — there is no inline config payload, including on a wapp's first start. A launch config takes effect only if it was previously buffered at that wapp's `config` node (see below); otherwise the wapp launches with no config.
+
 ## Wapp namespace
 
 Live wapps are discovered by `readdir` on `wapps/`. Each `wapps/<name>/` exposes:
