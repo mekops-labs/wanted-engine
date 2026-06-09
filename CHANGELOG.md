@@ -4,6 +4,11 @@ Changelog
 Unreleased
 ----------
 
+### Engine — `/proc/wanted` introspection node
+
+- Added a read-only `/proc/wanted` node exposing engine identity and compile-time resource ceilings as `key:\tvalue` lines: `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`. Unprivileged — any wapp may read it to size itself to the host.
+- `platform` comes from a new `PlatformName()` accessor in the platform API (`linux`/`nuttx`/`dummy`), keeping the platform boundary intact. `version` is the git-derived SemVer baked in via a `WANTED_VERSION` compile definition.
+
 ### Engine — default console backing
 
 - A wapp whose launch config omits a stdio slot no longer fails to start. An unset `console.in`/`out`/`err` now resolves to a default backing — `stdin` to `null`, `stdout`/`stderr` to `log` — so a wapp launches without an explicit console and its output is captured to the per-wapp log ring buffer instead of being lost. A slot set explicitly still overrides its default.

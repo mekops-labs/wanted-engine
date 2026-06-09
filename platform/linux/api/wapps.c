@@ -354,3 +354,5 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
     if (heap_used)  *heap_used  = mi.uordblks;
     if (heap_total) *heap_total = mi.arena;
 }
+
+const char *PlatformName(void) { return "linux"; }
