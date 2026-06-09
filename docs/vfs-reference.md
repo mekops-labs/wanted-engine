@@ -71,8 +71,23 @@ A read-only, flat namespace exposing system state. Privileged entries are visibl
 | `/proc/wapps` | r | yes | Per-wapp state — name and status for each running wapp. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`. |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
+
+`/proc/wanted` reports the engine itself as `key:\tvalue` lines, one per field — human-readable, split on the tab:
+
+```text
+platform:	linux
+version:	0.6.0+g06f5cca.20260608205353
+max_wapps:	3
+max_wapp_name:	15 B
+max_path:	256 B
+wasm_stack:	8192 B
+wasm_heap:	8192 B
+```
+
+`platform` is the build target (`linux`, `nuttx`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
 
 ## `/` — TarFS application space
 
