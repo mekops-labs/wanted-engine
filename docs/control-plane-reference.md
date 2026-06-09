@@ -10,6 +10,8 @@ The control plane is the VFS namespace a supervisor uses to install, launch, obs
 
 Every interaction is an ordinary file operation. Identity travels in the path — never in a payload field — so reads compose as plain text and only the launch config is JSON.
 
+This reference documents the **engine-provided contract** — the nodes, verbs, and semantics the engine guarantees. How a supervisor *drives* that contract (reconciliation cadence, capability policy, retry and back-off) is supervisor behaviour and is out of scope here.
+
 ## Mounting and access
 
 A supervisor is granted the namespace by a `drivers[]` entry in its launch config:
@@ -18,7 +20,7 @@ A supervisor is granted the namespace by a `drivers[]` entry in its launch confi
 { "name": "wanted", "path": "/dev/wanted" }
 ```
 
-`/dev/wanted` is the canonical mount point; a wapp granted the driver at a different path sees the same tree under that prefix. Opens are not exclusive — a supervisor re-opens nodes every reconciliation tick, and each open of a read node gets an independent file descriptor with its own cursor.
+`/dev/wanted` is the canonical mount point; a wapp granted the driver at a different path sees the same tree under that prefix.
 
 ## Namespace map
 
@@ -64,10 +66,12 @@ A read node returns its value once; the next read on the same fd returns `0` (EO
 
 ### Verbs
 
+A verb is one `write()` to the node. The engine has no shell or I/O redirection; the examples below use the `wsh` debug shell's `write` builtin, which opens the path and writes the joined tokens verbatim:
+
 ```
-echo start > /dev/wanted/wapps/app1/ctl     # launch app1 (uses its buffered config, if any)
-echo stop  > /dev/wanted/wapps/app1/ctl     # terminate app1
-echo "start app1" > /dev/wanted/ctl         # create-and-launch shorthand for a not-yet-present wapp
+write /dev/wanted/wapps/app1/ctl start      # launch app1 (uses its buffered config, if any)
+write /dev/wanted/wapps/app1/ctl stop       # terminate app1
+write /dev/wanted/ctl start app1            # create-and-launch shorthand for a not-yet-present wapp
 ```
 
 - `start`: resolve the name in the registry → load the OCI layers → parse the manifest → install the buffered config's drivers, console, and preopens → start the wapp. Returns bytes written, or a negative errno if any step fails.
@@ -105,7 +109,7 @@ A wapp that needs drivers, console redirection, or preopens has its config writt
 ```json
 {
   "console": {
-    "in":  { "name": "platform" },
+    "in":  { "name": "null" },
     "out": { "name": "log" },
     "err": { "name": "log" }
   },

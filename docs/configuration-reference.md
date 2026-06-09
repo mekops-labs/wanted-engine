@@ -8,6 +8,8 @@ description: "The engine's JSON config: every field, its type, default, and effe
 
 The engine takes a single JSON config that decides one thing: which supervisor to boot and how. Everything else — installing and launching wapps — happens at runtime through the [control plane](control-plane-reference.md).
 
+The schema itself is platform-independent, but the concrete examples, defaults, and driver options in this reference assume the **Linux build** — TLS sockets, `localhost` socket addresses, and host-filesystem preopens. Other targets differ: the NuttX port has no TLS, and host paths resolve against the simulator's filesystem. See the [Platform Guide](platform-guide.md).
+
 ## Loading order
 
 ```bash
