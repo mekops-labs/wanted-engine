@@ -30,7 +30,7 @@ To add a group: drop a `test/test-<thing>.c` using the Unity assertions (see `te
 
 ## Selftest suite
 
-`make selftest` (Linux) and `make nuttx-selftest` (NuttX sim) run an identical suite from **inside WASM**, driven by the `selftest` supervisor variant (`wapps/selftest/`). Because it uses only the WASI and WANTED control-plane ABI, it runs unchanged on both targets — no platform-specific scripting. Results are reported as TAP; the runner asserts a plan line and the absence of `not ok`.
+`make selftest` (Linux) and `make nuttx-selftest` (NuttX sim) run an identical suite from **inside WASM**, driven by the `selftest` supervisor variant (`wapps/selftest/`). Because it uses only the WASI and WANTED control-plane ABI, it runs unchanged on both targets — no platform-specific scripting. Results are reported as TAP (_Test Anything Protocol_); the runner asserts a plan line and the absence of `not ok`.
 
 The suite covers four categories:
 

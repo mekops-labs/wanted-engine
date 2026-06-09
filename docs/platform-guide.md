@@ -60,11 +60,11 @@ make nuttx-shell     # boot the sim to an interactive wsh prompt
 - **Stop mechanism** — cooperative: `PlatformWappStop` sets the WAMR terminate flag and sends `SIGUSR2` to the worker so a wapp blocked in a host call is interrupted and checks the flag on return. A per-worker `interrupted` flag bridges `clock_nanosleep`'s success-on-signal quirk.
 - **Submodules** — `third_party/nuttx` and `third_party/nuttx-apps` are shallow submodules pinned to the `wanted` branch of the mekops forks; `make nuttx-deps` initialises them (idempotent) and must run once before `nuttx-build`.
 
-**Differences from Linux.** No TLS (Phase 2). The cooperative stop cannot pre-empt a bare native call that never checks `EINTR`, where Linux's async cancel can.
+**Differences from Linux.** No TLS yet. The cooperative stop cannot pre-empt a bare native call that never checks `EINTR`, where Linux's async cancel can.
 
-## NuttX on ESP32 (Phase 2)
+## NuttX on real HW (upcoming)
 
-Not yet implemented; requires hardware. The planned architecture: wapp images loaded from XIP flash, a LittleFS-backed registry slot table, and mbedTLS for secure sockets. The simulator port is the staging ground — the `Platform*` bodies are largely shared; the flash registry backend and TLS are the remaining hardware-specific pieces.
+The planned architecture: wapp images loaded from XIP flash, a LittleFS-backed registry slot table, and mbedTLS for secure sockets. The simulator port is the staging ground — the `Platform*` bodies are largely shared; the flash registry backend and TLS are the remaining hardware-specific pieces.
 
 ## Porting to a new platform
 

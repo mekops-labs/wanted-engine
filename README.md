@@ -1,4 +1,4 @@
-# Web Assembly Nanocontainer Technology for Embedded Devices
+# WebAssembly Nanocontainer Technology for Embedded Devices
 
 [![pipeline status](https://gitlab.com/wanted-project/wanted-engine/badges/main/pipeline.svg)](https://gitlab.com/wanted-project/wanted-engine/-/commits/main)
 [![coverage report](https://gitlab.com/wanted-project/wanted-engine/badges/main/coverage.svg)](https://gitlab.com/wanted-project/wanted-engine/-/commits/main)

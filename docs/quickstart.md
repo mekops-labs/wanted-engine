@@ -57,12 +57,13 @@ The image name encodes the manifest's identity: `hello`, version `[0, 0, 1]`, pa
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | yes | Unique wapp identifier (≤15 characters). Also the name you `start`. |
-| `version` | `[major, minor, patch]` | yes | Integer triple. |
-| `package` | integer | yes | Package revision; the `-N` suffix in the image name. |
-| `requirements` | string array | no | Abstract capability names the wapp needs. The engine parses and stores them; a supervisor validates them against policy before launching. An absent or empty array declares no requirements. |
+| Field          | Type                    | Required | Description                                                                                                                                                                                                                                              |
+| -------------- | ----------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`         | string                  | yes      | Unique wapp identifier (≤15 characters). Also the name you `start`.                                                                                                                                                                                      |
+| `version`      | `[major, minor, patch]` | yes      | Integer triple.                                                                                                                                                                                                                                          |
+| `package`      | integer                 | yes      | Package revision; the `-N` suffix in the image name.                                                                                                                                                                                                     |
+| `requirements` | string array            | no       | Abstract capability names the wapp needs (up to 8). The engine parses and stores them as opaque strings — it enforces no fixed vocabulary; a supervisor validates them against its policy before launching. An absent or empty array declares no requirements. |
+
 
 ## Run
 
