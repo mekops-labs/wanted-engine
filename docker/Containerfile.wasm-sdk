@@ -1,0 +1,191 @@
+# Wanted Wapp SDK — multi-language WebAssembly build environment.
+#
+# A self-contained toolchain image for compiling wapps (Wanted applications)
+# to wasm32-wasi, independent of the host-engine build image (docker/Dockerfile).
+# It carries only what a wapp author needs to produce an app.wasm:
+#
+#   - C / C++   -> wasi-sdk (bundled clang + lld + wasi-sysroot)
+#   - Zig       -> ziglang (wasm32-wasi, static toolchain)
+#   - Go        -> TinyGo (needs a host Go toolchain, also installed)
+#   - Rust      -> rustup stable + wasm32-wasip1 / wasm32-unknown-unknown
+#
+# Plus Wasmtime — a standalone wasm32-wasi runtime for running and debugging a
+# freshly built app.wasm outside the engine (and sheriff's smoke harness).
+#
+# Consumers:
+#   - wanted-engine: build the test wapps (wapps/*) and wsh.
+#   - sheriff: build the supervisor Wapp (Zig).
+#   - wapp authors: the FROM base for the builder stage of a wapp's
+#     multi-stage Containerfile (see docs/wapp-authoring.md).
+#
+# Base is Debian (glibc), not Alpine: the official wasi-sdk, TinyGo and Go
+# release tarballs are dynamically linked against glibc and do not run on
+# musl without unreliable gcompat shims. glibc is the portable choice for a
+# universal toolchain image.
+#
+# Build (single arch):  podman build -f Containerfile.wasm-sdk -t wanted-wasm-sdk .
+# Build (multi arch):   podman build --platform linux/amd64,linux/arm64 \
+#                         -f Containerfile.wasm-sdk -t wanted-wasm-sdk .
+# Run:   podman run --rm -it -v "$PWD:/src" --userns=keep-id wanted-wasm-sdk
+
+FROM docker.io/library/debian:trixie-slim
+
+LABEL maintainer="mek.xgt@gmail.com"
+LABEL org.opencontainers.image.title="wanted-wasm-sdk"
+LABEL org.opencontainers.image.description="Multi-language WebAssembly SDK for building Wanted wapps (C/C++, Zig, TinyGo, Rust)."
+LABEL version="0.1.0"
+
+# Pinned toolchain versions. Update the matching SHA-256 args together.
+ARG WASI_SDK_VER=33
+ARG ZIG_VERSION=0.14.1
+ARG TINYGO_VERSION=0.41.1
+ARG GO_VERSION=1.26.4
+ARG RUST_VERSION=1.96.0
+ARG WASMTIME_VERSION=v44.0.1
+
+# Pinned upstream SHA-256 sums, per release arch. `dpkg --print-architecture`
+# values: amd64, arm64. Update together with the version args above.
+ARG WASI_SDK_SHA256_AMD64=0ba8b5bfaeb2adf3f29bab5841d76cf5318ab8e1642ea195f88baba1abd47bce
+ARG WASI_SDK_SHA256_ARM64=4f98ee738c7abb45c81a94d1461fc53cc569d1cd01498951c8184d841a027844
+ARG ZIG_SHA256_AMD64=24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+ARG ZIG_SHA256_ARM64=f7a654acc967864f7a050ddacfaa778c7504a0eca8d2b678839c21eea47c992b
+ARG TINYGO_SHA256_AMD64=e156d1d93a376eef639a4143d13be07e8c463fb6cf2d7d447698ed4474d23e91
+ARG TINYGO_SHA256_ARM64=789733bc3b5bace0bd1835a267b3ea267804a7ef1cfe69bc522c295f5226d624
+ARG GO_SHA256_AMD64=1153d3d50e0ac764b447adfe05c2bcf08e889d42a02e0fe0259bd47f6733ad7f
+ARG GO_SHA256_ARM64=ef758ae7c6cf9267c9c0ef080b8965f453d89ab2d25d9eb22de4405925238768
+ARG WASMTIME_SHA256_AMD64=afd58715f105e3a7f454169daed22168c5736ec5f225fb04c4ac62c54c9508a3
+ARG WASMTIME_SHA256_ARM64=9ec1e606c541099a7e8266865494e190a6f928abb3a2fb7bb4195fd2e8499d2b
+
+# Populated by buildx on multi-platform builds; falls back to the build host's
+# dpkg arch for a plain single-arch `podman build`.
+ARG TARGETARCH
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    RUSTUP_HOME=/opt/rust/rustup \
+    CARGO_HOME=/opt/rust/cargo \
+    GOROOT=/opt/go \
+    GOPATH=/cache/go \
+    GOCACHE=/cache/go-build \
+    GOMODCACHE=/cache/go/pkg/mod \
+    ZIG_GLOBAL_CACHE_DIR=/cache/zig \
+    PATH=/opt/wasi-sdk/bin:/opt/rust/cargo/bin:/opt/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        xz-utils \
+        git \
+        make \
+        wabt \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- wasi-sdk (C / C++ -> wasm32-wasi) ----------------------------------------
+# The full bundle ships its own clang, lld and wasi-sysroot under /opt/wasi-sdk.
+# Its clang defaults to the bundled sysroot and compiler-rt for wasm32-wasi, so
+# wapp Makefiles need no explicit --sysroot / --rtlib.
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+      amd64) wasi_arch=x86_64; sha=$WASI_SDK_SHA256_AMD64 ;; \
+      arm64) wasi_arch=arm64;  sha=$WASI_SDK_SHA256_ARM64 ;; \
+      *) echo "no wasi-sdk build for arch=$arch" >&2; exit 1 ;; \
+    esac; \
+    dir="wasi-sdk-${WASI_SDK_VER}.0-${wasi_arch}-linux"; \
+    curl -fsSL -o /tmp/wasi-sdk.tar.gz \
+        "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VER}/${dir}.tar.gz"; \
+    echo "${sha}  /tmp/wasi-sdk.tar.gz" | sha256sum -c -; \
+    tar xzf /tmp/wasi-sdk.tar.gz -C /opt/; \
+    ln -s "/opt/${dir}" /opt/wasi-sdk; \
+    rm -f /tmp/wasi-sdk.tar.gz; \
+    clang --version
+
+# --- Zig (wasm32-wasi) --------------------------------------------------------
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+      amd64) ztar="zig-x86_64-linux-${ZIG_VERSION}.tar.xz";  sha=$ZIG_SHA256_AMD64 ;; \
+      arm64) ztar="zig-aarch64-linux-${ZIG_VERSION}.tar.xz"; sha=$ZIG_SHA256_ARM64 ;; \
+      *) echo "no zig build for arch=$arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/${ztar}"; \
+    echo "${sha}  /tmp/zig.tar.xz" | sha256sum -c -; \
+    mkdir -p /opt/zig; \
+    tar -C /opt/zig --strip-components=1 -xJf /tmp/zig.tar.xz; \
+    ln -s /opt/zig/zig /usr/local/bin/zig; \
+    rm /tmp/zig.tar.xz; \
+    zig version
+
+# --- Go + TinyGo (Go -> wasm32-wasi) ------------------------------------------
+# TinyGo invokes the host `go` tool to load packages and modules, so the Go
+# toolchain is a hard dependency, not an extra.
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+      amd64) goarch=amd64; gosha=$GO_SHA256_AMD64; tgsha=$TINYGO_SHA256_AMD64 ;; \
+      arm64) goarch=arm64; gosha=$GO_SHA256_ARM64; tgsha=$TINYGO_SHA256_ARM64 ;; \
+      *) echo "no go/tinygo build for arch=$arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz"; \
+    echo "${gosha}  /tmp/go.tar.gz" | sha256sum -c -; \
+    tar xzf /tmp/go.tar.gz -C /opt/; \
+    rm /tmp/go.tar.gz; \
+    curl -fsSL -o /tmp/tinygo.tar.gz \
+        "https://github.com/tinygo-org/tinygo/releases/download/v${TINYGO_VERSION}/tinygo${TINYGO_VERSION}.linux-${goarch}.tar.gz"; \
+    echo "${tgsha}  /tmp/tinygo.tar.gz" | sha256sum -c -; \
+    tar xzf /tmp/tinygo.tar.gz -C /opt/; \
+    ln -s /opt/tinygo/bin/tinygo /usr/local/bin/tinygo; \
+    rm /tmp/tinygo.tar.gz; \
+    go version; \
+    tinygo version
+
+# --- Rust (wasm32-wasip1, wasm32-unknown-unknown) -----------------------------
+# Minimal profile: no docs, no rustfmt/clippy. rustup self-verifies its
+# downloads against the signed channel manifest. Toolchain dirs are made
+# world-writable so the unprivileged build user can populate the registry cache.
+RUN set -eux; \
+    curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh; \
+    sh /tmp/rustup-init.sh -y --no-modify-path --profile minimal \
+        --default-toolchain "${RUST_VERSION}" \
+        --target wasm32-wasip1,wasm32-unknown-unknown; \
+    rm /tmp/rustup-init.sh; \
+    chmod -R a+rwX /opt/rust; \
+    rustc --version; \
+    cargo --version
+
+# --- Wasmtime (wasm32-wasi runtime, for running/debugging built modules) ------
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+      amd64) wt_arch=x86_64;  sha=$WASMTIME_SHA256_AMD64 ;; \
+      arm64) wt_arch=aarch64; sha=$WASMTIME_SHA256_ARM64 ;; \
+      *) echo "no wasmtime build for arch=$arch" >&2; exit 1 ;; \
+    esac; \
+    wtar="wasmtime-${WASMTIME_VERSION}-${wt_arch}-linux.tar.xz"; \
+    curl -fsSL -o /tmp/wasmtime.tar.xz \
+        "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/${wtar}"; \
+    echo "${sha}  /tmp/wasmtime.tar.xz" | sha256sum -c -; \
+    mkdir -p /opt/wasmtime; \
+    tar -C /opt/wasmtime --strip-components=1 -xJf /tmp/wasmtime.tar.xz; \
+    ln -s /opt/wasmtime/wasmtime /usr/local/bin/wasmtime; \
+    rm /tmp/wasmtime.tar.xz; \
+    wasmtime --version
+
+# A login shell (`bash -l`) sources /etc/profile, which resets PATH to a
+# distro default and would drop the /opt toolchain dirs set via ENV. Re-add
+# them for login shells so interactive `podman run -it ... bash -l` works.
+RUN printf 'export PATH=/opt/wasi-sdk/bin:/opt/rust/cargo/bin:/opt/go/bin:$PATH\n' \
+        > /etc/profile.d/wasm-sdk.sh
+
+# Unprivileged build user. UID/GID are remapped by `--userns=keep-id` (podman)
+# or `-u $(id -u)` at run time; in a multi-stage `FROM` builder, RUN steps run
+# as this user and write to the workspace.
+RUN useradd -m -u 1000 -s /bin/bash builder \
+ && mkdir -p /src /cache/zig /cache/go /cache/go-build \
+ && chown -R builder:builder /src /cache
+
+USER builder
+WORKDIR /src
+
+CMD ["bash"]
