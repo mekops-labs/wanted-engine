@@ -30,7 +30,7 @@ WANTED implements a Cloud-Native VFS Router. Path resolution is split into four 
 
 1. **Device Namespace (`/dev/`):** Routes to registered sub-drivers — `null`, `pipe/<name>`, `stdin`, `stdout`, `stderr`, `platform`, `wanted`, and any wapp-configured drivers.
 2. **Network Namespace (`/net/`):** Routes to the socket driver for TCP/UDP operations.
-3. **Process Namespace (`/proc/`):** Read-only flat namespace exposing system state (`wapps`, `memory`). Privileged entries are hidden when `system.privileged` is false.
+3. **Process Namespace (`/proc/`):** Read-only flat namespace exposing system state (`wapps`, `memory`, `clock_quality`, `wanted`). Privileged entries (`wapps`, `memory`) are hidden when `system.privileged` is false; `wanted` exposes engine identity and resource ceilings unprivileged.
 4. **Application Space (Root `/`):** Handled by **TarFS**, which merges up to 4 OCI layers into a single unified view.
 
 ```text
