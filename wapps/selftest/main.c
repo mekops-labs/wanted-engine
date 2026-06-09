@@ -109,6 +109,17 @@ static void positive_checks(void) {
                strstr(buf, "supervisor") != NULL,
            "proc: /proc/wapps reports the supervisor");
 
+    /* /proc/wanted reports engine identity and the compile-time ceilings as
+     * key:\tvalue lines. It is unprivileged. The platform string and version
+     * vary by target/build, so assert the stable fields: the identity keys are
+     * present and max_wapps carries the actual MAX_WAPPS ceiling. */
+    tap_ok(dir_has("/proc", "wanted"), "VFS: /proc exposes wanted");
+    tap_ok(read_path("/proc/wanted", buf, sizeof(buf)) > 0 &&
+               strstr(buf, "platform:") != NULL &&
+               strstr(buf, "version:") != NULL &&
+               strstr(buf, "max_wapps:\t3") != NULL,
+           "proc: /proc/wanted reports engine identity and limits");
+
     /* Inter-wapp pipe round-trip within our own namespace. */
     write_path("/dev/pipe/selftest", "ping");
     tap_ok(read_path("/dev/pipe/selftest", buf, sizeof(buf)) > 0 &&

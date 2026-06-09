@@ -96,6 +96,10 @@ message("-- Supervisor image: ${WANTED_SUPERVISOR_IMAGE_PATH}")
 target_compile_definitions(${project} PRIVATE
     SUPERVISOR_IMAGE_PATH="${WANTED_SUPERVISOR_IMAGE_PATH}")
 
+# Engine version string (git-derived SemVer), surfaced at /proc/wanted.
+target_compile_definitions(${project} PRIVATE
+    WANTED_VERSION="${SEMVER}")
+
 # Add debug symbols
 target_compile_options(${project} PUBLIC -g)
 

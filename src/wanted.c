@@ -117,6 +117,30 @@ static int ProcReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
     return w < (int)bufLen ? w : (int)bufLen;
 }
 
+#ifndef WANTED_VERSION
+#define WANTED_VERSION "unknown"
+#endif
+
+/* /proc/wanted — engine identity and compile-time resource ceilings. One
+ * key:\tvalue line per field: human-readable, trivially split on the tab. */
+static int ProcReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
+    (void)c;
+    int w = snprintf((char *)buf, bufLen,
+                     "platform:\t%s\n"
+                     "version:\t%s\n"
+                     "max_wapps:\t%d\n"
+                     "max_wapp_name:\t%d B\n"
+                     "max_path:\t%d B\n"
+                     "wasm_stack:\t%d B\n"
+                     "wasm_heap:\t%d B\n",
+                     PlatformName(), WANTED_VERSION, MAX_WAPPS,
+                     WAPP_MAX_NAME_LEN, MAX_PATH_LEN, WASM_STACK_SIZE,
+                     WASM_HEAP_SIZE);
+    if (w < 0)
+        return -EIO;
+    return w < (int)bufLen ? w : (int)bufLen;
+}
+
 /* Build a one-shot tarfs ctx over the wapp's layer stack. Caller owns the
  * returned ctx and must TarFsDestroy() it. Returns NULL on bad args / OOM /
  * malformed layer. */
@@ -381,6 +405,9 @@ int WantedWappRun(wapp_data_t *ctx) {
      * to trust the wall clock. */
     ProcFs_Register(ctx->vfs, "clock_quality",
                     WantedProcReadClockQuality, false);
+    /* wanted exposes engine identity and resource ceilings; unprivileged so any
+     * wapp can introspect the host it runs on. */
+    ProcFs_Register(ctx->vfs, "wanted", ProcReadWanted, false);
 
     wasiCtx->argc   = 0;
     wasiCtx->argv   = NULL;
