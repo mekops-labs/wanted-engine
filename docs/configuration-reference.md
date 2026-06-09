@@ -19,7 +19,7 @@ wanted-cli configs/example_config.json   # explicit config file
 
 1. **CLI path argument** — if given, the JSON file is read and used verbatim.
 2. **Built-in minimal default** — with no argument, the engine uses `{"system": {}}`: no privileged `/proc`, and the supervisor falls back to compiled-in defaults.
-3. **Compiled-in supervisor params** — when the config omits `supervisor.params`, the engine applies the defaults baked into `src/default_supervisor_cfg.json.h` (TCP socket at `localhost:8888`, TLS at `localhost:8889`, 9P at `localhost:5640`, the `wanted` control plane, and a `/var/lib/sheriff` preopen).
+3. **Compiled-in supervisor params** — when the config omits `supervisor.params`, the engine applies the defaults baked into `src/default_supervisor_cfg.json.h`: a plain-TCP control socket at `localhost:8888`, the `wanted` control plane, and a `/var/lib/sheriff` preopen.
 
 `{"system": {}}` is a valid config.
 
