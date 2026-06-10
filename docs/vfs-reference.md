@@ -99,8 +99,8 @@ The wapp's root filesystem is **TarFS**: a read-only merge of the image's OCI la
 - **Read-only** — writes are rejected with `EROFS`. A wapp's writable storage is a **preopen** (a host directory bound into the namespace), not TarFS.
 
 ```bash
-$ cat /etc/role        # a file baked into the wapp image
-reader
+$ cat /assets/config.txt   # a file baked into the wapp image
+...
 ```
 
 ## See also
