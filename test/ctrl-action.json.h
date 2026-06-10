@@ -17,6 +17,8 @@ STRINGIFY({
             {"name" : "rom", "path" : "/rom", "options" : ""},
             {"name" : "socket", "path" : "/s", "options" : "t 127.0.0.1 8888"},
             {"name" : "wanted", "path" : "/w", "options" : ""}
-        ]
+        ],
+        "args" : ["--verbose", "--port"],
+        "envs" : ["TZ=UTC", "LANG=C"]
     }
 })

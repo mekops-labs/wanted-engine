@@ -1,8 +1,8 @@
-# hello sample wapp builder.
+# duplex test wapp builder.
 #
-# Compiles the wapp source under this directory to <dir>.wasm with the
-# wasi-sdk clang. Mirrors wapps/wsh/Makefile; the test/smoke-multiwapp.sh
-# harness packages the resulting wasm + manifest.json into a registry .wapp.
+# Compiles the wapp source under this directory to <dir>.wasm with the wasi-sdk
+# clang. The selftest runner stages this one image under two registry names
+# (reader, writer); the ROLE env var in each launch config picks the side.
 
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 current_dir := $(notdir $(patsubst %/,%,$(dir $(mkfile_path))))
