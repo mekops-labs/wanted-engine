@@ -31,8 +31,36 @@ TEST(wanted_vfs_api, WantedParseCtrlActionTest) {
     TEST_ASSERT_EQUAL_STRING("app1", appName);
     TEST_ASSERT_EQUAL(WAPP_START, act);
     TEST_ASSERT_EQUAL(5, cfg.driversCnt);
+
+    /* args occupy argv[1..]; argv[0] is the wapp name, set by the engine. */
+    TEST_ASSERT_EQUAL(2, cfg.argsCnt);
+    TEST_ASSERT_EQUAL_STRING("--verbose", cfg.args[0]);
+    TEST_ASSERT_EQUAL_STRING("--port", cfg.args[1]);
+
+    /* envs are POSIX "KEY=VALUE" strings. */
+    TEST_ASSERT_EQUAL(2, cfg.envsCnt);
+    TEST_ASSERT_EQUAL_STRING("TZ=UTC", cfg.envs[0]);
+    TEST_ASSERT_EQUAL_STRING("LANG=C", cfg.envs[1]);
+}
+
+/* The decomposed config node carries a bare params object (no envelope). */
+TEST(wanted_vfs_api, WantedParseWappConfigArgsEnvs) {
+    const char *cfg_json =
+        "{\"args\":[\"one\",\"two\",\"three\"],"
+        "\"envs\":[\"A=1\",\"B=2\"]}";
+    wapp_config_t cfg;
+
+    int ret = WantedParseWappConfigJson(cfg_json, strlen(cfg_json), &cfg);
+    TEST_ASSERT_EQUAL(0, ret);
+
+    TEST_ASSERT_EQUAL(3, cfg.argsCnt);
+    TEST_ASSERT_EQUAL_STRING("one", cfg.args[0]);
+    TEST_ASSERT_EQUAL_STRING("three", cfg.args[2]);
+    TEST_ASSERT_EQUAL(2, cfg.envsCnt);
+    TEST_ASSERT_EQUAL_STRING("A=1", cfg.envs[0]);
 }
 
 TEST_GROUP_RUNNER(wanted_vfs_api) {
     RUN_TEST_CASE(wanted_vfs_api, WantedParseCtrlActionTest);
+    RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigArgsEnvs);
 }
