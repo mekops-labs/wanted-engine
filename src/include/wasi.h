@@ -23,6 +23,8 @@ typedef struct wasi_ctx_t {
     int32_t     exit_code;
     uint32_t    argc;
     const char **argv;
+    uint32_t    envc;
+    const char **envp;
     vfs_ctx_t   vfsCtx;
     wasi_preopen_t preopens[WASI_MAX_PREOPENS];
     uint8_t        preopens_cnt;

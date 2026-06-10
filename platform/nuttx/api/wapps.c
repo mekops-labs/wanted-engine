@@ -271,6 +271,7 @@ int PlatformWappStart(wapp_t *wapp) {
 
     state.threads[slot].data.id = slot;
     state.threads[slot].data.wapp = wapp;
+    state.threads[slot].data.exit_code = WAPP_EXIT_CODE_NONE;
     state.threads[slot].status = STARTING;
     state.threads[slot].interrupted = 0;
 
@@ -399,6 +400,7 @@ int PlatformWappGetState(wapp_state_t *wapps, size_t appsLen) {
         wapps[r].status = state.threads[i].status;
         wapps[r].version = state.threads[i].data.wapp->version;
         wapps[r].id = state.threads[i].data.id;
+        wapps[r].exit_code = state.threads[i].data.exit_code;
         r++;
     }
 

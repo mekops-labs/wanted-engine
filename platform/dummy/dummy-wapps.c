@@ -93,6 +93,7 @@ int PlatformWappStart(wapp_t *app) {
     }
     g_state[idx].version = app->version;
     g_state[idx].status = RUNNING;
+    g_state[idx].exit_code = WAPP_EXIT_CODE_NONE;
     return 0;
 }
 
