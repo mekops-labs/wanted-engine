@@ -1,49 +1,37 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* hello — a minimal WASI sample wapp with three behaviours selected by the
- * role string read from /etc/role in its own (read-only) rootfs. It talks to
- * the outside world only through the VFS its launch config grants it.
+ * ROLE environment variable, passed in via its launch config (params.envs). It
+ * talks to the outside world only through the VFS its launch config grants it.
  *
- *   role "writer": open /dev/pipe/smoke and write PAYLOAD, then exit.
- *   role "reader": blocking-read /dev/pipe/smoke and copy what it received to a
- *                  host result file (a preopen), then exit. The result file —
- *                  not stdout — is the observation point, because the stdio
- *                  teardown drops a launched wapp's late stdout.
- *   no role (file absent): write an alive marker, stay alive briefly so a
- *                  concurrent `status` sees it, then write an exit marker. Used
- *                  by the multi-wapp concurrency smoke test.
+ *   ROLE=writer: open /dev/pipe/smoke and write PAYLOAD, then exit.
+ *   ROLE=reader: blocking-read /dev/pipe/smoke and copy what it received to a
+ *                host result file (a preopen), then exit. The result file —
+ *                not stdout — is the observation point, because the stdio
+ *                teardown drops a launched wapp's late stdout.
+ *   ROLE unset:  write an alive marker, stay alive briefly so a concurrent
+ *                `status` sees it, then write an exit marker. Used by the
+ *                multi-wapp concurrency smoke test.
  *
  * The reader/writer pair proves /dev/pipe is an inter-wapp IPC channel.
  */
 #include <fcntl.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#define ROLE_PATH   "/etc/role"
 #define PIPE_PATH   "/dev/pipe/smoke"
 #define RESULT_DIR  "/tmp/wanted-smoke-pipe"
 #define RESULT_PATH RESULT_DIR "/result"
 
 #define PAYLOAD     "inter-wapp-pipe-ok"
+#define ROLE_ENV    "ROLE"
 #define ROLE_WRITER "writer"
 #define ROLE_READER "reader"
 
 #define MARKER_ALIVE  "hello-wapp: alive\n"
 #define MARKER_EXIT   "hello-wapp: exit\n"
 #define ALIVE_SECONDS 2
-
-/* Read the mounted role string into `out`. Returns its length (0 if absent). */
-static int ReadRole(char *out, int cap) {
-    int fd = open(ROLE_PATH, O_RDONLY);
-    if (fd < 0)
-        return 0;
-    int n = read(fd, out, cap - 1);
-    close(fd);
-    if (n < 0)
-        n = 0;
-    out[n] = '\0';
-    return n;
-}
 
 static int RunWriter(void) {
     int fd = open(PIPE_PATH, O_WRONLY);
@@ -82,8 +70,9 @@ static int RunReader(void) {
 }
 
 int main(void) {
-    char role[16];
-    ReadRole(role, sizeof(role));
+    const char *role = getenv(ROLE_ENV);
+    if (role == NULL)
+        role = "";
 
     if (strcmp(role, ROLE_WRITER) == 0)
         return RunWriter();

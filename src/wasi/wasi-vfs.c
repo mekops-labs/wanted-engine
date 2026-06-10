@@ -143,21 +143,56 @@ static int32_t wasi_args_sizes_get(wasm_exec_env_t exec_env,
 
 static int32_t wasi_environ_get(wasm_exec_env_t exec_env,
                                 int32_t env_app, int32_t env_buf_app) {
-    (void)exec_env; (void)env_app; (void)env_buf_app;
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+
+    uint32_t *env = (uint32_t *)vaddr(exec_env, env_app,
+                                      ctx->envc * sizeof(uint32_t));
+    if (!env && ctx->envc > 0)
+        return __WASI_ERRNO_FAULT;
+
+    char *env_buf = (char *)vaddr(exec_env, env_buf_app, 1);
+    /* env_buf size is unknown here; each entry is bounds-checked per-character
+     * below via validate_app_addr (same pattern as wasi_args_get). */
+    if (!env_buf && ctx->envc > 0)
+        return __WASI_ERRNO_FAULT;
+
+    uint32_t buf_off = (uint32_t)env_buf_app;
+    wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
+    for (uint32_t i = 0; i < ctx->envc; ++i) {
+        size_t len = strlen(ctx->envp[i]);
+        if (!wasm_runtime_validate_app_addr(inst, buf_off, len + 1))
+            return __WASI_ERRNO_FAULT;
+        char *dst = wasm_runtime_addr_app_to_native(inst, buf_off);
+        env[i] = buf_off;
+        memcpy(dst, ctx->envp[i], len);
+        dst[len] = '\0';
+        buf_off += (uint32_t)(len + 1);
+    }
     return __WASI_ERRNO_SUCCESS;
 }
 
 static int32_t wasi_environ_sizes_get(wasm_exec_env_t exec_env,
                                       int32_t env_count_app,
                                       int32_t env_buf_size_app) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+
     __wasi_size_t *env_count =
         vaddr(exec_env, env_count_app, sizeof(__wasi_size_t));
     __wasi_size_t *env_buf_size =
         vaddr(exec_env, env_buf_size_app, sizeof(__wasi_size_t));
     if (!env_count || !env_buf_size)
         return __WASI_ERRNO_FAULT;
-    *env_count = 0;
-    *env_buf_size = 0;
+
+    __wasi_size_t buf_len = 0;
+    for (uint32_t i = 0; i < ctx->envc; ++i)
+        buf_len += (__wasi_size_t)(strlen(ctx->envp[i]) + 1);
+
+    *env_count = ctx->envc;
+    *env_buf_size = buf_len;
     return __WASI_ERRNO_SUCCESS;
 }
 
@@ -945,7 +980,16 @@ wasi_ctx_t *InitWasiContext(void) {
     return ctx;
 }
 
-void FreeWasiContext(wasi_ctx_t *c) { WantedFree(c); }
+void FreeWasiContext(wasi_ctx_t *c) {
+    if (!c)
+        return;
+    /* argv/envp are heap-allocated pointer arrays; their string storage lives
+     * in the wapp's persistent launch config (not owned here), so only the
+     * arrays are freed. */
+    WantedFree((void *)c->argv);
+    WantedFree((void *)c->envp);
+    WantedFree(c);
+}
 
 int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, int host_fd) {
     if (!ctx || !path || !ctx->vfsCtx)
