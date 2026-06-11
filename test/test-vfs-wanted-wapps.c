@@ -390,6 +390,72 @@ TEST(vfs_wanted_wapps, RootCtlCreateIsIdempotent) {
     TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create c", 8) > 0);
 }
 
+/* delete — slot release */
+
+/* Deleting a `create` reservation removes the namespace: the name stops being
+ * known, so its nodes return ENOENT again. */
+TEST(vfs_wanted_wapps, RootCtlDelete_RemovesReservation) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create ghost", 12) > 0);
+    TEST_ASSERT_TRUE(OpenLeaf("ghost/state") >= 0); /* known after create */
+
+    TEST_ASSERT_EQUAL_INT(12, ctl->Write(ctl->ctx, fd, "delete ghost", 12));
+
+    /* Gone: the per-wapp nodes are ENOENT and it no longer enumerates. */
+    TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("ghost/state"));
+    int dd = OpenLeaf("/");
+    uint8_t db[256];
+    uint64_t cookie = 0;
+    size_t used = 0;
+    TEST_ASSERT_EQUAL_INT(
+        0, drv->ReadDir(drv->ctx, dd, db, sizeof(db), &cookie, &used));
+    TEST_ASSERT_FALSE(HasBytes(db, used, "ghost", 5));
+}
+
+/* Deleting a terminal (exited) wapp releases its platform slot; the name then
+ * returns ENOENT. */
+TEST(vfs_wanted_wapps, RootCtlDelete_ReleasesTerminalSlot) {
+    wapp_state_t seed = MakeState("alpha", 1, EXITED, 1, 0, 0, 0);
+    DummyWappStateSeed(&seed, 1);
+
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(12, ctl->Write(ctl->ctx, fd, "delete alpha", 12));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("alpha/state"));
+}
+
+/* A running wapp cannot be deleted — it must be stopped first. The slot is left
+ * intact (-EBUSY) and the wapp stays enumerable. */
+TEST(vfs_wanted_wapps, RootCtlDelete_RunningRejectedEbusy) {
+    wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 0, 0, 0);
+    DummyWappStateSeed(&seed, 1);
+
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(-EBUSY, ctl->Write(ctl->ctx, fd, "delete alpha", 12));
+    TEST_ASSERT_TRUE(OpenLeaf("alpha/state") >= 0); /* still known */
+}
+
+TEST(vfs_wanted_wapps, RootCtlDelete_UnknownReturnsEnoent) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, ctl->Write(ctl->ctx, fd, "delete ghost", 12));
+}
+
+TEST(vfs_wanted_wapps, RootCtlDeleteNoName_ReturnsEinval) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(-EINVAL, ctl->Write(ctl->ctx, fd, "delete ", 7));
+}
+
+/* delete frees a pending slot back to the pool, so a new name fits afterwards. */
+TEST(vfs_wanted_wapps, RootCtlDelete_FreesPoolSlot) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create a", 8) > 0);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create b", 8) > 0);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create c", 8) > 0);
+    TEST_ASSERT_EQUAL_INT(-ENOSPC, ctl->Write(ctl->ctx, fd, "create d", 8));
+
+    TEST_ASSERT_EQUAL_INT(8, ctl->Write(ctl->ctx, fd, "delete a", 8));
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create d", 8) > 0);
+}
+
 /* fd table exhaustion — bounded, no overflow */
 
 TEST(vfs_wanted_wapps, OpenExhaustsFdTable_ReturnsEmfile) {
@@ -430,5 +496,11 @@ TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreateTooLongName_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreateExhaustsSlots_ReturnsEnospc);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreateIsIdempotent);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDelete_RemovesReservation);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDelete_ReleasesTerminalSlot);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDelete_RunningRejectedEbusy);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDelete_UnknownReturnsEnoent);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDeleteNoName_ReturnsEinval);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDelete_FreesPoolSlot);
     RUN_TEST_CASE(vfs_wanted_wapps, OpenExhaustsFdTable_ReturnsEmfile);
 }

@@ -43,7 +43,8 @@
 
 /* Longest control verb / read token we emit; bounds the write line buffer so
  * a write() never drives an unbounded (VLA) stack allocation. The widest root
- * verb is "create <name>" (name ≤ WAPP_MAX_NAME_LEN), which fits comfortably. */
+ * verbs are "create <name>" / "delete <name>" (name ≤ WAPP_MAX_NAME_LEN), which
+ * fit comfortably. */
 #define WAPPS_LINE_MAX 32
 
 typedef enum {
@@ -566,6 +567,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
  * The root /dev/wanted/ctl node. Write-only engine command channel:
  *
  *   write /dev/wanted/ctl create <name>   register a per-wapp namespace
+ *   write /dev/wanted/ctl delete <name>   release a wapp slot (→ -ENOENT again)
  *   write /dev/wanted/ctl poweroff        stop the engine (no respawn)
  *   write /dev/wanted/ctl reboot          restart the engine / reset the board
  *
@@ -574,8 +576,9 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
  *
  * The root ctl does not launch wapps — a wapp is started through its own
  * wapps/<name>/ctl after `create` and an optional config write. `create`
- * reserves the namespace (identity travels in the verb argument, not a JSON
- * payload); poweroff/reboot take no argument. This node is the supervisor's
+ * reserves the namespace and `delete` frees it (identity travels in the verb
+ * argument, not a JSON payload); poweroff/reboot take no argument. This node is
+ * the supervisor's
  * capability: it is reachable only by a wapp whose launch grants the
  * /dev/wanted driver, so an ordinary wapp cannot issue these commands.
  * ───────────────────────────────────────────────────────────────────────── */
@@ -674,9 +677,42 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
         return (int)nbyte;
     }
 
+    /* "delete <name>": release a wapp slot so the name leaves wapps/ and its
+     * nodes return -ENOENT again. Frees a `create` reservation and/or a terminal
+     * (exited/failure) platform slot. A running wapp is rejected with -EBUSY —
+     * it must be stopped first (no implicit stop-then-delete). An unknown name
+     * (no reservation, no platform slot) is -ENOENT. */
+    static const char DELETE_VERB[] = "delete ";
+    size_t dlen = sizeof(DELETE_VERB) - 1;
+    if (strncmp(line, DELETE_VERB, dlen) == 0) {
+        const char *dname = line + dlen;
+        while (*dname == ' ' || *dname == '\t')
+            dname++;
+        if (*dname == '\0' || strlen(dname) >= WAPP_MAX_NAME_LEN)
+            return -EINVAL;
+
+        wapp_state_t st;
+        bool live = LookupState(dname, &st);
+        wapps_pending_t *p = pending_find(&ctx, dname);
+        if (!live && p == NULL)
+            return -ENOENT;
+
+        /* Release the platform slot first: a running wapp returns -EBUSY, which
+         * leaves the reservation (if any) intact so the caller can retry after a
+         * stop rather than losing buffered config to a half-applied delete. */
+        if (live) {
+            int ret = PlatformWappRelease(dname);
+            if (ret < 0)
+                return ret;
+        }
+        if (p != NULL)
+            memset(p, 0, sizeof(*p));
+        return (int)nbyte;
+    }
+
     /* The root ctl does not launch wapps: a wapp is started through its own
      * wapps/<name>/ctl after `create` (and an optional config write). Any verb
-     * other than create/poweroff/reboot is rejected. */
+     * other than create/delete/poweroff/reboot is rejected. */
     return -EINVAL;
 }
 

@@ -8,6 +8,14 @@ Unreleased
 
 - Relicensed from MIT to Apache License 2.0. Added `NOTICE` (project copyright plus attribution for bundled third-party components: WAMR, cwalk, tiny-json, c9, Unity, NuttX) and a minimal `CONTRIBUTING.md`. All first-party `.c`/`.h` files now carry an `SPDX-License-Identifier: Apache-2.0` header.
 
+### Control plane — env/argv, first-start lifecycle, exit codes, and slot release
+
+- Wapps receive **environment variables and command-line arguments** via standard WASI. The launch config gains `args[]` (→ `argv[1..]`; `argv[0]` is always the wapp name) and `envs[]` (POSIX `KEY=VALUE` → `environ`); the engine fills WAMR's `argv`/`envp` and implements the previously-stubbed `environ_sizes_get`/`environ_get`.
+- **Explicit first-start lifecycle.** A wapp is launched in three deliberate steps: `create <name>` on the root `ctl` reserves the namespace (state `created`), a write to `wapps/<name>/config` buffers the launch config (→ `not_started`), and a bare `start` on `wapps/<name>/ctl` launches it. `create` is the sole entry point — opening any node of an unknown name returns `-ENOENT`, so a name cannot be probed or configured by guessing its path. The root `ctl` no longer launches wapps; `start`/`stop` are per-wapp only.
+- **`delete <name>` root verb** releases a slot: it frees a `create` reservation and/or a terminal (`exited`/`failure`) platform slot (new `PlatformWappRelease` on linux/nuttx/dummy), so the name leaves `wapps/` and its nodes return `-ENOENT` again. A `running`/`starting` wapp is rejected with `-EBUSY` — stop it first; there is no implicit stop-then-delete.
+- **Exit-code exposure.** `wapps/<name>/exit_code` reports the wapp's WASI exit code as plain text, authoritative only when `state == exited` (sentinel `-1` otherwise). A genuine trap now resolves to `state == failure` (previously a blanket success), giving a supervisor a three-way exit analysis: clean zero, clean non-zero, trap.
+- `wsh` gains `create`, `delete`, and `set_config` builtins for the lifecycle; `start`/`stop` write the bare per-wapp verb.
+
 ### Engine — `/proc/wanted` introspection node
 
 - Added a read-only `/proc/wanted` node exposing engine identity and compile-time resource ceilings as `key:\tvalue` lines: `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`. Unprivileged — any wapp may read it to size itself to the host.
@@ -81,7 +89,7 @@ Unreleased
 
 - Replaced the single multiplexed `/dev/wanted/ctrl` JSON-RPC node with a path-addressed per-wapp namespace under `/dev/wanted/wapps/` plus a root `/dev/wanted/ctl` create-and-launch node.
 - `wapps/` enumerates known wapps (`ReadDir`); each `wapps/<name>/` exposes plain-text read nodes `state`, `version`, `id` and write nodes `ctl` (line verb `start`/`stop`) and `config` (JSON `{ console, drivers[], preopens }`). Wapp identity travels in the path, not a payload field.
-- Root `ctl` accepts `start <name>` as a create-and-launch shorthand, applying any config previously buffered at `wapps/<name>/config`.
+- Root `ctl` carries the namespace-lifecycle verbs (`create`/`delete`) and engine power verbs (`poweroff`/`reboot`); it does not launch wapps — `start`/`stop` are per-wapp (see the lifecycle entry above).
 - Removed the legacy `WantedControlDriver`, its `w/ctrl` alias, and the now-unused `WantedReadState`/`StateToJson` all-wapps JSON blob. `w/reg` is retained for the supervisor binary.
 - Hardened the parse path: bounded on-stack JSON buffers (`WANTED_CTRL_JSON_MAX`) instead of variable-length arrays; per-fd read EOF state so concurrent readers keep independent cursors; oversized control writes rejected with `EMSGSIZE`.
 - Added a controllable in-memory wapp-state mock to the dummy platform (`DummyWappStateSeed`/`DummyWappStateReset`).
