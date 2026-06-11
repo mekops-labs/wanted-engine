@@ -26,7 +26,7 @@ A supervisor is granted the namespace by a `drivers[]` entry in its launch confi
 
 ```
 /dev/wanted/
-  ctl                       root verbs: "create <name>" | "start <name> [args...]"
+  ctl                       root verbs: "create <name>" | "delete <name>"
                             | "poweroff" | "reboot"
   wapps/                    enumerable directory — one entry per known wapp
     <name>/
@@ -45,11 +45,28 @@ A supervisor is granted the namespace by a `drivers[]` entry in its launch confi
 
 | Path | Access | Description |
 |------|--------|-------------|
-| `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). |
+| `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `delete <name>` releases a slot — a `create` reservation or a terminal (`exited`/`failure`) wapp — so the name leaves `wapps/` and its nodes return `-ENOENT` again. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). |
 | `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; writing a wapp OCI TAR installs it. A plain file-read returns `-EISDIR`. |
 | `/dev/wanted/config` | r | Supervisor bootstrap meta-config. |
 
-The root `ctl` accepts **only** `create <name>`, `poweroff`, and `reboot`; any other token returns `-EINVAL`. The root ctl does **not** launch wapps — `start` and `stop` exist only per-wapp (`wapps/<name>/ctl`). `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.
+The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, and `reboot`; any other token returns `-EINVAL`. The root ctl does **not** launch wapps — `start` and `stop` exist only per-wapp (`wapps/<name>/ctl`). `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.
+
+### Releasing a slot (`delete`)
+
+`delete <name>` is the inverse of `create`: it removes the name from the control plane so `wapps/<name>/` stops enumerating and every node under it returns `-ENOENT` again.
+
+```
+write /dev/wanted/ctl delete app1
+```
+
+It frees a `create` reservation (`created`/`not_started`) and/or a terminal platform slot (`exited`/`failure`). The slot allocator already reuses a terminal slot on the next `start`, so `delete` is for explicitly reclaiming a name — releasing the `wapps/` entry and any buffered config — without launching another wapp.
+
+| Target state | Result |
+|--------------|--------|
+| `created` / `not_started` | Reservation freed; name → `-ENOENT`. |
+| `exited` / `failure` | Terminal slot released; name → `-ENOENT`. |
+| `running` / `starting` | Rejected with `-EBUSY` — stop the wapp first; there is no implicit stop-then-delete. |
+| unknown name | `-ENOENT`. |
 
 ### First-start lifecycle
 
@@ -105,9 +122,13 @@ stateDiagram-v2
     starting --> running
     running --> exited: stop / clean exit (any code via proc_exit)
     running --> failure: trap
-    exited --> [*]
-    failure --> [*]
+    created --> [*]: delete
+    not_started --> [*]: delete
+    exited --> [*]: delete
+    failure --> [*]: delete
 ```
+
+`delete` is the only edge back to `[*]` from `created`/`not_started`; a terminal `exited`/`failure` slot also leaves via `delete` (or is silently reused by the next `start`). A `running`/`starting` wapp has no `delete` edge — stop it first.
 
 `state` is the authoritative observed status. A supervisor maps these tokens onto its own reconciliation state machine; `starting` and `stopping` are supervisor-side transient states, not engine tokens.
 
@@ -167,6 +188,7 @@ The `wsh` debug supervisor wraps the raw node operations as builtins:
 | `status` | List every wapp under `wapps/` with its state. |
 | `status <name>` | Print one wapp's `state`, `version`, and `id`. |
 | `create <name>` | Write `create <name>` to the root `ctl` to reserve the namespace. |
+| `delete <name>` | Write `delete <name>` to the root `ctl` to release the slot (stop a running wapp first). |
 | `set_config <name> <json>` | Write the JSON launch config to `wapps/<name>/config`. |
 | `start <name>` | Write `start` to `wapps/<name>/ctl` (launches with the buffered config). |
 | `stop <name>` | Write `stop` to `wapps/<name>/ctl`. |

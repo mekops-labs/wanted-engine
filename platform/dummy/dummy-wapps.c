@@ -108,6 +108,24 @@ int PlatformWappStop(const char *name) {
     return 0;
 }
 
+int PlatformWappRelease(const char *name) {
+    if (!name)
+        return -EINVAL;
+
+    int idx = state_find(name);
+    if (idx < 0)
+        return -ENOENT;
+
+    /* Only a terminal slot can be released; a running/starting wapp must be
+     * stopped first. */
+    if (g_state[idx].status != EXITED && g_state[idx].status != FAILURE)
+        return -EBUSY;
+
+    g_used[idx] = 0;
+    memset(&g_state[idx], 0, sizeof(g_state[idx]));
+    return 0;
+}
+
 void PlatformWappLoop(void) {}
 
 void PlatformSetProcessArgs(int argc, char **argv) {

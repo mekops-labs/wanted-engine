@@ -269,6 +269,55 @@ int PlatformWappStop(const char *name) {
 #endif
 }
 
+int PlatformWappRelease(const char *name) {
+    int slot;
+
+    if (NULL == name) {
+        return -EINVAL;
+    }
+
+    pthread_mutex_lock(&state_mtx);
+
+    for (slot = 0; slot < MAX_WAPPS; slot++) {
+        if (state.threads[slot].data.wapp == NULL)
+            continue;
+        if (strcmp((char *)state.threads[slot].data.wapp->name, name) == 0)
+            break;
+    }
+
+    if (slot == MAX_WAPPS) {
+        pthread_mutex_unlock(&state_mtx);
+        return -ENOENT;
+    }
+
+    /* Only a terminal slot can be released. A running/starting wapp must be
+     * stopped first — its worker still dereferences the slot, so freeing the
+     * image here would be a use-after-free. The terminal status (set by
+     * updateState after the worker unwound) guarantees the thread is gone. */
+    if (state.threads[slot].status != EXITED &&
+        state.threads[slot].status != FAILURE) {
+        pthread_mutex_unlock(&state_mtx);
+        return -EBUSY;
+    }
+
+    /* Free the mapped image + struct. The supervisor image is a persistent
+     * singleton reused across respawns — never free that one. state.n was
+     * already decremented when the worker reached its terminal status, so the
+     * slot does not count against the pool and must not be decremented again. */
+    wapp_t *w = state.threads[slot].data.wapp;
+    if (w != NULL && w != WantedGetCurrentSupervisor()) {
+        PlatformWappUnload(w);
+        WantedFree(w);
+    }
+    state.threads[slot].data.wapp = NULL;
+    state.threads[slot].data.id = 0;
+    state.threads[slot].data.exit_code = WAPP_EXIT_CODE_NONE;
+    state.threads[slot].status = NOT_STARTED;
+
+    pthread_mutex_unlock(&state_mtx);
+    return 0;
+}
+
 void PlatformSetProcessArgs(int argc, char **argv) {
     (void)argc;
     process_argv = argv;

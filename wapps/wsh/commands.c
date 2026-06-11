@@ -35,6 +35,7 @@ int wsh_write(char **args);
 int wsh_cp(char **args);
 int wsh_rm(char **args);
 int wsh_create(char **args);
+int wsh_delete(char **args);
 int wsh_set_config(char **args);
 int wsh_start(char **args);
 int wsh_stop(char **args);
@@ -56,6 +57,7 @@ cmd_t cmds[] = {
     { "cp", wsh_cp },
     { "rm", wsh_rm },
     { "create", wsh_create },
+    { "delete", wsh_delete },
     { "set_config", wsh_set_config },
     { "start", wsh_start },
     { "stop", wsh_stop },
@@ -392,6 +394,29 @@ int wsh_create(char **args)
     snprintf(payload, sizeof(payload), "create %s", args[1]);
     if (wanted_write(WANTED_CTL, payload) < 0) {
         fputs("create: ", stderr);
+        perror(WANTED_CTL);
+    }
+    return 1;
+}
+
+/**
+   @brief Release a wapp slot via the root control node, so its namespace leaves
+          wapps/ and its nodes return ENOENT again. A running wapp is rejected;
+          stop it first.
+   @param args args[1] is the wapp name.
+ */
+int wsh_delete(char **args)
+{
+    char payload[64];
+
+    if (args[1] == NULL) {
+        fputs("delete: need a wapp name\n", stderr);
+        return 1;
+    }
+
+    snprintf(payload, sizeof(payload), "delete %s", args[1]);
+    if (wanted_write(WANTED_CTL, payload) < 0) {
+        fputs("delete: ", stderr);
         perror(WANTED_CTL);
     }
     return 1;
