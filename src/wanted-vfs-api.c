@@ -225,13 +225,15 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
 static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
     int i;
 
-    /* image: the registry image this instance runs. Optional — when omitted the
-     * launch path defaults it to the instance name, so a single-instance wapp
-     * needs no config change. Lets N instances share one image. */
+    /* image: the registry image this instance runs, as a reference "<name>[:<tag>]".
+     * Optional — when omitted the launch path defaults it to the instance name,
+     * so a single-instance wapp needs no config change. A bare name resolves to
+     * the first match; a pinned tag resolves exactly. Lets N instances share one
+     * image. */
     const char *image = json_getPropertyValue(params, "image");
     if (image != NULL) {
-        strncpy(cfg->image, image, WAPP_MAX_NAME_LEN - 1);
-        cfg->image[WAPP_MAX_NAME_LEN - 1] = '\0';
+        strncpy(cfg->image, image, WAPP_MAX_IMAGE_REF_LEN - 1);
+        cfg->image[WAPP_MAX_IMAGE_REF_LEN - 1] = '\0';
     }
 
     json_t const *console = json_getProperty(params, "console");

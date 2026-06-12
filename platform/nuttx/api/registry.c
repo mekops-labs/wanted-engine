@@ -228,11 +228,13 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     if (ret < 0)
         return ret;
 
-    /* Image identity is the registry entry — name and version. The instance
+    /* Image identity is the registry entry — name and version tag. The instance
      * name (w->name) is set by the launch path and left untouched here. */
     strncpy(w->image, resolved.name, WAPP_MAX_NAME_LEN - 1);
     w->image[WAPP_MAX_NAME_LEN - 1] = '\0';
-    return ParseVersionString(resolved.version, &w->version);
+    strncpy(w->version, resolved.version, WAPP_MAX_VERSION_LEN - 1);
+    w->version[WAPP_MAX_VERSION_LEN - 1] = '\0';
+    return 0;
 }
 
 int PlatformRegistryRemove(const reg_entry_t *entry) {

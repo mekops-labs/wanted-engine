@@ -183,47 +183,6 @@ static vfs_tarfs_ctx_t *WappTarfsInit(const wapp_t *w) {
     return TarFsInit((uint8_t *const *)w->layers, w->layer_lens, w->layer_cnt);
 }
 
-/* Parse one decimal byte field of a version string, advancing *p past it and
- * any single trailing separator. Returns the value, or -1 on a non-digit /
- * overflow. */
-static int ParseVersionField(const char **p) {
-    const char *s = *p;
-    if (*s < '0' || *s > '9')
-        return -1;
-    unsigned val = 0;
-    while (*s >= '0' && *s <= '9') {
-        val = val * 10 + (unsigned)(*s - '0');
-        if (val > 255)
-            return -1;
-        s++;
-    }
-    if (*s == '.' || *s == '-')
-        s++;
-    *p = s;
-    return (int)val;
-}
-
-int ParseVersionString(const char *s, wapp_version_t *out) {
-    if (!s || !out)
-        return -EINVAL;
-
-    /* "major.minor.patch-package"; trailing fields are optional and zero-fill,
-     * so a registry filename's version part always maps to four bytes. */
-    out->major = out->minor = out->patch = out->package = 0;
-    if (*s == '\0')
-        return 0;
-
-    const char *p = s;
-    uint8_t *fields[4] = {&out->major, &out->minor, &out->patch, &out->package};
-    for (int i = 0; i < 4 && *p != '\0'; i++) {
-        int v = ParseVersionField(&p);
-        if (v < 0)
-            return -EINVAL;
-        *fields[i] = (uint8_t)v;
-    }
-    return 0;
-}
-
 int WantedWappRun(wapp_data_t *ctx) {
     wasm_function_inst_t f = NULL;
     wapp_t *wapp;
@@ -535,6 +494,10 @@ wapp_t *WantedGetCurrentSupervisor() {
     }
 
     w = WantedMalloc(sizeof(wapp_t));
+    /* The supervisor is loaded directly (not via the registry), so its image
+     * and version fields are never stamped by the loader — zero them so the
+     * control-plane string nodes read empty rather than uninitialised memory. */
+    memset(w, 0, sizeof(wapp_t));
     const wantedConfig_t *cfg = WantedGetConfig();
 
     if (cfg == NULL || !cfg->supervisorCfg.valid) {

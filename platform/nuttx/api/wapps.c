@@ -451,7 +451,10 @@ int PlatformWappGetState(wapp_state_t *wapps, size_t appsLen) {
                 WAPP_MAX_NAME_LEN);
         wapps[r].image[WAPP_MAX_NAME_LEN - 1] = '\0';
         wapps[r].status = state.threads[i].status;
-        wapps[r].version = state.threads[i].data.wapp->version;
+        strncpy(wapps[r].version,
+                (const char *)state.threads[i].data.wapp->version,
+                WAPP_MAX_VERSION_LEN);
+        wapps[r].version[WAPP_MAX_VERSION_LEN - 1] = '\0';
         wapps[r].id = state.threads[i].data.id;
         wapps[r].exit_code = state.threads[i].data.exit_code;
         r++;
