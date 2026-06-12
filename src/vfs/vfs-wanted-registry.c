@@ -20,11 +20,19 @@
 #define MAX_REG_ENTRIES 50
 static const char VERSION_SEPARATOR = ':';
 
+/* Longest install ref "<name>:<version>" (+NUL) the driver buffers between an
+ * install open and its finalizing close. */
+#define REG_REF_MAX (WAPP_MAX_NAME_LEN + 1 + WAPP_MAX_VERSION_LEN + 1)
+
 static struct vfs_driver_ctx_t {
     bool opened;
     bool startedWriting;
     size_t nEntries;
     reg_entry_t entries[MAX_REG_ENTRIES];
+    /* Target ref for an in-progress install (opened by ref for write); empty
+     * when the open is a read. Named by the open path, used to name the stored
+     * file at finalize. */
+    char writeRef[REG_REF_MAX];
 } ctx;
 
 static int _Destroy(struct vfs_driver_t *d);
@@ -66,12 +74,23 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     // if (opened) return -EBUSY;
     d->opened = true;
     d->startedWriting = false;
+    d->writeRef[0] = '\0';
 
     if (path[0] == '/' && path[1] == '\0') {
         ret = PlatformRegistryRead(d->entries, MAX_REG_ENTRIES);
         if (ret < 0)
             return ret;
         d->nEntries = ret;
+    } else if (flags & (VFS_O_WRONLY | VFS_O_RDWR)) {
+        /* Install by ref: opening a (possibly not-yet-existing) "<name>:<ver>"
+         * path for write names the image. The ref travels to the platform
+         * writer, which names the stored file by it — identity comes from the
+         * ref, not the bytes. The bytes are written to the root write fd (0). */
+        if (path[0] == '\0' || strlen(path) >= REG_REF_MAX)
+            return -ENAMETOOLONG;
+        strncpy(d->writeRef, path, REG_REF_MAX - 1);
+        d->writeRef[REG_REF_MAX - 1] = '\0';
+        return 0;
     } else {
         for (int i = 0; i < d->nEntries; i++) {
             const char *ver = strchr(path, (int)VERSION_SEPARATOR);
@@ -102,9 +121,11 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
 
     if (d->startedWriting) {
         d->startedWriting = false;
+        d->writeRef[0] = '\0';
         return WantedCloseRegistry();
     }
 
+    d->writeRef[0] = '\0';
     return 0;
 }
 
@@ -145,7 +166,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
         return read;
     }
 
-    read = WantedReadManifest(&d->entries[fd - 1], buf, nbyte);
+    read = WantedRenderRegistryDescriptor(&d->entries[fd - 1], buf, nbyte);
 
     return read;
 }
@@ -160,7 +181,12 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     if (fd > 0)
         return -EROFS;
 
-    ret = WantedWriteRegistry(&d->startedWriting, buf, nbyte);
+    /* Writes go to the root write fd, but only for an install opened by ref;
+     * the registry root itself is not writable. */
+    if (d->writeRef[0] == '\0')
+        return -EROFS;
+
+    ret = WantedWriteRegistry(&d->startedWriting, d->writeRef, buf, nbyte);
 
     return ret;
 }

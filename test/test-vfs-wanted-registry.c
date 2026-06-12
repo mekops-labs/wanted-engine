@@ -115,14 +115,18 @@ TEST(vfs_registry_driver, ReadRoot_IsDirectory) {
     TEST_ASSERT_EQUAL_INT(-EISDIR, drv->Read(drv->ctx, 0, buf, sizeof(buf)));
 }
 
-TEST(vfs_registry_driver, ReadEntry_ManifestLoadUnsupported) {
+TEST(vfs_registry_driver, ReadEntry_DescriptorSynthesized) {
     SeedTwo();
     drv->Open(drv->ctx, "/", VFS_O_RDONLY);
 
-    /* fd>0 reads a manifest, which needs a WASM load — the dummy returns
-     * -ENOSYS from PlatformRegistryWappLoad. */
-    uint8_t buf[64] = {0};
-    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Read(drv->ctx, 1, buf, sizeof(buf)));
+    /* fd>0 reads a small JSON descriptor synthesized from the registry entry
+     * (name/version/size) — the entry alone, with no image load. */
+    uint8_t buf[128] = {0};
+    int n = drv->Read(drv->ctx, 1, buf, sizeof(buf));
+    TEST_ASSERT_TRUE(n > 0);
+    TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "app1", 4));
+    TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "1.0.0", 5));
+    TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "42", 2));
 }
 
 TEST(vfs_registry_driver, Read_NullBuf_ReturnsEinval) {
@@ -167,9 +171,22 @@ TEST(vfs_registry_driver, Write_NotOpened_ReturnsEbadf) {
     TEST_ASSERT_EQUAL_INT(-EBADF, drv->Write(drv->ctx, 0, "x", 1));
 }
 
-TEST(vfs_registry_driver, Write_Chunk_Unsupported) {
+TEST(vfs_registry_driver, OpenForWrite_ByRef_ReturnsWriteFd) {
+    /* Opening a "<name>:<ver>" path for write is an install: it names the image
+     * by the ref and returns the root write fd (0). */
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "newapp:1.0.0-1",
+                                       VFS_O_WRONLY));
+}
+
+TEST(vfs_registry_driver, WriteRootNoRef_ReturnsErofs) {
     SeedTwo();
     drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    /* The registry root is not writable; an install must open by ref. */
+    TEST_ASSERT_EQUAL_INT(-EROFS, drv->Write(drv->ctx, 0, "{}", 2));
+}
+
+TEST(vfs_registry_driver, WriteByRef_Chunk_Unsupported) {
+    drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
     /* WantedWriteRegistry -> PlatformRegistryWrite(START_WRITE) -> -ENOSYS. */
     TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, 0, "{}", 2));
 }
@@ -229,8 +246,7 @@ TEST(vfs_registry_driver, Unlink_Unknown_ReturnsEnoent) {
 }
 
 TEST(vfs_registry_driver, Close_AfterWrite_FinalizesRegistry) {
-    SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
     drv->Write(drv->ctx, 0, "{}", 2); /* sets startedWriting */
     /* Close with a pending write calls WantedCloseRegistry ->
      * PlatformRegistryWrite(FINISH_WRITE) -> -ENOSYS. */
@@ -246,13 +262,15 @@ TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, StatEntry_IsRegularFile);
     RUN_TEST_CASE(vfs_registry_driver, Stat_BadFd_ReturnsEbadf);
     RUN_TEST_CASE(vfs_registry_driver, ReadRoot_IsDirectory);
-    RUN_TEST_CASE(vfs_registry_driver, ReadEntry_ManifestLoadUnsupported);
+    RUN_TEST_CASE(vfs_registry_driver, ReadEntry_DescriptorSynthesized);
     RUN_TEST_CASE(vfs_registry_driver, Read_NullBuf_ReturnsEinval);
     RUN_TEST_CASE(vfs_registry_driver, Read_NotOpened_ReturnsEbadf);
     RUN_TEST_CASE(vfs_registry_driver, ReadDir_ListsNameVersionPairs);
     RUN_TEST_CASE(vfs_registry_driver, Write_EntryFd_ReturnsErofs);
     RUN_TEST_CASE(vfs_registry_driver, Write_NotOpened_ReturnsEbadf);
-    RUN_TEST_CASE(vfs_registry_driver, Write_Chunk_Unsupported);
+    RUN_TEST_CASE(vfs_registry_driver, OpenForWrite_ByRef_ReturnsWriteFd);
+    RUN_TEST_CASE(vfs_registry_driver, WriteRootNoRef_ReturnsErofs);
+    RUN_TEST_CASE(vfs_registry_driver, WriteByRef_Chunk_Unsupported);
     RUN_TEST_CASE(vfs_registry_driver, Read_FdBeyondEntries_ReturnsEinval);
     RUN_TEST_CASE(vfs_registry_driver, Write_NullBuf_ReturnsEinval);
     RUN_TEST_CASE(vfs_registry_driver, ReadDir_NullBuf_ReturnsEinval);

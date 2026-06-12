@@ -17,8 +17,6 @@
 #define MAX_PATH_LEN 256
 #define MAX_OPTIONS_SIZE 1024
 #define MAX_DRIVERS_CNT 10
-#define WAPP_MAX_REQUIREMENTS 8
-#define WAPP_MAX_REQ_NAME_LEN 32
 
 /* Per-wapp persistent state preopens. Each entry is a host directory path
  * that the Engine will create (if absent), open, and expose to the wapp as a
@@ -64,6 +62,10 @@ typedef struct wapp_driver_t {
 // TODO: make dynamic driver number
 typedef struct wapp_config_t {
     bool valid;
+    /* Registry image this instance runs. Empty means "same as the instance
+     * name" — preserving single-instance wapps that never set it. Set from the
+     * launch config's "image" field; it lets N instances share one image. */
+    char image[WAPP_MAX_NAME_LEN];
     wapp_driver_t console[3];
     size_t driversCnt;
     wapp_driver_t drivers[MAX_DRIVERS_CNT];
@@ -81,15 +83,14 @@ typedef enum wapp_action_t {
 } wapp_action_t;
 
 typedef struct wapp_t {
-    char name[WAPP_MAX_NAME_LEN];
+    char name[WAPP_MAX_NAME_LEN];    /* instance identity (set at launch) */
+    char image[WAPP_MAX_NAME_LEN];   /* registry image identity (set by loader) */
     wapp_version_t version;
     wapp_config_t cfg;
     /* OCI layer stack (newest first, index 0 = topmost) */
     uint8_t *layers[TARFS_MAX_LAYERS];
     size_t layer_lens[TARFS_MAX_LAYERS];
     uint8_t layer_cnt; /* must be >= 1 for a valid wapp */
-    char requirements[WAPP_MAX_REQUIREMENTS][WAPP_MAX_REQ_NAME_LEN];
-    uint8_t requirementsCnt;
 } wapp_t;
 
 typedef struct wapp_data_t {
@@ -116,6 +117,7 @@ typedef enum status_t {
 
 typedef struct wapp_state_t {
     char name[WAPP_MAX_NAME_LEN];
+    char image[WAPP_MAX_NAME_LEN]; /* registry image the instance was launched from */
     uint8_t id;
     wapp_version_t version;
     status_t status;
@@ -139,8 +141,8 @@ typedef struct wantedConfig_t {
 int WantedWappRun(wapp_data_t *ctx);
 void WantedWappStop(wapp_data_t *ctx);
 void WantedWappTerminate(wapp_data_t *ctx);
-int WantedWappParseManifest(wapp_t *w);
-int WantedWappParseManifestBytes(wapp_t *w, const uint8_t *manifest,
-                                 size_t manifestLen);
-int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen);
+/* Parse a registry version string "major.minor.patch-package" (each field a
+ * decimal byte) into a wapp_version_t. Missing trailing fields zero-fill.
+ * Returns 0 on success, or a negative errno on malformed input. */
+int ParseVersionString(const char *s, wapp_version_t *out);
 wapp_t *WantedGetCurrentSupervisor();

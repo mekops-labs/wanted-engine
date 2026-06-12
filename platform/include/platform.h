@@ -73,7 +73,12 @@ void PlatformRequestShutdown(void);
 void PlatformRequestReboot(void);
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len);
-int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes);
+/* Stream-install an image into the registry under an explicit target ref
+ * ("<name>:<version>"), supplied at START_WRITE and used to name the stored
+ * file at FINISH_WRITE. Identity comes from the ref, not the bytes. `ref` is
+ * ignored on CONTINUE/FINISH/ABORT. */
+int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
+                          size_t nbytes);
 int PlatformRegistryRemove(const reg_entry_t *entry);
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);
 

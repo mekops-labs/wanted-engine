@@ -6,8 +6,6 @@
 #include <string.h>
 #include <wasm_export.h>
 
-#include <tiny-json.h>
-
 #include <wanted_wasm_api.h>
 #include <wasi.h>
 
@@ -185,125 +183,53 @@ static vfs_tarfs_ctx_t *WappTarfsInit(const wapp_t *w) {
     return TarFsInit((uint8_t *const *)w->layers, w->layer_lens, w->layer_cnt);
 }
 
-int WantedWappLoadManifest(const wapp_t *w, uint8_t **img, size_t *imgLen) {
-    if (!w || !img || !imgLen)
+/* Parse one decimal byte field of a version string, advancing *p past it and
+ * any single trailing separator. Returns the value, or -1 on a non-digit /
+ * overflow. */
+static int ParseVersionField(const char **p) {
+    const char *s = *p;
+    if (*s < '0' || *s > '9')
         return -1;
-
-    vfs_tarfs_ctx_t *t = WappTarfsInit(w);
-    if (!t) {
-        DEBUG_TRACE("Can't initialize tarfs for wapp manifest lookup");
-        return -1;
+    unsigned val = 0;
+    while (*s >= '0' && *s <= '9') {
+        val = val * 10 + (unsigned)(*s - '0');
+        if (val > 255)
+            return -1;
+        s++;
     }
+    if (*s == '.' || *s == '-')
+        s++;
+    *p = s;
+    return (int)val;
+}
 
-    size_t mlen = 0;
-    const uint8_t *m = TarFsEntrypointManifest(t, &mlen);
-    if (!m) {
-        DEBUG_TRACE("manifest.json absent from wapp image");
-        TarFsDestroy(t);
-        return -1;
+int ParseVersionString(const char *s, wapp_version_t *out) {
+    if (!s || !out)
+        return -EINVAL;
+
+    /* "major.minor.patch-package"; trailing fields are optional and zero-fill,
+     * so a registry filename's version part always maps to four bytes. */
+    out->major = out->minor = out->patch = out->package = 0;
+    if (*s == '\0')
+        return 0;
+
+    const char *p = s;
+    uint8_t *fields[4] = {&out->major, &out->minor, &out->patch, &out->package};
+    for (int i = 0; i < 4 && *p != '\0'; i++) {
+        int v = ParseVersionField(&p);
+        if (v < 0)
+            return -EINVAL;
+        *fields[i] = (uint8_t)v;
     }
-
-    /* Pointer is into the wapp's layer bytes, which outlive this ctx. */
-    *img = (uint8_t *)m;
-    *imgLen = mlen;
-    TarFsDestroy(t);
     return 0;
-}
-
-int WantedWappParseManifestBytes(wapp_t *w, const uint8_t *manifest,
-                                 size_t manifestLen) {
-    int ret = 0;
-    json_t mem[48];
-
-    if (!w || !manifest || manifestLen == 0)
-        return -1;
-
-    char *buf = WantedMalloc(manifestLen);
-    if (buf == NULL) {
-        DEBUG_TRACE("Can't allocate mem for manifest json buffer");
-        return -1;
-    }
-    memcpy(buf, manifest, manifestLen);
-
-    json_t const *json = json_create(buf, mem, sizeof mem / sizeof *mem);
-    if (!json) {
-        DEBUG_TRACE("Error json create.");
-        ret = -1;
-        goto _exit;
-    }
-
-    json_t const *name = json_getProperty(json, "name");
-    if (!name || JSON_TEXT != json_getType(name)) {
-        DEBUG_TRACE("Error, the name property is not found.");
-        ret = -1;
-        goto _exit;
-    }
-    strncpy(w->name, json_getValue(name), WAPP_MAX_NAME_LEN);
-
-    json_t const *varsionArr = json_getProperty(json, "version");
-    if (!varsionArr || JSON_ARRAY != json_getType(varsionArr)) {
-        DEBUG_TRACE("Error, the version property is not found.");
-        ret = -1;
-        goto _exit;
-    }
-
-    json_t const *version;
-    int i;
-    for (i = 0, version = json_getChild(varsionArr); i < 3 && version != 0;
-         i++, version = json_getSibling(version)) {
-        if (JSON_INTEGER == json_getType(version)) {
-            w->version.v[i] = (uint8_t)json_getInteger(version);
-        }
-    }
-
-    json_t const *pkg = json_getProperty(json, "package");
-    if (!pkg || JSON_INTEGER != json_getType(pkg)) {
-        DEBUG_TRACE("Warning, the package property is not found.");
-        w->version.package = 0;
-    } else {
-        w->version.package = (uint8_t)json_getInteger(pkg);
-    }
-
-    json_t const *reqs = json_getProperty(json, "requirements");
-    if (reqs && JSON_ARRAY == json_getType(reqs)) {
-        json_t const *r;
-        int ri = 0;
-        for (r = json_getChild(reqs);
-             r && ri < WAPP_MAX_REQUIREMENTS;
-             r = json_getSibling(r), ri++) {
-            if (JSON_TEXT == json_getType(r)) {
-                strncpy(w->requirements[ri], json_getValue(r),
-                        WAPP_MAX_REQ_NAME_LEN - 1);
-                w->requirements[ri][WAPP_MAX_REQ_NAME_LEN - 1] = '\0';
-            }
-        }
-        w->requirementsCnt = (uint8_t)ri;
-    }
-
-_exit:
-    WantedFree(buf);
-
-    return ret;
-}
-
-int WantedWappParseManifest(wapp_t *w) {
-    uint8_t *manifest;
-    size_t manifestLen;
-    int ret = WantedWappLoadManifest(w, &manifest, &manifestLen);
-    if (ret < 0) {
-        DEBUG_TRACE("Can't load manifest");
-        return -1;
-    }
-    return WantedWappParseManifestBytes(w, manifest, manifestLen);
 }
 
 int WantedWappRun(wapp_data_t *ctx) {
     wasm_function_inst_t f = NULL;
     wapp_t *wapp;
     vfs_tarfs_ctx_t *tarfs = NULL;
-    const uint8_t *manifest = NULL;
     const uint8_t *wasm = NULL;
-    size_t manifestLen = 0, wasmLen = 0;
+    size_t wasmLen = 0;
     char err_buf[128];
     wasi_ctx_t *wasiCtx = NULL;
     int ret = 0;
@@ -328,27 +254,15 @@ int WantedWappRun(wapp_data_t *ctx) {
 
     DEBUG_TRACE("entering thread: %d", ctx->id);
 
-    /* Build the per-wapp tarfs index once. The pre-fetched entrypoint
-     * pointers feed both manifest parsing and wasm load below; the same ctx
-     * is later attached to the vfs so the prefix router can resolve arbitrary
-     * paths into the same layer stack. */
+    /* Build the per-wapp tarfs index once. The pre-fetched entrypoint pointer
+     * feeds the wasm load below; the same ctx is later attached to the vfs so
+     * the prefix router can resolve arbitrary paths into the same layer stack.
+     * A wapp image is app.wasm (+ any TarFS payload):
+     * identity comes from the registry entry the loader resolved. */
     tarfs = WappTarfsInit(wapp);
     if (!tarfs) {
         DEBUG_TRACE("Can't initialize tarfs for wapp");
         return -1;
-    }
-
-    manifest = TarFsEntrypointManifest(tarfs, &manifestLen);
-    if (!manifest) {
-        DEBUG_TRACE("manifest.json absent from wapp image");
-        ret = -1;
-        goto _freeTarfs;
-    }
-
-    if (WantedWappParseManifestBytes(wapp, manifest, manifestLen) < 0) {
-        DEBUG_TRACE("Can't parse wapp manifest");
-        ret = -1;
-        goto _freeTarfs;
     }
 
     wasm = TarFsEntrypointWasm(tarfs, &wasmLen);
@@ -425,7 +339,7 @@ int WantedWappRun(wapp_data_t *ctx) {
     VfsAttachTarfs(ctx->vfs, tarfs);
     tarfs = NULL;
 
-    /* Builtin /dev entries — always present regardless of wapp manifest. */
+    /* Builtin /dev entries — always present regardless of wapp config. */
     DevFs_Register(ctx->vfs, "null",   VfsNullInit(wapp, NULL));
     DevFs_Register(ctx->vfs, "pipe",   PipeDriverCreate(WantedPipeStore()));
     DevFs_Register(ctx->vfs, "stdin",  VfsStdinDriverGet());

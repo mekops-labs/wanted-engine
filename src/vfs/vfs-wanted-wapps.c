@@ -24,8 +24,9 @@
  *
  *   wapps/                 ReadDir → one entry per known (running) wapp
  *     <name>/              synthetic dir; ReadDir → the control files below
- *       ctl       (w)      line verb: "start" | "stop"  (identity = path)
+ *       ctl       (w)      line verb: "start [<image>]" | "stop" (identity=path)
  *       state     (r)      plain-text token: not_started|starting|running|...
+ *       image     (r)      plain-text registry image the instance runs
  *       version   (r)      plain-text version, e.g. "1.0.0-0"
  *       id        (r)      plain-text engine wapp id
  *       exit_code (r)      plain-text WASI exit code (authoritative when exited)
@@ -53,6 +54,7 @@ typedef enum {
     NODE_WAPP,    /* wapps/<name>/     */
     NODE_CTL,     /* wapps/<name>/ctl     */
     NODE_STATE,   /* wapps/<name>/state   */
+    NODE_IMAGE,   /* wapps/<name>/image   */
     NODE_VERSION, /* wapps/<name>/version */
     NODE_ID,      /* wapps/<name>/id      */
     NODE_EXIT_CODE, /* wapps/<name>/exit_code */
@@ -113,8 +115,9 @@ static const struct {
     const char *name;
     wapp_node_t node;
 } LEAVES[] = {
-    {"ctl", NODE_CTL},     {"state", NODE_STATE}, {"version", NODE_VERSION},
-    {"id", NODE_ID},       {"exit_code", NODE_EXIT_CODE},
+    {"ctl", NODE_CTL},       {"state", NODE_STATE},
+    {"image", NODE_IMAGE},   {"version", NODE_VERSION},
+    {"id", NODE_ID},         {"exit_code", NODE_EXIT_CODE},
     {"config", NODE_CONFIG}, {"log", NODE_LOG},
 };
 #define N_LEAVES (sizeof(LEAVES) / sizeof(LEAVES[0]))
@@ -212,19 +215,24 @@ static bool LookupState(const char *name, wapp_state_t *out) {
 }
 
 /* Create-and-launch a wapp by name, applying a buffered config if present.
- * Identity comes from `name` (supplied by the path), not a payload field. The
- * launch config — including argv[1..] (`args`) and the environment (`envs`) —
- * is whatever was buffered at wapps/<name>/config. */
-static int StartWapp(struct vfs_driver_ctx_t *d, const char *name) {
+ * Instance identity comes from `name` (supplied by the path). The image the
+ * instance runs is resolved in priority order: an explicit `image` argument
+ * (from `start <image>`), else the buffered config's `image` field, else the
+ * instance name. The launch config — console, argv[1..] (`args`), the
+ * environment (`envs`) — is whatever was buffered at wapps/<name>/config. */
+static int StartWapp(struct vfs_driver_ctx_t *d, const char *name,
+                     const char *image) {
     int ret;
     reg_entry_t e;
+    bool haveImage = (image != NULL && image[0] != '\0');
 
-    /* A wapp reserved via `create` must be configured before it can start: a
-     * bare reservation (state `created`, no config written) cannot transition
-     * straight to starting. A name with no reservation still starts with
+    /* A wapp reserved via `create` must name an image before it can start —
+     * either by a prior config write or by an explicit `start <image>`. A bare
+     * `create` followed by a bare `start` (neither) cannot transition straight
+     * to starting and is rejected. A name with no reservation still starts with
      * defaults, as before. */
     wapps_pending_t *pend = pending_find(d, name);
-    if (pend != NULL && !pend->configured)
+    if (pend != NULL && !pend->configured && !haveImage)
         return -EINVAL;
 
     wapp_t *wapp = WantedMalloc(sizeof(wapp_t));
@@ -243,17 +251,21 @@ static int StartWapp(struct vfs_driver_ctx_t *d, const char *name) {
         memset(pend, 0, sizeof(*pend));
     }
 
+    /* Instance identity (wapp->name) is the path-supplied `name`. The image it
+     * runs is the explicit `start <image>` argument, else the config's `image`,
+     * else the instance name — so an unconfigured single-instance wapp runs its
+     * like-named image, while many instances can share one image. The loader
+     * resolves the image's registry entry and stamps image identity (image +
+     * version) onto the wapp; it never touches wapp->name. */
+    const char *img = haveImage ? image
+                                : (wapp->cfg.image[0] ? wapp->cfg.image : name);
     memset(&e, 0, sizeof(e));
-    strncpy(e.name, name, WAPP_MAX_NAME_LEN - 1);
+    strncpy(e.name, img, WAPP_MAX_NAME_LEN - 1);
     e.version[0] = '\0';
 
     ret = PlatformRegistryWappLoad(&e, wapp);
     if (ret < 0)
         goto FREE; /* nothing mapped yet */
-
-    ret = WantedWappParseManifest(wapp);
-    if (ret < 0)
-        goto UNLOAD;
 
     ret = PlatformWappStart(wapp);
     if (ret < 0)
@@ -365,6 +377,11 @@ static size_t RenderRead(wapp_node_t node, const char *name, char *out,
         }
         return (size_t)snprintf(out, cap, "%s", statusToString(s));
     }
+    case NODE_IMAGE:
+        /* The registry image the instance runs. Known only once the platform has
+         * launched it (the loader stamps it); a created/not-started reservation
+         * has not bound an image yet, so it reads empty. */
+        return (size_t)snprintf(out, cap, "%s", live ? st.image : "");
     case NODE_VERSION: {
         const uint8_t *v = live ? st.version.v : (const uint8_t[]){0, 0, 0, 0};
         return (size_t)snprintf(out, cap, "%X.%X.%X-%X", v[0], v[1], v[2],
@@ -440,8 +457,16 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
             line[--end] = '\0';
 
         int ret;
-        if (strcmp(line, "start") == 0) {
-            ret = StartWapp(d, name);
+        /* "start" optionally followed by an image: "start" | "start <image>".
+         * The image overrides config.image; a bare "start" falls back to it. */
+        if (strncmp(line, "start", 5) == 0 &&
+            (line[5] == '\0' || line[5] == ' ' || line[5] == '\t')) {
+            const char *img = line + 5;
+            while (*img == ' ' || *img == '\t')
+                img++;
+            if (*img != '\0' && strlen(img) >= WAPP_MAX_NAME_LEN)
+                return -EINVAL;
+            ret = StartWapp(d, name, img[0] ? img : NULL);
         } else if (strcmp(line, "stop") == 0) {
             ret = PlatformWappStop(name);
         } else {
