@@ -10,7 +10,7 @@
 #   - Rust      -> rustup stable + wasm32-wasip1 / wasm32-unknown-unknown
 #
 # Plus Wasmtime — a standalone wasm32-wasi runtime for running and debugging a
-# freshly built app.wasm outside the engine (and sheriff's smoke harness).
+# freshly built app.wasm outside the engine.
 #
 # Consumers:
 #   - wanted-engine: build the test wapps (wapps/*) and wsh.
@@ -18,10 +18,8 @@
 #   - wapp authors: the FROM base for the builder stage of a wapp's
 #     multi-stage Containerfile (see docs/wapp-authoring.md).
 #
-# Base is Debian (glibc), not Alpine: the official wasi-sdk, TinyGo and Go
-# release tarballs are dynamically linked against glibc and do not run on
-# musl without unreliable gcompat shims. glibc is the portable choice for a
-# universal toolchain image.
+# Base is Debian (glibc): the official wasi-sdk, TinyGo and Go
+# release tarballs are dynamically linked against glibc.
 #
 # Build (single arch):  podman build -f Containerfile.wasm-sdk -t wanted-wasm-sdk .
 # Build (multi arch):   podman build --platform linux/amd64,linux/arm64 \

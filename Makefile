@@ -79,8 +79,8 @@ clean: ## remove the build directory
 	rm -rf $(CURDIR)/$(BUILD_DIR)
 
 # docs-sync runs on the host, not in the build container: it only copies Markdown
-# (no toolchain needed) and the destination is the separate Hugo blog repo, which
-# lives outside the /src mount. Pass the blog's wanted content dir as DOCS_DEST.
+# (no toolchain needed) to the destination directory.
+# Pass the target content dir as DOCS_DEST.
 docs-sync: ## sync docs/*.md to the MekOps Hugo blog (pass DOCS_DEST=<blog content dir>)
 	@test -n "$(DOCS_DEST)" || { echo "DOCS_DEST is required, e.g. make docs-sync DOCS_DEST=<path to blog>/content/projects/wanted"; exit 1; }
 	rsync -av --include='*.md' --exclude='*' docs/ $(DOCS_DEST)/

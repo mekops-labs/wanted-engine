@@ -70,7 +70,7 @@ A **driver spec** (used by each `console` slot and each `drivers[]` entry):
 | Key | Type | Notes |
 |-----|------|-------|
 | `name` | string | A driver from the engine table (below). |
-| `path` | string | Mount point inside the namespace; must resolve under `/dev/*` or `/net/*`, or name a console slot. |
+| `path` | string | Mount point inside the namespace; must resolve under `/dev/*` or `/net/*`. |
 | `options` | string | Driver-specific configuration. |
 
 ## Driver name registry
