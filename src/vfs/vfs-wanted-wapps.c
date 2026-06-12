@@ -259,9 +259,24 @@ static int StartWapp(struct vfs_driver_ctx_t *d, const char *name,
      * version) onto the wapp; it never touches wapp->name. */
     const char *img = haveImage ? image
                                 : (wapp->cfg.image[0] ? wapp->cfg.image : name);
+
+    /* An image reference is "<name>[:<tag>]": a bare name resolves to the first
+     * matching entry (empty version), a "<name>:<tag>" pins the version exactly. */
     memset(&e, 0, sizeof(e));
-    strncpy(e.name, img, WAPP_MAX_NAME_LEN - 1);
-    e.version[0] = '\0';
+    const char *colon = strchr(img, ':');
+    if (colon != NULL) {
+        size_t nlen = (size_t)(colon - img);
+        if (nlen >= WAPP_MAX_NAME_LEN)
+            nlen = WAPP_MAX_NAME_LEN - 1;
+        memcpy(e.name, img, nlen);
+        e.name[nlen] = '\0';
+        strncpy(e.version, colon + 1, WAPP_MAX_VERSION_LEN - 1);
+        e.version[WAPP_MAX_VERSION_LEN - 1] = '\0';
+    } else {
+        strncpy(e.name, img, WAPP_MAX_NAME_LEN - 1);
+        e.name[WAPP_MAX_NAME_LEN - 1] = '\0';
+        e.version[0] = '\0';
+    }
 
     ret = PlatformRegistryWappLoad(&e, wapp);
     if (ret < 0)
@@ -382,11 +397,10 @@ static size_t RenderRead(wapp_node_t node, const char *name, char *out,
          * launched it (the loader stamps it); a created/not-started reservation
          * has not bound an image yet, so it reads empty. */
         return (size_t)snprintf(out, cap, "%s", live ? st.image : "");
-    case NODE_VERSION: {
-        const uint8_t *v = live ? st.version.v : (const uint8_t[]){0, 0, 0, 0};
-        return (size_t)snprintf(out, cap, "%X.%X.%X-%X", v[0], v[1], v[2],
-                                v[3]);
-    }
+    case NODE_VERSION:
+        /* The image's version tag — an opaque string (e.g. "1.0.0-1", "stable",
+         * a digest). Empty for a not-yet-launched reservation. */
+        return (size_t)snprintf(out, cap, "%s", live ? st.version : "");
     case NODE_ID:
         return (size_t)snprintf(out, cap, "%u", live ? st.id : 0);
     case NODE_EXIT_CODE:
@@ -464,7 +478,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
             const char *img = line + 5;
             while (*img == ' ' || *img == '\t')
                 img++;
-            if (*img != '\0' && strlen(img) >= WAPP_MAX_NAME_LEN)
+            if (*img != '\0' && strlen(img) >= WAPP_MAX_IMAGE_REF_LEN)
                 return -EINVAL;
             ret = StartWapp(d, name, img[0] ? img : NULL);
         } else if (strcmp(line, "stop") == 0) {

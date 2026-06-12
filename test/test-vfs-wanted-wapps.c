@@ -3,6 +3,7 @@
 #include "unity_fixture.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "test-utils.h"
@@ -35,10 +36,9 @@ static wapp_state_t MakeState(const char *name, uint8_t id, status_t status,
     strncpy(s.name, name, WAPP_MAX_NAME_LEN - 1);
     s.id = id;
     s.status = status;
-    s.version.v[0] = major;
-    s.version.v[1] = minor;
-    s.version.v[2] = patch;
-    s.version.v[3] = pkg;
+    /* version is an opaque tag string. */
+    snprintf(s.version, WAPP_MAX_VERSION_LEN, "%u.%u.%u-%u", major, minor, patch,
+             pkg);
     return s;
 }
 
@@ -157,6 +157,19 @@ TEST(vfs_wanted_wapps, ReadVersion_Formatted) {
     char buf[32] = {0};
     drv->Read(drv->ctx, fd, buf, sizeof(buf));
     TEST_ASSERT_EQUAL_STRING("1.2.3-4", buf);
+}
+
+/* The version is an opaque tag: a tag like "stable" round-trips through the
+ * version node. */
+TEST(vfs_wanted_wapps, ReadVersion_OpaqueTag) {
+    wapp_state_t seed = MakeState("alpha", 1, RUNNING, 0, 0, 0, 0);
+    strncpy(seed.version, "stable", WAPP_MAX_VERSION_LEN - 1);
+    DummyWappStateSeed(&seed, 1);
+
+    int fd = OpenLeaf("alpha/version");
+    char buf[32] = {0};
+    drv->Read(drv->ctx, fd, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("stable", buf);
 }
 
 /* The image node reports the registry image the live instance runs — distinct
@@ -520,6 +533,7 @@ TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, ReadState_Running);
     RUN_TEST_CASE(vfs_wanted_wapps, OpenUnknownWapp_ReturnsEnoent);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadVersion_Formatted);
+    RUN_TEST_CASE(vfs_wanted_wapps, ReadVersion_OpaqueTag);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadImage_FromState);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadId_Decimal);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadExitCode_Exited);

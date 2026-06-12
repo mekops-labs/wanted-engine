@@ -191,6 +191,42 @@ TEST(vfs_registry_driver, WriteByRef_Chunk_Unsupported) {
     TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, 0, "{}", 2));
 }
 
+/* An out-of-grammar install ref is rejected at open rather than naming a file.
+ * The grammar is "<name>[:<tag>]", each component [A-Za-z0-9_][A-Za-z0-9._-]*
+ * and within its length bound. */
+TEST(vfs_registry_driver, OpenForWrite_InvalidRef_ReturnsEinval) {
+    /* whitespace is not in the grammar (name and tag halves) */
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "bad name:1.0", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:bad tag", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app name", VFS_O_WRONLY));
+    /* a tag carries no second separator */
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:1:2", VFS_O_WRONLY));
+    /* empty name or empty tag */
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, ":1.0", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:", VFS_O_WRONLY));
+    /* component may not start with a separator-class char */
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "-app:1.0", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:.1.0", VFS_O_WRONLY));
+    /* a stray punctuation char outside the class */
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:tag!", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "ap/p:1.0", VFS_O_WRONLY));
+    /* name at/over its length bound (16 ≥ WAPP_MAX_NAME_LEN) */
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "aaaaaaaaaaaaaaaa:1", VFS_O_WRONLY));
+    /* tag at/over its length bound (16 ≥ WAPP_MAX_VERSION_LEN) */
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "app:aaaaaaaaaaaaaaaa", VFS_O_WRONLY));
+}
+
+/* In-grammar refs are accepted — bare name (first-match) and pinned tags,
+ * numeric or not — returning the root write fd (0). */
+TEST(vfs_registry_driver, OpenForWrite_ValidRefs_Accepted) {
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "app", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "app:1.0.0-1", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "app:stable", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "my_app.v2:latest", VFS_O_WRONLY));
+}
+
 TEST(vfs_registry_driver, Read_FdBeyondEntries_ReturnsEinval) {
     SeedTwo();
     drv->Open(drv->ctx, "/", VFS_O_RDONLY);
@@ -271,6 +307,8 @@ TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, OpenForWrite_ByRef_ReturnsWriteFd);
     RUN_TEST_CASE(vfs_registry_driver, WriteRootNoRef_ReturnsErofs);
     RUN_TEST_CASE(vfs_registry_driver, WriteByRef_Chunk_Unsupported);
+    RUN_TEST_CASE(vfs_registry_driver, OpenForWrite_InvalidRef_ReturnsEinval);
+    RUN_TEST_CASE(vfs_registry_driver, OpenForWrite_ValidRefs_Accepted);
     RUN_TEST_CASE(vfs_registry_driver, Read_FdBeyondEntries_ReturnsEinval);
     RUN_TEST_CASE(vfs_registry_driver, Write_NullBuf_ReturnsEinval);
     RUN_TEST_CASE(vfs_registry_driver, ReadDir_NullBuf_ReturnsEinval);

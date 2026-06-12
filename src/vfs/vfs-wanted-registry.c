@@ -65,6 +65,39 @@ static int _Destroy(struct vfs_driver_t *d) {
     return 0;
 }
 
+/* One image-reference component (name or tag): non-empty, within `maxlen`
+ * (incl. NUL), first char [A-Za-z0-9_], rest [A-Za-z0-9._-] — the OCI tag
+ * grammar, applied to both halves of "<name>:<tag>". */
+static bool ValidRefComponent(const char *s, size_t len, size_t maxlen) {
+    if (len == 0 || len >= maxlen)
+        return false;
+    for (size_t i = 0; i < len; i++) {
+        char c = s[i];
+        bool alnum = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                     (c >= '0' && c <= '9') || c == '_';
+        if (i == 0) {
+            if (!alnum)
+                return false;
+        } else if (!alnum && c != '.' && c != '-') {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* An install ref is "<name>" or "<name>:<tag>" with at most one separator; both
+ * components must satisfy the tag grammar and their length bounds. This rejects
+ * an out-of-grammar ref at install rather than letting it name a file. */
+static bool ValidInstallRef(const char *ref) {
+    const char *colon = strchr(ref, (int)VERSION_SEPARATOR);
+    if (colon == NULL)
+        return ValidRefComponent(ref, strlen(ref), WAPP_MAX_NAME_LEN);
+    if (strchr(colon + 1, (int)VERSION_SEPARATOR) != NULL)
+        return false; /* a tag carries no separator */
+    return ValidRefComponent(ref, (size_t)(colon - ref), WAPP_MAX_NAME_LEN) &&
+           ValidRefComponent(colon + 1, strlen(colon + 1), WAPP_MAX_VERSION_LEN);
+}
+
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     int ret;
 
@@ -84,10 +117,12 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     } else if (flags & (VFS_O_WRONLY | VFS_O_RDWR)) {
         /* Install by ref: opening a (possibly not-yet-existing) "<name>:<ver>"
          * path for write names the image. The ref travels to the platform
-         * writer, which names the stored file by it — identity comes from the
-         * ref, not the bytes. The bytes are written to the root write fd (0). */
+         * writer, which names the stored file by it — the ref is the image's
+         * identity. The image bytes are written to the root write fd (0). */
         if (path[0] == '\0' || strlen(path) >= REG_REF_MAX)
             return -ENAMETOOLONG;
+        if (!ValidInstallRef(path))
+            return -EINVAL;
         strncpy(d->writeRef, path, REG_REF_MAX - 1);
         d->writeRef[REG_REF_MAX - 1] = '\0';
         return 0;
