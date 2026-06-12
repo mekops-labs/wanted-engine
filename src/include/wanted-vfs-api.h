@@ -15,10 +15,14 @@ int WantedInstallDriver(vfs_ctx_t c, const wapp_t *w, const char *name,
 int WantedParseConfig(const char *buf, size_t bufLen);
 const wantedConfig_t *WantedGetConfig();
 
-int WantedWriteRegistry(bool *cont, const uint8_t *buf, size_t bufLen);
+int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
+                        size_t bufLen);
 int WantedCloseRegistry();
 int WantedRegistryRemove(const reg_entry_t *entry);
-int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen);
+/* Synthesize a small JSON descriptor (name/version/size) for a registry entry
+ * into buf — the entry alone is the source, with no image load. */
+int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
+                                   size_t bufLen);
 
 const char *statusToString(status_t state);
 

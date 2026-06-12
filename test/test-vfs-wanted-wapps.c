@@ -159,6 +159,19 @@ TEST(vfs_wanted_wapps, ReadVersion_Formatted) {
     TEST_ASSERT_EQUAL_STRING("1.2.3-4", buf);
 }
 
+/* The image node reports the registry image the live instance runs — distinct
+ * from its instance name (here "alpha" runs image "duplex"). */
+TEST(vfs_wanted_wapps, ReadImage_FromState) {
+    wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 0, 0, 0);
+    strncpy(seed.image, "duplex", WAPP_MAX_NAME_LEN - 1);
+    DummyWappStateSeed(&seed, 1);
+
+    int fd = OpenLeaf("alpha/image");
+    char buf[32] = {0};
+    drv->Read(drv->ctx, fd, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("duplex", buf);
+}
+
 TEST(vfs_wanted_wapps, ReadId_Decimal) {
     wapp_state_t seed = MakeState("alpha", 7, RUNNING, 1, 0, 0, 0);
     DummyWappStateSeed(&seed, 1);
@@ -358,6 +371,39 @@ TEST(vfs_wanted_wapps, StartCreatedWithoutConfig_ReturnsEinval) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Write(drv->ctx, c, "start", 5));
 }
 
+/* `start <image>` on a bare `create` reservation (no config written) satisfies
+ * the start gate on its own — the explicit image is enough to launch, so the
+ * loader is reached (dummy can't map an image → -ENOSYS) rather than the
+ * unconfigured-reservation -EINVAL a bare `start` would get. */
+TEST(vfs_wanted_wapps, CtlStartWithImage_CreatedWithoutConfig_ReachesLoader) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create ghost", 12) > 0);
+
+    int c = OpenLeaf("ghost/ctl");
+    TEST_ASSERT_EQUAL_INT(-ENOSYS,
+                          drv->Write(drv->ctx, c, "start duplex", 12));
+}
+
+/* Two distinct instances can be created and bound to a single image via config
+ * `image`; each start reaches the loader independently (dummy → -ENOSYS). This
+ * is the multi-instance path: one image, N instance names. */
+TEST(vfs_wanted_wapps, MultiInstance_TwoInstancesOneImage) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create reader", 13) > 0);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create writer", 13) > 0);
+
+    const char *cfg = "{\"image\":\"duplex\"}";
+    int rc = OpenLeaf("reader/config");
+    TEST_ASSERT_TRUE(drv->Write(drv->ctx, rc, cfg, strlen(cfg)) > 0);
+    int wc = OpenLeaf("writer/config");
+    TEST_ASSERT_TRUE(drv->Write(drv->ctx, wc, cfg, strlen(cfg)) > 0);
+
+    int r = OpenLeaf("reader/ctl");
+    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, r, "start", 5));
+    int w = OpenLeaf("writer/ctl");
+    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, w, "start", 5));
+}
+
 TEST(vfs_wanted_wapps, RootCtlCreateNoName_ReturnsEinval) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
     TEST_ASSERT_EQUAL_INT(-EINVAL, ctl->Write(ctl->ctx, fd, "create ", 7));
@@ -474,6 +520,7 @@ TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, ReadState_Running);
     RUN_TEST_CASE(vfs_wanted_wapps, OpenUnknownWapp_ReturnsEnoent);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadVersion_Formatted);
+    RUN_TEST_CASE(vfs_wanted_wapps, ReadImage_FromState);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadId_Decimal);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadExitCode_Exited);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadExitCode_RunningIsSentinel);
@@ -492,6 +539,9 @@ TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreate_MakesWappCreatedAndEnumerable);
     RUN_TEST_CASE(vfs_wanted_wapps, ConfigWriteAfterCreate_TransitionsToNotStarted);
     RUN_TEST_CASE(vfs_wanted_wapps, StartCreatedWithoutConfig_ReturnsEinval);
+    RUN_TEST_CASE(vfs_wanted_wapps,
+                  CtlStartWithImage_CreatedWithoutConfig_ReachesLoader);
+    RUN_TEST_CASE(vfs_wanted_wapps, MultiInstance_TwoInstancesOneImage);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreateNoName_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreateTooLongName_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreateExhaustsSlots_ReturnsEnospc);

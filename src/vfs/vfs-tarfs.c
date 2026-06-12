@@ -68,11 +68,9 @@ struct vfs_tarfs_ctx_t {
     size_t path_pool_used;
     size_t path_pool_cap;
 
-    /* Boot optimisations: direct pointers into layer data. */
+    /* Boot optimisation: direct pointer into layer data for the entrypoint. */
     const uint8_t *entrypoint_wasm;
     size_t entrypoint_wasm_len;
-    const uint8_t *entrypoint_manifest;
-    size_t entrypoint_manifest_len;
 };
 
 /* POSIX ustar stores numeric fields as NUL/space-terminated octal ASCII. */
@@ -435,17 +433,13 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
             continue;
         }
 
-        /* Pre-fetch boot entrypoints from the topmost non-whiteout hit. */
+        /* Pre-fetch the boot entrypoint from the topmost non-whiteout hit. */
         if (!is_whiteout) {
             size_t data_off = off + TAR_BLOCK_SIZE;
             if (strcmp(entry_path, "app.wasm") == 0 &&
                 ctx->entrypoint_wasm == NULL) {
                 ctx->entrypoint_wasm = buf + data_off;
                 ctx->entrypoint_wasm_len = eff_size;
-            } else if (strcmp(entry_path, "manifest.json") == 0 &&
-                       ctx->entrypoint_manifest == NULL) {
-                ctx->entrypoint_manifest = buf + data_off;
-                ctx->entrypoint_manifest_len = eff_size;
             }
         }
 
@@ -538,14 +532,6 @@ const uint8_t *TarFsEntrypointWasm(const vfs_tarfs_ctx_t *ctx, size_t *len) {
         return NULL;
     *len = ctx->entrypoint_wasm_len;
     return ctx->entrypoint_wasm;
-}
-
-const uint8_t *TarFsEntrypointManifest(const vfs_tarfs_ctx_t *ctx,
-                                       size_t *len) {
-    if (!ctx || !len)
-        return NULL;
-    *len = ctx->entrypoint_manifest_len;
-    return ctx->entrypoint_manifest;
 }
 
 uint16_t TarFsIndexLen(const vfs_tarfs_ctx_t *ctx) {

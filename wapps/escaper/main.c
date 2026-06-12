@@ -37,7 +37,6 @@ int main(void) {
     leak |= leaked("/etc/passwd", O_RDONLY);
     /* write the read-only TarFS image */
     leak |= leaked("/app.wasm", O_WRONLY);
-    leak |= leaked("/manifest.json", O_WRONLY);
     /* reach the engine control plane / another wapp (not in this namespace) */
     leak |= leaked("/dev/wanted/ctl", O_WRONLY);
     leak |= leaked("/dev/wanted/wapps/supervisor/ctl", O_WRONLY);

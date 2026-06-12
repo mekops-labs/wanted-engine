@@ -2,8 +2,9 @@
 
 /* fdhog — exhausts a sandbox resource (file descriptors).
  *
- * Opens its read-only manifest over and over without closing, until the open
- * fails or a hard probe cap is reached, then reports on its log console. The
+ * Opens a read-only image file (app.wasm) over and over without closing, until
+ * the open fails or a hard probe cap is reached, then reports on its log
+ * console. The
  * engine must bound the wapp (open eventually errors) and stay up — the abuse
  * must be contained to the wapp, never crash or exhaust the host. The selftest
  * supervisor asserts the wapp is reaped and the supervisor survives, and the
@@ -20,7 +21,7 @@
 int main(void) {
     int opened = 0;
     for (int i = 0; i < PROBE_CAP; i++) {
-        int fd = open("/manifest.json", O_RDONLY);
+        int fd = open("/app.wasm", O_RDONLY);
         if (fd < 0)
             break;               /* engine bounded the wapp's fd table */
         opened++;

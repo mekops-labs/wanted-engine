@@ -2,6 +2,7 @@
 
 #include "unity_fixture.h"
 
+#include <errno.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -30,6 +31,7 @@ TEST(wanted_vfs_api, WantedParseCtrlActionTest) {
 
     TEST_ASSERT_EQUAL_STRING("app1", appName);
     TEST_ASSERT_EQUAL(WAPP_START, act);
+    TEST_ASSERT_EQUAL_STRING("app1img", cfg.image);
     TEST_ASSERT_EQUAL(5, cfg.driversCnt);
 
     /* args occupy argv[1..]; argv[0] is the wapp name, set by the engine. */
@@ -60,7 +62,55 @@ TEST(wanted_vfs_api, WantedParseWappConfigArgsEnvs) {
     TEST_ASSERT_EQUAL_STRING("A=1", cfg.envs[0]);
 }
 
+/* The config node parses the optional "image" field — the image an instance
+ * runs, decoupled from its instance name. */
+TEST(wanted_vfs_api, WantedParseWappConfigImage) {
+    const char *cfg_json = "{\"image\":\"duplex\",\"envs\":[\"ROLE=reader\"]}";
+    wapp_config_t cfg;
+
+    int ret = WantedParseWappConfigJson(cfg_json, strlen(cfg_json), &cfg);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL_STRING("duplex", cfg.image);
+
+    /* Omitting "image" leaves it empty (the launch path defaults it to the
+     * instance name). */
+    const char *no_image = "{\"args\":[\"x\"]}";
+    ret = WantedParseWappConfigJson(no_image, strlen(no_image), &cfg);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL_STRING("", cfg.image);
+}
+
+/* ParseVersionString maps a registry version field "a.b.c-d" onto the packed
+ * wapp_version_t, zero-filling missing trailing fields and rejecting malformed
+ * input. */
+TEST(wanted_vfs_api, ParseVersionStringParsesAndZeroFills) {
+    wapp_version_t v;
+
+    TEST_ASSERT_EQUAL(0, ParseVersionString("1.2.3-4", &v));
+    TEST_ASSERT_EQUAL_UINT8(1, v.major);
+    TEST_ASSERT_EQUAL_UINT8(2, v.minor);
+    TEST_ASSERT_EQUAL_UINT8(3, v.patch);
+    TEST_ASSERT_EQUAL_UINT8(4, v.package);
+
+    /* Trailing fields are optional and zero-fill. */
+    TEST_ASSERT_EQUAL(0, ParseVersionString("2.5", &v));
+    TEST_ASSERT_EQUAL_UINT8(2, v.major);
+    TEST_ASSERT_EQUAL_UINT8(5, v.minor);
+    TEST_ASSERT_EQUAL_UINT8(0, v.patch);
+    TEST_ASSERT_EQUAL_UINT8(0, v.package);
+
+    /* An empty string is all zeros. */
+    TEST_ASSERT_EQUAL(0, ParseVersionString("", &v));
+    TEST_ASSERT_EQUAL_UINT8(0, v.major);
+
+    /* Non-numeric and out-of-range fields are rejected. */
+    TEST_ASSERT_EQUAL(-EINVAL, ParseVersionString("x.2.3", &v));
+    TEST_ASSERT_EQUAL(-EINVAL, ParseVersionString("999.0.0", &v));
+}
+
 TEST_GROUP_RUNNER(wanted_vfs_api) {
     RUN_TEST_CASE(wanted_vfs_api, WantedParseCtrlActionTest);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigArgsEnvs);
+    RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigImage);
+    RUN_TEST_CASE(wanted_vfs_api, ParseVersionStringParsesAndZeroFills);
 }

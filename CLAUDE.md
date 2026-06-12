@@ -117,7 +117,7 @@ WebAssembly toolchain, test apps, and supervisor variants.
 
 #### `wasm/supervisor/`
 
-Two supervisor variants, each bundled into `supervisor.tar` from `app.wasm` + `manifest.json`.
+Two supervisor variants, each bundled into `supervisor.tar` from `app.wasm`.
 
 | Variant | Purpose | `app.wasm` source |
 |---|---|---|

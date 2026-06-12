@@ -2,7 +2,7 @@
 #
 # Compiles the wapp source under this directory to <dir>.wasm with the wasi-sdk
 # clang. Mirrors the other wapps/* Makefiles; the selftest runner packages the
-# resulting wasm + manifest.json into a registry .wapp.
+# resulting wasm into a registry .wapp.
 
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 current_dir := $(notdir $(patsubst %/,%,$(dir $(mkfile_path))))
