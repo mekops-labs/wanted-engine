@@ -8,11 +8,11 @@ description: "The three test tiers — unit, in-WASM selftest, and smoke — how
 
 The engine has three test tiers, each catching a different class of failure. All run inside the build container.
 
-| Suite | Command | Scope | Runtime |
-|-------|---------|-------|---------|
-| Unit (ctest) | `make test` | C unit tests: VFS, TarFS, WASI, registry, API parsing | ~5 s |
-| In-WASM selftest | `make selftest` / `make nuttx-selftest` | 29 functional + robustness scenarios from inside WASM; TAP | TBD |
-| Smoke | `make smoke-engine` | The production sheriff supervisor instantiates cleanly | ~3 s |
+| Suite | Command | Scope |
+|-------|---------|-------|
+| Unit (ctest) | `make test` | C unit tests: VFS, TarFS, WASI, registry, API parsing |
+| In-WASM selftest | `make selftest` / `make nuttx-selftest` | 29 functional + robustness scenarios from inside WASM; TAP |
+| Smoke | `make smoke-engine` | The production sheriff supervisor instantiates cleanly |
 
 ## Unit suite (ctest)
 
@@ -39,7 +39,7 @@ The suite covers four categories:
 | VFS / namespace | Path normalisation, read-only TarFS, parent-traversal denial, `/proc` access, control-plane enumeration |
 | Inter-wapp IPC | A two-wapp `/dev/pipe` round-trip: `preader` blocks while `pwriter` writes from a separate namespace |
 | Concurrency and stop | `looper` running alongside the supervisor, stopped via the control plane; stop of a dead or unknown wapp |
-| Negative / robustness | Trap containment (`trapper`), CPU runaway (`cpuhog`), memory exhaustion (`membomb`), stack overflow (`stackbomb`), blocking-syscall stop (`blocker`, `pblock`), sandbox-escape denial (`escaper`), fd-table bounds (`fdhog`), crash-loop stability (`crasher`), and a malformed-image battery (missing manifest, missing `app.wasm`, invalid WASM, invalid JSON, truncated TAR) |
+| Negative / robustness | Trap containment (`trapper`), CPU runaway (`cpuhog`), memory exhaustion (`membomb`), stack overflow (`stackbomb`), blocking-syscall stop (`blocker`, `pblock`), sandbox-escape denial (`escaper`), fd-table bounds (`fdhog`), crash-loop stability (`crasher`), and a malformed-image battery (no `app.wasm` entrypoint, invalid WASM, truncated TAR) |
 
 Each scenario is a small purpose-built wapp under `wapps/` that the supervisor launches and then checks via the control plane — a misbehaving wapp must be contained without taking down the engine or its neighbours.
 
@@ -57,7 +57,7 @@ make smoke-engine
 
 To add a scenario:
 
-1. Create `wapps/<name>/` with the wapp source, a `Makefile` (copy `wapps/hello/Makefile`), and a `manifest.json`.
+1. Create `wapps/<name>/` with the wapp source and a `Makefile` (copy `wapps/hello/Makefile`) - just an `app.wasm`.
 2. Make the wapp exercise one behaviour — reach a VFS path, misbehave in one specific way, or talk over a pipe.
 3. Stage it: add `<name>:<version>` to `TEST_WAPPS` in `test/selftest.sh` (and `stage_test_wapp` in `test/nuttx-sim.sh` for the sim). The runner packages each into the registry as `<name>:<version>.wapp`.
 4. Add the supervisor-side check in `wapps/selftest/main.c`: launch the wapp via the control plane and assert the expected `state` / `log` outcome, emitting a TAP line.
