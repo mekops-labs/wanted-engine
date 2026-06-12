@@ -11,7 +11,7 @@ This architecture was inspired by Plan 9 operating system design and tries to be
 
 ## Wapp model
 
-A wapp is an OCI-style layered TAR carrying at least an `app.wasm` (a `wasm32-wasi` binary) and a `manifest.json` (identity + declared capability requirements). It is isolated on two axes:
+A wapp is an OCI-style layered TAR carrying at least an `app.wasm` (a `wasm32-wasi` binary); image identity (name + version) comes from the registry filename, not from any in-image metadata. It is isolated on two axes:
 
 - **Memory** — WebAssembly linear memory. A wapp cannot address host memory or another wapp's memory; the runtime bounds every access.
 - **I/O** — the host interface is the VFS only. There is no ambient filesystem, no shared memory between wapps, and no syscall a wapp can make that the VFS router does not mediate.

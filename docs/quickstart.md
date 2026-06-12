@@ -28,42 +28,24 @@ make wsh     # build the engine + CLI with the wsh debug supervisor
 
 ## Package a wapp into the registry
 
-The engine starts wapps by name from a **registry** — on Linux, the `./registry/` directory scanned for `<name>:<version>.wapp` images. A `.wapp` is an OCI-style ustar TAR holding `app.wasm` and `manifest.json`. The compiled samples are not packaged automatically, so package `hello` once:
+The engine starts wapps by name from a **registry** — on Linux, the `./registry/` directory scanned for `<name>:<version>.wapp` images. A `.wapp` is an OCI-style ustar TAR holding `app.wasm` (and any optional data files). The compiled samples are not packaged automatically, so package `hello` once:
 
 ```bash
 mkdir -p registry
 stage=$(mktemp -d)
-cp wapps/hello/hello.wasm    "$stage/app.wasm"
-cp wapps/hello/manifest.json "$stage/manifest.json"
+cp wapps/hello/hello.wasm "$stage/app.wasm"
 tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
-    -C "$stage" -cf registry/hello:0.0.1-1.wapp app.wasm manifest.json
+    -C "$stage" -cf registry/hello:0.0.1-1.wapp app.wasm
 rm -rf "$stage"
 ```
 
-The image name encodes the manifest's identity: `hello`, version `[0, 0, 1]`, package `1` → `hello:0.0.1-1.wapp`. The wasm binary is renamed to `app.wasm` inside the TAR — that is the fixed entrypoint name the loader expects.
+The **registry filename is the image's identity**: `hello`, version `0.0.1`, package `1` → `hello:0.0.1-1.wapp`. The engine reads the name and version from the filename. The wasm binary is renamed to `app.wasm` inside the TAR — that is the fixed entrypoint name the loader expects.
 
-`app.wasm` and `manifest.json` are the bare minimum. A wapp image can carry any additional files — config, certificates, static assets, data — and they become visible to the wapp as a read-only filesystem at `/`, served by TarFS. Add such files to the TAR alongside `app.wasm` and they appear at the matching path inside the wapp. (Small runtime knobs, like the `hello` sample's `ROLE`, are better passed as launch-config env vars or args than baked into the image — see [Control Plane Reference](control-plane-reference.md).)
+`app.wasm` is the only required member. A wapp image can carry any additional files — config, certificates, static assets, data — and they become visible to the wapp as a read-only filesystem at `/`, served by TarFS. Add such files to the TAR alongside `app.wasm` and they appear at the matching path inside the wapp. (Small runtime knobs, like the `hello` sample's `ROLE`, are better passed as launch-config env vars or args than baked into the image — see [Control Plane Reference](control-plane-reference.md).)
 
-### The manifest
+### Image identity
 
-`manifest.json` declares the wapp's identity and the capabilities it expects. `hello`'s is:
-
-```json
-{
-    "name": "hello",
-    "version": [0, 0, 1],
-    "package": 1,
-    "requirements": ["console"]
-}
-```
-
-| Field          | Type                    | Required | Description                                                                                                                                                                                                                                              |
-| -------------- | ----------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`         | string                  | yes      | Unique wapp identifier (≤15 characters). Also the name you `start`.                                                                                                                                                                                      |
-| `version`      | `[major, minor, patch]` | yes      | Integer triple.                                                                                                                                                                                                                                          |
-| `package`      | integer                 | yes      | Package revision; the `-N` suffix in the image name.                                                                                                                                                                                                     |
-| `requirements` | string array            | no       | Abstract capability names the wapp needs (up to 8). The engine parses and stores them as opaque strings — it enforces no fixed vocabulary; a supervisor validates them against its policy before launching. An absent or empty array declares no requirements. |
-
+The image's name and version come entirely from its registry filename `<name>:<version>-<package>.wapp` — for `hello`, that is name `hello`, version `0.0.1`, package `1`. The engine reports them at `/proc/wapps` and the per-instance `version` node. Capabilities are not declared in the image; they are exactly what the launch config grants at start (consoles, drivers, preopens, the control plane). One image can run as several independent **instances** — see [Control Plane Reference](control-plane-reference.md).
 
 ## Run
 
