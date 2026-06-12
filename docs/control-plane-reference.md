@@ -33,7 +33,7 @@ A supervisor is granted the namespace by a `drivers[]` entry in its launch confi
       ctl       (w)         per-wapp verb: "start [<image>]" | "stop"
       state     (r)         lifecycle token
       image     (r)         registry image the instance runs
-      version   (r)         "MAJOR.MINOR.PATCH-PACKAGE"
+      version   (r)         image version tag (opaque string)
       id        (r)         engine-assigned wapp id
       exit_code (r)         WASI exit code (authoritative when state == exited)
       log       (r)         buffered stdout/stderr (when console: log)
@@ -47,7 +47,7 @@ A supervisor is granted the namespace by a `drivers[]` entry in its launch confi
 | Path | Access | Description |
 |------|--------|-------------|
 | `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `delete <name>` releases a slot — a `create` reservation or a terminal (`exited`/`failure`) wapp — so the name leaves `wapps/` and its nodes return `-ENOENT` again. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). |
-| `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`) synthesized from the registry — no image load. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image (identity comes from the ref, not the bytes). A plain read of the directory itself returns `-EISDIR`. |
+| `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`) synthesized from the registry — no image load. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image. The version is an opaque tag; each ref component must match `[A-Za-z0-9_][A-Za-z0-9._-]*` or the open is rejected. A plain read of the directory itself returns `-EISDIR`. |
 | `/dev/wanted/config` | r | Supervisor bootstrap meta-config. |
 
 The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, and `reboot`; any other token returns `-EINVAL`. The root ctl does **not** launch wapps — `start` and `stop` exist only per-wapp (`wapps/<name>/ctl`). `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.
@@ -93,7 +93,7 @@ Command-line arguments (`argv[1..]`) and environment variables travel in the `co
 |------|--------|----------------|
 | `state` | r | Lifecycle token: `created`, `not_started`, `starting`, `running`, `exited`, `failure`. A bare `create` reservation (no config yet) reads `created`; once its `config` is written it reads `not_started`. |
 | `image` | r | The registry image the instance runs, known once it is live (the loader stamps it). A `created`/`not_started` reservation has not bound an image yet and reads empty. |
-| `version` | r | `MAJOR.MINOR.PATCH-PACKAGE`, e.g. `0.0.1-1`. The image's version, from its registry entry. |
+| `version` | r | The image's version tag — an opaque string (e.g. `0.0.1-1`, `stable`, a digest), from its registry entry. |
 | `id` | r | Engine-assigned wapp id (decimal). |
 | `exit_code` | r | The wapp's WASI exit code as a decimal integer. **Authoritative only when `state == exited`**; otherwise (running, or a trap that set `state == failure`) it reads the sentinel `-1`. Lets a supervisor distinguish a clean zero exit, a clean non-zero (application-level) exit, and a trap. |
 | `log` | r | Ring-buffered stdout/stderr, present when the wapp was launched with a `log` console. |
@@ -169,7 +169,7 @@ A wapp that needs drivers, console redirection, or preopens has its config writt
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `image` | string | **Optional** registry image this instance runs (≤15 chars). When omitted it defaults to the instance name — so a single-instance wapp needs no `image`. Set it to run several instances off one image, or override it per launch with `start <image>`. |
+| `image` | string | **Optional** registry image this instance runs, as a reference `<name>[:<tag>]` — a bare name resolves to the first match, a pinned tag (`duplex:stable`) resolves exactly. When omitted it defaults to the instance name, so a single-instance wapp needs no `image`. Set it to run several instances off one image, or override it per launch with `start <image>`. |
 | `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. **Optional**: an unset slot defaults — `in` to `null`, `out`/`err` to `log` — so a wapp launches without an explicit console and its output is captured to the `log` node. Override a slot with `log` (capture), `null` (discard), or `platform` (redirect to the engine's native stdio, fds 0/1/2). The `platform` *name* backs stdio here, but mounted at a path in `drivers[]` it is instead the host filesystem. |
 | `drivers` | array | Up to 10 entries. VFS drivers mounted into the wapp's namespace. |
 | `preopens` | array | Up to 4 absolute paths (must start with `/`, ≤63 chars). The engine creates/opens each and binds it as a WASI preopen — the wapp's read-write state storage. |
