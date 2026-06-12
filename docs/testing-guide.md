@@ -11,7 +11,7 @@ The engine has three test tiers, each catching a different class of failure. All
 | Suite | Command | Scope | Runtime |
 |-------|---------|-------|---------|
 | Unit (ctest) | `make test` | C unit tests: VFS, TarFS, WASI, registry, API parsing | ~5 s |
-| In-WASM selftest | `make selftest` / `make nuttx-selftest` | 29 functional + robustness scenarios from inside WASM; TAP | ~7 s / ~4 s |
+| In-WASM selftest | `make selftest` / `make nuttx-selftest` | 29 functional + robustness scenarios from inside WASM; TAP | TBD |
 | Smoke | `make smoke-engine` | The production sheriff supervisor instantiates cleanly | ~3 s |
 
 ## Unit suite (ctest)

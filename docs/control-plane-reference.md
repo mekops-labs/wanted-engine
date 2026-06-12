@@ -6,7 +6,7 @@ toc: true
 description: "The complete /dev/wanted contract: nodes, verbs, the wapp state machine, and the launch-config schema."
 ---
 
-The control plane is the VFS namespace a supervisor uses to install, launch, observe, and stop wapps, and to drive the engine's own power state. It is mounted at `/dev/wanted` and is a privileged capability: a wapp reaches it only if its launch config grants the `wanted` driver. An ordinary wapp has no path to it.
+The control plane is the VFS namespace a supervisor uses to install, launch, observe, and stop wapps, and to drive the engine's own power state. It is usually mounted at `/dev/wanted` (depnds on mount path in config; in default its `/dev/wanted`) and is a privileged capability: a wapp reaches it only if its launch config grants the `wanted` driver. An ordinary wapp has no path to it.
 
 Every interaction is an ordinary file operation. Identity travels in the path — never in a payload field — so reads compose as plain text and only the launch config is JSON.
 

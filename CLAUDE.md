@@ -160,7 +160,7 @@ After cloning: `git submodule update --init --recursive`
 
 ### `docs/`
 
-Published developer/user documentation — the source of truth. Flat tree of `.md` files with Hugo front matter, one per topic, synced to the MekOps blog with `make docs-sync DOCS_DEST=<path>`. Update the relevant `docs/*.md` in the same change as the feature it documents. The Hugo section landing page (`_index.md`, with the `{{< children >}}` listing) is a site construct and lives in the blog repo, not here.
+Published developer/user documentation — the source of truth, need to be in sync with actual code. Flat tree of `.md` files with Hugo front matter, one per topic, synced to the external blog dir with `make docs-sync DOCS_DEST=<path>`. Update the relevant `docs/*.md` in the same change as the feature it documents.
 
 ### `configs/`
 
