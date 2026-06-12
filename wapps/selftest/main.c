@@ -42,6 +42,12 @@
 #define LOOPER_CTL   "/dev/wanted/wapps/" LOOPER "/ctl"
 #define LOOPER_STATE "/dev/wanted/wapps/" LOOPER "/state"
 
+/* All-null console: every stdio slot discards/EOFs. A wapp still launches and
+ * runs — it is just silent. No interior whitespace (see LAUNCH_CFG). */
+#define NULL_CONSOLE_CFG \
+    "{\"console\":{\"in\":{\"name\":\"null\"}," \
+    "\"out\":{\"name\":\"null\"},\"err\":{\"name\":\"null\"}}}"
+
 /* Read up to cap-1 bytes of a path into buf (NUL-terminated). <0 on open
  * error, else byte count. */
 static int read_path(const char *path, char *buf, int cap) {
@@ -102,6 +108,17 @@ static void positive_checks(void) {
     tap_ok(read_path("/proc/wapps", buf, sizeof(buf)) > 0 &&
                strstr(buf, "supervisor") != NULL,
            "proc: /proc/wapps reports the supervisor");
+
+    /* /proc/wanted reports engine identity and the compile-time ceilings as
+     * key:\tvalue lines. It is unprivileged. The platform string and version
+     * vary by target/build, so assert the stable fields: the identity keys are
+     * present and max_wapps carries the actual MAX_WAPPS ceiling. */
+    tap_ok(dir_has("/proc", "wanted"), "VFS: /proc exposes wanted");
+    tap_ok(read_path("/proc/wanted", buf, sizeof(buf)) > 0 &&
+               strstr(buf, "platform:") != NULL &&
+               strstr(buf, "version:") != NULL &&
+               strstr(buf, "max_wapps:\t3") != NULL,
+           "proc: /proc/wanted reports engine identity and limits");
 
     /* Inter-wapp pipe round-trip within our own namespace. */
     write_path("/dev/pipe/selftest", "ping");
@@ -248,6 +265,31 @@ static void lifecycle_checks(void) {
     int stopped = write_path(LOOPER_CTL, "stop") >= 0 &&
                   wait_state(LOOPER_STATE, 0);
     tap_ok(stopped, "lifecycle: control-plane stop terminates the looper");
+}
+
+/* Console backing: a wapp's stdio slots default when the launch config omits
+ * them (stdin->null, stdout/stderr->log), and an explicit all-null console is
+ * also valid. Either way the wapp must launch — a wapp with unwired stdio fds
+ * fails to start. Reuses the looper (a clean long-runner), stopped after each. */
+static void console_checks(void) {
+    /* No config at all: the unset slots resolve to their defaults. */
+    int dflt = write_path(WANTED_CTL, "start " LOOPER) >= 0 &&
+               wait_state(LOOPER_STATE, 1);
+    tap_ok(dflt, "console: a wapp with no console config launches on defaults");
+    if (dflt) {
+        write_path(LOOPER_CTL, "stop");
+        wait_state(LOOPER_STATE, 0);
+    }
+
+    /* Explicit all-null console: silent, but still runs. */
+    int nul = write_path(LOOPER_CFG, NULL_CONSOLE_CFG) >= 0 &&
+              write_path(WANTED_CTL, "start " LOOPER) >= 0 &&
+              wait_state(LOOPER_STATE, 1);
+    tap_ok(nul, "console: an all-null console launches a (silent) wapp");
+    if (nul) {
+        write_path(LOOPER_CTL, "stop");
+        wait_state(LOOPER_STATE, 0);
+    }
 }
 
 /* Stop verb on a wapp's control node. Returns the write result (<0 on error,
@@ -461,6 +503,7 @@ int main(void) {
         { "robustness_checks",  robustness_checks  },
         { "containment_checks", containment_checks },
         { "cpuhog_check",       cpuhog_check       },
+        { "console_checks",     console_checks     },
         { "lifecycle_checks",   lifecycle_checks   },
         { "blocker_check",      blocker_check      },
         { "ioblock_check",      ioblock_check      },

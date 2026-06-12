@@ -9,8 +9,8 @@ wasm/supervisor/selftest/app.wasm
 wapps/*/*.wasm
 wapps/*/*.wasm.h
 wapps/*/*.o
-# Packaged registry images (REGISTRY_ROOT); built/staged by smoke-multiwapp.
-wapps/*.wapp
+# Registry root (REGISTRY_ROOT): packaged .wapp images staged at runtime/test.
+/registry/
 *.wat
 
 # NuttX sim scratch (staged hostfs root; test/nuttx-sim.sh). The nuttx +

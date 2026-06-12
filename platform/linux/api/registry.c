@@ -106,7 +106,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
 int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
     static FILE *f;
     static char tempName[] = REGISTRY_ROOT "/_temp";
-    static char targetName[NAME_MAX];
+    static char targetName[PATH_MAX];
 
     int written = 0;
     int ret = 0;
@@ -148,10 +148,10 @@ int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
             return ret;
         }
 
-        snprintf(targetName, NAME_MAX, "%s/%s%c%d.%d.%d-%d%s", REGISTRY_ROOT,
-                 w.name, REGISTRY_VERSION_SEPARATOR, w.version.major,
-                 w.version.minor, w.version.patch, w.version.package,
-                 REGISTRY_EXT);
+        snprintf(targetName, sizeof(targetName), "%s/%s%c%d.%d.%d-%d%s",
+                 REGISTRY_ROOT, w.name, REGISTRY_VERSION_SEPARATOR,
+                 w.version.major, w.version.minor, w.version.patch,
+                 w.version.package, REGISTRY_EXT);
         if (rename(tempName, targetName) < 0) {
             remove(tempName);
             written = -errno;
@@ -178,7 +178,7 @@ int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
 }
 
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
-    char targetName[NAME_MAX];
+    char targetName[PATH_MAX];
     reg_entry_t e;
 
     if (!entry->version[0]) {
@@ -196,11 +196,11 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
                 break;
             }
         }
-        snprintf(targetName, NAME_MAX, "%s/%s%c%s%s", REGISTRY_ROOT,
+        snprintf(targetName, sizeof(targetName), "%s/%s%c%s%s", REGISTRY_ROOT,
                  entry->name, REGISTRY_VERSION_SEPARATOR, entry->version,
                  REGISTRY_EXT);
     } else {
-        snprintf(targetName, NAME_MAX, "%s/%s%c%s%s", REGISTRY_ROOT,
+        snprintf(targetName, sizeof(targetName), "%s/%s%c%s%s", REGISTRY_ROOT,
                  entry->name, REGISTRY_VERSION_SEPARATOR, entry->version,
                  REGISTRY_EXT);
     }
@@ -209,10 +209,11 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
 }
 
 int PlatformRegistryRemove(const reg_entry_t *entry) {
-    char targetName[NAME_MAX];
+    char targetName[PATH_MAX];
 
-    snprintf(targetName, NAME_MAX, "%s/%s%c%s%s", REGISTRY_ROOT, entry->name,
-             REGISTRY_VERSION_SEPARATOR, entry->version, REGISTRY_EXT);
+    snprintf(targetName, sizeof(targetName), "%s/%s%c%s%s", REGISTRY_ROOT,
+             entry->name, REGISTRY_VERSION_SEPARATOR, entry->version,
+             REGISTRY_EXT);
     if (remove(targetName) != 0) {
         return -errno;
     }

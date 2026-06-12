@@ -16,3 +16,5 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
         *heap_total = (size_t)mi.arena;
     }
 }
+
+const char *PlatformName(void) { return "nuttx"; }

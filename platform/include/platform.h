@@ -49,6 +49,11 @@ void PlatformWappLoop();
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total);
 
+/* Short identifier for the target the engine was built against ("linux",
+ * "nuttx", "dummy"). Static storage; the caller must not free it. Exposed at
+ * /proc/wanted so a wapp can read which platform hosts it. */
+const char *PlatformName(void);
+
 /* System control. A privileged wapp triggers these through the wanted host
  * module; PlatformWappLoop normally respawns a vanished supervisor forever, so
  * they are the only paths that end the engine. The request just sets a flag —
