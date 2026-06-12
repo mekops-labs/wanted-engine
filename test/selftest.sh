@@ -16,12 +16,14 @@ cd "$ROOT"
 
 WANTED=${1:-./build/cmd/wanted-cli}
 CONFIG=${2:-./test/selftest-config.json}
-REGISTRY_ROOT=${REGISTRY_ROOT:-./wapps}
+REGISTRY_ROOT=${REGISTRY_ROOT:-./registry}
 
 if [ ! -x "$WANTED" ]; then
     echo "FAIL: wanted-cli not found at $WANTED (run 'make build')"
     exit 1
 fi
+
+mkdir -p "$REGISTRY_ROOT"
 
 # Launched test wapps, packaged into the registry as <name>:<version>.wapp.
 TEST_WAPPS="trapper:0.0.1-1 looper:0.0.1-1 stackbomb:0.0.1-1 membomb:0.0.1-1 cpuhog:0.0.1-1 blocker:0.0.1-1 pblock:0.0.1-1 escaper:0.0.1-1 fdhog:0.0.1-1 crasher:0.0.1-1 preader:0.0.1-1 pwriter:0.0.1-1"

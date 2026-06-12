@@ -24,6 +24,8 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
     if (heap_total) *heap_total = 0;
 }
 
+const char *PlatformName(void) { return "dummy"; }
+
 /* The dummy platform is single-threaded (unit tests), so the mutex is a no-op.
  * A non-NULL sentinel is returned so callers can still distinguish allocation
  * failure (NULL) from a successfully created lock. */

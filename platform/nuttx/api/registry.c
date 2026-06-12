@@ -62,7 +62,8 @@ static void ParseEntry(reg_entry_t *out, const char *dname, size_t size) {
 /* Lexicographic comparison: safe (both fields are always null-terminated by
  * ParseEntry), but version ordering is wrong for multi-digit fields —
  * "1.10.0-1" sorts before "1.9.0-1" because '1' < '9'. Acceptable while all
- * version fields remain single-digit; a numeric comparator is needed otherwise. */
+ * version fields remain single-digit; a numeric comparator is needed otherwise.
+ */
 static int CompareEntries(const void *a, const void *b) {
     const reg_entry_t *ea = (const reg_entry_t *)a;
     const reg_entry_t *eb = (const reg_entry_t *)b;
@@ -76,7 +77,7 @@ static int CompareEntries(const void *a, const void *b) {
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     DIR *dir;
     struct dirent *de;
-    char path[NAME_MAX];
+    char path[PATH_MAX];
     struct stat s;
     size_t filled = 0;
     int count = 0;
@@ -97,7 +98,8 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
             continue;
         }
 
-        /* NuttX dirent d_type is unreliable across filesystems; stat instead. */
+        /* NuttX dirent d_type is unreliable across filesystems; stat instead.
+         */
         snprintf(path, sizeof(path), "%s/%s", REGISTRY_ROOT, de->d_name);
         if (stat(path, &s) < 0 || !S_ISREG(s.st_mode)) {
             continue;
@@ -122,7 +124,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
 int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
     static FILE *f;
     static char tempName[] = REGISTRY_ROOT "/_temp";
-    static char targetName[NAME_MAX];
+    static char targetName[PATH_MAX];
 
     int written = 0;
     int ret = 0;
@@ -164,10 +166,10 @@ int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
             return ret;
         }
 
-        snprintf(targetName, NAME_MAX, "%s/%s%c%d.%d.%d-%d%s", REGISTRY_ROOT,
-                 w.name, REGISTRY_VERSION_SEPARATOR, w.version.major,
-                 w.version.minor, w.version.patch, w.version.package,
-                 REGISTRY_EXT);
+        snprintf(targetName, sizeof(targetName), "%s/%s%c%d.%d.%d-%d%s",
+                 REGISTRY_ROOT, w.name, REGISTRY_VERSION_SEPARATOR,
+                 w.version.major, w.version.minor, w.version.patch,
+                 w.version.package, REGISTRY_EXT);
         if (rename(tempName, targetName) < 0) {
             remove(tempName);
             written = -errno;
@@ -194,7 +196,7 @@ int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
 }
 
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
-    char targetName[NAME_MAX];
+    char targetName[PATH_MAX];
 
     if (!entry->version[0]) {
         reg_entry_t list[REGISTRY_MAX_ENTRIES];
@@ -216,11 +218,11 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
         if (match == NULL)
             return -ENOENT;
 
-        snprintf(targetName, NAME_MAX, "%s/%s%c%s%s", REGISTRY_ROOT,
+        snprintf(targetName, sizeof(targetName), "%s/%s%c%s%s", REGISTRY_ROOT,
                  match->name, REGISTRY_VERSION_SEPARATOR, match->version,
                  REGISTRY_EXT);
     } else {
-        snprintf(targetName, NAME_MAX, "%s/%s%c%s%s", REGISTRY_ROOT,
+        snprintf(targetName, sizeof(targetName), "%s/%s%c%s%s", REGISTRY_ROOT,
                  entry->name, REGISTRY_VERSION_SEPARATOR, entry->version,
                  REGISTRY_EXT);
     }
@@ -229,10 +231,11 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
 }
 
 int PlatformRegistryRemove(const reg_entry_t *entry) {
-    char targetName[NAME_MAX];
+    char targetName[PATH_MAX];
 
-    snprintf(targetName, NAME_MAX, "%s/%s%c%s%s", REGISTRY_ROOT, entry->name,
-             REGISTRY_VERSION_SEPARATOR, entry->version, REGISTRY_EXT);
+    snprintf(targetName, sizeof(targetName), "%s/%s%c%s%s", REGISTRY_ROOT,
+             entry->name, REGISTRY_VERSION_SEPARATOR, entry->version,
+             REGISTRY_EXT);
     if (remove(targetName) != 0) {
         return -errno;
     }

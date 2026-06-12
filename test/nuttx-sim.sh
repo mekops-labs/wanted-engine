@@ -74,16 +74,16 @@ build() {
 }
 
 # Package a test wapp (wapps/<name>) into the sim's hostfs registry, which the
-# engine resolves as ./wapps relative to /data (wanted_sim_main chdirs there).
+# engine resolves as ./registry relative to /data (wanted_sim_main chdirs there).
 stage_test_wapp() {
     local name=${1%%:*} ver=${1#*:} s
     make -C "$ENGINE_DIR/wapps/$name" >/dev/null 2>&1
-    mkdir -p "$SIMROOT/wapps"
+    mkdir -p "$SIMROOT/registry"
     s=$(mktemp -d)
     cp "$ENGINE_DIR/wapps/$name/$name.wasm" "$s/app.wasm"
     cp "$ENGINE_DIR/wapps/$name/manifest.json" "$s/manifest.json"
     tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
-        -C "$s" -cf "$SIMROOT/wapps/$name:$ver.wapp" app.wasm manifest.json
+        -C "$s" -cf "$SIMROOT/registry/$name:$ver.wapp" app.wasm manifest.json
     rm -rf "$s"
 }
 
@@ -107,7 +107,7 @@ selftest() {
     stage_test_wapp pwriter:0.0.1-1
     # hand-crafted malformed images for the loader-robustness check (reuse the
     # valid wasm that stage_test_wapp just built)
-    "$ENGINE_DIR/test/stage-malformed.sh" "$SIMROOT/wapps" \
+    "$ENGINE_DIR/test/stage-malformed.sh" "$SIMROOT/registry" \
         "$ENGINE_DIR/wapps/trapper/trapper.wasm"
 
     # The engine keeps running after the test supervisor finishes (a cleanly

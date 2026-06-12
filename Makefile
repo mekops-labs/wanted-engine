@@ -26,7 +26,8 @@ RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c
 .DEFAULT_GOAL := help
 
 .PHONY: all supervisor wapps build wsh test smoke-engine shell clean help \
-        nuttx-deps nuttx-build nuttx-selftest nuttx-shell wsh-shell selftest
+        nuttx-deps nuttx-build nuttx-selftest nuttx-shell wsh-shell selftest \
+        docs-sync
 
 all: build test ## build the engine and run the test suite
 
@@ -50,11 +51,11 @@ smoke-engine: ## boot the production supervisor and assert a clean instantiate
 
 selftest: build ## run the in-WASM selftest suite + system-control checks on Linux
 	$(RUN) 'cd /src && ./test/selftest.sh ./$(BUILD_DIR)/cmd/wanted-cli ./test/selftest-config.json \
-	    && ./test/syscontrol.sh ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_wsh.json'
+	    && ./test/syscontrol.sh ./$(BUILD_DIR)/cmd/wanted-cli ./configs/example_config_wsh.json'
 
 wsh-shell: wsh ## build wsh and open the interactive wsh prompt on Linux (wanted-cli)
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c \
-	    'cd /src && ./$(BUILD_DIR)/cmd/wanted-cli ./docs/example_config_wsh.json'
+	    'cd /src && ./$(BUILD_DIR)/cmd/wanted-cli ./configs/example_config_wsh.json'
 
 # The recipe lives in test/nuttx-sim.sh so the Makefile (which wraps it in the
 # build container) and GitLab CI (already inside it) share one source of truth.
@@ -76,6 +77,13 @@ shell: ## open an interactive shell in the build container
 
 clean: ## remove the build directory
 	rm -rf $(CURDIR)/$(BUILD_DIR)
+
+# docs-sync runs on the host, not in the build container: it only copies Markdown
+# (no toolchain needed) to the destination directory.
+# Pass the target content dir as DOCS_DEST.
+docs-sync: ## sync docs/*.md to the MekOps Hugo blog (pass DOCS_DEST=<blog content dir>)
+	@test -n "$(DOCS_DEST)" || { echo "DOCS_DEST is required, e.g. make docs-sync DOCS_DEST=<path to blog>/content/projects/wanted"; exit 1; }
+	rsync -av --include='*.md' --exclude='*' docs/ $(DOCS_DEST)/
 
 help: ## list the available targets
 	@grep -hE '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) \

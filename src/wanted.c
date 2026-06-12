@@ -32,6 +32,21 @@ struct wamrData_t {
     uint8_t           *wasm_bytes; /* writable copy passed to wasm_runtime_load */
 };
 
+/* Default console backing for a stdio slot the launch config leaves unset. All
+ * three of a wapp's standard fds must be wired or it fails to launch, so an
+ * empty slot resolves to a default rather than to nothing: stdin to `null` (no
+ * input source by default), stdout/stderr to `log` (captured to the per-wapp
+ * ring buffer and readable at /dev/wanted/wapps/<name>/log, so a wapp's output
+ * is never silently lost). A slot set explicitly overrides its default. */
+#define DEFAULT_CONSOLE_IN  "null"
+#define DEFAULT_CONSOLE_OUT "log"
+#define DEFAULT_CONSOLE_ERR "log"
+
+/* A console slot with no driver name falls back to its default backing. */
+static const char *ResolveConsole(const char *name, const char *fallback) {
+    return (name == NULL || name[0] == '\0') ? fallback : name;
+}
+
 /* WAMR runtime init is global and one-shot. Called lazily from both
  * WantedStart and WantedWappRun so direct callers (tests) work too. */
 static int EnsureWamrInit(void) {
@@ -97,6 +112,30 @@ static int ProcReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
     int w = snprintf((char *)buf, bufLen,
                      "stack_size:\t%d B\nheap_used:\t%zu B\nheap_total:\t%zu B\n",
                      WASM_STACK_SIZE, heap_used, heap_total);
+    if (w < 0)
+        return -EIO;
+    return w < (int)bufLen ? w : (int)bufLen;
+}
+
+#ifndef WANTED_VERSION
+#define WANTED_VERSION "unknown"
+#endif
+
+/* /proc/wanted — engine identity and compile-time resource ceilings. One
+ * key:\tvalue line per field: human-readable, trivially split on the tab. */
+static int ProcReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
+    (void)c;
+    int w = snprintf((char *)buf, bufLen,
+                     "platform:\t%s\n"
+                     "version:\t%s\n"
+                     "max_wapps:\t%d\n"
+                     "max_wapp_name:\t%d B\n"
+                     "max_path:\t%d B\n"
+                     "wasm_stack:\t%d B\n"
+                     "wasm_heap:\t%d B\n",
+                     PlatformName(), WANTED_VERSION, MAX_WAPPS,
+                     WAPP_MAX_NAME_LEN, MAX_PATH_LEN, WASM_STACK_SIZE,
+                     WASM_HEAP_SIZE);
     if (w < 0)
         return -EIO;
     return w < (int)bufLen ? w : (int)bufLen;
@@ -366,6 +405,9 @@ int WantedWappRun(wapp_data_t *ctx) {
      * to trust the wall clock. */
     ProcFs_Register(ctx->vfs, "clock_quality",
                     WantedProcReadClockQuality, false);
+    /* wanted exposes engine identity and resource ceilings; unprivileged so any
+     * wapp can introspect the host it runs on. */
+    ProcFs_Register(ctx->vfs, "wanted", ProcReadWanted, false);
 
     wasiCtx->argc   = 0;
     wasiCtx->argv   = NULL;
@@ -390,13 +432,16 @@ int WantedWappRun(wapp_data_t *ctx) {
         }
     }
 
-    /* install console */
-    ret = WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[0].name,
-                              "<stdin>", wapp->cfg.console[0].options);
-    ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[1].name,
-                               "<stdout>", wapp->cfg.console[1].options);
-    ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.console[2].name,
-                               "<stderr>", wapp->cfg.console[2].options);
+    /* install console (an unset slot falls back to its default backing) */
+    ret = WantedInstallDriver(
+        ctx->vfs, wapp, ResolveConsole(wapp->cfg.console[0].name, DEFAULT_CONSOLE_IN),
+        "<stdin>", wapp->cfg.console[0].options);
+    ret += WantedInstallDriver(
+        ctx->vfs, wapp, ResolveConsole(wapp->cfg.console[1].name, DEFAULT_CONSOLE_OUT),
+        "<stdout>", wapp->cfg.console[1].options);
+    ret += WantedInstallDriver(
+        ctx->vfs, wapp, ResolveConsole(wapp->cfg.console[2].name, DEFAULT_CONSOLE_ERR),
+        "<stderr>", wapp->cfg.console[2].options);
 
     /* fs drivers */
     for (int i = 0; i < wapp->cfg.driversCnt; i++) {

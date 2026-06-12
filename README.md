@@ -1,16 +1,28 @@
-# Web Assembly Nanocontainer Technology for Embedded Devices
+# WebAssembly Nanocontainer Technology for Embedded Devices
 
 [![pipeline status](https://gitlab.com/wanted-project/wanted-engine/badges/main/pipeline.svg)](https://gitlab.com/wanted-project/wanted-engine/-/commits/main)
 [![coverage report](https://gitlab.com/wanted-project/wanted-engine/badges/main/coverage.svg)](https://gitlab.com/wanted-project/wanted-engine/-/commits/main)
 
 > [CHANGELOG](CHANGELOG.md)
 
-- **Interpreter:** Uses [WAMR 2.4.4](https://github.com/bytecodealliance/wasm-micro-runtime) (WebAssembly Micro Runtime) in classic interpreted mode (`WAMR_BUILD_INTERP=1`, `WAMR_BUILD_AOT=0`).
+- **Interpreter:** Uses [WAMR 2.4.4](https://github.com/bytecodealliance/wasm-micro-runtime) (WebAssembly Micro Runtime) in fast interpreted mode (`WAMR_BUILD_INTERP=1`, `WAMR_BUILD_FAST_INTERP=1`, `WAMR_BUILD_AOT=0`).
 - **Concurrency:** Runs multiple [wapps](#wapp-overview) simultaneously as isolated threads.
 - **Isolation:** Strict memory isolation via WebAssembly; all external interactions are mediated exclusively through the VFS.
 - **Mount-table VFS Router:** Path normalization (`..`, `.`, double-slash), typed FD table, and a mount table routing `/dev/`, `/net/`, `/proc/`, and `/` independently.
 - **Layered TarFS:** OCI-compatible filesystem supporting multiple TAR layers with shadowing and whiteout (`.wh.`) semantics.
 - **Efficient Indexing:** Zero-copy filesystem indexing in memory with O(log N) lookup performance and boot-time pre-fetching.
+
+## Documentation
+
+Full developer and user documentation lives in [`docs/`](docs/):
+
+- [Quick Start](docs/quickstart.md) — build, package, and launch a wapp in about ten minutes.
+- [Architecture](docs/architecture.md) — the VFS router, wapp model, supervisor, platform seam, and WAMR runtime.
+- [VFS Reference](docs/vfs-reference.md) — every `/dev`, `/net`, `/proc`, and TarFS path and its semantics.
+- [Control Plane Reference](docs/control-plane-reference.md) — the `/dev/wanted` contract: nodes, verbs, state machine.
+- [Configuration Reference](docs/configuration-reference.md) — the engine JSON config, field by field.
+- [Platform Guide](docs/platform-guide.md) — Linux, the NuttX simulator, and the porting checklist.
+- [Testing Guide](docs/testing-guide.md) — the unit, in-WASM selftest, and smoke tiers.
 
 ## General architecture
 
@@ -18,7 +30,7 @@ WANTED implements a Cloud-Native VFS Router. Path resolution is split into four 
 
 1. **Device Namespace (`/dev/`):** Routes to registered sub-drivers — `null`, `pipe/<name>`, `stdin`, `stdout`, `stderr`, `platform`, `wanted`, and any wapp-configured drivers.
 2. **Network Namespace (`/net/`):** Routes to the socket driver for TCP/UDP operations.
-3. **Process Namespace (`/proc/`):** Read-only flat namespace exposing system state (`wapps`, `memory`). Privileged entries are hidden when `system.privileged` is false.
+3. **Process Namespace (`/proc/`):** Read-only flat namespace exposing system state (`wapps`, `memory`, `clock_quality`, `wanted`). Privileged entries (`wapps`, `memory`) are hidden when `system.privileged` is false; `wanted` exposes engine identity and resource ceilings unprivileged.
 4. **Application Space (Root `/`):** Handled by **TarFS**, which merges up to 4 OCI layers into a single unified view.
 
 ```text
@@ -89,7 +101,7 @@ cmake -DWANTED_SUPERVISOR_IMAGE_PATH=../wasm/supervisor/wsh/supervisor.tar ..
 
 ```bash
 ./build/cmd/wanted-cli                           # run with built-in default config
-./build/cmd/wanted-cli docs/example_config.json  # run with explicit config file
+./build/cmd/wanted-cli configs/example_config.json  # run with explicit config file
 ```
 
 The config file is JSON. Relevant top-level fields:
@@ -98,7 +110,7 @@ The config file is JSON. Relevant top-level fields:
 - **`supervisor.imagePath`** — path to the supervisor TAR image; overrides the compiled-in default when set.
 - **`supervisor.params`** — driver and console settings; if absent, compiled-in defaults apply (TCP socket at `localhost:8888`, TLS socket at `localhost:8889`, 9P at `localhost:5640`).
 
-See [`docs/example_config.json`](docs/example_config.json) for a fully annotated example.
+See [`configs/example_config.json`](configs/example_config.json) for a reference example.
 
 ## Build and Verification
 
