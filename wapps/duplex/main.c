@@ -6,9 +6,6 @@
  *   ROLE=writer:           write PAYLOAD to /dev/pipe/duplex, then exit.
  *   ROLE=reader (default): block-read /dev/pipe/duplex and echo what arrived to
  *                          the log console for the supervisor to verify.
- *
- * Consolidates the former preader/pwriter pair now that the role can come from
- * the launch config rather than a separate compiled image per side.
  */
 #include <fcntl.h>
 #include <stdlib.h>
