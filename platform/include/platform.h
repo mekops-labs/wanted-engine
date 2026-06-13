@@ -47,6 +47,11 @@ int PlatformWappLoad(const char *name, wapp_t *wapp);
 int PlatformWappUnload(const wapp_t *wapp);
 int PlatformWappStart(wapp_t *wapp);
 int PlatformWappStop(const char *name);
+/* Release a wapp's platform slot by name: free its image + struct and drop the
+ * record so the name stops being reported by PlatformWappGetState. Only a
+ * terminal slot (EXITED/FAILURE) is releasable — a running or starting wapp
+ * returns -EBUSY (stop it first); an unknown name returns -ENOENT. */
+int PlatformWappRelease(const char *name);
 void PlatformWappLoop();
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total);

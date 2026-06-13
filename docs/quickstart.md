@@ -42,7 +42,7 @@ rm -rf "$stage"
 
 The image name encodes the manifest's identity: `hello`, version `[0, 0, 1]`, package `1` → `hello:0.0.1-1.wapp`. The wasm binary is renamed to `app.wasm` inside the TAR — that is the fixed entrypoint name the loader expects.
 
-`app.wasm` and `manifest.json` are the bare minimum. A wapp image can carry any additional files — config, certificates, static assets, data — and they become visible to the wapp as a read-only filesystem at `/`, served by TarFS. The `hello` sample, for instance, reads an optional `/etc/role` from its own image. Add such files to the TAR alongside `app.wasm` and they appear at the matching path inside the wapp.
+`app.wasm` and `manifest.json` are the bare minimum. A wapp image can carry any additional files — config, certificates, static assets, data — and they become visible to the wapp as a read-only filesystem at `/`, served by TarFS. Add such files to the TAR alongside `app.wasm` and they appear at the matching path inside the wapp. (Small runtime knobs, like the `hello` sample's `ROLE`, are better passed as launch-config env vars or args than baked into the image — see [Control Plane Reference](control-plane-reference.md).)
 
 ### The manifest
 
@@ -102,7 +102,7 @@ hello:
   id       1
 ```
 
-The `hello` sample (launched with no role file) writes an alive marker, lives for two seconds, then exits. A moment later its state is `exited`. By default a wapp's stdout and stderr are captured to a per-wapp **log console**, readable at its `log` node:
+The `hello` sample (launched with no `ROLE` set) writes an alive marker, lives for two seconds, then exits. A moment later its state is `exited`. By default a wapp's stdout and stderr are captured to a per-wapp **log console**, readable at its `log` node:
 
 ```
 > status hello

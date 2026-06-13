@@ -49,6 +49,39 @@ static const char *ResolveConsole(const char *name, const char *fallback) {
     return (name == NULL || name[0] == '\0') ? fallback : name;
 }
 
+/* Build the WASI argv/envp pointer arrays for a wapp. argv[0] is the wapp name;
+ * argv[1..] and envp[] point into the wapp's persistent launch-config storage,
+ * which outlives the wasi context, so no string copies are made. The pointer
+ * arrays themselves are heap allocated here and released by FreeWasiContext.
+ * Returns 0 on success or a negative errno. */
+static int BuildWasiArgs(wasi_ctx_t *wasiCtx, const wapp_t *wapp) {
+    uint32_t argc = 1 + (uint32_t)wapp->cfg.argsCnt;
+    const char **argv = WantedMalloc(argc * sizeof(char *));
+    if (!argv)
+        return -ENOMEM;
+    argv[0] = wapp->name;
+    for (size_t i = 0; i < wapp->cfg.argsCnt; i++)
+        argv[1 + i] = wapp->cfg.args[i];
+
+    const char **envp = NULL;
+    uint32_t envc = (uint32_t)wapp->cfg.envsCnt;
+    if (envc > 0) {
+        envp = WantedMalloc(envc * sizeof(char *));
+        if (!envp) {
+            WantedFree(argv);
+            return -ENOMEM;
+        }
+        for (size_t i = 0; i < wapp->cfg.envsCnt; i++)
+            envp[i] = wapp->cfg.envs[i];
+    }
+
+    wasiCtx->argc = argc;
+    wasiCtx->argv = argv;
+    wasiCtx->envc = envc;
+    wasiCtx->envp = envp;
+    return 0;
+}
+
 /* WAMR runtime init is global and one-shot. Called lazily from both
  * WantedStart and WantedWappRun so direct callers (tests) work too. */
 static int EnsureWamrInit(void) {
@@ -411,9 +444,15 @@ int WantedWappRun(wapp_data_t *ctx) {
      * wapp can introspect the host it runs on. */
     ProcFs_Register(ctx->vfs, "wanted", ProcReadWanted, false);
 
-    wasiCtx->argc   = 0;
-    wasiCtx->argv   = NULL;
     wasiCtx->vfsCtx = ctx->vfs;
+
+    /* Pass the launch config's args/envs through as WASI argv/envp. argv[0] is
+     * the wapp name; user args occupy argv[1..]. */
+    if (BuildWasiArgs(wasiCtx, wapp) < 0) {
+        DEBUG_TRACE("BuildWasiArgs: can't allocate argv/envp");
+        ret = -1;
+        goto _freeVfs;
+    }
     wasm_runtime_set_user_data(ctx->wamr->exec_env, wasiCtx);
 
     /* Persistent-state preopens: any wapp can declare host directories via
@@ -467,14 +506,33 @@ int WantedWappRun(wapp_data_t *ctx) {
     }
 
     DEBUG_TRACE("starting wapp: %d", ctx->id);
-    uint32_t argv[1] = {(uint32_t)ctx->id};
-    if (!wasm_runtime_call_wasm(ctx->wamr->exec_env, f, 1, argv)) {
+    uint32_t callArgv[1] = {(uint32_t)ctx->id};
+
+    /* exit_code is authoritative only on a clean exit; default to the sentinel
+     * so a trap (which never reaches proc_exit) stays distinguishable. */
+    ctx->exit_code = WAPP_EXIT_CODE_NONE;
+
+    if (wasm_runtime_call_wasm(ctx->wamr->exec_env, f, 1, callArgv)) {
+        /* Returned without trapping — a clean exit. A WASI wapp leaves through
+         * proc_exit; a bare wapp just returns. The recorded code is
+         * authoritative (0 if proc_exit was never called). */
+        ctx->exit_code = wasiCtx->exit_code;
+    } else {
         const char *exc = wasm_runtime_get_exception(ctx->wamr->instance);
-        if (exc && strcmp(exc, "proc_exit") == 0) {
+        /* WAMR prefixes the stored string ("Exception: proc_exit"), so match a
+         * substring rather than the bare token. */
+        if (exc && strstr(exc, "proc_exit") != NULL) {
+            /* Clean exit via proc_exit (explicit exit() or return from _start);
+             * proc_exit recorded the code on the wasi context. */
             DEBUG_TRACE("normal exit via proc_exit");
+            ctx->exit_code = wasiCtx->exit_code;
         } else {
+            /* Genuine trap: no WASI exit code exists. Leave the sentinel and
+             * report failure so the slot transitions RUNNING -> FAILURE. */
             DEBUG_TRACE("wasm_runtime_call_wasm[%d]: %s", ctx->id,
                         exc ? exc : "(no exception)");
+            ret = -1;
+            goto _freeVfs;
         }
     }
 
