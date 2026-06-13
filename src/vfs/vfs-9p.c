@@ -173,30 +173,43 @@ __attribute__((format(printf, 1, 2))) static void ctxerror(const char *fmt,
 static int dial(char *s) {
     struct addrinfo *r, *a,
         hint = {.ai_flags = AI_ADDRCONFIG, .ai_family = AF_UNSPEC, 0};
-    char host[64], *port;
+    char host[64];
+    const char *sep, *hostStart, *colon;
+    size_t schemeLen, hostLen;
     int e, f;
 
-    if (strncmp(s, "udp!", 4) == 0) {
-        hint.ai_socktype = SOCK_DGRAM;
-        hint.ai_protocol = IPPROTO_UDP;
-    } else if (strncmp(s, "tcp!", 4) == 0) {
+    /* Address is a URL "<scheme>://<host>:<port>", matching the socket driver:
+     * tcp (stream) or udp (datagram). */
+    if ((sep = strstr(s, "://")) == NULL) {
+        DEBUG_TRACE("invalid 9p address (no scheme): %s", s);
+        return -1;
+    }
+    schemeLen = (size_t)(sep - s);
+    if (schemeLen == 3 && strncmp(s, "tcp", 3) == 0) {
         hint.ai_socktype = SOCK_STREAM;
         hint.ai_protocol = IPPROTO_TCP;
+    } else if (schemeLen == 3 && strncmp(s, "udp", 3) == 0) {
+        hint.ai_socktype = SOCK_DGRAM;
+        hint.ai_protocol = IPPROTO_UDP;
     } else {
-        DEBUG_TRACE("invalid dial string: %s", s);
+        DEBUG_TRACE("invalid 9p address (scheme): %s", s);
         return -1;
     }
-    if ((port = strchr(s + 4, '!')) == NULL) {
-        DEBUG_TRACE("invalid dial string: %s", s);
+
+    hostStart = sep + 3;
+    if ((colon = strrchr(hostStart, ':')) == NULL || colon == hostStart) {
+        DEBUG_TRACE("invalid 9p address (host/port): %s", s);
         return -1;
     }
-    if (snprintf(host, sizeof(host), "%.*s", (int)(port - s - 4), s + 4) >=
-        (int)sizeof(host)) {
+    hostLen = (size_t)(colon - hostStart);
+    if (hostLen >= sizeof(host)) {
         DEBUG_TRACE("host name too large: %s", s);
         return -1;
     }
-    port++;
-    if ((e = getaddrinfo(host, port, &hint, &r)) != 0) {
+    memcpy(host, hostStart, hostLen);
+    host[hostLen] = '\0';
+
+    if ((e = getaddrinfo(host, colon + 1, &hint, &r)) != 0) {
         // DEBUG_TRACE("%s: %s", gai_strerror(e), s);
         return -1;
     }

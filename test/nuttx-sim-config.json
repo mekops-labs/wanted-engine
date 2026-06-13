@@ -11,10 +11,13 @@
                 "err": {"name": "platform"}
             },
             "drivers": [
-                {
-                    "name": "wanted",
-                    "path": "/dev/wanted"
-                }
+                {"name": "wanted"}
+            ],
+            "mounts": [
+                {"name": "config", "path": "/etc/config", "options": "selftest-cfgmap-v1"}
+            ],
+            "sockets": [
+                {"name": "uplink", "address": "tcp://localhost:8899"}
             ]
         }
     }

@@ -140,7 +140,11 @@ selftest() {
     sleep 1                              # let tail flush the final lines
     kill "$tpid" 2>/dev/null || true
     wait "$tpid" 2>/dev/null || true
-    out=$(cat "$log"); rm -f "$log"
+    # Judge only the first complete run: the engine respawns a cleanly-exited
+    # supervisor, so the log can hold a second, partial run that was killed
+    # mid-flight once the first plan line appeared. Truncate at the first plan
+    # line so a half-run check (`not ok` from a killed respawn) is not counted.
+    out=$(sed '/^1\.\./q' "$log"); rm -f "$log"
     if ! printf '%s\n' "$out" | grep -qE '^1\.\.[0-9]+'; then
         echo "FAIL: no TAP plan (selftest supervisor did not finish on the sim)"
         exit 1

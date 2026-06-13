@@ -13,11 +13,15 @@ STRINGIFY({
             "err" : {"name" : "platform", "options" : ""}
         },
         "drivers" : [
-            {"name" : "rom", "path" : "/rom", "options" : ""},
-            {"name" : "platform", "path" : "/mnt", "options" : "./"},
-            {"name" : "rom", "path" : "/rom", "options" : ""},
-            {"name" : "socket", "path" : "/s", "options" : "t 127.0.0.1 8888"},
-            {"name" : "wanted", "path" : "/w", "options" : ""}
+            {"name" : "wanted"},
+            {"name" : "gpio"}
+        ],
+        "mounts" : [
+            {"name" : "config", "path" : "/etc/config", "options" : ""},
+            {"name" : "platform", "path" : "/mnt"}
+        ],
+        "sockets" : [
+            {"name" : "uplink", "address" : "tcp://127.0.0.1:8888"}
         ],
         "args" : ["--verbose", "--port"],
         "envs" : ["TZ=UTC", "LANG=C"]

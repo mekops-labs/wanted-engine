@@ -4,6 +4,15 @@ Changelog
 Unreleased
 ----------
 
+### Launch config — drivers / mounts / sockets split
+
+- The flat `drivers[]` array (every entry a `name` **and** a mount `path`) is replaced by three purpose-specific sections, each addressed the way its resource actually is: `drivers[]` are device singletons mounted at `/dev/<name>` (no `path`); `mounts[]` are file/backend drivers bound at an arbitrary absolute `path` outside `/dev` and `/net`; `sockets[]` are connections created at `/net/<name>`, the transport carried in `address`. Install-time validation is loud per section — a `path` on a `drivers[]`/`sockets[]` entry, or a `mounts[]` path under a reserved namespace (`/dev`, `/net`, `/proc`), is rejected.
+- `/dev/stdin`, `/dev/stdout`, `/dev/stderr` now alias the wapp's own console streams (WASI fd 0/1/2): opening the `/dev` path reaches the same backing as the matching fd — the `platform` console, the `log` ring, or `/dev/null` — instead of the previous discard/EOF stubs.
+- `preopens[]` is removed; a host directory is now a `mounts[]` entry with the `platform` backend (`{ "name": "platform", "path": "/var/lib/app" }`), which the engine binds as a native WASI preopen at that path.
+- The VFS router gains a general single-driver mount: a file/backend driver (config-map, `platform`, 9P) can be bound at any absolute path such as `/etc/config`, reachable outside the device and network namespaces. A deep mount surfaces a synthetic parent directory in the root listing.
+- Socket addresses use a URL form `<scheme>://<host>:<port>` — `tcp`/`udp` (plain), `tcps`/`udps` (TLS/DTLS) — replacing the `t|u|T|U host port` string. The vestigial `bus` transport (no platform backing; every open returned `-ECONNABORTED`) is removed. The `9p` driver's address adopts the same URL form (`tcp://host:port` / `udp://host:port`), replacing the Plan 9 `tcp!host!port` dial string.
+- The config-exposed `virt` driver is removed (it could not be usefully driven from config); the virtual-namespace primitive remains internal.
+
 ### Licensing
 
 - Relicensed from MIT to Apache License 2.0. Added `NOTICE` (project copyright plus attribution for bundled third-party components: WAMR, cwalk, tiny-json, c9, Unity, NuttX) and a minimal `CONTRIBUTING.md`. All first-party `.c`/`.h` files now carry an `SPDX-License-Identifier: Apache-2.0` header.

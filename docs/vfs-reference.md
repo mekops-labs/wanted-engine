@@ -18,11 +18,11 @@ These five `/dev/` entries are **always present** in every wapp, independent of 
 |------|--------|--------|-----------|
 | `/dev/null` | null | rw | Reads return 0 bytes (EOF); writes are accepted and discarded. |
 | `/dev/pipe/<name>` | pipe | rw | Process-wide named-pipe IPC. See below. |
-| `/dev/stdin` | stdio | r | Stub; reads return EOF. |
-| `/dev/stdout` | stdio | w | Stub; writes are discarded. |
-| `/dev/stderr` | stdio | w | Stub; writes are discarded. |
+| `/dev/stdin` | stdio | r | Alias of WASI fd 0 — reads from the same console backing. |
+| `/dev/stdout` | stdio | w | Alias of WASI fd 1 — writes to the same console backing. |
+| `/dev/stderr` | stdio | w | Alias of WASI fd 2 — writes to the same console backing. |
 
-The stdio stubs exist so a wapp's standard descriptors always resolve; a wapp that wants real stdout is given a `platform` or `log` console in its launch config (see [Control Plane Reference](control-plane-reference.md)), not by writing to `/dev/stdout`.
+The stdio entries alias the wapp's standard descriptors: opening `/dev/stdout` and writing reaches exactly the same place WASI fd 1 does — the `platform` console, the `log` ring, or `/dev/null` — whichever the launch config wired the slot to (see [Control Plane Reference](control-plane-reference.md)).
 
 ### `/dev/pipe/<name>` — inter-wapp IPC
 
@@ -81,31 +81,34 @@ $ cat /assets/config.txt   # a file baked into the wapp image
 
 ## Config-mounted drivers
 
-Beyond the fixed namespace above, a wapp sees whatever drivers its launch config grants. Each is bound at a path the config's `drivers[]` entry (or a console slot) names — **not a fixed location**: the paths below are the customary mountpoints, chosen by convention, not hard-wired. A mount target must resolve under `/dev/*` or `/net/*`, or name a `<stdio>` console slot, else the driver is rejected at install. The schema that mounts them is the [Control Plane Reference](control-plane-reference.md) launch config.
+Beyond the fixed namespace above, a wapp sees whatever its launch config grants through three sections — device `drivers[]` (mounted at `/dev/<name>`), file/backend `mounts[]` (bound at an arbitrary `path`), and `sockets[]` (created at `/net/<name>`). The paths below follow from each section's addressing rule. The schema that grants them is the [Control Plane Reference](control-plane-reference.md) launch config.
 
-| Driver | Customary path | Purpose |
-|--------|----------------|---------|
-| `platform` | `/dev/platform` | Host filesystem access. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
-| `wanted` | `/dev/wanted` | The control-plane namespace; privileged supervisors only. Fully specified in the [Control Plane Reference](control-plane-reference.md). |
-| `socket` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
-| `log`, `null`, `config`, `9p`, `virt` | console slot or path | Console capture (`log`) and other VFS drivers; see the launch-config schema. |
+| Driver | Section | Path | Purpose |
+|--------|---------|------|---------|
+| `wanted` | `drivers[]` | `/dev/wanted` | The control-plane namespace; privileged supervisors only. Fully specified in the [Control Plane Reference](control-plane-reference.md). |
+| `null` | `drivers[]` | `/dev/null` | Bit bucket. |
+| `platform` | `mounts[]` | chosen `path` | A host directory bound as a native WASI preopen. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
+| `config` | `mounts[]` | chosen `path` (e.g. `/etc/config`) | Read-only config-file injection, reachable outside `/dev`. |
+| `9p` | `mounts[]` | chosen `path` | 9P2000 client for an external FS plugin. |
+| `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
+| `log` | console slot | — | Console capture; output readable at `/dev/wanted/wapps/<name>/log`. |
 
 ### `socket` — the `/net/` network namespace
 
-`/net/` routes to the socket driver, mounted at one or more config-chosen paths (`/net/s`, `/net/ss`, `/net/manager` — the path is configuration, not fixed), each bound to a connection described by its `options` string:
+`/net/` routes to the socket driver. A `sockets[]` entry is created at `/net/<name>` (the name is the node label) and bound to the connection described by its `address` — a URL `<scheme>://<host>:<port>`:
 
-| Option | Transport |
+| Scheme | Transport |
 |--------|-----------|
-| `t host port` | Plain TCP |
-| `u host port` | Plain UDP |
-| `T host port` | TLS TCP (Linux only) |
-| `U host port` | TLS UDP (Linux only) |
+| `tcp://host:port` | Plain TCP |
+| `udp://host:port` | Plain UDP |
+| `tcps://host:port` | TLS TCP (Linux only) |
+| `udps://host:port` | DTLS UDP (Linux only) |
 
-A wapp `open`s the mounted path, then `read`/`write`s the stream and `close`s it; connection parameters come from the mount's `options`, not from the wapp. TLS is OpenSSL-backed on Linux; the NuttX sim has no TLS.
+A wapp `open`s the `/net/<name>` node, then `read`/`write`s the stream and `close`s it; connection parameters come from the entry's `address`, not from the wapp. TLS is OpenSSL-backed on Linux; the NuttX sim has no TLS.
 
 #### Testing a TLS socket
 
-Stand up an OpenSSL test server, then point a wapp's `socket` driver at it with options `T localhost 8889`:
+Stand up an OpenSSL test server, then point a wapp's socket `address` at it with `tcps://localhost:8889`:
 
 ```bash
 # create a sample cert and key

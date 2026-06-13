@@ -74,7 +74,7 @@ The WebAssembly core is [WAMR](https://github.com/bytecodealliance/wasm-micro-ru
 
 1. `WantedStart(config)` parses `system.privileged` and the `supervisor` block.
 2. The supervisor image is loaded and its TAR layers indexed (TarFS).
-3. The supervisor wapp is instantiated; the engine mounts `/`, `/dev`, `/net`, `/proc`, registers the built-in devices, applies the configured drivers/console/preopens, and registers the WASI + WANTED natives.
+3. The supervisor wapp is instantiated; the engine mounts `/`, `/dev`, `/net`, `/proc`, registers the built-in devices, applies the configured console, drivers, mounts, and sockets, and registers the WASI + WANTED natives.
 4. Control transfers to the supervisor's entrypoint. It reads the registry and drives the control plane to launch further wapps.
 5. The run loop blocks until an explicit `poweroff`/`reboot`.
 

@@ -12,13 +12,13 @@ JSON({
             "err" : {"name" : "platform"}
         },
         "drivers" : [
-            {
-                "name" : "socket",
-                "path" : "/net/s",
-                "options" : "t localhost 8888"
-            },
-            {"name" : "wanted", "path" : "/dev/wanted"}
+            {"name" : "wanted"}
         ],
-        "preopens" : ["/var/lib/sheriff"]
+        "mounts" : [
+            {"name" : "platform", "path" : "/var/lib/sheriff"}
+        ],
+        "sockets" : [
+            {"name" : "s", "address" : "tcp://localhost:8888"}
+        ]
     }
 })

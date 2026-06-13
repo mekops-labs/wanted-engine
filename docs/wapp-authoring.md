@@ -108,13 +108,13 @@ Semantics to design around:
 
 ## Preopens
 
-A preopen is a host directory the engine binds into the wapp's namespace as **read-write** storage that survives restarts — the wapp's only writable filesystem. Declare it in the launch config, under `params.preopens`:
+A preopen is a host directory the engine binds into the wapp's namespace as **read-write** storage that survives restarts — the wapp's only writable filesystem. Declare it as a `mounts[]` entry with the `platform` backend, giving the path it should appear at:
 
 ```json
-{ "preopens": [ "/tmp/wanted-smoke-pipe" ] }
+{ "mounts": [ { "name": "platform", "path": "/tmp/wanted-smoke-pipe" } ] }
 ```
 
-The engine creates the host directory if it is absent and mounts it at the **same path** inside the wapp. The wapp then uses ordinary POSIX calls against it:
+The engine creates the host directory if it is absent and binds it as a WASI preopen at that **same path** inside the wapp. The wapp then uses ordinary POSIX calls against it:
 
 ```c
 int fd = open("/tmp/wanted-smoke-pipe/result", O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -126,7 +126,7 @@ close(fd);
 
 ## Capability requirements
 
-A wapp's effective capabilities are exactly what its launch config grants: the consoles, drivers, preopens, and the `/dev/wanted` control plane the supervisor wires up at start. The image itself declares nothing. A declarative capability-requirement vocabulary (its home — OCI image-config labels vs. implicit wasm imports — is an open design question) is deferred to a future revision.
+A wapp's effective capabilities are exactly what its launch config grants: the consoles, drivers, mounts, sockets, and the `/dev/wanted` control plane the supervisor wires up at start. The image itself declares nothing. A declarative capability-requirement vocabulary (its home — OCI image-config labels vs. implicit wasm imports — is an open design question) is deferred to a future revision.
 
 ## Building a wapp
 

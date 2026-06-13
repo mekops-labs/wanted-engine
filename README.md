@@ -56,9 +56,9 @@ The following devices are always registered in every wapp's `/dev/` namespace, r
 |------|---------|
 | `/dev/null` | Reads return 0; writes are no-ops |
 | `/dev/pipe/<name>` | Inter-wapp named pipe IPC over a process-wide shared store; 4096-byte ring buffer; up to 8 concurrent pipes; blocking reads by default (`O_NONBLOCK` opts out) |
-| `/dev/stdin` | Stub; reads return EOF |
-| `/dev/stdout` | Stub; writes are no-ops |
-| `/dev/stderr` | Stub; writes are no-ops |
+| `/dev/stdin` | Alias of the wapp's stdin (WASI fd 0) — reaches the same console backing |
+| `/dev/stdout` | Alias of the wapp's stdout (WASI fd 1) — reaches the same console backing |
+| `/dev/stderr` | Alias of the wapp's stderr (WASI fd 2) — reaches the same console backing |
 
 ## Supervisor
 
