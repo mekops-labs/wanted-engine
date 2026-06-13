@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* membomb — allocate until allocation fails.
  *
  * The wapp's linear memory is capped (see Makefile --max-memory), so malloc

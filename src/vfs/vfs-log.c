@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* "log" console driver — captures a wapp's stdout/stderr into the per-wapp log
  * store instead of the shared platform console. Installed as a wapp's console
  * (console.out/err = {"name":"log"}); the supervisor reads the captured output

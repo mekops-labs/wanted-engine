@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* blocker — blocks inside a host syscall instead of executing WASM.
  *
  * cpuhog stresses a wapp busy in the interpreter, where the terminate flag is

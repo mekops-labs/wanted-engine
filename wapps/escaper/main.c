@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* escaper — attempts to break out of its sandbox; every attempt must be denied.
  *
  * A launched, non-privileged wapp sees only its read-only TarFS root and its

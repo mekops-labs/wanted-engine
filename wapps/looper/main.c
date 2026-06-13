@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* looper — a well-behaved long-running test wapp.
  *
  * Loops forever so the supervisor can prove two things: that it runs

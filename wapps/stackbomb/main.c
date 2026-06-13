@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* stackbomb — unbounded recursion that overflows the WASM stack.
  *
  * Prints a marker (captured by the engine's log console), then recurses without

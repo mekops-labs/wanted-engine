@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* NuttX platform wapp lifecycle.
  *
  * Threading mirrors the Linux platform (detached pthreads, one slot per wapp),

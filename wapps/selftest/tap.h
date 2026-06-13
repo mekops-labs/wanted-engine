@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* Minimal TAP (Test Anything Protocol) emitter for in-WASM test wapps.
  *
  * Output goes to stdout, which the engine wires to the platform console on
