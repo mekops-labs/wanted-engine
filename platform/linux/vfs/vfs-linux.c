@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 #define _DEFAULT_SOURCE
 #include <dirent.h>
 #include <errno.h>

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* cpuhog — a never-yielding busy loop with no sleep and no syscalls.
  *
  * Where `looper` sleeps between iterations (going off-CPU), cpuhog spins on a

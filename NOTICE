@@ -1,0 +1,31 @@
+WANTED Engine
+Copyright 2021-2026 MekOps Labs
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product bundles the following third-party components as git
+submodules; each retains its own license at the path below. vendor/ and
+third_party/ are exempt from this project's own SPDX/Apache-2.0 source
+headers (see CONTRIBUTING.md).
+
+Runtime dependencies (linked into the engine binary):
+
+  - WAMR (WebAssembly Micro Runtime) -- vendor/wamr -- Apache-2.0 WITH
+    LLVM-exception -- Copyright Bytecode Alliance and WAMR contributors
+  - cwalk -- vendor/cwalk -- MIT -- Copyright Leonard Iklé
+  - tiny-json -- vendor/tiny-json -- MIT -- Copyright Rafa Garcia
+  - c9 (9P2000 client) -- vendor/c9 -- Public domain -- mek-x
+
+Build- and test-only dependencies (not linked into the distributed engine
+binary):
+
+  - Unity -- test/unity -- MIT -- Copyright Mike Karlesky, Mark
+    VanderVoord, Greg Williams
+  - NuttX -- third_party/nuttx -- Apache-2.0 -- Copyright Apache NuttX
+    contributors
+  - NuttX apps -- third_party/nuttx-apps -- Apache-2.0 -- Copyright Apache
+    NuttX contributors
+
+Of the above, only NuttX and NuttX apps ship their own NOTICE file
+(third_party/nuttx{,-apps}/NOTICE). Those notices apply when redistributing
+NuttX itself; WANTED Engine does not redistribute NuttX.

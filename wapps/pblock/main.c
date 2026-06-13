@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* pblock — blocks indefinitely on a read from an empty pipe.
  *
  * Where blocker parks in a single timed sleep, pblock parks in fd_read on a

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* NuttX platform sockets
  *
  * The BSD socket API is the same as on Linux. */

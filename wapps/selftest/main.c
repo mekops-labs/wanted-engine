@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* selftest — the WANTED engine test supervisor.
  *
  * Runs as the boot supervisor (like sheriff/wsh) and exercises the engine from

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 #include "wanted_libc.h"
 
 #define WASM_EXPORT __attribute__((used)) __attribute__((visibility("default")))

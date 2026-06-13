@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 #define STRINGIFY(...) #__VA_ARGS__
 
 STRINGIFY({

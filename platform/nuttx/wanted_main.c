@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* NuttX built-in application entry point.
  *
  * Mirrors cmd/main.c: load a JSON config from argv[1] when given, otherwise use

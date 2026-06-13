@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* trapper — a deliberately misbehaving test wapp.
  *
  * Prints a marker (captured by the engine's log console, not the platform
