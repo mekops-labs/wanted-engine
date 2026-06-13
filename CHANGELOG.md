@@ -4,6 +4,12 @@ Changelog
 Unreleased
 ----------
 
+### Launch config — `platform` bind mounts (host-path mapping + read-only)
+
+- A `platform` `mounts[]` entry is now a full bind mount. Its `options` string carries `src=<hostpath>` to back the wapp-visible `path` with an arbitrary host directory (defaulting to `path`, so existing single-path mounts are unchanged) and `ro`/`rw` to set the access mode (defaulting to `rw`).
+- A `ro` mount is enforced in the engine: the platform VFS driver rejects writes, directory creation, and renames with `-EROFS`, and the host directory is opened without write intent. A read-only mount requires its host directory to already exist (it is never created); a missing one fails the launch.
+- Malformed `platform` options — a relative or empty `src`, or an unrecognised token — are rejected at install.
+
 ### Launch config — drivers / mounts / sockets split
 
 - The flat `drivers[]` array (every entry a `name` **and** a mount `path`) is replaced by three purpose-specific sections, each addressed the way its resource actually is: `drivers[]` are device singletons mounted at `/dev/<name>` (no `path`); `mounts[]` are file/backend drivers bound at an arbitrary absolute `path` outside `/dev` and `/net`; `sockets[]` are connections created at `/net/<name>`, the transport carried in `address`. Install-time validation is loud per section — a `path` on a `drivers[]`/`sockets[]` entry, or a `mounts[]` path under a reserved namespace (`/dev`, `/net`, `/proc`), is rejected.
