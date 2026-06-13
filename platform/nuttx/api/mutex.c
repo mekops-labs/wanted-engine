@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* pthread-backed platform mutex. Wraps the opaque platform_mutex_t so src/
  * shared state can serialise access without including <pthread.h> itself.
  * NuttX provides the POSIX pthread mutex API used here. */

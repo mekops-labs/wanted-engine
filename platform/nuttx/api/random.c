@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* NuttX platform randomness, sourced from the kernel random device. NuttX
  * exposes /dev/urandom via CONFIG_DEV_URANDOM on the sim and ESP32 alike. */
 

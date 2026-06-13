@@ -4,6 +4,10 @@ Changelog
 Unreleased
 ----------
 
+### Licensing
+
+- Relicensed from MIT to Apache License 2.0. Added `NOTICE` (project copyright plus attribution for bundled third-party components: WAMR, cwalk, tiny-json, c9, Unity, NuttX) and a minimal `CONTRIBUTING.md`. All first-party `.c`/`.h` files now carry an `SPDX-License-Identifier: Apache-2.0` header.
+
 ### Engine — `/proc/wanted` introspection node
 
 - Added a read-only `/proc/wanted` node exposing engine identity and compile-time resource ceilings as `key:\tvalue` lines: `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`. Unprivileged — any wapp may read it to size itself to the host.

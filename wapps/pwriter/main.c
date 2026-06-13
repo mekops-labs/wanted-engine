@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* pwriter — sends a payload to another wapp over a shared named pipe.
  *
  * Writes a known payload to /dev/pipe/duplex, the process-wide channel preader

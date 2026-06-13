@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* preader — receives a payload from another wapp over a shared named pipe.
  *
  * /dev/pipe/<name> is a process-wide store, so this wapp and pwriter — in

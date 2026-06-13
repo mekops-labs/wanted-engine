@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* NuttX platform wapp registry.
  *
  * The sim backs the registry on a hostfs directory. Reads enumerate it with

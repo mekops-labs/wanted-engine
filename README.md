@@ -168,3 +168,14 @@ The simulator uses the `sim:wanted` board config from the NuttX fork. NuttX and 
 ```bash
 make shell        # interactive shell in the build container (equivalent to run-podman.sh)
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build/test expectations, code
+style, and commit conventions.
+
+## License
+
+WANTED Engine is licensed under the [Apache License, Version 2.0](LICENSE).
+Bundled third-party components retain their own licenses — see
+[NOTICE](NOTICE).

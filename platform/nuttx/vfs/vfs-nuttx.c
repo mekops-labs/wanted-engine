@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* NuttX platform VFS driver. Maps the engine's root filesystem onto native
  * NuttX file operations; on the sim this is hostfs, identical in behaviour to
  * the Linux driver.

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* hello — a minimal WASI sample wapp with three behaviours selected by the
  * role string read from /etc/role in its own (read-only) rootfs. It talks to
  * the outside world only through the VFS its launch config grants it.

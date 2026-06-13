@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 #pragma once
 
 #if defined(SECURE_SOCKETS) && SECURE_SOCKETS == 1

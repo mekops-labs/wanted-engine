@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* Sim init shim.
  *
  * When wsh runs as the NuttX init task (CONFIG_INIT_ENTRYPOINT=wanted_sim_main)
