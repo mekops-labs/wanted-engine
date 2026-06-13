@@ -672,6 +672,8 @@ static void launch_config_validation_check(void) {
         { "d_path", "{\"image\":\"looper\",\"drivers\":[{\"name\":\"null\",\"path\":\"/x\"}]}" },
         { "s_path", "{\"image\":\"looper\",\"sockets\":[{\"name\":\"s\",\"path\":\"/net/x\",\"address\":\"tcp://localhost:9999\"}]}" },
         { "s_addr", "{\"image\":\"looper\",\"sockets\":[{\"name\":\"s\",\"address\":\"bogus\"}]}" },
+        { "m_psrc", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"platform\",\"path\":\"/p\",\"options\":\"src=relative\"}]}" },
+        { "m_popt", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"platform\",\"path\":\"/p\",\"options\":\"bogus\"}]}" },
     };
     char buf[80], desc[96];
     int all = 1;

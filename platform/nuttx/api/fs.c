@@ -42,12 +42,16 @@ static int mkdir_p(const char *path, mode_t mode) {
     return 0;
 }
 
-int PlatformOpenStateDir(const char *path) {
+int PlatformOpenStateDir(const char *path, bool readonly) {
     if (!path || !*path)
         return -EINVAL;
-    int rc = mkdir_p(path, 0700);
-    if (rc < 0)
-        return rc;
+    if (!readonly) {
+        int rc = mkdir_p(path, 0700);
+        if (rc < 0)
+            return rc;
+    }
+    /* The directory fd carries no write intent; per-file write capability is
+     * granted (or, for a read-only mount, denied) by the VFS platform driver. */
     int fd = open(path, O_RDONLY | O_DIRECTORY);
     if (fd < 0)
         return -errno;

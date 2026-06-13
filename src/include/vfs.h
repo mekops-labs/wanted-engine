@@ -32,6 +32,12 @@ typedef int vfs_oflags_t;
 #define VFS_O_WRONLY 01
 #define VFS_O_RDONLY 00
 
+/* True when open flags request any form of write access. VFS_O_RDONLY is 0, so
+ * read-only is the absence of every write bit. */
+#define VFS_O_IS_WRITE(f)                                                      \
+    (((f) & (VFS_O_WRONLY | VFS_O_RDWR | VFS_O_CREAT | VFS_O_TRUNC |           \
+             VFS_O_APPEND)) != 0)
+
 // seek whence
 typedef uint8_t vfs_whence_t;
 
@@ -168,10 +174,12 @@ int VfsMkdir(vfs_ctx_t c, int fd, const char *path);
  * `driver` provides the dispatch surface (OpenAt/Read/Write/...). `host_fd`
  * is stored as drv_fd so subsequent ops on this slot or anything OpenAt'd
  * from it reach the right host object. `path` is the wapp-visible absolute
- * path (e.g. "/var/lib/sheriff"). Returns the allocated VFS fd or -errno.
- * The VFS takes ownership of `driver` — VfsDestroy will call Destroy. */
+ * path (e.g. "/var/lib/sheriff"). `readonly` binds the slot without write
+ * intent (the driver rejects writes with -EROFS). Returns the allocated VFS fd
+ * or -errno. The VFS takes ownership of `driver` — VfsDestroy will call
+ * Destroy. */
 int VfsBindPlatformFd(vfs_ctx_t c, const char *path,
-                      const vfs_driver_t *driver, int host_fd);
+                      const vfs_driver_t *driver, int host_fd, bool readonly);
 
 /* Bind a file/backend driver as a mount at an arbitrary absolute `prefix`
  * (e.g. "/etc/config"). The mount routes opens of `prefix` and any path beneath

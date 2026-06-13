@@ -82,11 +82,13 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
 int PlatformRegistryRemove(const reg_entry_t *entry);
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);
 
-/* Open (and create-if-absent) a host-side directory that will be exposed to a
- * wapp as a WASI preopen. Returns a native fd usable with openat(2)-class
- * APIs, or a negative errno on failure. The returned fd's lifetime is owned
- * by the VFS layer (closed at VfsDestroy). */
-int PlatformOpenStateDir(const char *path);
+/* Open a host-side directory that will be exposed to a wapp as a WASI preopen.
+ * Read-write mounts create the directory if absent; a read-only mount requires
+ * it to already exist (creating a directory only to deny writes is incoherent),
+ * so a missing host dir on a `readonly` open returns -ENOENT. Returns a native
+ * fd usable with openat(2)-class APIs, or a negative errno on failure. The
+ * returned fd's lifetime is owned by the VFS layer (closed at VfsDestroy). */
+int PlatformOpenStateDir(const char *path, bool readonly);
 
 /* Thin wrappers over native fs primitives, used by VFS path_rename and
  * path_create_directory to operate on preopen-rooted directories. Both fds
