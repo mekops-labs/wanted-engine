@@ -178,7 +178,7 @@ A wapp that needs a console, drivers, mounts, or sockets has its config written 
 | `image` | string | **Optional** registry image this instance runs, as a reference `<name>[:<tag>]` — a bare name resolves to the first match, a pinned tag (`duplex:stable`) resolves exactly. When omitted it defaults to the instance name, so a single-instance wapp needs no `image`. Set it to run several instances off one image, or override it per launch with `start <image>`. |
 | `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. **Optional**: an unset slot defaults — `in` to `null`, `out`/`err` to `log` — so a wapp launches without an explicit console and its output is captured to the `log` node. Override a slot with `log` (capture), `null` (discard), or `platform` (redirect to the engine's native stdio, fds 0/1/2). The `platform` *name* backs stdio here; in `mounts[]` it is instead a host directory. |
 | `drivers` | array | Up to 10 device singletons. Each mounts at `/dev/<name>` derived from the name; a `path` is rejected. |
-| `mounts` | array | Up to 10 file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev` and `/net`. The `platform` backend binds a host directory as a native WASI preopen (the wapp's read-write state storage); other backends mount through the VFS router. |
+| `mounts` | array | Up to 10 file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev` and `/net`. The `platform` backend binds a host directory as a native WASI preopen (a bind mount; `options` set the host source and access mode — see below); other backends mount through the VFS router. |
 | `sockets` | array | Up to 10 named connections. Each is created at `/net/<name>`; the transport is the entry's `address`. A `path` is rejected. |
 | `args` | array | Up to 8 strings (≤63 chars each), the wapp's `argv[1..]`. `argv[0]` is always the instance name, set by the engine. |
 | `envs` | array | Up to 8 POSIX `KEY=VALUE` strings (≤63 chars each), the wapp's `environ`. |
@@ -191,6 +191,8 @@ Entry shapes per section:
 | `drivers[]` | `name`, `options` | `name` is a device driver (e.g. `null`, `wanted`); mounted at `/dev/<name>`. |
 | `mounts[]` | `name`, `path`, `options` | `name` is a file/backend driver (`platform`, `config`, `9p`); `path` is required, absolute, and outside `/dev`/`/net`. |
 | `sockets[]` | `name`, `address` | `name` is the `/net` node label; `address` is a URL `<scheme>://<host>:<port>` with scheme `tcp`/`udp`/`tcps`/`udps`. |
+
+A `platform` mount is a bind mount; its `options` accept two comma-separated knobs: `src=<abshostpath>` (the host directory backing the mount — defaults to `path`) and `ro`/`rw` (access mode — defaults to `rw`). A `ro` mount denies every write (`-EROFS`) and requires the host directory to already exist; `path` stays the wapp-visible mount point. A relative/empty `src` or an unrecognised token is rejected at install. Example: `{ "name": "platform", "path": "/cfg", "options": "src=/etc/app,ro" }`.
 
 The parser uses a bounded token pool and a 2048-byte stack buffer; an oversized config returns `-EMSGSIZE`.
 

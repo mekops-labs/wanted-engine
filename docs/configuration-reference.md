@@ -86,13 +86,26 @@ Entry shapes per section:
 |--------|---------|---------|-------------------|
 | `null` | `drivers` | Bit bucket at `/dev/null`. | — |
 | `log` | console slot | Ring-buffer console; output readable at `/dev/wanted/wapps/<name>/log`. | — |
-| `platform` | console slot / `mounts` | As a console slot: the engine's native stdio (fds 0/1/2). In `mounts[]`: a host directory bound as a native WASI preopen at `path`. | — |
+| `platform` | console slot / `mounts` | As a console slot: the engine's native stdio (fds 0/1/2). In `mounts[]`: a bind mount of a host directory as a native WASI preopen at `path`; `options` set the host source and access mode. | `src=/etc/app,ro` |
 | `socket` | `sockets` | TCP/UDP, plain or TLS. The transport is the entry's `address`. | `tcp://localhost:8888` |
 | `9p` | `mounts` | 9P2000 client for an external FS plugin. | `tcp://localhost:5640` |
 | `config` | `mounts` | Read-only config-file injection (e.g. mounted at `/etc/config`). | `{"config_file":"/config.json"}` |
 | `wanted` | `drivers` | The control-plane namespace at `/dev/wanted` (privileged). | — |
 
 A socket `address` is a URL `<scheme>://<host>:<port>`, where the scheme picks the transport: `tcp`/`udp` (plain) or `tcps`/`udps` (TLS/DTLS). See the [VFS Reference](vfs-reference.md).
+
+A `platform` mount is a **bind mount** — the Docker `-v /host/path:/wapp/path[:ro]` equivalent. Its `options` string carries two comma-separated knobs:
+
+- `src=<hostpath>` — the absolute host directory backing the mount. Omitted, it defaults to `path`, so the host and wapp paths are identical (the original behaviour). With `src`, the wapp sees the directory under the clean internal `path` (e.g. `/cfg`) while the operator decides which host directory backs it — the same image is repointable per deployment.
+- `ro` / `rw` — access mode. Omitted, it defaults to `rw`. A `ro` mount denies the wapp every write (engine-enforced with `-EROFS`); the host directory must already exist (a read-only mount is never created).
+
+```jsonc
+{ "name": "platform", "path": "/cfg",         "options": "src=/etc/app,ro" }  // map + read-only
+{ "name": "platform", "path": "/host",        "options": "src=/home/user/wapp" }  // map, writable
+{ "name": "platform", "path": "/var/lib/app" }  // src defaults to path, writable
+```
+
+A relative/empty `src` or an unrecognised token is rejected at install.
 
 ## Annotated example
 
