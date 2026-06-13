@@ -42,6 +42,7 @@ $(TAR): $(addprefix $(VARIANT_DIR)/,$(INPUTS))
 ifeq ($(VARIANT),wsh)
 WSH_SRC := $(DIR)../../wapps/wsh
 $(VARIANT_DIR)/app.wasm: $(wildcard $(WSH_SRC)/*.c) $(wildcard $(WSH_SRC)/*.h) $(WSH_SRC)/Makefile
+	mkdir -p $(VARIANT_DIR)
 	$(MAKE) -C $(WSH_SRC)
 	cp $(WSH_SRC)/wsh.wasm $@
 endif
@@ -50,6 +51,7 @@ endif
 ifeq ($(VARIANT),selftest)
 SELFTEST_SRC := $(DIR)../../wapps/selftest
 $(VARIANT_DIR)/app.wasm: $(wildcard $(SELFTEST_SRC)/*.c) $(wildcard $(SELFTEST_SRC)/*.h) $(SELFTEST_SRC)/Makefile
+	mkdir -p $(VARIANT_DIR)
 	$(MAKE) -C $(SELFTEST_SRC)
 	cp $(SELFTEST_SRC)/selftest.wasm $@
 endif
