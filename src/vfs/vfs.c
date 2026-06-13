@@ -66,7 +66,8 @@ static int VfsResolvePath(vfs_ctx_t c, int parent_fd, const char *path,
 
 /* ── Mount table ─────────────────────────────────────────────────────────── */
 
-static int VfsMount(vfs_ctx_t c, const char *prefix, vfs_fd_type_t type) {
+static int VfsMount(vfs_ctx_t c, const char *prefix, vfs_fd_type_t type,
+                    const vfs_driver_t *drv) {
     if (c->mounts_cnt >= VFS_MAX_MOUNTS)
         return -ENOSPC;
     size_t plen = strlen(prefix);
@@ -75,7 +76,23 @@ static int VfsMount(vfs_ctx_t c, const char *prefix, vfs_fd_type_t type) {
     vfs_mount_t *m = &c->mounts[c->mounts_cnt++];
     memcpy(m->prefix, prefix, plen + 1);
     m->type = type;
+    m->drv = drv;
     return 0;
+}
+
+int VfsMountDriver(vfs_ctx_t c, const char *prefix, const vfs_driver_t *driver) {
+    if (!c || !prefix || !driver)
+        return -EINVAL;
+    if (prefix[0] != '/' || prefix[1] == '\0')
+        return -EINVAL; /* must be an absolute path below root */
+
+    /* Reject collision with an existing mount prefix so routing stays
+     * deterministic. */
+    for (uint8_t i = 0; i < c->mounts_cnt; i++) {
+        if (strcmp(c->mounts[i].prefix, prefix) == 0)
+            return -EEXIST;
+    }
+    return VfsMount(c, prefix, VFS_TYPE_DRIVER, driver);
 }
 
 /* ── Flat-directory readdir helper ───────────────────────────────────────── */
@@ -126,6 +143,7 @@ static int FindFirstClosedFd(struct vfs_ctx_t *c) {
 static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     /* Longest-prefix match against the mount table. */
     vfs_fd_type_t type = VFS_TYPE_NONE;
+    const vfs_driver_t *mount_drv = NULL;
     size_t best_len = 0;
 
     for (uint8_t i = 0; i < c->mounts_cnt; i++) {
@@ -141,6 +159,7 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
         if (matches && plen > best_len) {
             best_len = plen;
             type = c->mounts[i].type;
+            mount_drv = c->mounts[i].drv;
         }
     }
 
@@ -151,6 +170,31 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     const char *suffix = path + best_len;
     if (*suffix == '/')
         suffix++;
+
+    /* A driver mount delegates directly to its bound driver: the suffix below
+     * the mount prefix is the driver-relative path (empty suffix = the mount
+     * root). The slot carries (driver, drv_fd) like STREAM/PLATFORM do. */
+    if (type == VFS_TYPE_DRIVER) {
+        const char *open_path =
+            (*suffix != '\0')
+                ? suffix
+                : (mount_drv->filetype == VFS_FILETYPE_DIRECTORY ? "/" : "");
+        int drv_fd = TRY_DRV(mount_drv, Open, open_path, flags);
+        if (drv_fd < 0)
+            return drv_fd;
+        int fd = FindFirstClosedFd(c);
+        if (fd < 0) {
+            TRY_DRV(mount_drv, Close, drv_fd);
+            return fd;
+        }
+        c->fds[fd].type = VFS_TYPE_DRIVER;
+        c->fds[fd].driver = mount_drv;
+        c->fds[fd].drv_fd = drv_fd;
+        c->fds[fd].flags = flags;
+        strncpy(c->fds[fd].path, path, VFS_FD_PATH_LEN - 1);
+        c->fds[fd].path[VFS_FD_PATH_LEN - 1] = '\0';
+        return fd;
+    }
 
     void *handle;
     int open_err = -ENOENT;
@@ -208,10 +252,10 @@ vfs_ctx_t VfsInit() {
 
     memset(c, 0, sizeof(*c));
 
-    VfsMount(c, "/",     VFS_TYPE_TARFS);
-    VfsMount(c, "/dev",  VFS_TYPE_DEV);
-    VfsMount(c, "/net",  VFS_TYPE_NET);
-    VfsMount(c, "/proc", VFS_TYPE_PROC);
+    VfsMount(c, "/",     VFS_TYPE_TARFS, NULL);
+    VfsMount(c, "/dev",  VFS_TYPE_DEV,   NULL);
+    VfsMount(c, "/net",  VFS_TYPE_NET,   NULL);
+    VfsMount(c, "/proc", VFS_TYPE_PROC,  NULL);
 
     return c;
 }
@@ -284,6 +328,17 @@ static void DestroyTypedFds(vfs_ctx_t c) {
         case VFS_TYPE_TARFS:
             TarFs_Close(c->tarfs, c->fds[i].internal_ctx);
             break;
+        case VFS_TYPE_DRIVER: {
+            /* Close the driver-internal fd only; the driver itself is owned by
+             * its mount entry and destroyed in VfsDestroy. */
+            const vfs_driver_t *drv = c->fds[i].driver;
+            if (drv && drv->Close)
+                drv->Close(drv->ctx, c->fds[i].drv_fd);
+            c->fds[i].type = VFS_TYPE_NONE;
+            c->fds[i].driver = NULL;
+            c->fds[i].drv_fd = -1;
+            continue;
+        }
         default:
             continue;
         }
@@ -293,10 +348,24 @@ static void DestroyTypedFds(vfs_ctx_t c) {
     DestroyPlatformFds(c);
 }
 
+/* Destroy every driver bound to a VFS_TYPE_DRIVER mount. The mount table owns
+ * these drivers; their open fds are already closed by DestroyTypedFds. */
+static void DestroyMountDrivers(vfs_ctx_t c) {
+    for (uint8_t i = 0; i < c->mounts_cnt; i++) {
+        if (c->mounts[i].type != VFS_TYPE_DRIVER)
+            continue;
+        const vfs_driver_t *drv = c->mounts[i].drv;
+        if (drv && drv->Destroy)
+            drv->Destroy((vfs_driver_t *)drv);
+        c->mounts[i].drv = NULL;
+    }
+}
+
 void VfsDestroy(vfs_ctx_t *c) {
     if (NULL == c || NULL == *c)
         return;
     DestroyTypedFds(*c);
+    DestroyMountDrivers(*c);
     DevFs_Destroy(*c);
     NetFs_Destroy(*c);
     ProcFs_Destroy(*c);
@@ -445,6 +514,16 @@ int VfsClose(vfs_ctx_t c, int fd) {
     case VFS_TYPE_TARFS:
         r = TarFs_Close(c->tarfs, c->fds[fd].internal_ctx);
         break;
+    case VFS_TYPE_DRIVER: {
+        /* Close the driver-internal fd; the mount table still owns the driver
+         * (VfsDestroy calls Destroy). */
+        const vfs_driver_t *drv = c->fds[fd].driver;
+        r = (drv && drv->Close) ? drv->Close(drv->ctx, c->fds[fd].drv_fd) : 0;
+        c->fds[fd].type = VFS_TYPE_NONE;
+        c->fds[fd].driver = NULL;
+        c->fds[fd].drv_fd = -1;
+        return r;
+    }
     case VFS_TYPE_STREAM: {
         const vfs_driver_t *drv = c->fds[fd].driver;
         r = (drv && drv->Close) ? drv->Close(drv->ctx, c->fds[fd].drv_fd)
@@ -521,6 +600,7 @@ int VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat) {
         return TarFs_Stat(c->tarfs, c->fds[fd].internal_ctx, stat);
     case VFS_TYPE_STREAM:
     case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER:
         return TRY_DRV(c->fds[fd].driver, Stat, c->fds[fd].drv_fd, stat);
     default:
         return -EBADF;
@@ -539,6 +619,7 @@ int VfsStatSet(vfs_ctx_t c, int fd, vfs_stat_t stat) {
     case VFS_TYPE_TARFS:
         return -EROFS;
     case VFS_TYPE_STREAM:
+    case VFS_TYPE_DRIVER:
         return TRY_DRV(c->fds[fd].driver, StatSet, c->fds[fd].drv_fd, stat);
     default:
         return -ENOTSUP;
@@ -564,6 +645,7 @@ int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte) {
         return TarFs_Read(c->tarfs, c->fds[fd].internal_ctx, buf, nbyte);
     case VFS_TYPE_STREAM:
     case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER:
         return TRY_DRV(c->fds[fd].driver, Read, c->fds[fd].drv_fd, buf, nbyte);
     default:
         return -EBADF;
@@ -587,6 +669,7 @@ int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte) {
         return -EROFS;
     case VFS_TYPE_STREAM:
     case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER:
         return TRY_DRV(c->fds[fd].driver, Write, c->fds[fd].drv_fd, buf, nbyte);
     default:
         return -EBADF;
@@ -608,6 +691,7 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
         return TarFs_Seek(c->tarfs, c->fds[fd].internal_ctx, off, whence, pos);
     case VFS_TYPE_STREAM:
     case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER:
         return TRY_DRV(c->fds[fd].driver, Seek, c->fds[fd].drv_fd, off, whence,
                        pos);
     default:
@@ -642,6 +726,7 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
         return ProcFs_ReadDir(c, c->fds[fd].internal_ctx, buf, bufLen, cookie,
                               bufUsed);
     case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER:
         return TRY_DRV(c->fds[fd].driver, ReadDir, c->fds[fd].drv_fd, buf,
                        bufLen, cookie, bufUsed);
     case VFS_TYPE_TARFS: {
@@ -680,9 +765,27 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
             if (pfx[1] == '\0')
                 continue; /* skip "/" */
             const char *name = pfx + 1;
-            if (strchr(name, '/') != NULL)
-                continue; /* skip nested mounts, emit only top-level */
-            size_t namlen = strlen(name);
+            /* Emit only the first path component, so a deep mount such as
+             * "/etc/config" surfaces at root as a synthetic "etc" directory. */
+            const char *slash = strchr(name, '/');
+            size_t namlen = slash ? (size_t)(slash - name) : strlen(name);
+            /* Dedup against earlier mounts contributing the same component
+             * (e.g. "/etc/config" and "/etc/secrets" both surface one "etc"). */
+            bool dup = false;
+            for (uint8_t j = 0; j < idx; j++) {
+                const char *p2 = c->mounts[j].prefix;
+                if (p2[1] == '\0')
+                    continue;
+                const char *n2 = p2 + 1;
+                const char *s2 = strchr(n2, '/');
+                size_t l2 = s2 ? (size_t)(s2 - n2) : strlen(n2);
+                if (l2 == namlen && strncmp(n2, name, namlen) == 0) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (dup)
+                continue;
             if (mused + sizeof(vfs_dirent_t) + namlen > mspace)
                 break;
             vfs_dirent_t dir = {0};
@@ -714,6 +817,8 @@ int VfsUnlink(vfs_ctx_t c, int fd, const char *path) {
     switch (c->fds[fd].type) {
     case VFS_TYPE_DEV:
         return DevFs_Unlink(c, c->fds[fd].internal_ctx, path);
+    case VFS_TYPE_DRIVER:
+        return TRY_DRV(c->fds[fd].driver, Unlink, c->fds[fd].drv_fd, path);
     case VFS_TYPE_TARFS:
         return -EROFS;
     default:
@@ -811,7 +916,8 @@ int VfsRename(vfs_ctx_t c, int old_fd, const char *old_path,
         return -EROFS;
     case VFS_TYPE_NET:
         return -EINVAL;
-    case VFS_TYPE_PLATFORM: {
+    case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER: {
         const vfs_driver_t *old_drv = c->fds[old_fd].driver;
         const vfs_driver_t *new_drv = c->fds[new_fd].driver;
         if (old_drv != new_drv)
@@ -840,7 +946,8 @@ int VfsMkdir(vfs_ctx_t c, int fd, const char *path) {
         return -EROFS;
     case VFS_TYPE_NET:
         return -EINVAL;
-    case VFS_TYPE_PLATFORM: {
+    case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER: {
         const vfs_driver_t *drv = c->fds[fd].driver;
         if (!drv || !drv->Mkdir)
             return -ENOSYS;

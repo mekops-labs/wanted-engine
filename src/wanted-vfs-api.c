@@ -159,16 +159,17 @@ static const vfs_driver_table_t global_driver_table[] = {
     {"null", VfsNullInit},           {"log", VfsLogInit},
     {"9p", Vfs9PInit},               {"config", VfsConfigInit},
     {"platform", VfsPlatformFsInit}, {"socket", VfsSocketInit},
-    {"virt", VfsVirtualInit},        {"wanted", VfsWantedInit},
-    {NULL, NULL},
+    {"wanted", VfsWantedInit},       {NULL, NULL},
 };
 
-/* Every wapp mount must terminate at one of three sinks:
- *   /dev/<x>  → DevFs registration table
- *   /net/<x>  → NetFs registration table
- *   <stdio>   → STREAM slot in the typed-FD table
- * Anything else is rejected: a misconfigured launch config must fail loudly at
- * install time rather than silently at first open. */
+/* Route a resolved driver to its mount target:
+ *   /dev/<x>  → DevFs registration table   (device singletons)
+ *   /net/<x>  → NetFs registration table   (sockets)
+ *   <stdio>   → STREAM slot in the typed-FD table (console)
+ *   /<abs>    → general single-driver mount (file/backend drivers)
+ * A malformed path (relative, or an unknown <stdio> token) is rejected and the
+ * driver destroyed: a misconfigured launch config fails loudly at install time
+ * rather than silently at first open. */
 static int InstallTo(struct vfs_ctx_t *c, const char *path,
                      const vfs_driver_t *drv) {
     if (strncmp(path, "/dev/", 5) == 0)
@@ -177,6 +178,12 @@ static int InstallTo(struct vfs_ctx_t *c, const char *path,
         return NetFs_Register(c, path + 5, drv);
     if (path[0] == '<')
         return VfsRegister(c, path, drv);
+    if (path[0] == '/') {
+        int r = VfsMountDriver(c, path, drv);
+        if (r < 0 && drv->Destroy)
+            drv->Destroy((vfs_driver_t *)drv);
+        return r;
+    }
     DEBUG_TRACE("InstallTo: unrouted path '%s', dropping driver", path);
     if (drv->Destroy)
         drv->Destroy((vfs_driver_t *)drv);
@@ -216,15 +223,41 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
     return ret;
 }
 
-/* Parse the launch-config body — console redirections, driver mounts, and
- * persistent-state preopens — out of `params`. Shared by the {action,params}
+/* Parse one launch-config resource section ("drivers"/"mounts"/"sockets") into
+ * `arr`. Each entry reads "name", "path", and the section's options field
+ * (`optKey`, "options" or "address"). A field a section forbids is still read
+ * here so install-time validation can reject it loudly. */
+static void ParseResourceArray(json_t const *params, const char *section,
+                               const char *optKey, wapp_driver_t *arr,
+                               size_t *cnt) {
+    json_t const *a = json_getProperty(params, section);
+    json_t const *e;
+    size_t i = 0;
+
+    if (a && JSON_ARRAY == json_getType(a)) {
+        for (e = json_getChild(a); e && i < MAX_DRIVERS_CNT;
+             e = json_getSibling(e)) {
+            if (JSON_OBJ != json_getType(e))
+                continue;
+            const char *name = json_getPropertyValue(e, "name");
+            const char *path = json_getPropertyValue(e, "path");
+            const char *opt = json_getPropertyValue(e, optKey);
+            strcpy(arr[i].name, name ? name : "");
+            strcpy(arr[i].path, path ? path : "");
+            strcpy(arr[i].options, opt ? opt : "");
+            i++;
+        }
+    }
+    *cnt = i;
+}
+
+/* Parse the launch-config body — console redirections plus the drivers/mounts/
+ * sockets resource sections — out of `params`. Shared by the {action,params}
  * bootstrap envelope (WantedParseCtrlAction) and the per-wapp config node
  * (WantedParseWappConfigJson), where the object passed in *is* the config.
  * Wapp identity is not read here — for the config node it travels in the
  * path. */
 static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
-    int i;
-
     /* image: the registry image this instance runs, as a reference "<name>[:<tag>]".
      * Optional — when omitted the launch path defaults it to the instance name,
      * so a single-instance wapp needs no config change. A bare name resolves to
@@ -275,54 +308,19 @@ static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
         }
     }
 
-    json_t const *drivers = json_getProperty(params, "drivers");
-    json_t const *drv;
-    if (drivers && JSON_ARRAY == json_getType(drivers)) {
-        for (i = 0, drv = json_getChild(drivers); drv && i < 10;
-             drv = json_getSibling(drv), i++) {
-            if (JSON_OBJ == json_getType(drv)) {
-                strcpy(cfg->drivers[i].name,
-                       NULL == json_getPropertyValue(drv, "name")
-                           ? ""
-                           : json_getPropertyValue(drv, "name"));
-                strcpy(cfg->drivers[i].path,
-                       NULL == json_getPropertyValue(drv, "path")
-                           ? ""
-                           : json_getPropertyValue(drv, "path"));
-                strcpy(cfg->drivers[i].options,
-                       NULL == json_getPropertyValue(drv, "options")
-                           ? ""
-                           : json_getPropertyValue(drv, "options"));
-            }
-        }
-        cfg->driversCnt = i;
-    }
-
-    /* preopens[]: an optional array of absolute host directory paths. The
-     * Engine creates each (if absent), opens, and binds as a WASI preopen at
-     * the same path. This is how any wapp declares persistent state needs —
-     * the supervisor isn't special. */
-    json_t const *preopens = json_getProperty(params, "preopens");
-    if (preopens && JSON_ARRAY == json_getType(preopens)) {
-        json_t const *po;
-        int pi = 0;
-        for (po = json_getChild(preopens);
-             po && pi < WAPP_MAX_PREOPENS;
-             po = json_getSibling(po)) {
-            if (JSON_TEXT != json_getType(po))
-                continue;
-            const char *v = json_getValue(po);
-            if (!v || v[0] != '/')
-                continue;
-            size_t vlen = strnlen(v, WAPP_MAX_PREOPEN_LEN);
-            if (vlen >= WAPP_MAX_PREOPEN_LEN)
-                continue;
-            memcpy(cfg->preopens[pi], v, vlen);
-            cfg->preopens[pi][vlen] = '\0';
-            pi++;
-        }
-        cfg->preopensCnt = (size_t)pi;
-    }
+    /* The launch config addresses resources through three purpose-specific
+     * sections, each parsed into its own array:
+     *   - drivers[] — device singletons (`name`), mounted at "/dev/<name>".
+     *   - mounts[]  — file/backend drivers bound at an arbitrary `path`.
+     *   - sockets[] — connections at "/net/<name>"; transport in "address".
+     * Per-section validation (forbidden fields, required path) happens at
+     * install time; here we only read the fields each section may carry. */
+    ParseResourceArray(params, "drivers", "options", cfg->drivers,
+                       &cfg->driversCnt);
+    ParseResourceArray(params, "mounts", "options", cfg->mounts,
+                       &cfg->mountsCnt);
+    ParseResourceArray(params, "sockets", "address", cfg->sockets,
+                       &cfg->socketsCnt);
 
     /* args[]: optional command-line arguments, occupying argv[1..]. argv[0] is
      * the wapp name, set by the engine at launch. */

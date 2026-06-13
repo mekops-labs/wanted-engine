@@ -42,9 +42,22 @@ struct wamrData_t {
 #define DEFAULT_CONSOLE_OUT "log"
 #define DEFAULT_CONSOLE_ERR "log"
 
+/* Launch-config resource mount templates. A device singleton (drivers[]) mounts
+ * at /dev/<name>; a socket (sockets[]) is created at /net/<name>. */
+#define WANTED_DEV_MOUNT_FMT "/dev/%s"
+#define WANTED_NET_MOUNT_FMT "/net/%s"
+
 /* A console slot with no driver name falls back to its default backing. */
 static const char *ResolveConsole(const char *name, const char *fallback) {
     return (name == NULL || name[0] == '\0') ? fallback : name;
+}
+
+/* True when `path` is the reserved namespace `ns` itself or a path beneath it
+ * ("/dev", "/dev/x"), without matching unrelated names that merely share the
+ * prefix ("/development"). Used to keep mounts[] out of /dev and /net. */
+static bool IsReservedNamespace(const char *path, const char *ns) {
+    size_t n = strlen(ns);
+    return strncmp(path, ns, n) == 0 && (path[n] == '\0' || path[n] == '/');
 }
 
 /* Build the WASI argv/envp pointer arrays for a wapp. argv[0] is the wapp name;
@@ -328,24 +341,6 @@ int WantedWappRun(wapp_data_t *ctx) {
     }
     wasm_runtime_set_user_data(ctx->wamr->exec_env, wasiCtx);
 
-    /* Persistent-state preopens: any wapp can declare host directories via
-     * params.preopens in its launch config. The Engine creates each (if
-     * absent), opens it, and exposes it to the wapp as a WASI preopen at the
-     * same path. Failures are non-fatal — the wapp will surface a missing-
-     * preopen error itself if the state is actually required. */
-    for (size_t pi = 0; pi < wapp->cfg.preopensCnt; pi++) {
-        const char *p = wapp->cfg.preopens[pi];
-        int host_fd = PlatformOpenStateDir(p);
-        if (host_fd < 0) {
-            DEBUG_TRACE("PlatformOpenStateDir(%s) failed: %d", p, host_fd);
-            continue;
-        }
-        int rc = WasiCtxAddPreopen(wasiCtx, p, host_fd);
-        if (rc < 0) {
-            DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", p, rc);
-        }
-    }
-
     /* install console (an unset slot falls back to its default backing) */
     ret = WantedInstallDriver(
         ctx->vfs, wapp, ResolveConsole(wapp->cfg.console[0].name, DEFAULT_CONSOLE_IN),
@@ -357,11 +352,67 @@ int WantedWappRun(wapp_data_t *ctx) {
         ctx->vfs, wapp, ResolveConsole(wapp->cfg.console[2].name, DEFAULT_CONSOLE_ERR),
         "<stderr>", wapp->cfg.console[2].options);
 
-    /* fs drivers */
-    for (int i = 0; i < wapp->cfg.driversCnt; i++) {
-        ret += WantedInstallDriver(ctx->vfs, wapp, wapp->cfg.drivers[i].name,
-                                   wapp->cfg.drivers[i].path,
-                                   wapp->cfg.drivers[i].options);
+    /* drivers[]: device singletons. Each mounts at /dev/<name>; the name alone
+     * determines the mount, so a config-supplied path is meaningless and
+     * rejected. */
+    for (size_t i = 0; i < wapp->cfg.driversCnt; i++) {
+        const wapp_driver_t *d = &wapp->cfg.drivers[i];
+        if (d->path[0] != '\0') {
+            DEBUG_TRACE("drivers[%zu] '%s': path not allowed", i, d->name);
+            ret += -EINVAL;
+            continue;
+        }
+        char mount[MAX_PATH_LEN];
+        snprintf(mount, sizeof(mount), WANTED_DEV_MOUNT_FMT, d->name);
+        ret += WantedInstallDriver(ctx->vfs, wapp, d->name, mount, d->options);
+    }
+
+    /* sockets[]: named connections created at /net/<name>. The transport spec
+     * is the entry's address (carried in options); a config-supplied path is
+     * rejected. */
+    for (size_t i = 0; i < wapp->cfg.socketsCnt; i++) {
+        const wapp_driver_t *s = &wapp->cfg.sockets[i];
+        if (s->path[0] != '\0') {
+            DEBUG_TRACE("sockets[%zu] '%s': path not allowed", i, s->name);
+            ret += -EINVAL;
+            continue;
+        }
+        char mount[MAX_PATH_LEN];
+        snprintf(mount, sizeof(mount), WANTED_NET_MOUNT_FMT, s->name);
+        ret += WantedInstallDriver(ctx->vfs, wapp, "socket", mount, s->options);
+    }
+
+    /* mounts[]: file/backend drivers bound at an arbitrary absolute path,
+     * reachable outside the /dev and /net namespaces. The `platform` backend
+     * creates/opens a host directory and binds it as a native WASI preopen;
+     * every other backend mounts through the VFS router. The path is required,
+     * must be absolute, and must not fall under /dev or /net. */
+    for (size_t i = 0; i < wapp->cfg.mountsCnt; i++) {
+        const wapp_driver_t *m = &wapp->cfg.mounts[i];
+        if (m->path[0] != '/' || IsReservedNamespace(m->path, "/dev") ||
+            IsReservedNamespace(m->path, "/net")) {
+            DEBUG_TRACE("mounts[%zu] '%s': bad path '%s'", i, m->name, m->path);
+            ret += -EINVAL;
+            continue;
+        }
+        if (strcmp(m->name, "platform") == 0) {
+            /* Host directory bound as a WASI preopen at m->path. A failure to
+             * open the host dir is environmental, not a config error, so it is
+             * non-fatal — the wapp surfaces a missing-preopen error itself if
+             * the state is actually required. */
+            int host_fd = PlatformOpenStateDir(m->path);
+            if (host_fd < 0) {
+                DEBUG_TRACE("PlatformOpenStateDir(%s) failed: %d", m->path,
+                            host_fd);
+                continue;
+            }
+            int rc = WasiCtxAddPreopen(wasiCtx, m->path, host_fd);
+            if (rc < 0)
+                DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
+        } else {
+            ret += WantedInstallDriver(ctx->vfs, wapp, m->name, m->path,
+                                       m->options);
+        }
     }
 
     if (ret < 0) {

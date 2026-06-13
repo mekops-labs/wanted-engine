@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <debug_trace.h>
@@ -44,8 +45,6 @@ static int _SockShutdown(vfs_driver_ctx_t d, int fd, vfs_sdflags_t flags);
 
 static vfs_filetype_t convertSocketType(uint8_t type) {
     switch (type) {
-    case VFS_SKT_BUS:
-        return VFS_FILETYPE_SOCKET_STREAM;
     case VFS_SKT_TCP:
     case VFS_SKT_STCP:
         return VFS_FILETYPE_SOCKET_STREAM;
@@ -57,44 +56,43 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
     }
 }
 
+/* Map a URL scheme to a socket transport type. Returns false for an unknown
+ * scheme. The "s" suffix selects the secured transport (TLS / DTLS). */
+static bool schemeToType(const char *scheme, size_t len, uint8_t *type) {
+    if (len == 3 && strncmp(scheme, "tcp", 3) == 0)
+        *type = VFS_SKT_TCP;
+    else if (len == 4 && strncmp(scheme, "tcps", 4) == 0)
+        *type = VFS_SKT_STCP;
+    else if (len == 3 && strncmp(scheme, "udp", 3) == 0)
+        *type = VFS_SKT_UDP;
+    else if (len == 4 && strncmp(scheme, "udps", 4) == 0)
+        *type = VFS_SKT_SUDP;
+    else
+        return false;
+    return true;
+}
+
 vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
-    int ret;
-    char t;
     uint16_t port;
     vfs_driver_t *driver;
+    char addr[MAX_ADDR_LEN];
 
     if (NULL == options) {
         DEBUG_TRACE("bad options");
         return NULL;
     }
 
-    char addr[strnlen(options, MAX_ADDR_LEN)];
-
-    ret = sscanf(options, "%c %s %hd", &t, addr, &port);
-    if (ret < 3) {
-        DEBUG_TRACE("error during parsing options");
+    /* The address is a URL "<scheme>://<host>:<port>"; the scheme picks the
+     * transport (tcp, tcps, udp, udps). */
+    const char *sep = strstr(options, "://");
+    if (NULL == sep) {
+        DEBUG_TRACE("socket address: missing scheme");
         return NULL;
     }
 
     uint8_t type;
-    switch (t) {
-    case 'T':
-        type = VFS_SKT_STCP;
-        break;
-    case 'U':
-        type = VFS_SKT_SUDP;
-        break;
-    case 't':
-        type = VFS_SKT_TCP;
-        break;
-    case 'u':
-        type = VFS_SKT_UDP;
-        break;
-    case 'b':
-        type = VFS_SKT_BUS;
-        break;
-    default:
-        DEBUG_TRACE("error during parsing socket type");
+    if (!schemeToType(options, (size_t)(sep - options), &type)) {
+        DEBUG_TRACE("socket address: unknown scheme");
         return NULL;
     }
 
@@ -102,6 +100,30 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
         DEBUG_TRACE("no support for secure sockets");
         return NULL;
     }
+
+    /* Host runs from after "://" up to the ':' that introduces the port. */
+    const char *host = sep + 3;
+    const char *colon = strrchr(host, ':');
+    if (NULL == colon || colon == host) {
+        DEBUG_TRACE("socket address: missing host or port");
+        return NULL;
+    }
+    size_t hostLen = (size_t)(colon - host);
+    if (hostLen >= MAX_ADDR_LEN) {
+        DEBUG_TRACE("socket address: host too long");
+        return NULL;
+    }
+
+    char *endp = NULL;
+    long portVal = strtol(colon + 1, &endp, 10);
+    if (endp == colon + 1 || *endp != '\0' || portVal <= 0 || portVal > 65535) {
+        DEBUG_TRACE("socket address: bad port");
+        return NULL;
+    }
+    port = (uint16_t)portVal;
+
+    memcpy(addr, host, hostLen);
+    addr[hostLen] = '\0';
 
     driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
     if (NULL == driver) {
