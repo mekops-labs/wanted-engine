@@ -45,7 +45,7 @@ The **registry filename is the image's identity**: `hello`, version `0.0.1`, pac
 
 ### Image identity
 
-The image's name and version come entirely from its registry filename `<name>:<version>-<package>.wapp` — for `hello`, that is name `hello`, version `0.0.1`, package `1`. The engine reports them at `/proc/wapps` and the per-instance `version` node. Capabilities are not declared in the image; they are exactly what the launch config grants at start (consoles, drivers, preopens, the control plane). One image can run as several independent **instances** — see [Control Plane Reference](control-plane-reference.md).
+The image's name and version come entirely from its registry filename `<name>:<version>-<package>.wapp` — for `hello`, that is name `hello`, version `0.0.1`, package `1`. The engine reports them at `/proc/wapps` and the per-instance `version` node. Capabilities are not declared in the image; they are exactly what the launch config grants at start (consoles, drivers, mounts, sockets, the control plane). One image can run as several independent **instances** — see [Control Plane Reference](control-plane-reference.md).
 
 ## Run
 

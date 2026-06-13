@@ -34,8 +34,9 @@ wanted-cli configs/example_config.json   # explicit config file
     "imagePath": "./wasm/supervisor/sheriff/supervisor.tar",
     "params": {
       "console": { "in": {...}, "out": {...}, "err": {...} },
-      "drivers": [ { "name": "...", "path": "...", "options": "..." } ],
-      "preopens": ["..."]
+      "drivers": [ { "name": "...", "options": "..." } ],
+      "mounts":  [ { "name": "...", "path": "...", "options": "..." } ],
+      "sockets": [ { "name": "...", "address": "..." } ]
     }
   }
 }
@@ -59,36 +60,39 @@ The supervisor image is resolved in priority order:
 
 The `params` object is the supervisor wapp's launch config, identical in shape to what a supervisor writes to a wapp `config` node:
 
+The launch config addresses resources through three purpose-specific sections, each addressed the way the resource actually is:
+
 | Field | Type | Notes |
 |-------|------|-------|
 | `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. |
-| `drivers` | array | Up to 10 driver specs mounted into the namespace. |
-| `preopens` | array | Up to 4 absolute paths bound as read-write WASI preopens (created if absent). |
+| `drivers` | array | Up to 10 device singletons. Each mounts at `/dev/<name>` — the name determines the mount, so no `path`. |
+| `mounts` | array | Up to 10 file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev` and `/net`. |
+| `sockets` | array | Up to 10 named connections, each created at `/net/<name>`; the transport is the entry's `address`. |
 
-A **driver spec** (used by each `console` slot and each `drivers[]` entry):
+Entry shapes per section:
 
-| Key | Type | Notes |
-|-----|------|-------|
-| `name` | string | A driver from the engine table (below). |
-| `path` | string | Mount point inside the namespace; must resolve under `/dev/*` or `/net/*`. |
-| `options` | string | Driver-specific configuration. |
+| Section | Keys | Notes |
+|---------|------|-------|
+| `console.*` | `name`, `options` | Driver backing the stdio slot. |
+| `drivers[]` | `name`, `options` | Device driver; mounted at `/dev/<name>`. A `path` is rejected. |
+| `mounts[]` | `name`, `path`, `options` | `path` is required, absolute, and must not fall under `/dev` or `/net`. |
+| `sockets[]` | `name`, `address` | `name` is the `/net` node label; `address` is the connection URL. A `path` is rejected. |
 
 ## Driver name registry
 
 `name` selects one of the engine's built-in drivers:
 
-| `name` | Mounts at | Purpose | `options` example |
-|--------|-----------|---------|-------------------|
-| `null` | `/dev/*` | Bit bucket. | — |
+| `name` | Section | Purpose | `options` example |
+|--------|---------|---------|-------------------|
+| `null` | `drivers` | Bit bucket at `/dev/null`. | — |
 | `log` | console slot | Ring-buffer console; output readable at `/dev/wanted/wapps/<name>/log`. | — |
-| `platform` | console slot / path | As a console slot: the engine's native stdio (fds 0/1/2). Mounted at a path: the host filesystem. | — |
-| `socket` | `/net/*` | TCP/UDP, plain or TLS. | `t localhost 8888`, `T localhost 8889` |
-| `9p` | `/dev/*` | 9P2000 client for an external FS plugin. | `tcp!localhost!5640` |
-| `config` | `/dev/*` | Read-only config-file injection. | `{"config_file":"/config.json"}` |
-| `virt` | `/dev/*` or `/net/*` | Namespace multiplexer over named sub-drivers. | — |
-| `wanted` | `/dev/wanted` | The control-plane namespace (privileged). | — |
+| `platform` | console slot / `mounts` | As a console slot: the engine's native stdio (fds 0/1/2). In `mounts[]`: a host directory bound as a native WASI preopen at `path`. | — |
+| `socket` | `sockets` | TCP/UDP, plain or TLS. The transport is the entry's `address`. | `tcp://localhost:8888` |
+| `9p` | `mounts` | 9P2000 client for an external FS plugin. | `tcp!localhost!5640` |
+| `config` | `mounts` | Read-only config-file injection (e.g. mounted at `/etc/config`). | `{"config_file":"/config.json"}` |
+| `wanted` | `drivers` | The control-plane namespace at `/dev/wanted` (privileged). | — |
 
-Socket option syntax is `t|u|T|U host port` (lowercase plain, uppercase TLS; `t`/`T` TCP, `u`/`U` UDP). See the [VFS Reference](vfs-reference.md).
+A socket `address` is a URL `<scheme>://<host>:<port>`, where the scheme picks the transport: `tcp`/`udp` (plain) or `tcps`/`udps` (TLS/DTLS). See the [VFS Reference](vfs-reference.md).
 
 ## Annotated example
 
@@ -108,16 +112,16 @@ Socket option syntax is `t|u|T|U host port` (lowercase plain, uppercase TLS; `t`
                 "err": {"name": "platform"}
             },
             "drivers": [
-                {"name": "wanted", "path": "/dev/wanted"}   // control plane
+                {"name": "wanted"}                          // control plane → /dev/wanted
             ]
         }
     }
 }
 ```
 
-`configs/example_config_wsh.json` is the same with `imagePath` pointing at the `wsh` debug supervisor; `configs/sheriff.json` adds a `socket` driver and a `/var/lib/sheriff` preopen for Sheriff's state.
+`configs/example_config_wsh.json` is the same with `imagePath` pointing at the `wsh` debug supervisor; `configs/sheriff.json` adds a `manager` socket and a `/var/lib/sheriff` platform mount for Sheriff's state.
 
 ## See also
 
-- [Control Plane Reference](control-plane-reference.md) — the launch-config schema in full (`console` / `drivers` / `preopens`).
+- [Control Plane Reference](control-plane-reference.md) — the launch-config schema in full (`console` / `drivers` / `mounts` / `sockets`).
 - [Platform Guide](platform-guide.md) — `WANTED_SUPERVISOR_IMAGE_PATH` and other build options.
