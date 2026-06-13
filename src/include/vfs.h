@@ -172,3 +172,15 @@ int VfsMkdir(vfs_ctx_t c, int fd, const char *path);
  * The VFS takes ownership of `driver` — VfsDestroy will call Destroy. */
 int VfsBindPlatformFd(vfs_ctx_t c, const char *path,
                       const vfs_driver_t *driver, int host_fd);
+
+/* Bind a file/backend driver as a mount at an arbitrary absolute `prefix`
+ * (e.g. "/etc/config"). The mount routes opens of `prefix` and any path beneath
+ * it to `driver`. The VFS takes ownership of `driver` — VfsDestroy calls
+ * Destroy. `prefix` must be absolute and must not collide with a fixed
+ * namespace. Returns 0 or -errno (the caller still owns `driver` on failure). */
+int VfsMountDriver(vfs_ctx_t c, const char *prefix, const vfs_driver_t *driver);
+
+/* The driver backing a console STREAM slot (VFS_STDIN/VFS_STDOUT/VFS_STDERR),
+ * or NULL if the slot is not a live stream. Lets /dev/std* aliases forward to
+ * the same backing as the wapp's WASI fd. The slot's driver-fd equals `slot`. */
+const vfs_driver_t *VfsStreamDriver(vfs_ctx_t c, int slot);

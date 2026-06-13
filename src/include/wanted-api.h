@@ -22,13 +22,6 @@
  * tag. It bounds the config `image` field, which may carry a pinned tag. */
 #define WAPP_MAX_IMAGE_REF_LEN (WAPP_MAX_NAME_LEN + 1 + WAPP_MAX_VERSION_LEN)
 
-/* Per-wapp persistent state preopens. Each entry is a host directory path
- * that the Engine will create (if absent), open, and expose to the wapp as a
- * WASI preopen at the same path. Any wapp can declare these via its launch
- * config (params.preopens). */
-#define WAPP_MAX_PREOPENS 4
-#define WAPP_MAX_PREOPEN_LEN 64
-
 /* Command-line arguments and environment variables passed to a wapp via its
  * launch config. argv[0] is the wapp name (set by the engine at launch), so
  * these arrays hold argv[1..] and the POSIX "KEY=VALUE" environ entries. */
@@ -44,14 +37,20 @@
 
 struct wamrData_t;
 
-// TODO: make dynamic
+/* A launch-config resource entry. The three launch-config sections share this
+ * shape but use it differently:
+ *   - drivers[] — device singletons; `name` only, mounted at "/dev/<name>".
+ *   - mounts[]  — file/backend drivers bound at an arbitrary absolute `path`.
+ *   - sockets[] — connections at "/net/<name>"; the transport spec is carried
+ *                 in `options` (the JSON "address" field).
+ * Where a section forbids a field, a value present there is rejected at install
+ * time. */
 typedef struct wapp_driver_t {
     char name[WAPP_MAX_NAME_LEN];
     char path[MAX_PATH_LEN];
     char options[MAX_OPTIONS_SIZE];
 } wapp_driver_t;
 
-// TODO: make dynamic driver number
 typedef struct wapp_config_t {
     bool valid;
     /* Registry image this instance runs, as an image reference "<name>:<tag>"
@@ -60,10 +59,15 @@ typedef struct wapp_config_t {
      * launch config's "image" field; it lets N instances share one image. */
     char image[WAPP_MAX_IMAGE_REF_LEN];
     wapp_driver_t console[3];
+    /* Device singletons, mounted at "/dev/<name>". */
     size_t driversCnt;
     wapp_driver_t drivers[MAX_DRIVERS_CNT];
-    char preopens[WAPP_MAX_PREOPENS][WAPP_MAX_PREOPEN_LEN];
-    size_t preopensCnt;
+    /* File/backend drivers bound at an arbitrary absolute path. */
+    size_t mountsCnt;
+    wapp_driver_t mounts[MAX_DRIVERS_CNT];
+    /* Named connections created at "/net/<name>". */
+    size_t socketsCnt;
+    wapp_driver_t sockets[MAX_DRIVERS_CNT];
     char args[WAPP_MAX_ARGS][WAPP_MAX_ARG_LEN];
     size_t argsCnt;
     char envs[WAPP_MAX_ENVS][WAPP_MAX_ENV_LEN];

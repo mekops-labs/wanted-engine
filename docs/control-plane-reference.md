@@ -17,10 +17,10 @@ This reference documents the **engine-provided contract** — the nodes, verbs, 
 A supervisor is granted the namespace by a `drivers[]` entry in its launch config:
 
 ```json
-{ "name": "wanted", "path": "/dev/wanted" }
+{ "name": "wanted" }
 ```
 
-`/dev/wanted` is the canonical mount point; a wapp granted the driver at a different path sees the same tree under that prefix.
+The `wanted` driver is a device singleton: it mounts at its canonical `/dev/wanted` derived from the name.
 
 ## Namespace map
 
@@ -112,10 +112,10 @@ write /dev/wanted/wapps/app1/ctl start duplex    # launch app1 from the "duplex"
 write /dev/wanted/wapps/app1/ctl stop            # terminate app1
 ```
 
-- `start [<image>]`: resolve the image (explicit argument → `config.image` → the instance name) in the registry → load the OCI layers → install the buffered config's drivers, console, preopens, args, and envs → start the wapp. Image identity (name + version) is read from the registry entry; the instance keeps its own name. Returns bytes written, or a negative errno if any step fails.
+- `start [<image>]`: resolve the image (explicit argument → `config.image` → the instance name) in the registry → load the OCI layers → install the buffered config's console, drivers, mounts, sockets, args, and envs → start the wapp. Image identity (name + version) is read from the registry entry; the instance keeps its own name. Returns bytes written, or a negative errno if any step fails.
 - `stop`: terminate the wapp named by the path. Returns bytes written / negative errno.
 
-The engine declares no capability requirements in the image and enforces none; a wapp's effective capabilities are exactly the `drivers[]`, consoles, and preopens its launch config grants. Validating those against policy before issuing `start` is the supervisor's responsibility. The engine trusts the `drivers[]` it is handed.
+The engine declares no capability requirements in the image and enforces none; a wapp's effective capabilities are exactly the consoles, drivers, mounts, and sockets its launch config grants. Validating those against policy before issuing `start` is the supervisor's responsibility. The engine trusts the config it is handed.
 
 ## Wapp state machine
 
@@ -148,7 +148,7 @@ stateDiagram-v2
 
 ## Launch-config schema
 
-A wapp that needs drivers, console redirection, or preopens has its config written as one JSON object to `wapps/<name>/config` before `start`. The config carries no name — identity is the path.
+A wapp that needs a console, drivers, mounts, or sockets has its config written as one JSON object to `wapps/<name>/config` before `start`. The config carries no name — identity is the path.
 
 ```json
 {
@@ -159,9 +159,15 @@ A wapp that needs drivers, console redirection, or preopens has its config writt
     "err": { "name": "log" }
   },
   "drivers": [
-    { "name": "socket", "path": "/net/s", "options": "t 127.0.0.1 8888" }
+    { "name": "gpio" }
   ],
-  "preopens": ["/var/lib/app"],
+  "mounts": [
+    { "name": "platform", "path": "/var/lib/app" },
+    { "name": "config",   "path": "/etc/config", "options": "{\"config_file\":\"/config.json\"}" }
+  ],
+  "sockets": [
+    { "name": "uplink", "address": "tcp://127.0.0.1:8888" }
+  ],
   "args": ["--port", "8888"],
   "envs": ["TZ=UTC", "LOG_LEVEL=info"]
 }
@@ -170,19 +176,21 @@ A wapp that needs drivers, console redirection, or preopens has its config writt
 | Field | Type | Notes |
 |-------|------|-------|
 | `image` | string | **Optional** registry image this instance runs, as a reference `<name>[:<tag>]` — a bare name resolves to the first match, a pinned tag (`duplex:stable`) resolves exactly. When omitted it defaults to the instance name, so a single-instance wapp needs no `image`. Set it to run several instances off one image, or override it per launch with `start <image>`. |
-| `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. **Optional**: an unset slot defaults — `in` to `null`, `out`/`err` to `log` — so a wapp launches without an explicit console and its output is captured to the `log` node. Override a slot with `log` (capture), `null` (discard), or `platform` (redirect to the engine's native stdio, fds 0/1/2). The `platform` *name* backs stdio here, but mounted at a path in `drivers[]` it is instead the host filesystem. |
-| `drivers` | array | Up to 10 entries. VFS drivers mounted into the wapp's namespace. |
-| `preopens` | array | Up to 4 absolute paths (must start with `/`, ≤63 chars). The engine creates/opens each and binds it as a WASI preopen — the wapp's read-write state storage. |
+| `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. **Optional**: an unset slot defaults — `in` to `null`, `out`/`err` to `log` — so a wapp launches without an explicit console and its output is captured to the `log` node. Override a slot with `log` (capture), `null` (discard), or `platform` (redirect to the engine's native stdio, fds 0/1/2). The `platform` *name* backs stdio here; in `mounts[]` it is instead a host directory. |
+| `drivers` | array | Up to 10 device singletons. Each mounts at `/dev/<name>` derived from the name; a `path` is rejected. |
+| `mounts` | array | Up to 10 file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev` and `/net`. The `platform` backend binds a host directory as a native WASI preopen (the wapp's read-write state storage); other backends mount through the VFS router. |
+| `sockets` | array | Up to 10 named connections. Each is created at `/net/<name>`; the transport is the entry's `address`. A `path` is rejected. |
 | `args` | array | Up to 8 strings (≤63 chars each), the wapp's `argv[1..]`. `argv[0]` is always the instance name, set by the engine. |
 | `envs` | array | Up to 8 POSIX `KEY=VALUE` strings (≤63 chars each), the wapp's `environ`. |
 
-Each driver spec (used by `console.*` slots and `drivers[]` entries):
+Entry shapes per section:
 
-| Key | Type | Notes |
-|-----|------|-------|
-| `name` | string | One of `null`, `log`, `9p`, `config`, `platform`, `socket`, `virt`, `wanted`. |
-| `path` | string | Mount point inside the wapp namespace. Must resolve under `/dev/*` or `/net/*`, or name a console slot, else the driver is rejected at install. |
-| `options` | string | Driver-specific. For `socket`: `t host port` (TCP), `u host port` (UDP), `T host port` (TLS TCP), `U host port` (TLS UDP). |
+| Section | Keys | Notes |
+|---------|------|-------|
+| `console.*` | `name`, `options` | `name` is one of `null`, `log`, `platform`. |
+| `drivers[]` | `name`, `options` | `name` is a device driver (e.g. `null`, `wanted`); mounted at `/dev/<name>`. |
+| `mounts[]` | `name`, `path`, `options` | `name` is a file/backend driver (`platform`, `config`, `9p`); `path` is required, absolute, and outside `/dev`/`/net`. |
+| `sockets[]` | `name`, `address` | `name` is the `/net` node label; `address` is a URL `<scheme>://<host>:<port>` with scheme `tcp`/`udp`/`tcps`/`udps`. |
 
 The parser uses a bounded token pool and a 2048-byte stack buffer; an oversized config returns `-EMSGSIZE`.
 
