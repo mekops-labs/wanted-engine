@@ -88,7 +88,7 @@ Entry shapes per section:
 | `log` | console slot | Ring-buffer console; output readable at `/dev/wanted/wapps/<name>/log`. | — |
 | `platform` | console slot / `mounts` | As a console slot: the engine's native stdio (fds 0/1/2). In `mounts[]`: a host directory bound as a native WASI preopen at `path`. | — |
 | `socket` | `sockets` | TCP/UDP, plain or TLS. The transport is the entry's `address`. | `tcp://localhost:8888` |
-| `9p` | `mounts` | 9P2000 client for an external FS plugin. | `tcp!localhost!5640` |
+| `9p` | `mounts` | 9P2000 client for an external FS plugin. | `tcp://localhost:5640` |
 | `config` | `mounts` | Read-only config-file injection (e.g. mounted at `/etc/config`). | `{"config_file":"/config.json"}` |
 | `wanted` | `drivers` | The control-plane namespace at `/dev/wanted` (privileged). | — |
 

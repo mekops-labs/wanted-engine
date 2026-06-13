@@ -10,7 +10,7 @@ Unreleased
 - `/dev/stdin`, `/dev/stdout`, `/dev/stderr` now alias the wapp's own console streams (WASI fd 0/1/2): opening the `/dev` path reaches the same backing as the matching fd — the `platform` console, the `log` ring, or `/dev/null` — instead of the previous discard/EOF stubs.
 - `preopens[]` is removed; a host directory is now a `mounts[]` entry with the `platform` backend (`{ "name": "platform", "path": "/var/lib/app" }`), which the engine binds as a native WASI preopen at that path.
 - The VFS router gains a general single-driver mount: a file/backend driver (config-map, `platform`, 9P) can be bound at any absolute path such as `/etc/config`, reachable outside the device and network namespaces. A deep mount surfaces a synthetic parent directory in the root listing.
-- Socket addresses use a URL form `<scheme>://<host>:<port>` — `tcp`/`udp` (plain), `tcps`/`udps` (TLS/DTLS) — replacing the `t|u|T|U host port` string. The vestigial `bus` transport (no platform backing; every open returned `-ECONNABORTED`) is removed.
+- Socket addresses use a URL form `<scheme>://<host>:<port>` — `tcp`/`udp` (plain), `tcps`/`udps` (TLS/DTLS) — replacing the `t|u|T|U host port` string. The vestigial `bus` transport (no platform backing; every open returned `-ECONNABORTED`) is removed. The `9p` driver's address adopts the same URL form (`tcp://host:port` / `udp://host:port`), replacing the Plan 9 `tcp!host!port` dial string.
 - The config-exposed `virt` driver is removed (it could not be usefully driven from config); the virtual-namespace primitive remains internal.
 
 ### Licensing
