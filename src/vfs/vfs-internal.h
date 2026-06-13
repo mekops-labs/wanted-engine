@@ -45,6 +45,10 @@ typedef enum {
      * a PLATFORM fd bypasses the mount table — the driver resolves relative
      * paths against the host directory directly. */
     VFS_TYPE_PLATFORM,
+    /* A single file/backend driver bound at an arbitrary mount prefix (e.g. a
+     * config-map at "/etc/config"). The mount entry owns the driver; ops
+     * delegate through it using drv_fd as the driver-internal fd. */
+    VFS_TYPE_DRIVER,
 } vfs_fd_type_t;
 
 typedef struct vfs_fd_t {
@@ -89,10 +93,17 @@ typedef struct vfs_named_drv_t {
     const vfs_driver_t *drv;
 } vfs_named_drv_t;
 
-/* Mount table entry — drives route_open dispatch and root VfsReadDir listing. */
+/* Mount prefix length — sized for an arbitrary absolute mount path such as
+ * "/etc/config", not just the fixed top-level namespaces. */
+#define VFS_MOUNT_PREFIX_LEN 64
+
+/* Mount table entry — drives route_open dispatch and root VfsReadDir listing.
+ * For VFS_TYPE_DRIVER mounts `drv` is the bound driver, owned by the mount and
+ * destroyed on VfsDestroy; it is NULL for the fixed namespace types. */
 typedef struct vfs_mount_t {
-    char prefix[16]; /* "/", "/dev", "/net", "/proc" */
+    char prefix[VFS_MOUNT_PREFIX_LEN]; /* "/", "/dev", "/net", "/proc", "/etc/config" */
     vfs_fd_type_t type;
+    const vfs_driver_t *drv;
 } vfs_mount_t;
 
 struct vfs_ctx_t {

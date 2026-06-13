@@ -11,10 +11,7 @@
                 "err": {"name": "platform"}
             },
             "drivers": [
-                {
-                    "name": "wanted",
-                    "path": "/dev/wanted"
-                }
+                {"name": "wanted"}
             ]
         }
     }

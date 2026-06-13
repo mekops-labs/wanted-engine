@@ -11,14 +11,14 @@
                 "err": {"name": "platform"}
             },
             "drivers": [
-                {"name": "wanted", "path": "/dev/wanted"},
-                {
-                    "name": "socket",
-                    "path": "/net/manager",
-                    "options": "T localhost 8443"
-                }
+                {"name": "wanted"}
             ],
-            "preopens": ["/var/lib/sheriff"]
+            "mounts": [
+                {"name": "platform", "path": "/var/lib/sheriff"}
+            ],
+            "sockets": [
+                {"name": "manager", "address": "tcps://localhost:8443"}
+            ]
         }
     }
 }

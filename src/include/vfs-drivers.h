@@ -12,7 +12,6 @@
 #endif
 
 enum vfs_socket_type_t {
-    VFS_SKT_BUS,
     VFS_SKT_TCP,
     VFS_SKT_UDP,
     VFS_SKT_STCP, /* secure tcp */

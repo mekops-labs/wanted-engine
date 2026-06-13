@@ -31,7 +31,24 @@ TEST(wanted_vfs_api, WantedParseCtrlActionTest) {
     TEST_ASSERT_EQUAL_STRING("app1", appName);
     TEST_ASSERT_EQUAL(WAPP_START, act);
     TEST_ASSERT_EQUAL_STRING("app1img", cfg.image);
-    TEST_ASSERT_EQUAL(5, cfg.driversCnt);
+
+    /* drivers[]: device singletons, name only. */
+    TEST_ASSERT_EQUAL(2, cfg.driversCnt);
+    TEST_ASSERT_EQUAL_STRING("wanted", cfg.drivers[0].name);
+    TEST_ASSERT_EQUAL_STRING("gpio", cfg.drivers[1].name);
+
+    /* mounts[]: file/backend drivers at an arbitrary path. */
+    TEST_ASSERT_EQUAL(2, cfg.mountsCnt);
+    TEST_ASSERT_EQUAL_STRING("config", cfg.mounts[0].name);
+    TEST_ASSERT_EQUAL_STRING("/etc/config", cfg.mounts[0].path);
+    TEST_ASSERT_EQUAL_STRING("platform", cfg.mounts[1].name);
+    TEST_ASSERT_EQUAL_STRING("/mnt", cfg.mounts[1].path);
+
+    /* sockets[]: the transport spec is carried in options (the "address"
+     * field); the name is the /net node label. */
+    TEST_ASSERT_EQUAL(1, cfg.socketsCnt);
+    TEST_ASSERT_EQUAL_STRING("uplink", cfg.sockets[0].name);
+    TEST_ASSERT_EQUAL_STRING("tcp://127.0.0.1:8888", cfg.sockets[0].options);
 
     /* args occupy argv[1..]; argv[0] is the wapp name, set by the engine. */
     TEST_ASSERT_EQUAL(2, cfg.argsCnt);
