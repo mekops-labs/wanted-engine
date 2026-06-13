@@ -16,6 +16,7 @@
  * image runs on Linux, the NuttX sim, and future hardware. */
 
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
@@ -61,6 +62,14 @@
     "{\"console\":{\"in\":{\"name\":\"null\"}," \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
     "\"args\":[\"alpha\",\"beta\"],\"envs\":[\"FOO=bar\",\"BAZ=qux\"]}"
+
+/* The supervisor's own launch config (selftest-config.json) wires the three
+ * launch-config resource sections, so they are verified in our own namespace:
+ * a `config` map mounted at an arbitrary path outside /dev, a named socket, and
+ * the `wanted` device driver. */
+#define CFGMAP_PATH   "/etc/config"
+#define CFGMAP_MARKER "selftest-cfgmap-v1"
+#define SOCKET_NAME   "uplink"
 
 /* Read up to cap-1 bytes of a path into buf (NUL-terminated). <0 on open
  * error, else byte count. */
@@ -579,6 +588,165 @@ static void argenv_check(void) {
            "exit_code: a clean non-zero exit surfaces on the exit_code node");
 }
 
+/* The launch-config resource sections, verified in the supervisor's own
+ * namespace (wired by selftest-config.json):
+ *   - mounts[]:  a `config` map mounts at an arbitrary path OUTSIDE /dev
+ *                (/etc/config), reads back its configured content, and surfaces
+ *                a synthetic parent (/etc) in the root listing — exercising the
+ *                general single-driver VFS mount;
+ *   - sockets[]: a socket is created at /net/<name> by name;
+ *   - drivers[]: the `wanted` device driver mounts at /dev/<name> — already
+ *                asserted by positive_checks via /dev/wanted. */
+static void mounts_check(void) {
+    char buf[256];
+
+    int n = read_path(CFGMAP_PATH, buf, sizeof(buf));
+    tap_ok(n > 0 && strstr(buf, CFGMAP_MARKER) != NULL,
+           "mounts: config-map reads back its content at /etc/config (outside /dev)");
+
+    tap_ok(dir_has("/", "etc"),
+           "mounts: a deep mount surfaces a synthetic parent in ls /");
+
+    /* A socket needs an IP netstack: socket() must succeed even to enumerate the
+     * node, because listing /net stats each entry and stat'ing a socket node
+     * opens it. The sim:wanted board is built without CONFIG_NET, so socket()
+     * fails there and /net enumeration aborts. Distinguish three outcomes:
+     *   - found        → the socket is present (assert pass);
+     *   - readdir abort → no netstack on this build (skip with a diagnostic);
+     *   - enumerable but absent → a real regression (assert fail). */
+    int found = 0, aborted = 0;
+    DIR *nd = opendir("/net");
+    if (nd) {
+        struct dirent *e;
+        for (;;) {
+            errno = 0;
+            e = readdir(nd);
+            if (e == NULL) {
+                aborted = (errno != 0);
+                break;
+            }
+            if (strcmp(e->d_name, SOCKET_NAME) == 0)
+                found = 1;
+        }
+        closedir(nd);
+    } else {
+        aborted = 1;
+    }
+
+    if (found || !aborted) {
+        tap_ok(found, "sockets: a named socket is created at /net/<name>");
+    } else {
+        tap_diag("sockets: skipped — /net enumeration needs an IP netstack "
+                 "(absent on this build, e.g. the sim:wanted board)");
+    }
+}
+
+/* Configure instance `name` with `cfg` and return true if the engine REJECTED
+ * it — the wapp never reached running/starting. Each `cfg` pins image:looper (a
+ * known-good image) so the image loads and the ONLY failure source is the
+ * launch config itself. */
+static int rejects_config(const char *name, const char *cfg) {
+    char path[96], state[96], buf[64];
+    if (!create_wapp(name))
+        return 0;
+    wapp_node(path, sizeof(path), name, "config");
+    if (write_path(path, cfg) < 0)
+        return 0;
+    start_wapp(name);
+    wapp_node(state, sizeof(state), name, "state");
+    wait_dead(name);
+    int n = read_path(state, buf, sizeof(buf));
+    return !(n > 0 && (strstr(buf, "running") || strstr(buf, "starting")));
+}
+
+/* Per-section launch-config validation must fail loudly: a path on a device
+ * driver or socket, a mount under a reserved namespace (/dev, /net, /proc), and
+ * a malformed socket address are each rejected at install — the wapp fails to
+ * start rather than coming up half-configured. A valid config mount on a
+ * launched wapp still runs, proving the rejection is specific. */
+static void launch_config_validation_check(void) {
+    static const struct { const char *name, *cfg; } bad[] = {
+        { "m_dev",  "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\",\"path\":\"/dev/x\",\"options\":\"y\"}]}" },
+        { "m_net",  "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\",\"path\":\"/net/x\",\"options\":\"y\"}]}" },
+        { "m_proc", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\",\"path\":\"/proc/x\",\"options\":\"y\"}]}" },
+        { "d_path", "{\"image\":\"looper\",\"drivers\":[{\"name\":\"null\",\"path\":\"/x\"}]}" },
+        { "s_path", "{\"image\":\"looper\",\"sockets\":[{\"name\":\"s\",\"path\":\"/net/x\",\"address\":\"tcp://localhost:9999\"}]}" },
+        { "s_addr", "{\"image\":\"looper\",\"sockets\":[{\"name\":\"s\",\"address\":\"bogus\"}]}" },
+    };
+    char buf[80], desc[96];
+    int all = 1;
+
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(*bad); i++) {
+        int rejected = rejects_config(bad[i].name, bad[i].cfg);
+        snprintf(desc, sizeof(desc), "launch-config reject %s: %s",
+                 bad[i].name, rejected ? "ok" : "ACCEPTED");
+        tap_diag(desc);
+        if (!rejected)
+            all = 0;
+    }
+    tap_ok(all,
+           "launch config: malformed drivers/mounts/sockets are rejected at install");
+
+    /* A valid config mount on a launched wapp must still come up. */
+    int ok = create_wapp("cfgok") &&
+             write_path("/dev/wanted/wapps/cfgok/config",
+                        "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\","
+                        "\"path\":\"/etc/cfg\",\"options\":\"z\"}]}") >= 0 &&
+             start_wapp("cfgok") &&
+             wait_state("/dev/wanted/wapps/cfgok/state", 1);
+    tap_ok(ok, "launch config: a valid config mount launches the wapp");
+    if (ok) {
+        write_path("/dev/wanted/wapps/cfgok/ctl", "stop");
+        wait_state("/dev/wanted/wapps/cfgok/state", 0);
+    }
+
+    tap_ok(read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
+               strstr(buf, "running") != NULL,
+           "launch config: supervisor survives the rejected configs");
+}
+
+/* Multiple readers on one pipe. A named pipe is a single consume-once ring, not
+ * a broadcast: with two readers blocked on /dev/pipe/duplex and one writer (this
+ * supervisor) writing a single payload, exactly one reader receives it and the
+ * other reaches EOF — proving multi-reader attach is safe and each byte is
+ * delivered once. MAX_WAPPS=3, so the supervisor is the writer and the two
+ * readers are the only launched wapps. Both reader instances run the one duplex
+ * image (ROLE=reader) and echo what they read to their log. */
+#define MREAD_A     "mreadA"
+#define MREAD_B     "mreadB"
+#define MREAD_A_LOG "/dev/wanted/wapps/" MREAD_A "/log"
+#define MREAD_B_LOG "/dev/wanted/wapps/" MREAD_B "/log"
+#define DUPLEX_CHAN "/dev/pipe/duplex"
+static void multi_reader_pipe_check(void) {
+    char buf[128];
+
+    create_wapp(MREAD_A);
+    create_wapp(MREAD_B);
+    write_path("/dev/wanted/wapps/" MREAD_A "/config", READER_CFG_BODY);
+    write_path("/dev/wanted/wapps/" MREAD_B "/config", READER_CFG_BODY);
+    start_wapp(MREAD_A);
+    start_wapp(MREAD_B);
+
+    /* Both readers must be attached (blocked in their read) before the writer
+     * closes, so the delivery is deterministic: one drains the payload, the
+     * other sees the closed writer and gets EOF. */
+    wait_state("/dev/wanted/wapps/" MREAD_A "/state", 1);
+    wait_state("/dev/wanted/wapps/" MREAD_B "/state", 1);
+
+    /* The supervisor is the single writer: one payload into the shared ring. */
+    write_path(DUPLEX_CHAN, DUPLEX_PAYLOAD);
+
+    wait_dead(MREAD_A);
+    wait_dead(MREAD_B);
+
+    int got_a = read_path(MREAD_A_LOG, buf, sizeof(buf)) > 0 &&
+                strstr(buf, DUPLEX_PAYLOAD) != NULL;
+    int got_b = read_path(MREAD_B_LOG, buf, sizeof(buf)) > 0 &&
+                strstr(buf, DUPLEX_PAYLOAD) != NULL;
+    tap_ok(got_a != got_b,
+           "pipe: two readers on one pipe — payload reaches exactly one (consume-once)");
+}
+
 int main(void) {
     /* Phases run in order. Announce each before running it (with a current/total
      * counter) so a long, mostly-sleeping check — the control-plane stop/wait
@@ -590,7 +758,9 @@ int main(void) {
         void (*run)(void);
     } phases[] = {
         { "positive_checks",    positive_checks    },
+        { "mounts_check",       mounts_check       },
         { "pipe_duplex_check",  pipe_duplex_check  },
+        { "multi_reader_pipe_check", multi_reader_pipe_check },
         { "robustness_checks",  robustness_checks  },
         { "containment_checks", containment_checks },
         { "cpuhog_check",       cpuhog_check       },
@@ -604,6 +774,7 @@ int main(void) {
         { "resource_check",     resource_check     },
         { "malformed_check",    malformed_check    },
         { "crashloop_check",    crashloop_check    },
+        { "launch_config_validation_check", launch_config_validation_check },
     };
     const int total = (int)(sizeof(phases) / sizeof(phases[0]));
 
