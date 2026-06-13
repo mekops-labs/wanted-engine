@@ -179,3 +179,8 @@ int VfsBindPlatformFd(vfs_ctx_t c, const char *path,
  * Destroy. `prefix` must be absolute and must not collide with a fixed
  * namespace. Returns 0 or -errno (the caller still owns `driver` on failure). */
 int VfsMountDriver(vfs_ctx_t c, const char *prefix, const vfs_driver_t *driver);
+
+/* The driver backing a console STREAM slot (VFS_STDIN/VFS_STDOUT/VFS_STDERR),
+ * or NULL if the slot is not a live stream. Lets /dev/std* aliases forward to
+ * the same backing as the wapp's WASI fd. The slot's driver-fd equals `slot`. */
+const vfs_driver_t *VfsStreamDriver(vfs_ctx_t c, int slot);
