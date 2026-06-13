@@ -882,7 +882,7 @@ int VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags) {
 }
 
 int VfsBindPlatformFd(vfs_ctx_t c, const char *path,
-                      const vfs_driver_t *driver, int host_fd) {
+                      const vfs_driver_t *driver, int host_fd, bool readonly) {
     if (!c || !path || !driver)
         return -EINVAL;
 
@@ -893,7 +893,8 @@ int VfsBindPlatformFd(vfs_ctx_t c, const char *path,
     c->fds[slot].type = VFS_TYPE_PLATFORM;
     c->fds[slot].driver = driver;
     c->fds[slot].drv_fd = host_fd;
-    c->fds[slot].flags = VFS_O_RDWR | VFS_O_DIRECTORY;
+    c->fds[slot].flags =
+        (readonly ? VFS_O_RDONLY : VFS_O_RDWR) | VFS_O_DIRECTORY;
     size_t plen = strlen(path);
     if (plen >= VFS_FD_PATH_LEN)
         plen = VFS_FD_PATH_LEN - 1;

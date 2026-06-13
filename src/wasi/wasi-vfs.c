@@ -991,21 +991,24 @@ void FreeWasiContext(wasi_ctx_t *c) {
     WantedFree(c);
 }
 
-int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, int host_fd) {
+int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, const char *hostPath,
+                      int host_fd, bool readonly) {
     if (!ctx || !path || !ctx->vfsCtx)
         return -EINVAL;
     if (ctx->preopens_cnt >= WASI_MAX_PREOPENS)
         return -ENOSPC;
 
     /* The PlatformFs driver owns conversion from VFS ops to host syscalls on
-     * `host_fd`. Passing `path` as the rootPath isn't load-bearing — for
-     * openat-relative paths the host kernel resolves against `host_fd` itself
-     * — but it keeps the driver self-describing for debugging. */
-    vfs_driver_t *drv = VfsPlatformFsInit(NULL, path);
+     * `host_fd`. The rootPath isn't load-bearing — for openat-relative paths
+     * the host kernel resolves against `host_fd` itself — but labelling it with
+     * the real backing directory keeps the driver self-describing for
+     * debugging. */
+    vfs_driver_t *drv =
+        VfsPlatformFsInit(NULL, hostPath ? hostPath : path, readonly);
     if (!drv)
         return -ENOMEM;
 
-    int fd = VfsBindPlatformFd(ctx->vfsCtx, path, drv, host_fd);
+    int fd = VfsBindPlatformFd(ctx->vfsCtx, path, drv, host_fd, readonly);
     if (fd < 0) {
         if (drv->Destroy)
             drv->Destroy(drv);

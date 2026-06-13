@@ -51,6 +51,7 @@ static dummy_fs_t g_dummy_fs;
 
 struct vfs_driver_ctx_t {
     dummy_fs_t *fs;
+    bool readonly;
 };
 
 /* ── Clock / PRNG state ─────────────────────────────────────────────────── */
@@ -162,6 +163,8 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 
 static int _OpenAt(vfs_driver_ctx_t d, int dir_drv_fd, const char *rel_path,
                    vfs_oflags_t flags) {
+    if (d->readonly && VFS_O_IS_WRITE(flags))
+        return -EROFS;
     dummy_fs_t *fs = d->fs;
     dummy_fd_slot_t *dfd = fd_get(fs, dir_drv_fd);
     if (!dfd)
@@ -216,6 +219,8 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
 }
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
+    if (d->readonly)
+        return -EROFS;
     dummy_fs_t *fs = d->fs;
     dummy_fd_slot_t *dfd = fd_get(fs, fd);
     if (!dfd)
@@ -330,10 +335,14 @@ static int dummy_rename(dummy_fs_t *fs, int old_fd, const char *old_path,
 
 static int _Rename(vfs_driver_ctx_t d, int old_fd, const char *old_path,
                    int new_fd, const char *new_path) {
+    if (d->readonly)
+        return -EROFS;
     return dummy_rename(d->fs, old_fd, old_path, new_fd, new_path);
 }
 
 static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path) {
+    if (d->readonly)
+        return -EROFS;
     dummy_fs_t *fs = d->fs;
     dummy_fd_slot_t *dfd = fd_get(fs, fd);
     if (!dfd)
@@ -353,7 +362,8 @@ static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path) {
 
 static const char id[] = {'D', 'u', 'm', 'y'};
 
-vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt) {
+vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt,
+                                bool readonly) {
     (void)wapp;
     (void)opt;
 
@@ -367,6 +377,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt) {
         return NULL;
     }
     ctx->fs = &g_dummy_fs;
+    ctx->readonly = readonly;
 
     memset(drv, 0, sizeof(*drv));
     drv->bytesId  = *(uint32_t *)(id);
@@ -388,11 +399,13 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt) {
 
 /* ── Platform filesystem functions ──────────────────────────────────────── */
 
-int PlatformOpenStateDir(const char *path) {
+int PlatformOpenStateDir(const char *path, bool readonly) {
     if (!path)
         return -EINVAL;
     int ni = node_find(&g_dummy_fs, path);
     if (ni < 0) {
+        if (readonly)
+            return -ENOENT;
         ni = node_alloc(&g_dummy_fs, path, DUMMY_NODE_DIR);
         if (ni < 0)
             return -ENOSPC;

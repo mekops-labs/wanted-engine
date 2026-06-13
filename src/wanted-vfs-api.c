@@ -153,12 +153,19 @@ int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
     return n < (int)bufLen ? n : (int)bufLen;
 }
 
+/* Table adaptor: a config-named `platform` driver — a console backing or a
+ * /dev singleton — is always read-write. The read-only bind mount is bound via
+ * WasiCtxAddPreopen (the mounts[] path), not resolved through this table. */
+static vfs_driver_t *PlatformFsInitRW(const wapp_t *wapp, const char *options) {
+    return VfsPlatformFsInit(wapp, options, false);
+}
+
 /* Global driver table — single registry used by WantedInstallDriver to resolve
  * a config driver name into an init callback. */
 static const vfs_driver_table_t global_driver_table[] = {
     {"null", VfsNullInit},           {"log", VfsLogInit},
     {"9p", Vfs9PInit},               {"config", VfsConfigInit},
-    {"platform", VfsPlatformFsInit}, {"socket", VfsSocketInit},
+    {"platform", PlatformFsInitRW},  {"socket", VfsSocketInit},
     {"wanted", VfsWantedInit},       {NULL, NULL},
 };
 
