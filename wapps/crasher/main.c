@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* crasher — exits immediately, every time.
  *
  * Models a wapp stuck in a crash loop (one that dies the moment it starts, e.g.

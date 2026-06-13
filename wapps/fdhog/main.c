@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* fdhog — exhausts a sandbox resource (file descriptors).
  *
  * Opens its read-only manifest over and over without closing, until the open

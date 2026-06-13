@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* NuttX platform memory stats.
  *
  * NuttX exposes mallinfo() (not the glibc-only mallinfo2()); its uordblks/arena

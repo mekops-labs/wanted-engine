@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* NuttX platform filesystem primitives: preopen state dirs and the openat-class
  * rename/mkdir used by the VFS. renameat/mkdirat are unconditional on NuttX; on
  * the host scaffolding build (glibc) they need the feature-test macros below. */

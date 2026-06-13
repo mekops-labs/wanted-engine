@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* Per-wapp log ring buffers — the backing store for the "log" console driver.
  *
  * Structurally a sibling of the named-pipe store (vfs-pipe.c): a process-wide
