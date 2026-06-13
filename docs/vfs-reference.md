@@ -18,11 +18,11 @@ These five `/dev/` entries are **always present** in every wapp, independent of 
 |------|--------|--------|-----------|
 | `/dev/null` | null | rw | Reads return 0 bytes (EOF); writes are accepted and discarded. |
 | `/dev/pipe/<name>` | pipe | rw | Process-wide named-pipe IPC. See below. |
-| `/dev/stdin` | stdio | r | Stub; reads return EOF. |
-| `/dev/stdout` | stdio | w | Stub; writes are discarded. |
-| `/dev/stderr` | stdio | w | Stub; writes are discarded. |
+| `/dev/stdin` | stdio | r | Alias of WASI fd 0 — reads from the same console backing. |
+| `/dev/stdout` | stdio | w | Alias of WASI fd 1 — writes to the same console backing. |
+| `/dev/stderr` | stdio | w | Alias of WASI fd 2 — writes to the same console backing. |
 
-The stdio stubs exist so a wapp's standard descriptors always resolve; a wapp that wants real stdout is given a `platform` or `log` console in its launch config (see [Control Plane Reference](control-plane-reference.md)), not by writing to `/dev/stdout`.
+The stdio entries alias the wapp's standard descriptors: opening `/dev/stdout` and writing reaches exactly the same place WASI fd 1 does — the `platform` console, the `log` ring, or `/dev/null` — whichever the launch config wired the slot to (see [Control Plane Reference](control-plane-reference.md)).
 
 ### `/dev/pipe/<name>` — inter-wapp IPC
 
