@@ -8,6 +8,13 @@ Unreleased
 
 - Relicensed from MIT to Apache License 2.0. Added `NOTICE` (project copyright plus attribution for bundled third-party components: WAMR, cwalk, tiny-json, c9, Unity, NuttX) and a minimal `CONTRIBUTING.md`. All first-party `.c`/`.h` files now carry an `SPDX-License-Identifier: Apache-2.0` header.
 
+### Images — manifest removed, image identity from the registry, multi-instance
+
+- **`manifest.json` is gone.** A wapp image is `app.wasm` (+ any TarFS payload); the loader no longer requires or parses an in-image manifest. Image identity (name + version) comes from the registry filename `<name>:<version>-<package>.wapp` — `PlatformRegistryWappLoad` stamps `image` and `version` onto the wapp from the resolved registry entry and never overwrites the instance name. `requirements[]` (parsed but never consumed) is dropped; the capability-declaration home is deferred.
+- **Instance identity is decoupled from image identity.** `create <name>` reserves an instance; the image it runs is resolved at start as an explicit `start <image>` argument → the launch config's `image` field → the instance name. One image can therefore run as N instances. The image an instance runs is recorded on the new `wapps/<name>/image` control node.
+- **Install by ref.** Streaming an image into the registry now names the stored file by the write path (`reg/<name>:<version>`) instead of parsing a manifest at finalize; `PlatformRegistryWrite` takes the target ref. Reading a registry entry returns a small synthesized `{name,version,size}` descriptor — no image load.
+- Supervisor TARs (`sheriff`/`wsh`/`selftest`) and all sample wapps ship `app.wasm` only; the supervisor's identity is its compiled-in name. Docs, selftest staging, and the malformed-image battery (now: no-entrypoint, invalid WASM, truncated TAR) updated accordingly.
+
 ### Control plane — env/argv, first-start lifecycle, exit codes, and slot release
 
 - Wapps receive **environment variables and command-line arguments** via standard WASI. The launch config gains `args[]` (→ `argv[1..]`; `argv[0]` is always the wapp name) and `envs[]` (POSIX `KEY=VALUE` → `environ`); the engine fills WAMR's `argv`/`envp` and implements the previously-stubbed `environ_sizes_get`/`environ_get`.
@@ -101,7 +108,7 @@ Unreleased
 
 ### Tooling — sample wapp + multi-wapp smoke test
 
-- Added `wapps/hello/` — a minimal WASI sample wapp (source, manifest, Makefile) used to exercise concurrent multi-wapp execution through wsh.
+- Added `wapps/hello/` — a minimal WASI sample wapp (source + Makefile) used to exercise concurrent multi-wapp execution through wsh.
 - Added `test/smoke-multiwapp.sh` — packages the sample into the registry (`REGISTRY_ROOT`), drives wsh to write a launch config and `start` the wapp, then asserts `status` reports it running alongside the supervisor.
 - Added `make wapps` (compile sample wapp images) and `make smoke-multiwapp` targets.
 

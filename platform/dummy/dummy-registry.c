@@ -10,8 +10,8 @@
 /* ── In-memory registry ─────────────────────────────────────────────────────
  * Deterministic, dependency-free stand-in for the host registry. Backs
  * PlatformRegistryRead / PlatformRegistryRemove. The real PlatformRegistryWrite
- * is a chunked state machine whose FINISH_WRITE step parses a WASM manifest to
- * derive name and version — out of scope for the dummy. Tests populate via
+ * is a chunked state machine that streams an image to a host file and renames
+ * it under the install ref — out of scope for the dummy. Tests populate via
  * DummyRegistrySeed.
  * ───────────────────────────────────────────────────────────────────────── */
 

@@ -1,8 +1,8 @@
-# hello sample wapp builder.
+# selftest supervisor wapp builder.
 #
 # Compiles the wapp source under this directory to <dir>.wasm with the
-# wasi-sdk clang. Mirrors wapps/wsh/Makefile; the test/smoke-multiwapp.sh
-# harness packages the resulting wasm + manifest.json into a registry .wapp.
+# wasi-sdk clang. wasm/supervisor/Makefile bundles the resulting wasm into the
+# selftest supervisor TAR.
 
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 current_dir := $(notdir $(patsubst %/,%,$(dir $(mkfile_path))))

@@ -10,12 +10,13 @@
  * in dummy-wapps.c.
  * Network mock (PlatformNet*) lives in dummy-net.c. */
 
-/* PlatformRegistryWrite requires parsing a WASM manifest to derive name and
- * version (FINISH_WRITE); WASM loading is out of scope for the dummy, so this
- * remains a stub. PlatformRegistryWappLoad chains a WASM load for the same
- * reason. Read/Remove are implemented in dummy-registry.c. */
-int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
-    (void)s; (void)buf; (void)nbytes; return -ENOSYS;
+/* PlatformRegistryWrite streams an image to a host file and renames it under
+ * the install ref; host filesystem writes are out of scope for the dummy, so
+ * this remains a stub. PlatformRegistryWappLoad chains a WASM load, also out of
+ * scope. Read/Remove are implemented in dummy-registry.c. */
+int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
+                          size_t nbytes) {
+    (void)s; (void)ref; (void)buf; (void)nbytes; return -ENOSYS;
 }
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) { (void)entry; (void)w; return -ENOSYS; }
 

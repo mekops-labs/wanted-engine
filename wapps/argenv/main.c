@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* argenv — prints its argv and environ, then exits with a fixed non-zero code.
  *
  * The selftest launches it with known args and envs in its launch config and

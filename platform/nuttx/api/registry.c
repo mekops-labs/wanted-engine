@@ -5,7 +5,8 @@
  * The sim backs the registry on a hostfs directory. Reads enumerate it with
  * opendir/readdir (scandir is optional on NuttX, gated by CONFIG_LIBC_SCANDIR,
  * so it is avoided) and sort the result; the writer stages incoming bytes to a
- * temp file then renames it into place once the manifest parses. */
+ * temp file then renames it into place under the install ref ("<name>:<ver>")
+ * once the stream completes. */
 
 #include <dirent.h>
 #include <errno.h>
@@ -123,19 +124,25 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     return count;
 }
 
-int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
+int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
+                          size_t nbytes) {
     static FILE *f;
     static char tempName[] = REGISTRY_ROOT "/_temp";
+    static char targetRef[PATH_MAX];
     static char targetName[PATH_MAX];
 
     int written = 0;
-    int ret = 0;
-    wapp_t w;
 
     switch (s) {
     case START_WRITE:
         if (buf == NULL || nbytes == 0)
             return -EINVAL;
+        /* The install target is named by the ref ("<name>:<version>"), captured
+         * here and used to name the stored file at FINISH_WRITE. */
+        if (ref == NULL || ref[0] == '\0')
+            return -EINVAL;
+        strncpy(targetRef, ref, sizeof(targetRef) - 1);
+        targetRef[sizeof(targetRef) - 1] = '\0';
         f = fopen(tempName, "w");
         if (f == NULL)
             return -errno;
@@ -155,38 +162,25 @@ int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
             return -EBADF;
         fclose(f);
         f = NULL;
-
-        ret = PlatformWappLoad(tempName, &w);
-        if (ret < 0) {
+        if (targetRef[0] == '\0') {
             remove(tempName);
-            return ret;
+            return -EINVAL;
         }
 
-        ret = WantedWappParseManifest(&w);
-        if (ret < 0) {
-            remove(tempName);
-            return ret;
-        }
-
-        snprintf(targetName, sizeof(targetName), "%s/%s%c%d.%d.%d-%d%s",
-                 REGISTRY_ROOT, w.name, REGISTRY_VERSION_SEPARATOR,
-                 w.version.major, w.version.minor, w.version.patch,
-                 w.version.package, REGISTRY_EXT);
+        snprintf(targetName, sizeof(targetName), "%s/%s%s", REGISTRY_ROOT,
+                 targetRef, REGISTRY_EXT);
+        targetRef[0] = '\0';
         if (rename(tempName, targetName) < 0) {
             remove(tempName);
-            written = -errno;
+            return -errno;
         }
-
-        ret = PlatformWappUnload(&w);
-        if (ret < 0)
-            return ret;
-
         break;
     case ABORT_WRITE:
         if (f == NULL)
             return -EBADF;
         fclose(f);
         f = NULL;
+        targetRef[0] = '\0';
         remove(tempName);
         break;
     default:
@@ -199,6 +193,8 @@ int PlatformRegistryWrite(write_state_t s, const uint8_t *buf, size_t nbytes) {
 
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     char targetName[PATH_MAX];
+    reg_entry_t resolved;
+    int ret;
 
     if (!entry->version[0]) {
         reg_entry_t list[REGISTRY_MAX_ENTRIES];
@@ -219,17 +215,26 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
         }
         if (match == NULL)
             return -ENOENT;
-
-        snprintf(targetName, sizeof(targetName), "%s/%s%c%s%s", REGISTRY_ROOT,
-                 match->name, REGISTRY_VERSION_SEPARATOR, match->version,
-                 REGISTRY_EXT);
+        resolved = *match;
     } else {
-        snprintf(targetName, sizeof(targetName), "%s/%s%c%s%s", REGISTRY_ROOT,
-                 entry->name, REGISTRY_VERSION_SEPARATOR, entry->version,
-                 REGISTRY_EXT);
+        resolved = *entry;
     }
 
-    return PlatformWappLoad(targetName, w);
+    snprintf(targetName, sizeof(targetName), "%s/%s%c%s%s", REGISTRY_ROOT,
+             resolved.name, REGISTRY_VERSION_SEPARATOR, resolved.version,
+             REGISTRY_EXT);
+
+    ret = PlatformWappLoad(targetName, w);
+    if (ret < 0)
+        return ret;
+
+    /* Image identity is the registry entry — name and version tag. The instance
+     * name (w->name) is set by the launch path and left untouched here. */
+    strncpy(w->image, resolved.name, WAPP_MAX_NAME_LEN - 1);
+    w->image[WAPP_MAX_NAME_LEN - 1] = '\0';
+    strncpy(w->version, resolved.version, WAPP_MAX_VERSION_LEN - 1);
+    w->version[WAPP_MAX_VERSION_LEN - 1] = '\0';
+    return 0;
 }
 
 int PlatformRegistryRemove(const reg_entry_t *entry) {

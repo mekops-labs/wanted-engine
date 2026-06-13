@@ -30,6 +30,7 @@ TEST(wanted_vfs_api, WantedParseCtrlActionTest) {
 
     TEST_ASSERT_EQUAL_STRING("app1", appName);
     TEST_ASSERT_EQUAL(WAPP_START, act);
+    TEST_ASSERT_EQUAL_STRING("app1img", cfg.image);
     TEST_ASSERT_EQUAL(5, cfg.driversCnt);
 
     /* args occupy argv[1..]; argv[0] is the wapp name, set by the engine. */
@@ -60,7 +61,38 @@ TEST(wanted_vfs_api, WantedParseWappConfigArgsEnvs) {
     TEST_ASSERT_EQUAL_STRING("A=1", cfg.envs[0]);
 }
 
+/* The config node parses the optional "image" field — the image an instance
+ * runs, decoupled from its instance name. */
+TEST(wanted_vfs_api, WantedParseWappConfigImage) {
+    const char *cfg_json = "{\"image\":\"duplex\",\"envs\":[\"ROLE=reader\"]}";
+    wapp_config_t cfg;
+
+    int ret = WantedParseWappConfigJson(cfg_json, strlen(cfg_json), &cfg);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL_STRING("duplex", cfg.image);
+
+    /* Omitting "image" leaves it empty (the launch path defaults it to the
+     * instance name). */
+    const char *no_image = "{\"args\":[\"x\"]}";
+    ret = WantedParseWappConfigJson(no_image, strlen(no_image), &cfg);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL_STRING("", cfg.image);
+}
+
+/* A pinned image reference "<name>:<tag>" round-trips through the config — the
+ * tag is opaque and resolved exactly at launch. */
+TEST(wanted_vfs_api, WantedParseWappConfigImagePinnedTag) {
+    const char *cfg_json = "{\"image\":\"duplex:stable\"}";
+    wapp_config_t cfg;
+
+    int ret = WantedParseWappConfigJson(cfg_json, strlen(cfg_json), &cfg);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL_STRING("duplex:stable", cfg.image);
+}
+
 TEST_GROUP_RUNNER(wanted_vfs_api) {
     RUN_TEST_CASE(wanted_vfs_api, WantedParseCtrlActionTest);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigArgsEnvs);
+    RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigImage);
+    RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigImagePinnedTag);
 }

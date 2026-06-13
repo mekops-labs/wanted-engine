@@ -3,10 +3,10 @@ title: "Wapp Authoring"
 date: 2026-06-09T20:00:00+01:00
 weight: 30
 toc: true
-description: "Writing a wapp: package layout, manifest, the WASI ABI, filesystem and IPC, capability requirements, and building the image."
+description: "Writing a wapp: package layout, image identity, the WASI ABI, filesystem and IPC, and building the image."
 ---
 
-A wapp is a WebAssembly module (`app.wasm`) plus a manifest (`manifest.json`), packaged into a TAR image. It runs in its own WASM linear memory and reaches the outside world **only** through the VFS the engine grants it — there is no ambient host access. This page is the reference for authoring one. See [Architecture](architecture.md) for the runtime model and [VFS Reference](vfs-reference.md) for the exhaustive path list.
+A wapp is a WebAssembly module (`app.wasm`) packaged into a TAR image. It runs in its own WASM linear memory and reaches the outside world **only** through the VFS the engine grants it — there is no ambient host access. This page is the reference for authoring one. See [Architecture](architecture.md) for the runtime model and [VFS Reference](vfs-reference.md) for the exhaustive path list.
 
 The `hello` sample is the running example throughout:
 
@@ -24,43 +24,24 @@ int main(void) {
 
 ## Package layout
 
-A wapp image is a POSIX **ustar** TAR. The engine's TarFS mounts it read-only as the wapp's root filesystem (`/`), and the loader looks for two entries by exact name at the archive root:
+A wapp image is a POSIX **ustar** TAR. The engine's TarFS mounts it read-only as the wapp's root filesystem (`/`), and the loader looks for the entrypoint by exact name at the archive root:
 
 ```
 hello:0.0.1-1.wapp           # the TAR (registry filename: <name>:<version>-<package>.wapp)
-├── app.wasm                 # required — the compiled module
-├── manifest.json            # required — the wapp metadata
+├── app.wasm                 # required — the compiled module (the only mandatory member)
 └── assets/logo.png          # optional — any data files become the read-only rootfs
 ```
 
-- **`app.wasm`** and **`manifest.json`** are mandatory at the root. The wasm binary is always named `app.wasm` *inside* the package regardless of its source filename.
+- **`app.wasm`** is the only mandatory entry; it is always named `app.wasm` *inside* the package regardless of its source filename. An image is just code plus optional data.
 - Every other entry appears to the wapp at its archived path. An asset at `assets/logo.png` is readable as `/assets/logo.png`.
 - The root is **read-only** (`EROFS` on write). Writable storage is a [preopen](#preopens), not a packaged file.
 - Multiple stacked layers merge newest-over-oldest with `.wh.<name>` whiteout deletion; see [VFS Reference → TarFS](vfs-reference.md#--tarfs-application-space). A single-layer image — one TAR — is the common case.
 
-## Manifest schema
+## Image identity
 
-`manifest.json` is a flat JSON object. The engine parses four fields:
+A wapp image has **no embedded metadata** — its identity is the registry filename. Installing the TAR as `registry/<name>:<version>-<package>.wapp` is what gives the image its name and version; the loader reads both back from the registry entry, and `/proc/wapps` / the `version` control node report them. A missing or unreadable `app.wasm` rejects the image at load.
 
-| Field | Type | Required | Constraints | Description |
-|-------|------|:--------:|-------------|-------------|
-| `name` | string | yes | ≤ 15 chars | Wapp identifier; the registry key and the name shown by `status` / `/proc/wapps`. |
-| `version` | integer array | yes | `[major, minor, patch]` | Three integers; read positionally. |
-| `package` | integer | no | defaults to `0` | Package revision, bumped when the image changes but the version does not. |
-| `requirements` | string array | no | ≤ 8 entries, ≤ 31 chars each | Abstract capability names; see [Capability requirements](#capability-requirements). |
-
-`hello`'s manifest:
-
-```json
-{
-    "name": "hello",
-    "version": [ 0, 0, 1 ],
-    "package": 1,
-    "requirements": [ "console" ]
-}
-```
-
-A missing or wrong-typed `name` or `version` rejects the image at load. A missing `package` is treated as `0`; a missing `requirements` is treated as the empty set.
+**Instance identity is separate from image identity.** A running wapp is an *instance*, created by `create <instance>` on the control plane; the *image* it runs is named by the instance's launch config (`"image": "<name>"`, defaulting to the instance name) or by an explicit `start <image>`. One image can therefore run as N independent instances — the engine reports each under its instance name and records the image it runs on the per-instance `image` node. See [Control Plane Reference](control-plane-reference.md).
 
 ## The WASI ABI
 
@@ -94,7 +75,7 @@ Practical consequences for a wapp author:
 
 What a wapp sees under `/` is assembled by the VFS router from three sources:
 
-1. **TarFS root (`/`)** — the read-only contents of the image (above). Your `app.wasm`, `manifest.json`, and any packaged data files.
+1. **TarFS root (`/`)** — the read-only contents of the image (above). Your `app.wasm` and any packaged data files.
 2. **Preopens** — host directories bound into the namespace as read-write storage. See below.
 3. **Device, network, and process namespaces** — `/dev/`, `/net/`, `/proc/`, overlaid by the router. The full path list is the [VFS Reference](vfs-reference.md).
 
@@ -127,7 +108,7 @@ Semantics to design around:
 
 ## Preopens
 
-A preopen is a host directory the engine binds into the wapp's namespace as **read-write** storage that survives restarts — the wapp's only writable filesystem. Declare it in the launch config (not the manifest), under `params.preopens`:
+A preopen is a host directory the engine binds into the wapp's namespace as **read-write** storage that survives restarts — the wapp's only writable filesystem. Declare it in the launch config, under `params.preopens`:
 
 ```json
 { "preopens": [ "/tmp/wanted-smoke-pipe" ] }
@@ -145,13 +126,7 @@ close(fd);
 
 ## Capability requirements
 
-`requirements` in the manifest is the wapp declaring, in the abstract, what it needs to function — for example `hello` requires `console` because its job is to print:
-
-```json
-"requirements": [ "console" ]
-```
-
-The **supervisor** reads these and validates them against the launch config before issuing a start: a wapp that requires `console` but is launched with no console is rejected up front rather than failing mid-run. The engine core stores the requirement list (up to 8 names, 31 chars each) and exposes it; it does not itself gate startup on it — enforcement is supervisor policy. `console` is the requirement used by the sample wapps; the vocabulary is defined by whichever supervisor (sheriff, wsh) launches the wapp.
+A wapp's effective capabilities are exactly what its launch config grants: the consoles, drivers, preopens, and the `/dev/wanted` control plane the supervisor wires up at start. The image itself declares nothing. A declarative capability-requirement vocabulary (its home — OCI image-config labels vs. implicit wasm imports — is an open design question) is deferred to a future revision.
 
 ## Building a wapp
 
@@ -166,13 +141,12 @@ RUN make NAME=hello                         # -> hello.wasm
 
 FROM scratch
 COPY --from=build /src/hello.wasm  app.wasm
-COPY manifest.json                 manifest.json
 # COPY assets/  assets/                    # optional packaged data files
 ```
 
 The C reference for the compile flags is `wapps/hello/Makefile` — `--target=wasm32-wasi`, an initial/maximum linear memory of one 64 KiB page, a 4 KiB stack, `-Os`, and `--strip-all`. Read `/proc/wanted` at runtime for the engine's resource ceilings.
 
-Build the image, then export its filesystem as the `.wapp` TAR — the exported rootfs *is* the wapp's TarFS root, with `app.wasm` and `manifest.json` at its top level:
+Build the image, then export its filesystem as the `.wapp` TAR — the exported rootfs *is* the wapp's TarFS root, with `app.wasm` at its top level:
 
 ```bash
 podman build -t hello-wapp .
@@ -181,15 +155,15 @@ podman export "$cid" -o registry/hello:0.0.1-1.wapp
 podman rm "$cid"
 ```
 
-Install means placing that TAR in the registry directory under `<name>:<version>-<package>.wapp`. Start it through the control plane (`start hello` from `wsh`); the full run is in the [Quick Start](quickstart.md), and the install/launch verbs are in the [Control Plane Reference](control-plane-reference.md).
+Install means placing that TAR in the registry directory under `<name>:<version>-<package>.wapp` — the filename **is** the image's identity (name and version). Start it through the control plane (`start hello` from `wsh`); the full run is in the [Quick Start](quickstart.md), and the install/launch verbs are in the [Control Plane Reference](control-plane-reference.md).
 
-The low-level fallback — no container build — is to tar the two files directly, exactly as the test harness does:
+The low-level fallback — no container build — is to tar the single file directly, exactly as the test harness does:
 
 ```bash
 make -C wapps/hello                        # produces hello.wasm
-mkdir pkg && cp wapps/hello/hello.wasm pkg/app.wasm && cp wapps/hello/manifest.json pkg/
+mkdir pkg && cp wapps/hello/hello.wasm pkg/app.wasm
 tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
-    -C pkg -cf registry/hello:0.0.1-1.wapp app.wasm manifest.json
+    -C pkg -cf registry/hello:0.0.1-1.wapp app.wasm
 ```
 
 ## See also

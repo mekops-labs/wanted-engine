@@ -76,31 +76,20 @@ build() {
 # Package a test wapp into the sim's hostfs registry, which the engine resolves
 # as ./registry relative to /data (wanted_sim_main chdirs there).
 #
-# stage_test_wapp <name>:<ver> [srcdir]
-# Package wapps/<srcdir> (default <srcdir>=<name>) as <name>:<ver>.wapp. When an
-# alias name differs from the source dir, the manifest is synthesised carrying
-# the registry name (the engine reports a wapp under its manifest name), so the
-# single `duplex` source can be staged as both `reader` and `writer`. Mirrors
-# the Linux `stage` helper in test/selftest.sh.
+# stage_test_wapp <name>:<ver>
+# Package wapps/<name> as <name>:<ver>.wapp. An image is just app.wasm (+ any
+# TarFS payload); identity comes from the registry filename. The `duplex` image
+# is launched as two instances (reader/writer) by the supervisor via config
+# `image`, so it is staged once, not aliased. Mirrors the Linux `stage` helper
+# in test/selftest.sh.
 stage_test_wapp() {
-    local name=${1%%:*} ver=${1#*:} src=${2:-${1%%:*}} s
-    make -C "$ENGINE_DIR/wapps/$src" >/dev/null 2>&1
+    local name=${1%%:*} ver=${1#*:} s
+    make -C "$ENGINE_DIR/wapps/$name" >/dev/null 2>&1
     mkdir -p "$SIMROOT/registry"
     s=$(mktemp -d)
-    cp "$ENGINE_DIR/wapps/$src/$src.wasm" "$s/app.wasm"
-    if [ "$src" = "$name" ]; then
-        cp "$ENGINE_DIR/wapps/$src/manifest.json" "$s/manifest.json"
-    else
-        local vv=${ver%-*} pkg=${ver#*-}
-        local mj=${vv%%.*}
-        local rest=${vv#*.}
-        local mn=${rest%%.*}
-        local pt=${rest##*.}
-        printf '{"name":"%s","version":[%s,%s,%s],"package":%s,"requirements":[]}\n' \
-            "$name" "$mj" "$mn" "$pt" "$pkg" > "$s/manifest.json"
-    fi
+    cp "$ENGINE_DIR/wapps/$name/$name.wasm" "$s/app.wasm"
     tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
-        -C "$s" -cf "$SIMROOT/registry/$name:$ver.wapp" app.wasm manifest.json
+        -C "$s" -cf "$SIMROOT/registry/$name:$ver.wapp" app.wasm
     rm -rf "$s"
 }
 
@@ -121,10 +110,10 @@ selftest() {
     stage_test_wapp fdhog:0.0.1-1
     stage_test_wapp crasher:0.0.1-1
     stage_test_wapp argenv:0.0.1-1
-    # The inter-wapp pipe round-trip uses one source (wapps/duplex) staged under
-    # two names; each picks its side from the ROLE env var in its launch config.
-    stage_test_wapp reader:0.0.1-1 duplex
-    stage_test_wapp writer:0.0.1-1 duplex
+    # The inter-wapp pipe round-trip runs the single `duplex` image as two
+    # instances (reader/writer); each picks its side from the ROLE env var in its
+    # launch config. The supervisor binds the image via config `image`.
+    stage_test_wapp duplex:0.0.1-1
     # hand-crafted malformed images for the loader-robustness check (reuse the
     # valid wasm that stage_test_wapp just built)
     "$ENGINE_DIR/test/stage-malformed.sh" "$SIMROOT/registry" \
