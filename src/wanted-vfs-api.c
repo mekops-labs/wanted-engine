@@ -44,6 +44,8 @@ const char *statusToString(status_t state) {
     switch (state) {
     case NOT_STARTED:
         return "not_started";
+    case CREATED:
+        return "created";
     case STARTING:
         return "starting";
     case RUNNING:
@@ -320,6 +322,49 @@ static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
             pi++;
         }
         cfg->preopensCnt = (size_t)pi;
+    }
+
+    /* args[]: optional command-line arguments, occupying argv[1..]. argv[0] is
+     * the wapp name, set by the engine at launch. */
+    json_t const *args = json_getProperty(params, "args");
+    if (args && JSON_ARRAY == json_getType(args)) {
+        json_t const *a;
+        int ai = 0;
+        for (a = json_getChild(args);
+             a && ai < WAPP_MAX_ARGS;
+             a = json_getSibling(a)) {
+            if (JSON_TEXT != json_getType(a))
+                continue;
+            const char *v = json_getValue(a);
+            size_t vlen = v ? strnlen(v, WAPP_MAX_ARG_LEN) : WAPP_MAX_ARG_LEN;
+            if (!v || vlen >= WAPP_MAX_ARG_LEN)
+                continue;
+            memcpy(cfg->args[ai], v, vlen);
+            cfg->args[ai][vlen] = '\0';
+            ai++;
+        }
+        cfg->argsCnt = (size_t)ai;
+    }
+
+    /* envs[]: optional environment, each a POSIX "KEY=VALUE" string. */
+    json_t const *envs = json_getProperty(params, "envs");
+    if (envs && JSON_ARRAY == json_getType(envs)) {
+        json_t const *e;
+        int ei = 0;
+        for (e = json_getChild(envs);
+             e && ei < WAPP_MAX_ENVS;
+             e = json_getSibling(e)) {
+            if (JSON_TEXT != json_getType(e))
+                continue;
+            const char *v = json_getValue(e);
+            size_t vlen = v ? strnlen(v, WAPP_MAX_ENV_LEN) : WAPP_MAX_ENV_LEN;
+            if (!v || vlen >= WAPP_MAX_ENV_LEN)
+                continue;
+            memcpy(cfg->envs[ei], v, vlen);
+            cfg->envs[ei][vlen] = '\0';
+            ei++;
+        }
+        cfg->envsCnt = (size_t)ei;
     }
 }
 

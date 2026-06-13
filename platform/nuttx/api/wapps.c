@@ -271,6 +271,7 @@ int PlatformWappStart(wapp_t *wapp) {
 
     state.threads[slot].data.id = slot;
     state.threads[slot].data.wapp = wapp;
+    state.threads[slot].data.exit_code = WAPP_EXIT_CODE_NONE;
     state.threads[slot].status = STARTING;
     state.threads[slot].interrupted = 0;
 
@@ -321,6 +322,56 @@ int PlatformWappStop(const char *name) {
     if (rc != 0 && rc != ESRCH)
         return -rc;
 
+    return 0;
+}
+
+int PlatformWappRelease(const char *name) {
+    int slot;
+
+    if (NULL == name) {
+        return -EINVAL;
+    }
+
+    pthread_mutex_lock(&state_mtx);
+
+    for (slot = 0; slot < MAX_WAPPS; slot++) {
+        if (state.threads[slot].data.wapp == NULL)
+            continue;
+        if (strcmp((char *)state.threads[slot].data.wapp->name, name) == 0)
+            break;
+    }
+
+    if (slot == MAX_WAPPS) {
+        pthread_mutex_unlock(&state_mtx);
+        return -ENOENT;
+    }
+
+    /* Only a terminal slot can be released. A running/starting wapp must be
+     * stopped first — its worker still dereferences the slot, so freeing the
+     * image here would be a use-after-free. The terminal status (set by
+     * updateState after the worker unwound) guarantees the thread is gone. */
+    if (state.threads[slot].status != EXITED &&
+        state.threads[slot].status != FAILURE) {
+        pthread_mutex_unlock(&state_mtx);
+        return -EBUSY;
+    }
+
+    /* Free the mapped image + struct. The supervisor image is a persistent
+     * singleton reused across respawns — never free that one. state.n was
+     * already decremented when the worker reached its terminal status, so the
+     * slot does not count against the pool and must not be decremented again. */
+    wapp_t *w = state.threads[slot].data.wapp;
+    if (w != NULL && w != WantedGetCurrentSupervisor()) {
+        PlatformWappUnload(w);
+        WantedFree(w);
+    }
+    state.threads[slot].data.wapp = NULL;
+    state.threads[slot].data.id = 0;
+    state.threads[slot].data.exit_code = WAPP_EXIT_CODE_NONE;
+    state.threads[slot].status = NOT_STARTED;
+    state.threads[slot].interrupted = 0;
+
+    pthread_mutex_unlock(&state_mtx);
     return 0;
 }
 
@@ -399,6 +450,7 @@ int PlatformWappGetState(wapp_state_t *wapps, size_t appsLen) {
         wapps[r].status = state.threads[i].status;
         wapps[r].version = state.threads[i].data.wapp->version;
         wapps[r].id = state.threads[i].data.id;
+        wapps[r].exit_code = state.threads[i].data.exit_code;
         r++;
     }
 

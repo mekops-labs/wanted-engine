@@ -93,6 +93,7 @@ int PlatformWappStart(wapp_t *app) {
     }
     g_state[idx].version = app->version;
     g_state[idx].status = RUNNING;
+    g_state[idx].exit_code = WAPP_EXIT_CODE_NONE;
     return 0;
 }
 
@@ -104,6 +105,24 @@ int PlatformWappStop(const char *name) {
     if (idx < 0)
         return -ENOENT;
     g_state[idx].status = EXITED;
+    return 0;
+}
+
+int PlatformWappRelease(const char *name) {
+    if (!name)
+        return -EINVAL;
+
+    int idx = state_find(name);
+    if (idx < 0)
+        return -ENOENT;
+
+    /* Only a terminal slot can be released; a running/starting wapp must be
+     * stopped first. */
+    if (g_state[idx].status != EXITED && g_state[idx].status != FAILURE)
+        return -EBUSY;
+
+    g_used[idx] = 0;
+    memset(&g_state[idx], 0, sizeof(g_state[idx]));
     return 0;
 }
 

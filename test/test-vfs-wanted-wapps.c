@@ -62,6 +62,16 @@ static int OpenLeaf(const char *path) {
     return drv->Open(drv->ctx, path, VFS_O_RDONLY);
 }
 
+/* Reserve a wapp namespace via the root ctl `create` verb, the way a wapp comes
+ * into being. The per-wapp nodes are only openable once the wapp is known
+ * (created or live), so most tests create or seed their wapp first. */
+static void CreateWapp(const char *name) {
+    char cmd[64];
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    int n = snprintf(cmd, sizeof(cmd), "create %s", name);
+    ctl->Write(ctl->ctx, fd, cmd, (size_t)n);
+}
+
 /* M0 — enumeration */
 
 TEST(vfs_wanted_wapps, ReadDirRoot_EnumeratesKnownWapps) {
@@ -85,6 +95,7 @@ TEST(vfs_wanted_wapps, ReadDirRoot_EnumeratesKnownWapps) {
 }
 
 TEST(vfs_wanted_wapps, ReadDirWapp_ListsControlFiles) {
+    CreateWapp("alpha");
     int fd = OpenLeaf("alpha");
     TEST_ASSERT_TRUE(fd >= 0);
 
@@ -101,6 +112,7 @@ TEST(vfs_wanted_wapps, ReadDirWapp_ListsControlFiles) {
 }
 
 TEST(vfs_wanted_wapps, Stat_RootIsDir_LeafIsCharDevice) {
+    CreateWapp("alpha");
     vfs_stat_t st;
     int d = OpenLeaf("alpha");
     TEST_ASSERT_EQUAL_INT(0, drv->Stat(drv->ctx, d, &st));
@@ -128,11 +140,13 @@ TEST(vfs_wanted_wapps, ReadState_Running) {
     TEST_ASSERT_EQUAL_INT(7, n);
 }
 
-TEST(vfs_wanted_wapps, ReadState_UnknownWappIsNotStarted) {
-    int fd = OpenLeaf("ghost/state");
-    char buf[32] = {0};
-    drv->Read(drv->ctx, fd, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("not_started", buf);
+/* An unknown wapp has no namespace: opening any node under it is ENOENT, so a
+ * name cannot be probed by guessing its path. */
+TEST(vfs_wanted_wapps, OpenUnknownWapp_ReturnsEnoent) {
+    TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("ghost"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("ghost/state"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("ghost/config"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("ghost/ctl"));
 }
 
 TEST(vfs_wanted_wapps, ReadVersion_Formatted) {
@@ -155,6 +169,30 @@ TEST(vfs_wanted_wapps, ReadId_Decimal) {
     TEST_ASSERT_EQUAL_STRING("7", buf);
 }
 
+TEST(vfs_wanted_wapps, ReadExitCode_Exited) {
+    wapp_state_t seed = MakeState("alpha", 1, EXITED, 1, 0, 0, 0);
+    seed.exit_code = 42;
+    DummyWappStateSeed(&seed, 1);
+
+    int fd = OpenLeaf("alpha/exit_code");
+    char buf[32] = {0};
+    drv->Read(drv->ctx, fd, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("42", buf);
+}
+
+/* exit_code is authoritative only when exited; a running wapp reads the
+ * sentinel. (An unknown wapp can't be opened at all — see OpenUnknownWapp.) */
+TEST(vfs_wanted_wapps, ReadExitCode_RunningIsSentinel) {
+    wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 0, 0, 0);
+    seed.exit_code = WAPP_EXIT_CODE_NONE;
+    DummyWappStateSeed(&seed, 1);
+
+    int fd = OpenLeaf("alpha/exit_code");
+    char buf[32] = {0};
+    drv->Read(drv->ctx, fd, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("-1", buf);
+}
+
 TEST(vfs_wanted_wapps, ReadEof_IsPerFd) {
     wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 0, 0, 0);
     DummyWappStateSeed(&seed, 1);
@@ -171,6 +209,7 @@ TEST(vfs_wanted_wapps, ReadEof_IsPerFd) {
 }
 
 TEST(vfs_wanted_wapps, ReadWriteOnlyNode_ReturnsEinval) {
+    CreateWapp("alpha");
     int fd = OpenLeaf("alpha/ctl");
     char buf[8];
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Read(drv->ctx, fd, buf, sizeof(buf)));
@@ -205,18 +244,23 @@ TEST(vfs_wanted_wapps, CtlStop_TrimsTrailingNewline) {
 }
 
 TEST(vfs_wanted_wapps, CtlUnknownVerb_ReturnsEinval) {
+    CreateWapp("alpha");
     int c = OpenLeaf("alpha/ctl");
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Write(drv->ctx, c, "frobnicate", 10));
 }
 
 TEST(vfs_wanted_wapps, CtlStart_NoImageReturnsEnosys) {
-    /* The dummy cannot load a WASM image: PlatformRegistryWappLoad -> -ENOSYS.
+    /* A live wapp (no pending reservation) passes the config gate, so start
+     * reaches the loader; the dummy cannot map an image and returns -ENOSYS.
      * Identity comes from the path; the verb is just "start". */
+    wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 0, 0, 0);
+    DummyWappStateSeed(&seed, 1);
     int c = OpenLeaf("alpha/ctl");
     TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, c, "start", 5));
 }
 
 TEST(vfs_wanted_wapps, CtlOversizedWrite_ReturnsEmsgsize) {
+    CreateWapp("alpha");
     int c = OpenLeaf("alpha/ctl");
     char big[64];
     memset(big, 'x', sizeof(big));
@@ -227,6 +271,7 @@ TEST(vfs_wanted_wapps, CtlOversizedWrite_ReturnsEmsgsize) {
 /* M3 — config + root ctl */
 
 TEST(vfs_wanted_wapps, ConfigWrite_ParsesJson) {
+    CreateWapp("alpha");
     int c = OpenLeaf("alpha/config");
     const char *cfg =
         "{\"drivers\":[{\"name\":\"null\",\"path\":\"/dev/null\"}],"
@@ -236,13 +281,16 @@ TEST(vfs_wanted_wapps, ConfigWrite_ParsesJson) {
 }
 
 TEST(vfs_wanted_wapps, ConfigWrite_MalformedJsonRejected) {
+    CreateWapp("alpha");
     int c = OpenLeaf("alpha/config");
     TEST_ASSERT_TRUE(drv->Write(drv->ctx, c, "not json", 8) < 0);
 }
 
-TEST(vfs_wanted_wapps, RootCtlStart_NoImageReturnsEnosys) {
+/* The root ctl does not launch wapps — `start` is not a root verb; a wapp is
+ * started through its own wapps/<name>/ctl (see CtlStart_NoImageReturnsEnosys). */
+TEST(vfs_wanted_wapps, RootCtlStartRejected_ReturnsEinval) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
-    TEST_ASSERT_EQUAL_INT(-ENOSYS,
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
                           ctl->Write(ctl->ctx, fd, "start alpha", 11));
 }
 
@@ -251,20 +299,167 @@ TEST(vfs_wanted_wapps, RootCtlGarbage_ReturnsEinval) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, ctl->Write(ctl->ctx, fd, "frob", 4));
 }
 
-TEST(vfs_wanted_wapps, RootCtlStartNoName_ReturnsEinval) {
-    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
-    TEST_ASSERT_EQUAL_INT(-EINVAL, ctl->Write(ctl->ctx, fd, "start ", 6));
-}
-
 TEST(vfs_wanted_wapps, RootCtlRead_ReturnsEinval) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_RDONLY);
     char buf[8];
     TEST_ASSERT_EQUAL_INT(-EINVAL, ctl->Read(ctl->ctx, fd, buf, sizeof(buf)));
 }
 
+/* create — first-start lifecycle */
+
+TEST(vfs_wanted_wapps, RootCtlCreate_MakesWappCreatedAndEnumerable) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(12, ctl->Write(ctl->ctx, fd, "create ghost", 12));
+
+    /* A created-but-not-started wapp reports the CREATED state. */
+    int s = OpenLeaf("ghost/state");
+    char buf[32] = {0};
+    drv->Read(drv->ctx, s, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("created", buf);
+
+    /* ...and enumerates under wapps/ before it ever runs. */
+    int dd = OpenLeaf("/");
+    uint8_t db[256];
+    uint64_t cookie = 0;
+    size_t used = 0;
+    TEST_ASSERT_EQUAL_INT(
+        0, drv->ReadDir(drv->ctx, dd, db, sizeof(db), &cookie, &used));
+    TEST_ASSERT_TRUE(HasBytes(db, used, "ghost", 5));
+}
+
+TEST(vfs_wanted_wapps, ConfigWriteAfterCreate_TransitionsToNotStarted) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create ghost", 12) > 0);
+
+    /* A bare reservation (no config yet) reads created. */
+    char buf[32] = {0};
+    drv->Read(drv->ctx, OpenLeaf("ghost/state"), buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("created", buf);
+
+    /* Writing the config applies it and moves the wapp to not_started. */
+    const char *cfg = "{\"args\":[\"x\"]}";
+    int c = OpenLeaf("ghost/config");
+    TEST_ASSERT_TRUE(drv->Write(drv->ctx, c, cfg, strlen(cfg)) > 0);
+
+    memset(buf, 0, sizeof(buf));
+    drv->Read(drv->ctx, OpenLeaf("ghost/state"), buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("not_started", buf);
+}
+
+/* A bare `create` reservation has no config; starting it is rejected — config
+ * must be written first (created cannot transition straight to starting). A
+ * name with no reservation is unaffected (see CtlStart_NoImageReturnsEnosys,
+ * which reaches the loader and fails on the missing image instead). */
+TEST(vfs_wanted_wapps, StartCreatedWithoutConfig_ReturnsEinval) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create ghost", 12) > 0);
+
+    int c = OpenLeaf("ghost/ctl");
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Write(drv->ctx, c, "start", 5));
+}
+
+TEST(vfs_wanted_wapps, RootCtlCreateNoName_ReturnsEinval) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(-EINVAL, ctl->Write(ctl->ctx, fd, "create ", 7));
+}
+
+TEST(vfs_wanted_wapps, RootCtlCreateTooLongName_ReturnsEinval) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    /* 16-char name exceeds WAPP_MAX_NAME_LEN (15). */
+    const char *cmd = "create aaaaaaaaaaaaaaaa";
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          ctl->Write(ctl->ctx, fd, cmd, strlen(cmd)));
+}
+
+TEST(vfs_wanted_wapps, RootCtlCreateExhaustsSlots_ReturnsEnospc) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    /* Only MAX_WAPPS (3) pending slots exist; the fourth distinct name fails. */
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create a", 8) > 0);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create b", 8) > 0);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create c", 8) > 0);
+    TEST_ASSERT_EQUAL_INT(-ENOSPC, ctl->Write(ctl->ctx, fd, "create d", 8));
+}
+
+TEST(vfs_wanted_wapps, RootCtlCreateIsIdempotent) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    /* Re-creating the same name reuses its slot rather than exhausting the
+     * pool, so two more distinct names still fit. */
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create a", 8) > 0);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create a", 8) > 0);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create b", 8) > 0);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create c", 8) > 0);
+}
+
+/* delete — slot release */
+
+/* Deleting a `create` reservation removes the namespace: the name stops being
+ * known, so its nodes return ENOENT again. */
+TEST(vfs_wanted_wapps, RootCtlDelete_RemovesReservation) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create ghost", 12) > 0);
+    TEST_ASSERT_TRUE(OpenLeaf("ghost/state") >= 0); /* known after create */
+
+    TEST_ASSERT_EQUAL_INT(12, ctl->Write(ctl->ctx, fd, "delete ghost", 12));
+
+    /* Gone: the per-wapp nodes are ENOENT and it no longer enumerates. */
+    TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("ghost/state"));
+    int dd = OpenLeaf("/");
+    uint8_t db[256];
+    uint64_t cookie = 0;
+    size_t used = 0;
+    TEST_ASSERT_EQUAL_INT(
+        0, drv->ReadDir(drv->ctx, dd, db, sizeof(db), &cookie, &used));
+    TEST_ASSERT_FALSE(HasBytes(db, used, "ghost", 5));
+}
+
+/* Deleting a terminal (exited) wapp releases its platform slot; the name then
+ * returns ENOENT. */
+TEST(vfs_wanted_wapps, RootCtlDelete_ReleasesTerminalSlot) {
+    wapp_state_t seed = MakeState("alpha", 1, EXITED, 1, 0, 0, 0);
+    DummyWappStateSeed(&seed, 1);
+
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(12, ctl->Write(ctl->ctx, fd, "delete alpha", 12));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("alpha/state"));
+}
+
+/* A running wapp cannot be deleted — it must be stopped first. The slot is left
+ * intact (-EBUSY) and the wapp stays enumerable. */
+TEST(vfs_wanted_wapps, RootCtlDelete_RunningRejectedEbusy) {
+    wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 0, 0, 0);
+    DummyWappStateSeed(&seed, 1);
+
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(-EBUSY, ctl->Write(ctl->ctx, fd, "delete alpha", 12));
+    TEST_ASSERT_TRUE(OpenLeaf("alpha/state") >= 0); /* still known */
+}
+
+TEST(vfs_wanted_wapps, RootCtlDelete_UnknownReturnsEnoent) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, ctl->Write(ctl->ctx, fd, "delete ghost", 12));
+}
+
+TEST(vfs_wanted_wapps, RootCtlDeleteNoName_ReturnsEinval) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(-EINVAL, ctl->Write(ctl->ctx, fd, "delete ", 7));
+}
+
+/* delete frees a pending slot back to the pool, so a new name fits afterwards. */
+TEST(vfs_wanted_wapps, RootCtlDelete_FreesPoolSlot) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create a", 8) > 0);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create b", 8) > 0);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create c", 8) > 0);
+    TEST_ASSERT_EQUAL_INT(-ENOSPC, ctl->Write(ctl->ctx, fd, "create d", 8));
+
+    TEST_ASSERT_EQUAL_INT(8, ctl->Write(ctl->ctx, fd, "delete a", 8));
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create d", 8) > 0);
+}
+
 /* fd table exhaustion — bounded, no overflow */
 
 TEST(vfs_wanted_wapps, OpenExhaustsFdTable_ReturnsEmfile) {
+    CreateWapp("alpha");
     int last = 0;
     for (int i = 0; i < 16; i++)
         last = OpenLeaf("alpha/state");
@@ -277,9 +472,11 @@ TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, Stat_RootIsDir_LeafIsCharDevice);
     RUN_TEST_CASE(vfs_wanted_wapps, OpenUnknownLeaf_ReturnsEnoent);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadState_Running);
-    RUN_TEST_CASE(vfs_wanted_wapps, ReadState_UnknownWappIsNotStarted);
+    RUN_TEST_CASE(vfs_wanted_wapps, OpenUnknownWapp_ReturnsEnoent);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadVersion_Formatted);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadId_Decimal);
+    RUN_TEST_CASE(vfs_wanted_wapps, ReadExitCode_Exited);
+    RUN_TEST_CASE(vfs_wanted_wapps, ReadExitCode_RunningIsSentinel);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadEof_IsPerFd);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadWriteOnlyNode_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, CtlStop_TransitionsState);
@@ -289,9 +486,21 @@ TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, CtlOversizedWrite_ReturnsEmsgsize);
     RUN_TEST_CASE(vfs_wanted_wapps, ConfigWrite_ParsesJson);
     RUN_TEST_CASE(vfs_wanted_wapps, ConfigWrite_MalformedJsonRejected);
-    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlStart_NoImageReturnsEnosys);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlStartRejected_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlGarbage_ReturnsEinval);
-    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlStartNoName_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlRead_ReturnsEinval);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreate_MakesWappCreatedAndEnumerable);
+    RUN_TEST_CASE(vfs_wanted_wapps, ConfigWriteAfterCreate_TransitionsToNotStarted);
+    RUN_TEST_CASE(vfs_wanted_wapps, StartCreatedWithoutConfig_ReturnsEinval);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreateNoName_ReturnsEinval);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreateTooLongName_ReturnsEinval);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreateExhaustsSlots_ReturnsEnospc);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreateIsIdempotent);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDelete_RemovesReservation);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDelete_ReleasesTerminalSlot);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDelete_RunningRejectedEbusy);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDelete_UnknownReturnsEnoent);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDeleteNoName_ReturnsEinval);
+    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlDelete_FreesPoolSlot);
     RUN_TEST_CASE(vfs_wanted_wapps, OpenExhaustsFdTable_ReturnsEmfile);
 }

@@ -30,11 +30,11 @@ A wapp image is a POSIX **ustar** TAR. The engine's TarFS mounts it read-only as
 hello:0.0.1-1.wapp           # the TAR (registry filename: <name>:<version>-<package>.wapp)
 ├── app.wasm                 # required — the compiled module
 ├── manifest.json            # required — the wapp metadata
-└── etc/role                 # optional — any data files become the read-only rootfs
+└── assets/logo.png          # optional — any data files become the read-only rootfs
 ```
 
 - **`app.wasm`** and **`manifest.json`** are mandatory at the root. The wasm binary is always named `app.wasm` *inside* the package regardless of its source filename.
-- Every other entry appears to the wapp at its archived path. `etc/role` is readable as `/etc/role`; an asset at `assets/logo.png` is readable as `/assets/logo.png`.
+- Every other entry appears to the wapp at its archived path. An asset at `assets/logo.png` is readable as `/assets/logo.png`.
 - The root is **read-only** (`EROFS` on write). Writable storage is a [preopen](#preopens), not a packaged file.
 - Multiple stacked layers merge newest-over-oldest with `.wh.<name>` whiteout deletion; see [VFS Reference → TarFS](vfs-reference.md#--tarfs-application-space). A single-layer image — one TAR — is the common case.
 
@@ -77,8 +77,8 @@ Wapps target **`wasm32-wasi`** and link against WASI `snapshot_preview1`. The en
 | `fd_fdstat_set_flags` | partial | Supports toggling `O_NONBLOCK` (used by pipes). |
 | `clock_time_get`, `clock_res_get` | full | Backed by the platform clock. |
 | `random_get` | full | Backed by the platform RNG. |
-| `args_get`, `args_sizes_get` | full | The argument vector is currently empty (`argc == 0`). |
-| `environ_get`, `environ_sizes_get` | stub | The environment is always empty (`environ_count == 0`). |
+| `args_get`, `args_sizes_get` | full | `argv[0]` is the wapp name; `argv[1..]` come from the launch config's `args[]`. |
+| `environ_get`, `environ_sizes_get` | full | The environment is the launch config's `envs[]` (POSIX `KEY=VALUE` entries). |
 | `poll_oneoff` | restricted | **Clock subscriptions only.** An `fd_read`/`fd_write` subscription returns `ENOSYS`; poll the fd directly instead. |
 | `fd_datasync` | stub | Returns success without doing anything (the root is read-only). |
 | `proc_exit` | full | Terminates the wapp with the given exit code. |
@@ -86,7 +86,7 @@ Wapps target **`wasm32-wasi`** and link against WASI `snapshot_preview1`. The en
 
 Practical consequences for a wapp author:
 
-- **No environment variables and no argv.** Configure behaviour through packaged files (like `hello`'s `/etc/role`) or a [preopen](#preopens), not `getenv`/`argc`.
+- **Environment variables and argv come from the launch config.** A wapp's `argv` and `environ` are set from the `args[]` and `envs[]` arrays in its launch config (`getenv`/`argc` work normally). `argv[0]` is always the wapp name. The `hello` sample selects its behaviour from a `ROLE` env var passed this way. See [Control Plane Reference → Launch-config schema](control-plane-reference.md). Larger or writable configuration still belongs in a packaged file or a [preopen](#preopens).
 - **`poll_oneoff` is a timer, not a readiness selector.** A `sleep()` works; an event loop that selects across file descriptors does not.
 - **`stdout`/`stderr` are not files you open.** Writing to fd 1/2 reaches a console only if the launch config gives the wapp one; see [Filesystem access](#filesystem-access) and [Control Plane Reference](control-plane-reference.md).
 
@@ -167,7 +167,7 @@ RUN make NAME=hello                         # -> hello.wasm
 FROM scratch
 COPY --from=build /src/hello.wasm  app.wasm
 COPY manifest.json                 manifest.json
-# COPY etc/role  etc/role                  # optional packaged data files
+# COPY assets/  assets/                    # optional packaged data files
 ```
 
 The C reference for the compile flags is `wapps/hello/Makefile` — `--target=wasm32-wasi`, an initial/maximum linear memory of one 64 KiB page, a 4 KiB stack, `-Os`, and `--strip-all`. Read `/proc/wanted` at runtime for the engine's resource ceilings.

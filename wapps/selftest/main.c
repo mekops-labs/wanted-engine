@@ -50,6 +50,18 @@
     "{\"console\":{\"in\":{\"name\":\"null\"}," \
     "\"out\":{\"name\":\"null\"},\"err\":{\"name\":\"null\"}}}"
 
+/* argenv prints its argv + environ to the log console and exits with code 7.
+ * Its config passes known args and envs (no interior whitespace per LAUNCH_CFG)
+ * so the supervisor can read them back from the log and assert passthrough. */
+#define ARGENV        "argenv"
+#define ARGENV_CFG    "/dev/wanted/wapps/" ARGENV "/config"
+#define ARGENV_LOG    "/dev/wanted/wapps/" ARGENV "/log"
+#define ARGENV_EXIT   "/dev/wanted/wapps/" ARGENV "/exit_code"
+#define ARGENV_CFG_BODY \
+    "{\"console\":{\"in\":{\"name\":\"null\"}," \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
+    "\"args\":[\"alpha\",\"beta\"],\"envs\":[\"FOO=bar\",\"BAZ=qux\"]}"
+
 /* Read up to cap-1 bytes of a path into buf (NUL-terminated). <0 on open
  * error, else byte count. */
 static int read_path(const char *path, char *buf, int cap) {
@@ -73,6 +85,17 @@ static int write_path(const char *path, const char *s) {
     close(fd);
     return n;
 }
+
+/* Reserve a wapp namespace via the root ctl `create` verb. The per-wapp nodes
+ * (config, ctl, ...) exist only after this, so every launch creates first. */
+static int create_wapp(const char *name) {
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "create %s", name);
+    return write_path(WANTED_CTL, cmd) >= 0;
+}
+
+/* Launch an already-configured wapp through its own ctl node (defined below). */
+static int start_wapp(const char *name);
 
 /* True if directory `dir` contains an entry named `name`. */
 static int dir_has(const char *dir, const char *name) {
@@ -148,13 +171,14 @@ static void positive_checks(void) {
 static void robustness_checks(void) {
     char buf[64];
 
-    int cfg_ok = write_path(TRAPPER_CFG, LAUNCH_CFG) >= 0;
-    int start_ok = write_path(WANTED_CTL, "start " TRAPPER) >= 0;
+    int cfg_ok = create_wapp(TRAPPER) && write_path(TRAPPER_CFG, LAUNCH_CFG) >= 0;
+    int start_ok = start_wapp(TRAPPER);
     tap_ok(cfg_ok && start_ok, "control plane: launched the " TRAPPER " wapp");
 
     /* Poll until it leaves starting/running, i.e. the engine has reaped the
-     * trap. Bounded so a hang fails rather than blocks. (The engine currently
-     * reports a trapped wapp as "exited", not "failure" — both count as dead.) */
+     * trap. Bounded so a hang fails rather than blocks. (A trap now reports
+     * "failure"; "exited" is also accepted for robustness — both count as
+     * dead.) */
     const char *state = "";
     int contained = 0;
     for (int i = 0; i < 10; i++) {
@@ -183,14 +207,17 @@ static void robustness_checks(void) {
 }
 
 /* Poll a wapp's state node until `want_running` matches whether it is
- * running/starting, bounded to ~10 s. Returns true if the condition was met. */
+ * running/starting, bounded to ~10 s. Returns true if the condition was met. A
+ * node that can't be read (the wapp is unknown — e.g. a launch that failed
+ * before it ever ran, leaving no slot) counts as not-live, so a "wait until
+ * dead" poll is satisfied immediately rather than spinning out the bound. */
 static int wait_state(const char *state_path, int want_running) {
     char buf[64];
     for (int i = 0; i < 10; i++) {
         sleep(1);
-        if (read_path(state_path, buf, sizeof(buf)) <= 0)
-            continue;
-        int live = strstr(buf, "running") != NULL || strstr(buf, "starting") != NULL;
+        int n = read_path(state_path, buf, sizeof(buf));
+        int live = (n > 0) && (strstr(buf, "running") != NULL ||
+                               strstr(buf, "starting") != NULL);
         if (live == want_running)
             return 1;
     }
@@ -202,15 +229,26 @@ static void wapp_node(char *buf, int cap, const char *name, const char *node) {
     snprintf(buf, cap, "/dev/wanted/wapps/%s/%s", name, node);
 }
 
-/* Configure a launched test wapp with the log console and start it via the
- * control plane. Returns true if both writes succeeded. */
+/* Launch an already-configured wapp through its own ctl node — the root ctl
+ * does not start wapps (it only creates namespaces and drives power). Returns
+ * true on a successful write. */
+static int start_wapp(const char *name) {
+    char ctl[96];
+    wapp_node(ctl, sizeof(ctl), name, "ctl");
+    return write_path(ctl, "start") >= 0;
+}
+
+/* Create the namespace, configure the wapp with the log console, and start it
+ * via the control plane (the create → config → start lifecycle). Returns true
+ * if every step succeeded. */
 static int launch(const char *name) {
-    char path[96], cmd[64];
+    char path[96];
+    if (!create_wapp(name))
+        return 0;
     wapp_node(path, sizeof(path), name, "config");
     if (write_path(path, LAUNCH_CFG) < 0)
         return 0;
-    snprintf(cmd, sizeof(cmd), "start %s", name);
-    return write_path(WANTED_CTL, cmd) >= 0;
+    return start_wapp(name);
 }
 
 /* Poll a wapp's state until it reports a dead state (exited/failure), bounded
@@ -259,8 +297,9 @@ static void cpuhog_check(void) {
  * supervisor, then stop it via the control plane and confirm the engine
  * terminated it. */
 static void lifecycle_checks(void) {
+    create_wapp(LOOPER);
     write_path(LOOPER_CFG, LAUNCH_CFG);
-    int started = write_path(WANTED_CTL, "start " LOOPER) >= 0;
+    int started = start_wapp(LOOPER);
     tap_ok(started && wait_state(LOOPER_STATE, 1),
            "lifecycle: looper runs concurrently with the supervisor");
 
@@ -274,9 +313,11 @@ static void lifecycle_checks(void) {
  * also valid. Either way the wapp must launch — a wapp with unwired stdio fds
  * fails to start. Reuses the looper (a clean long-runner), stopped after each. */
 static void console_checks(void) {
-    /* No config at all: the unset slots resolve to their defaults. */
-    int dflt = write_path(WANTED_CTL, "start " LOOPER) >= 0 &&
-               wait_state(LOOPER_STATE, 1);
+    /* Empty config (no console block): the unset slots resolve to their
+     * defaults. A start still requires a config to have been written, so the
+     * empty object is the minimal "use all defaults" config. */
+    int dflt = create_wapp(LOOPER) && write_path(LOOPER_CFG, "{}") >= 0 &&
+               start_wapp(LOOPER) && wait_state(LOOPER_STATE, 1);
     tap_ok(dflt, "console: a wapp with no console config launches on defaults");
     if (dflt) {
         write_path(LOOPER_CTL, "stop");
@@ -284,8 +325,9 @@ static void console_checks(void) {
     }
 
     /* Explicit all-null console: silent, but still runs. */
-    int nul = write_path(LOOPER_CFG, NULL_CONSOLE_CFG) >= 0 &&
-              write_path(WANTED_CTL, "start " LOOPER) >= 0 &&
+    int nul = create_wapp(LOOPER) &&
+              write_path(LOOPER_CFG, NULL_CONSOLE_CFG) >= 0 &&
+              start_wapp(LOOPER) &&
               wait_state(LOOPER_STATE, 1);
     tap_ok(nul, "console: an all-null console launches a (silent) wapp");
     if (nul) {
@@ -431,12 +473,16 @@ static void malformed_check(void) {
     static const char *const bad[] = {
         "nomanifest", "noappwasm", "badwasm", "badmanifest", "truncated"
     };
-    char state[96], buf[64], cmd[64];
+    char state[96], cfg[96], buf[64];
     int contained = 1;
 
     for (unsigned i = 0; i < sizeof(bad) / sizeof(*bad); i++) {
-        snprintf(cmd, sizeof(cmd), "start %s", bad[i]);
-        write_path(WANTED_CTL, cmd);
+        /* create → config → start: the empty config satisfies the start gate so
+         * the loader is actually reached and gets to reject the bad image. */
+        create_wapp(bad[i]);
+        wapp_node(cfg, sizeof(cfg), bad[i], "config");
+        write_path(cfg, "{}");
+        start_wapp(bad[i]);
         wapp_node(state, sizeof(state), bad[i], "state");
         wait_dead(bad[i]);               /* never lingers running/starting */
         if (read_path(state, buf, sizeof(buf)) > 0 &&
@@ -473,21 +519,61 @@ static void crashloop_check(void) {
 }
 
 /* Prove /dev/pipe is a process-wide channel between two distinct wapps (the
- * positive_checks round-trip is within one namespace). preader blocks reading
- * the shared channel; pwriter writes the payload; preader echoes what it got to
- * its log console, which the supervisor verifies. */
+ * positive_checks round-trip is within one namespace). One `duplex` source is
+ * staged under two names: `reader` blocks reading the shared channel and echoes
+ * what it got to its log console; `writer` writes the payload. Each picks its
+ * side from the ROLE env var in its launch config (the env-passthrough path) —
+ * the supervisor verifies the payload reached the reader's log. */
 #define DUPLEX_PAYLOAD "duplex-ok"
+#define READER_CFG "/dev/wanted/wapps/reader/config"
+#define WRITER_CFG "/dev/wanted/wapps/writer/config"
+#define READER_LOG "/dev/wanted/wapps/reader/log"
+#define READER_CFG_BODY \
+    "{\"console\":{\"in\":{\"name\":\"null\"}," \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
+    "\"envs\":[\"ROLE=reader\"]}"
+#define WRITER_CFG_BODY "{\"envs\":[\"ROLE=writer\"]}"
 static void pipe_duplex_check(void) {
-    char log[96], buf[128];
-    wapp_node(log, sizeof(log), "preader", "log");
+    char buf[128];
 
-    launch("preader");                    /* blocks reading /dev/pipe/duplex */
-    launch("pwriter");                    /* writes the payload to it */
-    wait_dead("preader");
+    create_wapp("reader");
+    create_wapp("writer");
+    write_path(READER_CFG, READER_CFG_BODY); /* log console + ROLE=reader */
+    write_path(WRITER_CFG, WRITER_CFG_BODY); /* ROLE=writer */
+    start_wapp("reader");                    /* blocks reading /dev/pipe/duplex */
+    start_wapp("writer");                    /* writes the payload to it */
+    wait_dead("reader");
 
-    int got = read_path(log, buf, sizeof(buf)) > 0;
+    int got = read_path(READER_LOG, buf, sizeof(buf)) > 0;
     tap_ok(got && strstr(buf, DUPLEX_PAYLOAD) != NULL,
            "pipe: a payload crosses between two wapps via /dev/pipe");
+}
+
+/* argv / environ passthrough + exit-code exposure. Configure argenv with known
+ * args and envs, launch it via its own ctl, and let it print them to its log
+ * and exit with a fixed non-zero code. Assert the values reached the wapp
+ * (argv[0] is the engine-set name) and that the clean non-zero exit surfaces on
+ * the exit_code node — distinct from a trap, which would leave it at -1. */
+static void argenv_check(void) {
+    char buf[256];
+
+    int started = create_wapp(ARGENV) &&
+                  write_path(ARGENV_CFG, ARGENV_CFG_BODY) >= 0 &&
+                  start_wapp(ARGENV);
+    wait_dead(ARGENV);
+
+    int got = read_path(ARGENV_LOG, buf, sizeof(buf)) > 0;
+    tap_ok(started && got &&
+               strstr(buf, "arg 0=argenv") != NULL && /* engine-set argv[0] */
+               strstr(buf, "arg 1=alpha") != NULL &&
+               strstr(buf, "arg 2=beta") != NULL &&
+               strstr(buf, "FOO=bar") != NULL &&
+               strstr(buf, "BAZ=qux") != NULL,
+           "argv/env: configured args and envs reach the launched wapp");
+
+    int n = read_path(ARGENV_EXIT, buf, sizeof(buf));
+    tap_ok(n > 0 && strstr(buf, "7") != NULL,
+           "exit_code: a clean non-zero exit surfaces on the exit_code node");
 }
 
 int main(void) {
@@ -506,6 +592,7 @@ int main(void) {
         { "containment_checks", containment_checks },
         { "cpuhog_check",       cpuhog_check       },
         { "console_checks",     console_checks     },
+        { "argenv_check",       argenv_check       },
         { "lifecycle_checks",   lifecycle_checks   },
         { "blocker_check",      blocker_check      },
         { "ioblock_check",      ioblock_check      },
