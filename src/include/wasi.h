@@ -35,11 +35,15 @@ void RegisterWASINatives(void);
 wasi_ctx_t *InitWasiContext(void);
 void FreeWasiContext(wasi_ctx_t *);
 
-/* Append a preopen for `path`, backed by an already-opened host directory fd.
- * The Engine must open the host directory before launching wasm. The new VFS
- * fd is allocated from the wasi ctx's vfs and stored in the returned entry.
- * Returns 0 on success or a negative errno. */
-int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, int host_fd);
+/* Append a preopen at the wapp-visible `path`, backed by an already-opened host
+ * directory fd. `hostPath` is the real backing directory (used to label the
+ * driver for debugging; it may differ from `path`). `readonly` binds the mount
+ * without write capability — the backing driver rejects writes with -EROFS. The
+ * Engine must open the host directory before launching wasm. The new VFS fd is
+ * allocated from the wasi ctx's vfs and stored in the returned entry. Returns 0
+ * on success or a negative errno. */
+int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, const char *hostPath,
+                      int host_fd, bool readonly);
 
 #ifdef __cplusplus
 }

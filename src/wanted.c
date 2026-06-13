@@ -60,6 +60,48 @@ static bool IsReservedNamespace(const char *path, const char *ns) {
     return strncmp(path, ns, n) == 0 && (path[n] == '\0' || path[n] == '/');
 }
 
+/* Parse a `platform` mount's options string — comma-separated, bind-mount style:
+ *   src=<abshostpath>   host directory backing the mount (default: the wapp path)
+ *   ro | rw             access mode (default: rw)
+ * `hostBuf` receives the parsed `src` (empty when unset → the caller defaults it
+ * to the wapp path); `*readonly` receives the access mode. A relative/empty src,
+ * an oversized src, or any unrecognised token is rejected with -EINVAL so a
+ * malformed mount fails loudly at install. */
+static int ParsePlatformMountOptions(const char *options, char *hostBuf,
+                                     size_t hostBufLen, bool *readonly) {
+    *readonly = false;
+    hostBuf[0] = '\0';
+    if (options == NULL || options[0] == '\0')
+        return 0;
+
+    char buf[MAX_OPTIONS_SIZE];
+    size_t olen = strnlen(options, sizeof(buf));
+    if (olen >= sizeof(buf))
+        return -EINVAL;
+    memcpy(buf, options, olen + 1);
+
+    char *save = NULL;
+    for (char *tok = strtok_r(buf, ",", &save); tok != NULL;
+         tok = strtok_r(NULL, ",", &save)) {
+        if (strncmp(tok, "src=", 4) == 0) {
+            const char *src = tok + 4;
+            if (src[0] != '/') /* must be an absolute host path */
+                return -EINVAL;
+            size_t slen = strlen(src);
+            if (slen >= hostBufLen)
+                return -EINVAL;
+            memcpy(hostBuf, src, slen + 1);
+        } else if (strcmp(tok, "ro") == 0) {
+            *readonly = true;
+        } else if (strcmp(tok, "rw") == 0) {
+            *readonly = false;
+        } else {
+            return -EINVAL;
+        }
+    }
+    return 0;
+}
+
 /* Build the WASI argv/envp pointer arrays for a wapp. argv[0] is the wapp name;
  * argv[1..] and envp[] point into the wapp's persistent launch-config storage,
  * which outlives the wasi context, so no string copies are made. The pointer
@@ -406,17 +448,33 @@ int WantedWappRun(wapp_data_t *ctx) {
             continue;
         }
         if (strcmp(m->name, "platform") == 0) {
-            /* Host directory bound as a WASI preopen at m->path. A failure to
-             * open the host dir is environmental, not a config error, so it is
-             * non-fatal — the wapp surfaces a missing-preopen error itself if
-             * the state is actually required. */
-            int host_fd = PlatformOpenStateDir(m->path);
-            if (host_fd < 0) {
-                DEBUG_TRACE("PlatformOpenStateDir(%s) failed: %d", m->path,
-                            host_fd);
+            /* A `platform` mount is a bind mount: `options` carries an optional
+             * host path (`src=`) and access mode (`ro`/`rw`); the host dir is
+             * bound as a WASI preopen at the wapp-visible m->path. A malformed
+             * options string is a config error and fails the launch. */
+            char hostPath[MAX_PATH_LEN];
+            bool readonly;
+            int rc = ParsePlatformMountOptions(m->options, hostPath,
+                                               sizeof(hostPath), &readonly);
+            if (rc < 0) {
+                DEBUG_TRACE("mounts[%zu] '%s': bad options '%s'", i, m->name,
+                            m->options);
+                ret += rc;
                 continue;
             }
-            int rc = WasiCtxAddPreopen(wasiCtx, m->path, host_fd);
+            const char *src = (hostPath[0] != '\0') ? hostPath : m->path;
+            int host_fd = PlatformOpenStateDir(src, readonly);
+            if (host_fd < 0) {
+                DEBUG_TRACE("PlatformOpenStateDir(%s) failed: %d", src, host_fd);
+                /* A read-only mount names host state the wapp must read; a
+                 * missing backing dir is a deployment error, surfaced loudly. A
+                 * read-write mount creates its dir, so an open failure is
+                 * environmental and stays non-fatal. */
+                if (readonly)
+                    ret += host_fd;
+                continue;
+            }
+            rc = WasiCtxAddPreopen(wasiCtx, m->path, src, host_fd, readonly);
             if (rc < 0)
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
         } else {

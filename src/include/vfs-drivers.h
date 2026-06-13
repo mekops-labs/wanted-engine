@@ -30,7 +30,8 @@ vfs_driver_t *VfsNullInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsLogInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsConfigInit(const wapp_t *wapp, const char *options);
-vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options);
+vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
+                                bool readonly);
 vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsVirtualInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *options);
