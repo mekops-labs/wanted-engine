@@ -311,12 +311,11 @@ int WantedWappRun(wapp_data_t *ctx) {
     VfsAttachTarfs(ctx->vfs, tarfs);
     tarfs = NULL;
 
-    /* Builtin /dev entries — always present regardless of wapp config. */
+    /* Builtin /dev entries — always present regardless of wapp config. The
+     * stdin/stdout/stderr aliases are registered after the console is installed
+     * (below), so they can forward to the wapp's actual stream backing. */
     DevFs_Register(ctx->vfs, "null",   VfsNullInit(wapp, NULL));
     DevFs_Register(ctx->vfs, "pipe",   PipeDriverCreate(WantedPipeStore()));
-    DevFs_Register(ctx->vfs, "stdin",  VfsStdinDriverGet());
-    DevFs_Register(ctx->vfs, "stdout", VfsStdoutDriverGet());
-    DevFs_Register(ctx->vfs, "stderr", VfsStderrDriverGet());
 
     /* Propagate system-level privilege flag, then register /proc entries. */
     VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
@@ -352,6 +351,15 @@ int WantedWappRun(wapp_data_t *ctx) {
         ctx->vfs, wapp, ResolveConsole(wapp->cfg.console[2].name, DEFAULT_CONSOLE_ERR),
         "<stderr>", wapp->cfg.console[2].options);
 
+    /* /dev/std{in,out,err} alias the just-installed console streams — opening
+     * the /dev path reaches the same backing as the matching WASI fd (0/1/2). */
+    DevFs_Register(ctx->vfs, "stdin",
+                   VfsStdioAliasInit(VfsStreamDriver(ctx->vfs, VFS_STDIN), VFS_STDIN));
+    DevFs_Register(ctx->vfs, "stdout",
+                   VfsStdioAliasInit(VfsStreamDriver(ctx->vfs, VFS_STDOUT), VFS_STDOUT));
+    DevFs_Register(ctx->vfs, "stderr",
+                   VfsStdioAliasInit(VfsStreamDriver(ctx->vfs, VFS_STDERR), VFS_STDERR));
+
     /* drivers[]: device singletons. Each mounts at /dev/<name>; the name alone
      * determines the mount, so a config-supplied path is meaningless and
      * rejected. */
@@ -383,14 +391,16 @@ int WantedWappRun(wapp_data_t *ctx) {
     }
 
     /* mounts[]: file/backend drivers bound at an arbitrary absolute path,
-     * reachable outside the /dev and /net namespaces. The `platform` backend
-     * creates/opens a host directory and binds it as a native WASI preopen;
-     * every other backend mounts through the VFS router. The path is required,
-     * must be absolute, and must not fall under /dev or /net. */
+     * reachable outside the fixed /dev, /net, and /proc namespaces. The
+     * `platform` backend creates/opens a host directory and binds it as a
+     * native WASI preopen; every other backend mounts through the VFS router.
+     * The path is required, must be absolute, and must not fall under a fixed
+     * namespace. */
     for (size_t i = 0; i < wapp->cfg.mountsCnt; i++) {
         const wapp_driver_t *m = &wapp->cfg.mounts[i];
         if (m->path[0] != '/' || IsReservedNamespace(m->path, "/dev") ||
-            IsReservedNamespace(m->path, "/net")) {
+            IsReservedNamespace(m->path, "/net") ||
+            IsReservedNamespace(m->path, "/proc")) {
             DEBUG_TRACE("mounts[%zu] '%s': bad path '%s'", i, m->name, m->path);
             ret += -EINVAL;
             continue;

@@ -384,6 +384,14 @@ void VfsSetPrivileged(vfs_ctx_t c, bool privileged) {
         c->privileged = privileged;
 }
 
+const vfs_driver_t *VfsStreamDriver(vfs_ctx_t c, int slot) {
+    if (!c || slot < 0 || slot >= VFS_MAX_FDS)
+        return NULL;
+    if (c->fds[slot].type != VFS_TYPE_STREAM)
+        return NULL;
+    return c->fds[slot].driver;
+}
+
 int VfsAttachTarfs(vfs_ctx_t c, vfs_tarfs_ctx_t *tarfs) {
     if (!c)
         return -EINVAL;
