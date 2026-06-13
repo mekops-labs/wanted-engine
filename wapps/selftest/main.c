@@ -117,8 +117,8 @@ static int dir_has(const char *dir, const char *name) {
 static void positive_checks(void) {
     char buf[256];
 
-    tap_ok(read_path("/manifest.json", buf, sizeof(buf)) > 0,
-           "TarFS: /manifest.json is readable");
+    tap_ok(read_path("/app.wasm", buf, sizeof(buf)) > 0,
+           "TarFS: /app.wasm is readable");
     tap_ok(dir_has("/dev", "wanted"), "VFS: /dev exposes the wanted control plane");
     tap_ok(dir_has("/dev", "pipe"), "VFS: /dev exposes pipe");
     tap_ok(dir_has("/proc", "wapps"), "VFS: /proc exposes wapps");
@@ -464,14 +464,13 @@ static void resource_check(void) {
            "robustness: fd exhaustion is contained to the wapp, host survives");
 }
 
-/* Try to start a battery of malformed registry images (missing manifest or
- * app.wasm, invalid wasm, invalid manifest JSON, truncated archive). The engine
- * must reject each cleanly — none reaches a running state — and stay up; a crash
- * in the loader would take the whole engine down and the TAP plan would never
- * print. */
+/* Try to start a battery of malformed registry images (no app.wasm entrypoint,
+ * invalid wasm, truncated archive). The engine must reject each cleanly — none
+ * reaches a running state — and stay up; a crash in the loader would take the
+ * whole engine down and the TAP plan would never print. */
 static void malformed_check(void) {
     static const char *const bad[] = {
-        "nomanifest", "noappwasm", "badwasm", "badmanifest", "truncated"
+        "noappwasm", "badwasm", "truncated"
     };
     char state[96], cfg[96], buf[64];
     int contained = 1;
@@ -519,20 +518,24 @@ static void crashloop_check(void) {
 }
 
 /* Prove /dev/pipe is a process-wide channel between two distinct wapps (the
- * positive_checks round-trip is within one namespace). One `duplex` source is
- * staged under two names: `reader` blocks reading the shared channel and echoes
- * what it got to its log console; `writer` writes the payload. Each picks its
- * side from the ROLE env var in its launch config (the env-passthrough path) —
- * the supervisor verifies the payload reached the reader's log. */
+ * positive_checks round-trip is within one namespace). Two instances —
+ * `reader` and `writer` — run the single `duplex` image (config `image`):
+ * `reader` blocks reading the shared channel and echoes what it got to its log
+ * console; `writer` writes the payload. Each picks its side from the ROLE env
+ * var in its launch config (the env-passthrough path) — the supervisor verifies
+ * the payload reached the reader's log. */
 #define DUPLEX_PAYLOAD "duplex-ok"
 #define READER_CFG "/dev/wanted/wapps/reader/config"
 #define WRITER_CFG "/dev/wanted/wapps/writer/config"
 #define READER_LOG "/dev/wanted/wapps/reader/log"
 #define READER_CFG_BODY \
-    "{\"console\":{\"in\":{\"name\":\"null\"}," \
+    "{\"image\":\"duplex\"," \
+    "\"console\":{\"in\":{\"name\":\"null\"}," \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
     "\"envs\":[\"ROLE=reader\"]}"
-#define WRITER_CFG_BODY "{\"envs\":[\"ROLE=writer\"]}"
+/* writer pins the image by tag ("duplex:0.0.1-1") — exact resolution — while
+ * reader uses the bare name ("duplex") — first-match. Both run the one image. */
+#define WRITER_CFG_BODY "{\"image\":\"duplex:0.0.1-1\",\"envs\":[\"ROLE=writer\"]}"
 static void pipe_duplex_check(void) {
     char buf[128];
 

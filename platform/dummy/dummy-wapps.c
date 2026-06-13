@@ -91,7 +91,10 @@ int PlatformWappStart(wapp_t *app) {
         g_state[idx].id = (uint8_t)(idx + 1);
         g_used[idx] = 1;
     }
-    g_state[idx].version = app->version;
+    strncpy(g_state[idx].image, app->image, WAPP_MAX_NAME_LEN - 1);
+    g_state[idx].image[WAPP_MAX_NAME_LEN - 1] = '\0';
+    strncpy(g_state[idx].version, app->version, WAPP_MAX_VERSION_LEN - 1);
+    g_state[idx].version[WAPP_MAX_VERSION_LEN - 1] = '\0';
     g_state[idx].status = RUNNING;
     g_state[idx].exit_code = WAPP_EXIT_CODE_NONE;
     return 0;

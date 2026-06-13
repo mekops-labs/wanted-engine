@@ -63,11 +63,6 @@ TEST(tarfs_phase2, IndexesSingleFileAndPrefetchesWasm) {
     TEST_ASSERT_EQUAL_UINT32(sizeof(payload) - 1, wasm_len);
     TEST_ASSERT_EQUAL_MEMORY(payload, wasm, sizeof(payload) - 1);
 
-    size_t man_len = 42;
-    const uint8_t *manifest = TarFsEntrypointManifest(ctx, &man_len);
-    TEST_ASSERT_NULL(manifest);
-    TEST_ASSERT_EQUAL_UINT32(0, man_len);
-
     TarFsDestroy(ctx);
 }
 

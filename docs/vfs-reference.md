@@ -3,24 +3,24 @@ title: "VFS Reference"
 date: 2026-06-08T17:30:00+01:00
 weight: 40
 toc: true
-description: "Every mountpoint and driver a wapp can see: the /dev, /net, /proc, and TarFS root namespaces."
+description: "The fixed VFS a wapp always sees: the always-present /dev builtins, /proc, and the TarFS root. Config-mounted drivers are summarized separately."
 ---
 
-A wapp's entire view of the world is the VFS. This page is the exhaustive reference for every path: which namespace serves it, how it is opened, and its read/write semantics. See [Architecture](architecture.md) for how the router dispatches between namespaces.
+A wapp's entire view of the world is the VFS, and it has two distinct parts. The **fixed namespace** is identical for every wapp regardless of configuration: the always-present `/dev/` builtins, the `/proc/` system namespace, and the TarFS root (`/`). On top of it, a wapp's launch config mounts **config-mounted drivers** at paths it chooses — these are not fixed locations.
 
-## `/dev/` — device namespace
+This page is the exhaustive reference for the **fixed** part. The config-mounted drivers are summarized in [Config-mounted drivers](#config-mounted-drivers) and fully specified by the [Control Plane Reference](control-plane-reference.md) and [Configuration Reference](configuration-reference.md). See [Architecture](architecture.md) for how the router dispatches between namespaces.
 
-`/dev/` prefix-routes to registered sub-drivers. Five are **always present** in every wapp; the rest are mounted only when the launch config grants them.
+## `/dev/` — device builtins
 
-| Path | Driver | Access | Always present | Semantics |
-|------|--------|--------|:--------------:|-----------|
-| `/dev/null` | null | rw | yes | Reads return 0 bytes (EOF); writes are accepted and discarded. |
-| `/dev/pipe/<name>` | pipe | rw | yes | Process-wide named-pipe IPC. See below. |
-| `/dev/stdin` | stdio | r | yes | Stub; reads return EOF. |
-| `/dev/stdout` | stdio | w | yes | Stub; writes are discarded. |
-| `/dev/stderr` | stdio | w | yes | Stub; writes are discarded. |
-| `/dev/platform` | platform | rw | config | Host filesystem access — the `platform` driver mounted at a path. (As a *console* backing instead, `platform` redirects the engine's native stdio.) |
-| `/dev/wanted` | wanted | rw | config | The control-plane namespace; privileged supervisors only. See [Control Plane Reference](control-plane-reference.md). |
+These five `/dev/` entries are **always present** in every wapp, independent of its launch config. (Other drivers can also appear under `/dev/` when the config mounts them — see [Config-mounted drivers](#config-mounted-drivers) — but those are not fixed paths and are not documented here.)
+
+| Path | Driver | Access | Semantics |
+|------|--------|--------|-----------|
+| `/dev/null` | null | rw | Reads return 0 bytes (EOF); writes are accepted and discarded. |
+| `/dev/pipe/<name>` | pipe | rw | Process-wide named-pipe IPC. See below. |
+| `/dev/stdin` | stdio | r | Stub; reads return EOF. |
+| `/dev/stdout` | stdio | w | Stub; writes are discarded. |
+| `/dev/stderr` | stdio | w | Stub; writes are discarded. |
 
 The stdio stubs exist so a wapp's standard descriptors always resolve; a wapp that wants real stdout is given a `platform` or `log` console in its launch config (see [Control Plane Reference](control-plane-reference.md)), not by writing to `/dev/stdout`.
 
@@ -36,30 +36,6 @@ A named pipe over a single process-wide store: a pipe opened by one wapp is visi
 int fd = open("/dev/pipe/work", O_WRONLY);   /* writer */
 write(fd, payload, len);
 close(fd);                                    /* signals EOF to the reader */
-```
-
-## `/net/` — network namespace
-
-`/net/` routes to the socket driver. The driver is mounted at one or more paths by the launch config (`/net/s`, `/net/ss`, `/net/manager` — the path is chosen by configuration, not fixed), each bound to a connection described by its `options` string:
-
-| Option | Transport |
-|--------|-----------|
-| `t host port` | Plain TCP |
-| `u host port` | Plain UDP |
-| `T host port` | TLS TCP (Linux only) |
-| `U host port` | TLS UDP (Linux only) |
-
-A wapp `open`s the mounted path, then `read`/`write`s the stream and `close`s it; connection parameters come from the mount's `options`, not from the wapp. TLS is OpenSSL-backed on Linux; the NuttX sim has no TLS.
-
-### Testing a TLS socket
-
-Stand up an OpenSSL test server, then point a wapp's `socket` driver at it with options `T localhost 8889`:
-
-```bash
-# create a sample cert and key
-openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes
-# start a TLS server the wapp can connect to
-openssl s_server -key key.pem -cert cert.pem -accept 8889
 ```
 
 ## `/proc/` — process namespace
@@ -103,7 +79,42 @@ $ cat /assets/config.txt   # a file baked into the wapp image
 ...
 ```
 
+## Config-mounted drivers
+
+Beyond the fixed namespace above, a wapp sees whatever drivers its launch config grants. Each is bound at a path the config's `drivers[]` entry (or a console slot) names — **not a fixed location**: the paths below are the customary mountpoints, chosen by convention, not hard-wired. A mount target must resolve under `/dev/*` or `/net/*`, or name a `<stdio>` console slot, else the driver is rejected at install. The schema that mounts them is the [Control Plane Reference](control-plane-reference.md) launch config.
+
+| Driver | Customary path | Purpose |
+|--------|----------------|---------|
+| `platform` | `/dev/platform` | Host filesystem access. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
+| `wanted` | `/dev/wanted` | The control-plane namespace; privileged supervisors only. Fully specified in the [Control Plane Reference](control-plane-reference.md). |
+| `socket` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
+| `log`, `null`, `config`, `9p`, `virt` | console slot or path | Console capture (`log`) and other VFS drivers; see the launch-config schema. |
+
+### `socket` — the `/net/` network namespace
+
+`/net/` routes to the socket driver, mounted at one or more config-chosen paths (`/net/s`, `/net/ss`, `/net/manager` — the path is configuration, not fixed), each bound to a connection described by its `options` string:
+
+| Option | Transport |
+|--------|-----------|
+| `t host port` | Plain TCP |
+| `u host port` | Plain UDP |
+| `T host port` | TLS TCP (Linux only) |
+| `U host port` | TLS UDP (Linux only) |
+
+A wapp `open`s the mounted path, then `read`/`write`s the stream and `close`s it; connection parameters come from the mount's `options`, not from the wapp. TLS is OpenSSL-backed on Linux; the NuttX sim has no TLS.
+
+#### Testing a TLS socket
+
+Stand up an OpenSSL test server, then point a wapp's `socket` driver at it with options `T localhost 8889`:
+
+```bash
+# create a sample cert and key
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes
+# start a TLS server the wapp can connect to
+openssl s_server -key key.pem -cert cert.pem -accept 8889
+```
+
 ## See also
 
-- [Control Plane Reference](control-plane-reference.md) — the `/dev/wanted` namespace in full.
+- [Control Plane Reference](control-plane-reference.md) — the `/dev/wanted` namespace in full, and the launch config that mounts drivers.
 - [Wapp Authoring](wapp-authoring.md) — packaging files into the TarFS root and declaring preopens.

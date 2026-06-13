@@ -112,16 +112,19 @@ int WantedParseConfig(const char *buf, size_t bufLen) {
 
 const wantedConfig_t *WantedGetConfig() { return &currentConfig; }
 
-int WantedWriteRegistry(bool *cont, const uint8_t *buf, size_t bufLen) {
+int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
+                        size_t bufLen) {
     if (buf == NULL)
         return -EINVAL;
 
+    /* The ref ("<name>:<version>") names the install target; it is consumed at
+     * START_WRITE and ignored thereafter. */
     if (*cont == false) {
         *cont = true;
-        return PlatformRegistryWrite(START_WRITE, buf, bufLen);
+        return PlatformRegistryWrite(START_WRITE, ref, buf, bufLen);
     }
 
-    return PlatformRegistryWrite(CONTINUE_WRITE, buf, bufLen);
+    return PlatformRegistryWrite(CONTINUE_WRITE, ref, buf, bufLen);
 }
 
 int WantedRegistryRemove(const reg_entry_t *entry) {
@@ -132,37 +135,22 @@ int WantedRegistryRemove(const reg_entry_t *entry) {
 }
 
 int WantedCloseRegistry() {
-    return PlatformRegistryWrite(FINISH_WRITE, NULL, 0);
+    return PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
 }
 
-int WantedReadManifest(reg_entry_t *entry, uint8_t *buf, size_t bufLen) {
-    int ret;
-    wapp_t *w = WantedMalloc(sizeof(wapp_t));
-    uint8_t *m;
-    size_t mLen;
-
-    if (buf == NULL)
+int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
+                                   size_t bufLen) {
+    if (entry == NULL || buf == NULL)
         return -EINVAL;
 
-    ret = PlatformRegistryWappLoad(entry, w);
-    if (ret < 0) {
-        return ret;
-    }
-
-    ret = WantedWappLoadManifest(w, &m, &mLen);
-    if (ret < 0) {
-        return -EINVAL;
-    }
-
-    size_t n = mLen < bufLen ? mLen : bufLen;
-
-    memcpy(buf, m, n);
-
-    PlatformWappUnload(w);
-
-    WantedFree(w);
-
-    return (int)n;
+    /* Inspecting a registry entry returns a small descriptor synthesized from
+     * the entry itself (name/version/size). */
+    int n = snprintf((char *)buf, bufLen,
+                     "{\"name\":\"%s\",\"version\":\"%s\",\"size\":%zu}",
+                     entry->name, entry->version, entry->size);
+    if (n < 0)
+        return -EIO;
+    return n < (int)bufLen ? n : (int)bufLen;
 }
 
 /* Global driver table — single registry used by WantedInstallDriver to resolve
@@ -179,8 +167,8 @@ static const vfs_driver_table_t global_driver_table[] = {
  *   /dev/<x>  → DevFs registration table
  *   /net/<x>  → NetFs registration table
  *   <stdio>   → STREAM slot in the typed-FD table
- * Anything else is rejected: a misconfigured supervisor manifest must fail
- * loudly at install time rather than silently at first open. */
+ * Anything else is rejected: a misconfigured launch config must fail loudly at
+ * install time rather than silently at first open. */
 static int InstallTo(struct vfs_ctx_t *c, const char *path,
                      const vfs_driver_t *drv) {
     if (strncmp(path, "/dev/", 5) == 0)
@@ -236,6 +224,18 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
  * path. */
 static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
     int i;
+
+    /* image: the registry image this instance runs, as a reference "<name>[:<tag>]".
+     * Optional — when omitted the launch path defaults it to the instance name,
+     * so a single-instance wapp needs no config change. A bare name resolves to
+     * the first match; a pinned tag resolves exactly. Lets N instances share one
+     * image. */
+    const char *image = json_getPropertyValue(params, "image");
+    if (image != NULL) {
+        strncpy(cfg->image, image, WAPP_MAX_IMAGE_REF_LEN - 1);
+        cfg->image[WAPP_MAX_IMAGE_REF_LEN - 1] = '\0';
+    }
+
     json_t const *console = json_getProperty(params, "console");
     if (console && JSON_OBJ == json_getType(console)) {
         json_t const *in = json_getProperty(console, "in");

@@ -6,6 +6,7 @@ STRINGIFY({
     "action" : "start",
     "params" : {
         "name" : "app1",
+        "image" : "app1img",
         "console" : {
             "in" : {"name" : "platform", "options" : ""},
             "out" : {"name" : "platform", "options" : ""},

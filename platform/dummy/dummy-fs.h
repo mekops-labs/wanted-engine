@@ -21,8 +21,8 @@ void DummyRegistryReset(void);
 
 /* Populate the registry from `entries`, upserting by name. Returns the number
  * of entries stored, or -ENOSPC if the table is full. This is the test write
- * path: the real PlatformRegistryWrite derives name/version from a parsed WASM
- * manifest, which the dummy platform cannot do. */
+ * path: the real PlatformRegistryWrite streams an image to a host file under an
+ * install ref, which the dummy platform cannot do. */
 int DummyRegistrySeed(const reg_entry_t *entries, size_t count);
 
 /* ── Wapp runtime-state mock control (dummy-wapps.c) ────────────────────── */

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* duplex — one image, two inter-wapp pipe roles selected by the ROLE env var
  * (passed via the launch config). Proves /dev/pipe is a process-wide channel
  * between wapps in separate namespaces. The selftest stages this single source

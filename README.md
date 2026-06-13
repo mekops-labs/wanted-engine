@@ -41,18 +41,10 @@ WAPP -> WASI -> VFS ROUTER -> [/dev/ | /net/ | /proc/ | TarFS(/)]
 
 A Wapp is a collection of OCI-compatible ustar TAR layers.
 
-1. **Required Files:** At least the following must exist in the layer stack:
+1. **Required File:** Only one entry must exist in the layer stack:
     - `app.wasm`: The WebAssembly application binary.
-    - `manifest.json`: Application metadata.
 
-2. **Manifest Schema:**
-    ```json
-    { "name": "my-app", "version": [1, 2, 3], "package": 0, "requirements": ["console", "network_tcp"] }
-    ```
-    - `name`: Unique application identifier.
-    - `version`: Integer array `[major, minor, patch]`.
-    - `package`: Integer package revision.
-    - `requirements` *(optional)*: Array of abstract capability names the wapp needs. The engine parses and stores the list; the Sheriff supervisor validates requirements against its capability registry before issuing a start action.
+2. **Image identity:** Name and version come from the registry filename `<name>:<version>-<package>.wapp`, not from in-image metadata. The loader reads them back from the registry entry. A running wapp is an *instance* (named by `create <name>`); the *image* it runs is named by its launch config's `image` field (or `start <image>`), defaulting to the instance name — so one image can back many instances.
 
 3. **Layering:** Supports OCI-style overlays. Newer layers shadow files in older layers. Whiteout files (`.wh.<filename>`) delete files from underlying layers.
 
@@ -70,7 +62,7 @@ The following devices are always registered in every wapp's `/dev/` namespace, r
 
 ## Supervisor
 
-WANTED boots a privileged wapp called the **supervisor** (Sheriff role). The supervisor image is a standard ustar TAR archive bundling `app.wasm` and `manifest.json`, loaded at runtime via `PlatformWappLoad`. It is **not** compiled into the binary.
+WANTED boots a privileged wapp called the **supervisor** (Sheriff role). The supervisor image is a standard ustar TAR archive bundling `app.wasm`, loaded at runtime via `PlatformWappLoad`.
 
 Two variants ship under `wasm/supervisor/`:
 
@@ -80,7 +72,7 @@ Two variants ship under `wasm/supervisor/`:
 | `wsh` | `wasm/supervisor/wsh/` | compiled from `wapps/wsh/` | Debug shell for interactive inspection |
 
 Build both TAR images before running (this compiles `wsh` from `wapps/wsh/` and
-bundles each variant's `app.wasm` + `manifest.json`):
+bundles each variant's `app.wasm`):
 
 ```bash
 make -C wasm/supervisor
@@ -150,7 +142,7 @@ The suite covers four categories:
 | **VFS / namespace** | Path normalization, read-only TarFS, parent-traversal denial (`..` blocked at root), `/proc` access, control-plane node enumeration |
 | **Inter-wapp IPC** | Two-wapp `/dev/pipe` round-trip: `preader` blocks on the channel while `pwriter` writes from a separate namespace; the supervisor verifies the payload via the log console |
 | **Concurrency and stop** | `looper` wapp running concurrently with the supervisor; stopped via the control plane and confirmed terminated; edge cases (stop of a dead or unknown wapp) |
-| **Negative / robustness** | WASM trap containment (`trapper`), CPU runaway (`cpuhog`), memory exhaustion (`membomb`), stack overflow (`stackbomb`), blocking-syscall stop (`blocker`, `pblock`), sandbox escape denial (`escaper`), fd table bounds (`fdhog`), crash-loop stability (`crasher`), malformed-image loader battery (missing manifest, missing `app.wasm`, invalid WASM, invalid JSON, truncated TAR) |
+| **Negative / robustness** | WASM trap containment (`trapper`), CPU runaway (`cpuhog`), memory exhaustion (`membomb`), stack overflow (`stackbomb`), blocking-syscall stop (`blocker`, `pblock`), sandbox escape denial (`escaper`), fd table bounds (`fdhog`), crash-loop stability (`crasher`), malformed-image loader battery (no `app.wasm` entrypoint, invalid WASM, truncated TAR) |
 
 ### NuttX simulator
 

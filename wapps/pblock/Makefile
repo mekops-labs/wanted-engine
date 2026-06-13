@@ -2,7 +2,7 @@
 #
 # Compiles the wapp source under this directory to <dir>.wasm with the wasi-sdk
 # clang. The selftest runners (test/selftest.sh, test/nuttx-sim.sh) package the
-# resulting wasm + manifest.json into a registry .wapp.
+# resulting wasm into a registry .wapp.
 
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 current_dir := $(notdir $(patsubst %/,%,$(dir $(mkfile_path))))
