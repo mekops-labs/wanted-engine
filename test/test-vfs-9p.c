@@ -25,7 +25,7 @@ static vfs_driver_t *drv;
 
 TEST_SETUP(vfs_9p_driver) {
     /* conf is never dialed: no test here calls _Open. */
-    drv = Vfs9PInit(NULL, "tcp!127.0.0.1!9999");
+    drv = Vfs9PInit(NULL, "tcp://127.0.0.1:9999");
 }
 
 TEST_TEAR_DOWN(vfs_9p_driver) {
