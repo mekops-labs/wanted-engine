@@ -38,9 +38,11 @@ static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path);
 
 struct vfs_driver_ctx_t {
     const char *rootPath;
+    bool readonly;
 };
 
-vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options) {
+vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
+                                bool readonly) {
     const char *root;
     vfs_driver_t *driver;
 
@@ -78,6 +80,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options) {
         memcpy((char *)driver->ctx->rootPath, root, rootLen);
     }
     memcpy((char *)&driver->ctx->rootPath[rootLen], &nullChar, 1);
+    driver->ctx->readonly = readonly;
 
     driver->bytesId = *(uint32_t *)(id);
     driver->filetype = VFS_FILETYPE_DIRECTORY;
@@ -191,7 +194,8 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
-    (void)d;
+    if (d->readonly && VFS_O_IS_WRITE(flags))
+        return -EROFS;
     /* `fd` is the preopen directory's host fd and `path` is already relative to
      * it, so the kernel resolves against `fd` directly. Prepending d->rootPath
      * would be both redundant and wrong (cwk_path_change_root drops the
@@ -260,6 +264,8 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
 }
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
+    if (d->readonly)
+        return -EROFS;
     int ret = write(fd, buf, nbyte);
     if (ret < 0)
         return -errno;
@@ -281,12 +287,14 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
 
 static int _Rename(vfs_driver_ctx_t d, int old_fd, const char *old_path,
                    int new_fd, const char *new_path) {
-    (void)d;
+    if (d->readonly)
+        return -EROFS;
     return PlatformFsRename(old_fd, old_path, new_fd, new_path);
 }
 
 static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path) {
-    (void)d;
+    if (d->readonly)
+        return -EROFS;
     return PlatformFsMkdir(fd, path);
 }
 

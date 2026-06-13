@@ -24,7 +24,7 @@ static vfs_driver_t *drv;
 
 TEST_SETUP(vfs_platform_driver) {
     DummyFsReset();
-    drv = VfsPlatformFsInit(NULL, NULL);
+    drv = VfsPlatformFsInit(NULL, NULL, false);
 }
 
 TEST_TEAR_DOWN(vfs_platform_driver) {
@@ -224,18 +224,20 @@ TEST_TEAR_DOWN(wasi_preopen_fs) {
 }
 
 TEST(wasi_preopen_fs, AddPreopen_BindsToVfs) {
-    int host_fd = PlatformOpenStateDir("/var/lib/test");
+    int host_fd = PlatformOpenStateDir("/var/lib/test", false);
     TEST_ASSERT_TRUE(host_fd >= 0);
 
     uint8_t before = wctx->preopens_cnt;
-    TEST_ASSERT_EQUAL_INT(0, WasiCtxAddPreopen(wctx, "/var/lib/test", host_fd));
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/var/lib/test", NULL, host_fd, false));
     TEST_ASSERT_EQUAL_UINT8(before + 1, wctx->preopens_cnt);
     TEST_ASSERT_TRUE(wctx->preopens[wctx->preopens_cnt - 1].fd >= 0);
 }
 
 TEST(wasi_preopen_fs, OpenAt_CreateAndRead) {
-    int host_fd = PlatformOpenStateDir("/state");
-    TEST_ASSERT_EQUAL_INT(0, WasiCtxAddPreopen(wctx, "/state", host_fd));
+    int host_fd = PlatformOpenStateDir("/state", false);
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/state", NULL, host_fd, false));
     int vfs_fd = wctx->preopens[wctx->preopens_cnt - 1].fd;
     TEST_ASSERT_TRUE(vfs_fd >= 0);
 
@@ -257,8 +259,9 @@ TEST(wasi_preopen_fs, OpenAt_CreateAndRead) {
 }
 
 TEST(wasi_preopen_fs, Mkdir_CreatesDirectory) {
-    int host_fd = PlatformOpenStateDir("/var/lib/sheriff");
-    TEST_ASSERT_EQUAL_INT(0, WasiCtxAddPreopen(wctx, "/var/lib/sheriff", host_fd));
+    int host_fd = PlatformOpenStateDir("/var/lib/sheriff", false);
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/var/lib/sheriff", NULL, host_fd, false));
     int vfs_fd = wctx->preopens[wctx->preopens_cnt - 1].fd;
     TEST_ASSERT_TRUE(vfs_fd >= 0);
 
@@ -276,8 +279,9 @@ TEST(wasi_preopen_fs, Mkdir_CreatesDirectory) {
 }
 
 TEST(wasi_preopen_fs, Rename_MovesFileInPreopen) {
-    int host_fd = PlatformOpenStateDir("/var/lib/rename");
-    TEST_ASSERT_EQUAL_INT(0, WasiCtxAddPreopen(wctx, "/var/lib/rename", host_fd));
+    int host_fd = PlatformOpenStateDir("/var/lib/rename", false);
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/var/lib/rename", NULL, host_fd, false));
     int vfs_fd = wctx->preopens[wctx->preopens_cnt - 1].fd;
     TEST_ASSERT_TRUE(vfs_fd >= 0);
 
@@ -307,9 +311,67 @@ TEST(wasi_preopen_fs, Rename_MovesFileInPreopen) {
     VfsClose(vfs, final);
 }
 
+TEST(wasi_preopen_fs, ReadOnlyMount_RejectsWrites) {
+    /* Seed the backing dir with a file through a writable bind, then re-bind the
+     * same host dir read-only. */
+    int rw_fd = PlatformOpenStateDir("/ro", false);
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/rw", NULL, rw_fd, false));
+    int rw_vfs = wctx->preopens[wctx->preopens_cnt - 1].fd;
+    int seed = VfsOpenAt(vfs, rw_vfs, "data.txt", VFS_O_CREAT | VFS_O_RDWR);
+    TEST_ASSERT_TRUE(seed >= 0);
+    VfsWrite(vfs, seed, "ro", 2);
+    VfsClose(vfs, seed);
+
+    int ro_fd = PlatformOpenStateDir("/ro", true);
+    TEST_ASSERT_TRUE(ro_fd >= 0);
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/ro", NULL, ro_fd, true));
+    int ro_vfs = wctx->preopens[wctx->preopens_cnt - 1].fd;
+    TEST_ASSERT_TRUE(ro_vfs >= 0);
+
+    /* Reads are allowed. */
+    int r = VfsOpenAt(vfs, ro_vfs, "data.txt", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(r >= 0);
+    char buf[4] = {0};
+    TEST_ASSERT_EQUAL_INT(2, VfsRead(vfs, r, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("ro", buf, 2);
+    VfsClose(vfs, r);
+
+    /* Every write path is denied with -EROFS. */
+    TEST_ASSERT_EQUAL_INT(
+        -EROFS, VfsOpenAt(vfs, ro_vfs, "new.txt", VFS_O_CREAT | VFS_O_RDWR));
+    TEST_ASSERT_EQUAL_INT(-EROFS, VfsMkdir(vfs, ro_vfs, "sub"));
+    TEST_ASSERT_EQUAL_INT(
+        -EROFS, VfsRename(vfs, ro_vfs, "data.txt", ro_vfs, "moved.txt"));
+}
+
+TEST(wasi_preopen_fs, ReadOnlyMount_MissingHostDirRejected) {
+    /* A read-only bind does not create its backing dir; a missing one fails. */
+    TEST_ASSERT_EQUAL_INT(-ENOENT, PlatformOpenStateDir("/absent", true));
+}
+
+TEST(wasi_preopen_fs, HostPathMapping_PreopenUsesWappPath) {
+    /* The host dir and the wapp-visible mount point differ: the preopen is
+     * advertised at the wapp path while ops resolve against the host dir. */
+    int host_fd = PlatformOpenStateDir("/host/state", false);
+    TEST_ASSERT_TRUE(host_fd >= 0);
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/cfg", "/host/state", host_fd, false));
+    wasi_preopen_t *p = &wctx->preopens[wctx->preopens_cnt - 1];
+    TEST_ASSERT_EQUAL_STRING("/cfg", p->path);
+
+    int f = VfsOpenAt(vfs, p->fd, "x.txt", VFS_O_CREAT | VFS_O_RDWR);
+    TEST_ASSERT_TRUE(f >= 0);
+    VfsClose(vfs, f);
+}
+
 TEST_GROUP_RUNNER(wasi_preopen_fs) {
     RUN_TEST_CASE(wasi_preopen_fs, AddPreopen_BindsToVfs);
     RUN_TEST_CASE(wasi_preopen_fs, OpenAt_CreateAndRead);
     RUN_TEST_CASE(wasi_preopen_fs, Mkdir_CreatesDirectory);
     RUN_TEST_CASE(wasi_preopen_fs, Rename_MovesFileInPreopen);
+    RUN_TEST_CASE(wasi_preopen_fs, ReadOnlyMount_RejectsWrites);
+    RUN_TEST_CASE(wasi_preopen_fs, ReadOnlyMount_MissingHostDirRejected);
+    RUN_TEST_CASE(wasi_preopen_fs, HostPathMapping_PreopenUsesWappPath);
 }
