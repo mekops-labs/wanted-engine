@@ -17,6 +17,15 @@ include(CTest)
 set(project ${CMAKE_PROJECT_NAME})
 message("Building ${project} v${SEMVER}")
 
+# Route compiles through ccache when it is on PATH (build image / dev host).
+# A no-op when ccache is absent, so the build is unaffected either way. Set
+# before any target is defined so every object honours the launcher.
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    message("-- ccache enabled: ${CCACHE_PROGRAM}")
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+endif()
+
 # Instrument every target for gcov when coverage is requested. Must be set
 # before any target is defined so the wanted library itself is covered, not
 # just the test binary. The `coverage` report target is wired in test/.
