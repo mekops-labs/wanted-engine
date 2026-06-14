@@ -73,6 +73,21 @@ stages:
     reports:
       junit: "$BUILD_DIR/rspec.xml"
 
+# build-nuttx shallow-inits the third_party/nuttx{,-apps} forks (excluded from
+# the global fetch above; cached across pipelines) and builds the engine as a
+# NuttX built-in over hostfs. The build image carries the sim prerequisites.
+build-nuttx:
+  stage: build
+  cache:
+    - *ccache_cache
+    - *nuttx_tree_cache
+  artifacts:
+    paths:
+      - third_party/nuttx/nuttx
+    expire_in: 20 minutes
+  script:
+    - bash test/nuttx-sim.sh kernel
+  
 build-gcc:
   <<: *build_defs
   variables:
@@ -149,7 +164,7 @@ coverage:
 # End-to-end engine tests. The in-WASM selftest suite (test/selftest.sh) is the
 # canonical functional suite — it boots the selftest supervisor and asserts the
 # VFS/control-plane/sandbox/robustness behaviour from inside WASM, identically on
-# Linux and the sim. smoke-engine.sh covers what selftest does not: that the
+# Linux and the nuttx sim. smoke-engine.sh covers what selftest does not: that the
 # production (sheriff) supervisor image instantiates cleanly. syscontrol.sh
 # covers the engine-process lifecycle the in-WASM suite cannot observe —
 # poweroff/reboot/exit and that a respawned supervisor keeps a working console.
@@ -188,27 +203,8 @@ integration-tests:
         status=1
       fi
       exit $status
-# NuttX simulator. The sim kernel is built once in build-nuttx and reused by the
-# selftest + syscontrol run jobs (the supervisor variant is a runtime hostfs
-# payload, so one kernel binary serves both). The run jobs run in parallel.
-#
-# build-nuttx shallow-inits the third_party/nuttx{,-apps} forks (excluded from
-# the global fetch above; cached across pipelines) and builds the engine as a
-# NuttX built-in over hostfs. The build image carries the sim prerequisites.
-build-nuttx:
-  stage: build
-  cache:
-    - *ccache_cache
-    - *nuttx_tree_cache
-  artifacts:
-    paths:
-      - third_party/nuttx/nuttx
-    expire_in: 20 minutes
-  script:
-    - bash test/nuttx-sim.sh kernel
 
-# Run-only against build-nuttx's kernel (NUTTX_SKIP_BUILD): stage the hostfs and
-# boot the sim, no rebuild. The in-WASM selftest suite asserts VFS / control
+# Boots the sim and runs the in-WASM selftest suite asserts VFS / control
 # plane / sandbox / robustness from inside WASM, identically to Linux. Needs
 # build-gcc for the supervisor TARs (wasm/supervisor, from `ninja supervisor`).
 nuttx-selftest:
@@ -223,7 +219,7 @@ nuttx-selftest:
 
 # Run-only: the engine-process lifecycle the in-WASM suite cannot observe —
 # poweroff / reboot / exit and that a respawned supervisor keeps a working
-# console. Runs in parallel with nuttx-selftest off the same prebuilt kernel.
+# console.
 nuttx-syscontrol:
   stage: integration-tests
   needs:
