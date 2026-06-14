@@ -106,13 +106,13 @@ A `platform` mount is a **bind mount** — the Docker `-v /host/path:/wapp/path[
 { "name": "platform", "path": "/var/lib/app" }  // src defaults to path, writable
 ```
 
-A `volume` mount is an engine-managed persistent store — the Docker named-volume (`--mount type=volume`) equivalent. Unlike a bind mount, the wapp names only a **volume**, never a host path: the engine owns the backing location, creates it on first use, and binds it as a WASI preopen at `path`. The store therefore travels with the wapp across hosts and works on targets with no operator-visible filesystem. Its `options` string carries:
+A `volume` mount is an engine-managed persistent store — the Docker named-volume (`--mount type=volume`) equivalent. Unlike a bind mount, the wapp names only a **volume**, never a host path: the engine owns the backing location, creates it on first use, and binds it as a WASI preopen at `path`. The store therefore is generic for the wapp across hosts and works on targets with no operator-visible filesystem. Its `options` string carries:
 
 - `name=<volname>` — the volume's name, a single path component (no `/`, `.`, or `..`). Omitted, it defaults to `default`. Distinct names give several independent stores.
 - `ro` / `rw` — access mode. Omitted, it defaults to `rw`. A `ro` grant denies the wapp every write (engine-enforced with `-EROFS`); the engine still provisions the backing store.
 - `shared` — place the volume in the **cross-wapp shared namespace**. Omitted, the volume is **private**: namespaced under the wapp instance, so one wapp can never reach another's. A shared volume is global by name — every wapp that mounts the same `name=<volname>,shared` sees one store. Private and shared namespaces are disjoint: a private `name=X` and a shared `name=X` are different stores.
 
-A shared volume is a deliberate inter-wapp channel — the substrate for a producer→processor→publisher pipeline, where each stage processes files in a store the next stage reads. The engine provides no locking; stages coordinate themselves (e.g. atomic rename, or a [named pipe](vfs-reference.md) for signalling). Which wapps share a volume is decided upstream by the supervisor handing the same `shared` volume to each — the engine enforces no policy, only the namespace.
+A shared volume could be used as deliberate inter-wapp channel, where each stage processes files in a store the next stage reads. The engine provides no locking; stages coordinate themselves (e.g. atomic rename, or a [named pipe](vfs-reference.md) for signalling). Which wapps share a volume is decided upstream by the supervisor handing the same `shared` volume to each — the engine enforces no policy, only the namespace.
 
 The store persists across wapp restarts and engine reboots. It is **not** deleted when a wapp is `delete`d or uninstalled — cleanup is an explicit operator action. There is no per-volume size quota yet.
 
