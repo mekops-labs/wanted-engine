@@ -35,12 +35,9 @@ SUPERVISOR_TAR=$ENGINE_DIR/wasm/supervisor/$SUPERVISOR_VARIANT/supervisor.tar
 deps() {
     # The NuttX + apps forks are excluded from CI's default recursive submodule
     # fetch (only this job needs them, and they are large). Shallow-init them
-    # here when absent; a no-op on a tree that already has them checked out, so
-    # a local checkout's pinned commit is left as-is.
-    if [ ! -f "$NUTTX_DIR/Makefile" ] || [ ! -f "$APPS_DIR/Makefile" ]; then
-        git -C "$ENGINE_DIR" submodule update --init --depth 1 \
-            third_party/nuttx third_party/nuttx-apps
-    fi
+    # here; a no-op on a tree that is already at the correct pinned commit.
+    git -C "$ENGINE_DIR" submodule update --init --recursive --depth 1 \
+        third_party/nuttx third_party/nuttx-apps
 
     local appdir="$APPS_DIR/system/wanted"
     ( cd "$appdir"
