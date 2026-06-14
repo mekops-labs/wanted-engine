@@ -2,7 +2,7 @@
 # Build and test the WANTED engine on the NuttX simulator.
 #
 #
-# Usage: test/nuttx-sim.sh {deps|build|selftest|all}
+# Usage: test/nuttx-sim.sh {deps|build|selftest|syscontrol|clean|all}
 #
 # nuttx + nuttx-apps are the mekops forks (wanted + devices changes), pinned as
 # shallow git submodules under third_party/. Env overrides (defaults keep
@@ -54,23 +54,40 @@ deps() {
     echo "linked engine sources into $appdir"
 }
 
-# Configure + build the sim:wanted board config (the native defconfig in the
-# nuttx fork: SYSTEM_WANTED + hostfs, wanted_sim_main as the init task, and
-# BOARDCTL_POWEROFF so the sim exits cleanly when the engine loop returns), and
-# stage the supervisor image + config into the hostfs root (/data).
-build() {
+# Stage the supervisor image + engine config into the sim's hostfs root (/data).
+# Variant-specific (selftest vs wsh) and cheap, so every phase stages its own.
+stage_hostfs() {
     [ -f "$SUPERVISOR_TAR" ] || \
         { echo "missing $SUPERVISOR_TAR (run 'make supervisor')" >&2; exit 1; }
     mkdir -p "$SIMROOT/wanted"
     cp "$SUPERVISOR_TAR" "$SIMROOT/wanted/supervisor.tar"
     cp "$ENGINE_DIR/test/nuttx-sim-config.json" "$SIMROOT/smoke.json"
+}
 
+# Configure + build the sim:wanted board config (the native defconfig in the
+# nuttx fork: SYSTEM_WANTED + hostfs, wanted_sim_main as the init task, and
+# BOARDCTL_POWEROFF so the sim exits cleanly when the engine loop returns).
+#
+# The supervisor variant is staged into hostfs and loaded at runtime, so the
+# kernel binary is identical across phases: configure once (on a fresh or
+# `clean`ed tree) and let make rebuild incrementally on later calls. This builds
+# the kernel a single time per `all` run and makes repeated local phase runs
+# near-instant. Set NUTTX_CLEAN=1 to force a full reconfigure.
+build_kernel() {
     local apps_rel
     apps_rel=$(realpath --relative-to="$NUTTX_DIR" "$APPS_DIR")
     cd "$NUTTX_DIR"
-    make distclean >/dev/null 2>&1 || true
-    ./tools/configure.sh -a "$apps_rel" sim:wanted >/dev/null
+    if [ "${NUTTX_CLEAN:-0}" = 1 ] || [ ! -f .config ]; then
+        make distclean >/dev/null 2>&1 || true
+        ./tools/configure.sh -a "$apps_rel" sim:wanted >/dev/null
+    fi
     make -j"$(nproc)"
+}
+
+# Stage the current variant's hostfs and (re)build the kernel.
+build() {
+    stage_hostfs
+    build_kernel
 }
 
 # Package a test wapp into the sim's hostfs registry, which the engine resolves
@@ -219,7 +236,8 @@ for cmd in "${@:-all}"; do
         build)      build ;;
         selftest)   deps; selftest ;;
         syscontrol) deps; syscontrol ;;
+        clean)      make -C "$NUTTX_DIR" distclean >/dev/null 2>&1 || true ;;
         all)        deps; selftest; syscontrol ;;
-        *) echo "usage: $0 [deps|build|selftest|syscontrol|all ...]" >&2; exit 2 ;;
+        *) echo "usage: $0 [deps|build|selftest|syscontrol|clean|all ...]" >&2; exit 2 ;;
     esac
 done
