@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <config-nuttx.h>
 #include <platform.h>
 
 /* mkdir -p: walk the path, creating each missing component. Existing
@@ -56,6 +57,10 @@ int PlatformOpenStateDir(const char *path, bool readonly) {
     if (fd < 0)
         return -errno;
     return fd;
+}
+
+const char *PlatformVolumeRoot(void) {
+    return VOLUME_ROOT;
 }
 
 int PlatformFsRename(int old_fd, const char *old_path,

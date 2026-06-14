@@ -47,6 +47,16 @@ struct wamrData_t {
 #define WANTED_DEV_MOUNT_FMT "/dev/%s"
 #define WANTED_NET_MOUNT_FMT "/net/%s"
 
+/* A `volume` mount with no `name=` option backs the wapp's single default store.
+ * A private volume is namespaced under the wapp instance and unreachable by any
+ * other wapp; a `shared` volume lives in a global namespace addressable by name
+ * across wapps (the substrate for a producer→processor→publisher pipeline). The
+ * fixed `priv`/`shared` segments keep the two namespaces disjoint, so no wapp
+ * name can collide with a shared volume. */
+#define WANTED_VOLUME_DEFAULT_NAME "default"
+#define WANTED_VOLUME_PRIV_FMT     "%s/priv/%s/%s"  /* <root>/priv/<wapp>/<vol> */
+#define WANTED_VOLUME_SHARED_FMT   "%s/shared/%s"   /* <root>/shared/<vol> */
+
 /* A console slot with no driver name falls back to its default backing. */
 static const char *ResolveConsole(const char *name, const char *fallback) {
     return (name == NULL || name[0] == '\0') ? fallback : name;
@@ -95,6 +105,65 @@ static int ParsePlatformMountOptions(const char *options, char *hostBuf,
             *readonly = true;
         } else if (strcmp(tok, "rw") == 0) {
             *readonly = false;
+        } else {
+            return -EINVAL;
+        }
+    }
+    return 0;
+}
+
+/* A volume name must be a single safe path component: non-empty, free of '/',
+ * and not "." or "..". The engine concatenates it into the host path under the
+ * wapp's volume directory, so a name with a separator or parent ref could escape
+ * that namespace — reject it. */
+static bool IsSafeVolumeName(const char *name) {
+    if (name == NULL || name[0] == '\0')
+        return false;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+        return false;
+    return strchr(name, '/') == NULL;
+}
+
+/* Parse a `volume` mount's options string — comma-separated:
+ *   name=<volname>   engine-managed volume name (default: "default")
+ *   ro | rw          access mode (default: rw)
+ *   shared           place the volume in the cross-wapp shared namespace
+ *                    (default: private, namespaced under this wapp)
+ * `nameBuf` receives the volume name; `*readonly` the access mode; `*shared`
+ * the namespace. An unsafe or oversized name, or any unrecognised token, is
+ * rejected with -EINVAL so a malformed mount fails loudly at install. */
+static int ParseVolumeMountOptions(const char *options, char *nameBuf,
+                                   size_t nameBufLen, bool *readonly,
+                                   bool *shared) {
+    *readonly = false;
+    *shared = false;
+    snprintf(nameBuf, nameBufLen, "%s", WANTED_VOLUME_DEFAULT_NAME);
+    if (options == NULL || options[0] == '\0')
+        return 0;
+
+    char buf[MAX_OPTIONS_SIZE];
+    size_t olen = strnlen(options, sizeof(buf));
+    if (olen >= sizeof(buf))
+        return -EINVAL;
+    memcpy(buf, options, olen + 1);
+
+    char *save = NULL;
+    for (char *tok = strtok_r(buf, ",", &save); tok != NULL;
+         tok = strtok_r(NULL, ",", &save)) {
+        if (strncmp(tok, "name=", 5) == 0) {
+            const char *vn = tok + 5;
+            if (!IsSafeVolumeName(vn))
+                return -EINVAL;
+            size_t vlen = strlen(vn);
+            if (vlen >= nameBufLen)
+                return -EINVAL;
+            memcpy(nameBuf, vn, vlen + 1);
+        } else if (strcmp(tok, "ro") == 0) {
+            *readonly = true;
+        } else if (strcmp(tok, "rw") == 0) {
+            *readonly = false;
+        } else if (strcmp(tok, "shared") == 0) {
+            *shared = true;
         } else {
             return -EINVAL;
         }
@@ -475,6 +544,49 @@ int WantedWappRun(wapp_data_t *ctx) {
                 continue;
             }
             rc = WasiCtxAddPreopen(wasiCtx, m->path, src, host_fd, readonly);
+            if (rc < 0)
+                DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
+        } else if (strcmp(m->name, "volume") == 0) {
+            /* A `volume` mount is an engine-managed named store. The engine owns
+             * the host location and binds it as a WASI preopen at the wapp-visible
+             * m->path; the wapp names only the volume (`options` carries `name=`,
+             * `ro`/`rw`, and `shared`), never a host path, so the store is
+             * portable across hosts. A private volume is namespaced under the
+             * instance so one wapp cannot reach another's; a `shared` volume sits
+             * in a global namespace any wapp can name — a cross-wapp store. */
+            char volName[MAX_PATH_LEN];
+            bool readonly, shared;
+            int rc = ParseVolumeMountOptions(m->options, volName,
+                                             sizeof(volName), &readonly, &shared);
+            if (rc < 0) {
+                DEBUG_TRACE("mounts[%zu] '%s': bad options '%s'", i, m->name,
+                            m->options);
+                ret += rc;
+                continue;
+            }
+            char hostPath[MAX_PATH_LEN];
+            int n = shared
+                ? snprintf(hostPath, sizeof(hostPath), WANTED_VOLUME_SHARED_FMT,
+                           PlatformVolumeRoot(), volName)
+                : snprintf(hostPath, sizeof(hostPath), WANTED_VOLUME_PRIV_FMT,
+                           PlatformVolumeRoot(), wapp->name, volName);
+            if (n < 0 || (size_t)n >= sizeof(hostPath)) {
+                DEBUG_TRACE("mounts[%zu] '%s': volume path too long", i, m->name);
+                ret += -ENAMETOOLONG;
+                continue;
+            }
+            /* The engine provisions the volume, so the backing dir is always
+             * created (create-on-first-use) even for a read-only grant; a
+             * provisioning failure is an engine/storage fault and fails the
+             * launch. `readonly` governs only the wapp's access to the store. */
+            int host_fd = PlatformOpenStateDir(hostPath, false);
+            if (host_fd < 0) {
+                DEBUG_TRACE("PlatformOpenStateDir(%s) failed: %d", hostPath,
+                            host_fd);
+                ret += host_fd;
+                continue;
+            }
+            rc = WasiCtxAddPreopen(wasiCtx, m->path, hostPath, host_fd, readonly);
             if (rc < 0)
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
         } else {

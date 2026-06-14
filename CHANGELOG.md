@@ -4,6 +4,14 @@ Changelog
 Unreleased
 ----------
 
+### Launch config — `volume` mounts (engine-managed persistent storage)
+
+- A `volume` `mounts[]` entry is an engine-managed persistent store: the wapp names only a volume and the engine owns the host location, so the store needs no host-path knowledge and is portable across hosts. Its `options` carry `name=<volname>` (a single path component, default `default`) to select the store, `ro`/`rw` to set the access mode (default `rw`), and `shared` to choose the namespace.
+- A **private** volume (the default) is backed at `<volume-root>/priv/<wapp>/<volname>`, namespaced by the wapp instance so one wapp can never reach another's store. A **shared** volume is backed at `<volume-root>/shared/<volname>`, a global namespace every wapp can name — one store all sharers see, the substrate for a producer→processor→publisher pipeline. The two namespaces are structurally disjoint, so a private `name=X` and a shared `name=X` never alias. `ro`/`rw` applies to both, so a downstream stage can be handed a shared feed read-only (engine-enforced with `-EROFS`).
+- The store is created on first use, persists across wapp restarts and engine reboots, and is not deleted when a wapp is `delete`d or uninstalled. There is no engine-level locking between sharers and no per-volume size quota.
+- A `name` containing `/`, `.`, or `..`, or an unrecognised option token, is rejected at install.
+- The volume root is a new platform primitive (`PlatformVolumeRoot`): a directory under the engine state root on Linux and the NuttX sim, a persistent flash partition on embedded targets.
+
 ### Launch config — `platform` bind mounts (host-path mapping + read-only)
 
 - A `platform` `mounts[]` entry is now a full bind mount. Its `options` string carries `src=<hostpath>` to back the wapp-visible `path` with an arbitrary host directory (defaulting to `path`, so existing single-path mounts are unchanged) and `ro`/`rw` to set the access mode (defaulting to `rw`).

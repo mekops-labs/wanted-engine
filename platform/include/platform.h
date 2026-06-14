@@ -90,6 +90,13 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);
  * returned fd's lifetime is owned by the VFS layer (closed at VfsDestroy). */
 int PlatformOpenStateDir(const char *path, bool readonly);
 
+/* Host directory under which engine-managed wapp volumes live. A `volume` mount
+ * backs a wapp's named store at <root>/<wapp>/<volname>, created on first use;
+ * the wapp never sees this host path. On a host filesystem this is a directory
+ * under the engine state root; on a flash target it is a persistent partition
+ * mountpoint (e.g. LittleFS). Returns a stable, non-NULL absolute path. */
+const char *PlatformVolumeRoot(void);
+
 /* Thin wrappers over native fs primitives, used by VFS path_rename and
  * path_create_directory to operate on preopen-rooted directories. Both fds
  * are native (openat-class) directory descriptors. */

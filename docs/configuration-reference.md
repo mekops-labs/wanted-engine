@@ -87,6 +87,7 @@ Entry shapes per section:
 | `null` | `drivers` | Bit bucket at `/dev/null`. | — |
 | `log` | console slot | Ring-buffer console; output readable at `/dev/wanted/wapps/<name>/log`. | — |
 | `platform` | console slot / `mounts` | As a console slot: the engine's native stdio (fds 0/1/2). In `mounts[]`: a bind mount of a host directory as a native WASI preopen at `path`; `options` set the host source and access mode. | `src=/etc/app,ro` |
+| `volume` | `mounts` | An engine-managed persistent store mounted at `path`. The engine owns the host location, so the wapp names only a volume — no host path. Private per wapp by default; `shared` makes it a cross-wapp store. Portable across hosts. | `name=cache` |
 | `socket` | `sockets` | TCP/UDP, plain or TLS. The transport is the entry's `address`. | `tcp://localhost:8888` |
 | `9p` | `mounts` | 9P2000 client for an external FS plugin. | `tcp://localhost:5640` |
 | `config` | `mounts` | Read-only config-file injection (e.g. mounted at `/etc/config`). | `{"config_file":"/config.json"}` |
@@ -103,6 +104,23 @@ A `platform` mount is a **bind mount** — the Docker `-v /host/path:/wapp/path[
 { "name": "platform", "path": "/cfg",         "options": "src=/etc/app,ro" }  // map + read-only
 { "name": "platform", "path": "/host",        "options": "src=/home/user/wapp" }  // map, writable
 { "name": "platform", "path": "/var/lib/app" }  // src defaults to path, writable
+```
+
+A `volume` mount is an engine-managed persistent store — the Docker named-volume (`--mount type=volume`) equivalent. Unlike a bind mount, the wapp names only a **volume**, never a host path: the engine owns the backing location, creates it on first use, and binds it as a WASI preopen at `path`. The store therefore is generic for the wapp across hosts and works on targets with no operator-visible filesystem. Its `options` string carries:
+
+- `name=<volname>` — the volume's name, a single path component (no `/`, `.`, or `..`). Omitted, it defaults to `default`. Distinct names give several independent stores.
+- `ro` / `rw` — access mode. Omitted, it defaults to `rw`. A `ro` grant denies the wapp every write (engine-enforced with `-EROFS`); the engine still provisions the backing store.
+- `shared` — place the volume in the **cross-wapp shared namespace**. Omitted, the volume is **private**: namespaced under the wapp instance, so one wapp can never reach another's. A shared volume is global by name — every wapp that mounts the same `name=<volname>,shared` sees one store. Private and shared namespaces are disjoint: a private `name=X` and a shared `name=X` are different stores.
+
+A shared volume could be used as deliberate inter-wapp channel, where each stage processes files in a store the next stage reads. The engine provides no locking; stages coordinate themselves (e.g. atomic rename, or a [named pipe](vfs-reference.md) for signalling). Which wapps share a volume is decided upstream by the supervisor handing the same `shared` volume to each — the engine enforces no policy, only the namespace.
+
+The store persists across wapp restarts and engine reboots. It is **not** deleted when a wapp is `delete`d or uninstalled — cleanup is an explicit operator action. There is no per-volume size quota yet.
+
+```jsonc
+{ "name": "volume", "path": "/data"                              }  // the default private store, writable
+{ "name": "volume", "path": "/cache", "options": "name=cache"    }  // a named private store
+{ "name": "volume", "path": "/ref",   "options": "name=ref,ro"   }  // a named private store, read-only
+{ "name": "volume", "path": "/stream", "options": "name=feed,shared" }  // a cross-wapp shared store
 ```
 
 A relative/empty `src` or an unrecognised token is rejected at install.

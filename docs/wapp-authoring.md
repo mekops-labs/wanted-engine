@@ -124,6 +124,16 @@ close(fd);
 
 `path_open`, `path_create_directory`, `path_rename`, and `path_unlink_file` operate here; the same calls against the read-only TarFS root return `EROFS`. The launch config and its `params` block are documented in [Control Plane Reference](control-plane-reference.md) and [Configuration Reference](configuration-reference.md).
 
+A `platform` mount pins the wapp to a host path the operator must know. When a wapp just needs *somewhere persistent to write* and should stay portable across hosts (no host-layout assumption), use a `volume` mount instead: the wapp names only a volume and the engine owns the backing location.
+
+```json
+{ "mounts": [ { "name": "volume", "path": "/data", "options": "name=cache" } ] }
+```
+
+The store is created on first use, namespaced to this wapp, and survives restarts and reboots the same way a preopen does. Use ordinary POSIX calls against `/data`.
+
+Adding `shared` to the options puts the volume in a **cross-wapp** namespace — every wapp that mounts the same `name=<volname>,shared` reaches one store. That makes a shared volume an inter-wapp channel for a producer→processor→publisher pipeline: each stage processes files a downstream stage reads, and a read-only stage mounts it with `shared,ro`. The engine provides no locking — stages coordinate themselves (e.g. atomic rename, or a [named pipe](#preopens) for signalling). A plain `volume` (no `shared`) stays private to the wapp.
+
 ## Capability requirements
 
 A wapp's effective capabilities are exactly what its launch config grants: the consoles, drivers, mounts, sockets, and the `/dev/wanted` control plane the supervisor wires up at start. The image itself declares nothing. A declarative capability-requirement vocabulary (its home — OCI image-config labels vs. implicit wasm imports — is an open design question) is deferred to a future revision.
