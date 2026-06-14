@@ -78,21 +78,21 @@ build-wsh:
 
 unit-test-gcc:
   <<: *unit_defs
-  dependencies:
+  needs:
     - build-gcc
   variables:
     BUILD_DIR: build-gcc
 
 unit-test-clang:
   <<: *unit_defs
-  dependencies:
+  needs:
     - build-clang
   variables:
     BUILD_DIR: build-clang
 
 coverage:
   stage: test
-  dependencies:
+  needs:
     - build-coverage
   variables:
     BUILD_DIR: build
@@ -120,7 +120,7 @@ coverage:
 # assume the repo CWD is the project root, which is the CI default.
 integration-tests:
   stage: integration-tests
-  dependencies:
+  needs:
     - build-gcc
   variables:
     BUILD_DIR: build-gcc
@@ -161,7 +161,7 @@ integration-tests:
 # for the supervisor TARs (wasm/supervisor, built by `ninja supervisor`).
 nuttx-integration-tests:
   stage: integration-tests
-  dependencies:
+  needs:
     - build-gcc
   script:
     - bash test/nuttx-sim.sh all
