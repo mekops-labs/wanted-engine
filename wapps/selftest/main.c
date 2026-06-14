@@ -63,6 +63,73 @@
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
     "\"args\":[\"alpha\",\"beta\"],\"envs\":[\"FOO=bar\",\"BAZ=qux\"]}"
 
+/* volcheck mounts an engine-managed `volume` at /data. On a fresh store it
+ * writes a marker and reports "vol-wrote"; on a store that already holds state
+ * it reads the marker back and reports "vol-read:<payload>". Two runs of the
+ * same instance prove the volume persists across a restart. */
+#define VOLCHECK         "volcheck"
+#define VOLCHECK_CFG     "/dev/wanted/wapps/" VOLCHECK "/config"
+#define VOLCHECK_LOG     "/dev/wanted/wapps/" VOLCHECK "/log"
+#define VOLCHECK_PAYLOAD "persist-42"
+#define VOLCHECK_CFG_BODY \
+    "{\"console\":{\"in\":{\"name\":\"null\"}," \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
+    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"}]}"
+
+/* A shared volume is one store two wapps reach by name — the substrate for a
+ * producer→processor→publisher pipeline. Two distinct instances (vprod, vcons)
+ * both run the volcheck image against the same `name=stream,shared` volume: the
+ * producer writes the marker on the fresh store, the consumer (a different
+ * instance) re-opens it, proving the store crosses the wapp boundary. Both bind
+ * the image via the config `image` field, since the instance names differ. */
+#define VPROD          "vprod"
+#define VCONS          "vcons"
+#define VPROD_CFG      "/dev/wanted/wapps/" VPROD "/config"
+#define VCONS_CFG      "/dev/wanted/wapps/" VCONS "/config"
+#define VPROD_LOG      "/dev/wanted/wapps/" VPROD "/log"
+#define VCONS_LOG      "/dev/wanted/wapps/" VCONS "/log"
+#define SHARED_CFG_BODY \
+    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"}," \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
+    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"," \
+    "\"options\":\"name=stream,shared\"}]}"
+
+/* Isolation: a private and a shared volume of the *same name* must be different
+ * stores. isoshr writes to a shared `name=iso`; isoprv then mounts a private
+ * `name=iso` (no `shared`) — if the two namespaces mixed, isoprv would find the
+ * shared marker (vol-open); kept disjoint, it sees a fresh store and writes
+ * (vol-wrote). Both run the volcheck image. */
+#define ISO_SHARE      "isoshr"
+#define ISO_PRIV       "isoprv"
+#define ISO_SHARE_CFG  "/dev/wanted/wapps/" ISO_SHARE "/config"
+#define ISO_PRIV_CFG   "/dev/wanted/wapps/" ISO_PRIV "/config"
+#define ISO_SHARE_LOG  "/dev/wanted/wapps/" ISO_SHARE "/log"
+#define ISO_PRIV_LOG   "/dev/wanted/wapps/" ISO_PRIV "/log"
+#define ISO_SHARE_CFG_BODY \
+    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"}," \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
+    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"," \
+    "\"options\":\"name=iso,shared\"}]}"
+#define ISO_PRIV_CFG_BODY \
+    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"}," \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
+    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"," \
+    "\"options\":\"name=iso\"}]}"
+
+/* A read-only shared volume must deny writes. vroro mounts a fresh
+ * `name=roonly,shared,ro` store; volcheck finds no marker and tries to create
+ * one, which the ro grant rejects (-EROFS), so it reports "vol-fail". This is the
+ * publisher's mount in a producer→processor→publisher chain — read the shared
+ * feed, never mutate it. */
+#define VRORO          "vroro"
+#define VRORO_CFG      "/dev/wanted/wapps/" VRORO "/config"
+#define VRORO_LOG      "/dev/wanted/wapps/" VRORO "/log"
+#define VRORO_CFG_BODY \
+    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"}," \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
+    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"," \
+    "\"options\":\"name=roonly,shared,ro\"}]}"
+
 /* The supervisor's own launch config (selftest-config.json) wires the three
  * launch-config resource sections, so they are verified in our own namespace:
  * a `config` map mounted at an arbitrary path outside /dev, a named socket, and
@@ -674,6 +741,8 @@ static void launch_config_validation_check(void) {
         { "s_addr", "{\"image\":\"looper\",\"sockets\":[{\"name\":\"s\",\"address\":\"bogus\"}]}" },
         { "m_psrc", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"platform\",\"path\":\"/p\",\"options\":\"src=relative\"}]}" },
         { "m_popt", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"platform\",\"path\":\"/p\",\"options\":\"bogus\"}]}" },
+        { "m_vnam", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"volume\",\"path\":\"/d\",\"options\":\"name=../escape\"}]}" },
+        { "m_vopt", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"volume\",\"path\":\"/d\",\"options\":\"bogus\"}]}" },
     };
     char buf[80], desc[96];
     int all = 1;
@@ -705,6 +774,117 @@ static void launch_config_validation_check(void) {
     tap_ok(read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
                strstr(buf, "running") != NULL,
            "launch config: supervisor survives the rejected configs");
+}
+
+/* An engine-managed `volume` is a writable, persistent, named store: the engine
+ * owns the host location (the wapp names only the volume) and it survives a wapp
+ * restart. volcheck writes a marker on a fresh store and, on a populated one,
+ * re-opens it and reads it back. Running the same instance twice — the engine
+ * names the volume by instance, so both runs see the same store — proves the
+ * first run's write persists into the second.
+ *
+ * Persistence (the marker re-opens after the restart) is asserted on every
+ * platform. The byte-level read-back is asserted where the host-fs preopen
+ * returns content; a build whose preopen opens but reads back nothing (the
+ * NuttX sim's hostfs) skips that one assertion with a diagnostic, the same way
+ * the socket check skips on a netless build. */
+static void volume_check(void) {
+    char buf[160];
+
+    int r1 = create_wapp(VOLCHECK) &&
+             write_path(VOLCHECK_CFG, VOLCHECK_CFG_BODY) >= 0 &&
+             start_wapp(VOLCHECK) && wait_dead(VOLCHECK);
+    int wrote = r1 && read_path(VOLCHECK_LOG, buf, sizeof(buf)) > 0 &&
+                strstr(buf, "vol-wrote") != NULL;
+    tap_ok(wrote, "volume: a fresh volume mounts writable and the wapp writes its state");
+
+    /* The launch config is consumed on start, so re-arm it before relaunching
+     * the same instance. The store is named by the instance, not the config. */
+    int r2 = write_path(VOLCHECK_CFG, VOLCHECK_CFG_BODY) >= 0 &&
+             start_wapp(VOLCHECK) && wait_dead(VOLCHECK);
+    int n = r2 ? read_path(VOLCHECK_LOG, buf, sizeof(buf)) : -1;
+
+    tap_ok(n > 0 && strstr(buf, "vol-open") != NULL,
+           "volume: state persists across a wapp restart (marker re-opens)");
+
+    if (n > 0 && strstr(buf, "vol-read:" VOLCHECK_PAYLOAD) != NULL) {
+        tap_ok(1, "volume: the persisted bytes read back through the preopen");
+    } else {
+        tap_diag("volume: byte read-back skipped — this build's host-fs preopen "
+                 "opens the persisted file but reads back no content (e.g. the "
+                 "NuttX sim hostfs)");
+    }
+}
+
+/* A shared volume crosses the wapp isolation boundary by design: two instances
+ * that name the same `shared` volume see one store. The producer writes a marker
+ * to a fresh shared volume; the consumer — a separate instance — re-opens that
+ * marker, proving the store is shared, not per-wapp. The byte read-back is
+ * asserted only where the host-fs preopen returns content (skipped on the NuttX
+ * sim hostfs, like the persistence check). */
+static void shared_volume_check(void) {
+    char buf[160];
+
+    int p = create_wapp(VPROD) && write_path(VPROD_CFG, SHARED_CFG_BODY) >= 0 &&
+            start_wapp(VPROD) && wait_dead(VPROD);
+    int wrote = p && read_path(VPROD_LOG, buf, sizeof(buf)) > 0 &&
+                strstr(buf, "vol-wrote") != NULL;
+    tap_ok(wrote, "shared volume: a producer writes to a fresh shared volume");
+
+    /* A different instance names the same shared volume and must see the marker
+     * the producer wrote — the store crossed the wapp boundary. */
+    int c = create_wapp(VCONS) && write_path(VCONS_CFG, SHARED_CFG_BODY) >= 0 &&
+            start_wapp(VCONS) && wait_dead(VCONS);
+    int n = c ? read_path(VCONS_LOG, buf, sizeof(buf)) : -1;
+
+    tap_ok(n > 0 && strstr(buf, "vol-open") != NULL,
+           "shared volume: a second wapp reaches the producer's store (cross-wapp share)");
+
+    if (n > 0 && strstr(buf, "vol-read:" VOLCHECK_PAYLOAD) != NULL) {
+        tap_ok(1, "shared volume: the shared bytes read back through the preopen");
+    } else {
+        tap_diag("shared volume: byte read-back skipped — host-fs preopen opens "
+                 "the shared file but reads back no content (e.g. the NuttX sim)");
+    }
+}
+
+/* Private and shared namespaces must never alias: a `name=iso` private volume
+ * and a `name=iso` shared volume are different stores. The shared instance writes
+ * its marker; the private instance, naming the same volume, must see a fresh
+ * store (write, not read) — finding the shared marker would be a namespace leak.
+ * This is the open-based proof (it holds even where byte read-back does not). */
+static void volume_isolation_check(void) {
+    char buf[160];
+
+    int s = create_wapp(ISO_SHARE) &&
+            write_path(ISO_SHARE_CFG, ISO_SHARE_CFG_BODY) >= 0 &&
+            start_wapp(ISO_SHARE) && wait_dead(ISO_SHARE);
+    int shared_wrote = s && read_path(ISO_SHARE_LOG, buf, sizeof(buf)) > 0 &&
+                       strstr(buf, "vol-wrote") != NULL;
+
+    int p = create_wapp(ISO_PRIV) &&
+            write_path(ISO_PRIV_CFG, ISO_PRIV_CFG_BODY) >= 0 &&
+            start_wapp(ISO_PRIV) && wait_dead(ISO_PRIV);
+    int priv_fresh = p && read_path(ISO_PRIV_LOG, buf, sizeof(buf)) > 0 &&
+                     strstr(buf, "vol-wrote") != NULL &&
+                     strstr(buf, "vol-open") == NULL;
+
+    tap_ok(shared_wrote && priv_fresh,
+           "volume: a private volume never aliases a shared volume of the same name");
+}
+
+/* `ro` is orthogonal to `shared`: a read-only shared volume is provisioned by the
+ * engine but denies the wapp every write. vroro tries to create a marker on a
+ * fresh ro shared store and is refused (-EROFS), reporting "vol-fail". */
+static void volume_readonly_check(void) {
+    char buf[160];
+
+    int r = create_wapp(VRORO) && write_path(VRORO_CFG, VRORO_CFG_BODY) >= 0 &&
+            start_wapp(VRORO) && wait_dead(VRORO);
+    int denied = r && read_path(VRORO_LOG, buf, sizeof(buf)) > 0 &&
+                 strstr(buf, "vol-fail") != NULL &&
+                 strstr(buf, "vol-wrote") == NULL;
+    tap_ok(denied, "volume: a read-only shared volume denies writes (-EROFS)");
 }
 
 /* Multiple readers on one pipe. A named pipe is a single consume-once ring, not
@@ -777,6 +957,10 @@ int main(void) {
         { "malformed_check",    malformed_check    },
         { "crashloop_check",    crashloop_check    },
         { "launch_config_validation_check", launch_config_validation_check },
+        { "volume_check",       volume_check       },
+        { "shared_volume_check", shared_volume_check },
+        { "volume_isolation_check", volume_isolation_check },
+        { "volume_readonly_check", volume_readonly_check },
     };
     const int total = (int)(sizeof(phases) / sizeof(phases[0]));
 

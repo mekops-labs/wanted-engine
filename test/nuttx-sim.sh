@@ -114,10 +114,16 @@ selftest() {
     # instances (reader/writer); each picks its side from the ROLE env var in its
     # launch config. The supervisor binds the image via config `image`.
     stage_test_wapp duplex:0.0.1-1
+    stage_test_wapp volcheck:0.0.1-1
     # hand-crafted malformed images for the loader-robustness check (reuse the
     # valid wasm that stage_test_wapp just built)
     "$ENGINE_DIR/test/stage-malformed.sh" "$SIMROOT/registry" \
         "$ENGINE_DIR/wapps/trapper/trapper.wasm"
+
+    # The volume persistence check asserts a fresh store on its first run; the
+    # engine roots volumes at ./data under SIMROOT, so clear any leftover from a
+    # prior local run (CI starts from a clean checkout).
+    rm -rf "$SIMROOT/data"
 
     # The engine keeps running after the test supervisor finishes (a cleanly
     # exited supervisor is respawned for resilience), so the sim won't self-exit.
