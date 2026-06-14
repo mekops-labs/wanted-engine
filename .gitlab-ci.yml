@@ -32,6 +32,16 @@ stages:
   paths:
     - .ccache
 
+# NuttX fork checkout, cached across pipelines so build-nuttx need not re-fetch
+# the (large) nuttx{,-apps} submodules each run. Bump the key version when the
+# pin moves — a stale cached tree would otherwise hide the new commit (deps()
+# reuses an already-checked-out tree as-is).
+.nuttx_tree_cache: &nuttx_tree_cache
+  key: nuttx-tree-v1
+  paths:
+    - third_party/nuttx
+    - third_party/nuttx-apps
+
 .build_job_template: &build_defs  # Hidden yaml configuration that defines an anchor named 'job_configuration'
   stage: build
   cache:
@@ -88,6 +98,16 @@ build-coverage:
 # wsh-compiled-in build still links.
 build-wsh:
   <<: *build_defs
+  needs:
+    - build-gcc
+  cache:
+    # Reuse build-gcc's warm cache: same gcc + flags, and the wsh image define
+    # only changes one object, so ~99% of compiles hit. pull-only so this build
+    # does not write back into build-gcc's cache.
+    key: ccache-build-gcc
+    paths:
+      - .ccache
+    policy: pull
   variables:
     BUILD_DIR: build-wsh
     CC: gcc
@@ -168,19 +188,48 @@ integration-tests:
         status=1
       fi
       exit $status
-# NuttX simulator: build the engine as a NuttX built-in (the selftest supervisor
-# as the init task over hostfs) and run the in-WASM selftest suite plus the
-# system-control checks against the sim via the shared recipe in
-# test/nuttx-sim.sh ("all" = deps; selftest; syscontrol). It
-# shallow-inits the third_party/nuttx{,-apps} submodules (excluded from the
-# global fetch above).
-# The build image already carries the sim prerequisites. Depends on build-gcc
-# for the supervisor TARs (wasm/supervisor, built by `ninja supervisor`).
-nuttx-integration-tests:
+# NuttX simulator. The sim kernel is built once in build-nuttx and reused by the
+# selftest + syscontrol run jobs (the supervisor variant is a runtime hostfs
+# payload, so one kernel binary serves both). The run jobs run in parallel.
+#
+# build-nuttx shallow-inits the third_party/nuttx{,-apps} forks (excluded from
+# the global fetch above; cached across pipelines) and builds the engine as a
+# NuttX built-in over hostfs. The build image carries the sim prerequisites.
+build-nuttx:
+  stage: build
+  cache:
+    - *ccache_cache
+    - *nuttx_tree_cache
+  artifacts:
+    paths:
+      - third_party/nuttx/nuttx
+    expire_in: 20 minutes
+  script:
+    - bash test/nuttx-sim.sh deps build
+
+# Run-only against build-nuttx's kernel (NUTTX_SKIP_BUILD): stage the hostfs and
+# boot the sim, no rebuild. The in-WASM selftest suite asserts VFS / control
+# plane / sandbox / robustness from inside WASM, identically to Linux. Needs
+# build-gcc for the supervisor TARs (wasm/supervisor, from `ninja supervisor`).
+nuttx-selftest:
   stage: integration-tests
   needs:
+    - build-nuttx
     - build-gcc
-  cache:
-    *ccache_cache
+  variables:
+    NUTTX_SKIP_BUILD: "1"
   script:
-    - bash test/nuttx-sim.sh all
+    - bash test/nuttx-sim.sh selftest
+
+# Run-only: the engine-process lifecycle the in-WASM suite cannot observe —
+# poweroff / reboot / exit and that a respawned supervisor keeps a working
+# console. Runs in parallel with nuttx-selftest off the same prebuilt kernel.
+nuttx-syscontrol:
+  stage: integration-tests
+  needs:
+    - build-nuttx
+    - build-gcc
+  variables:
+    NUTTX_SKIP_BUILD: "1"
+  script:
+    - bash test/nuttx-sim.sh syscontrol
