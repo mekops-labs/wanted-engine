@@ -27,15 +27,6 @@ TEST_GROUP(vfs_registry_driver);
 
 static const vfs_driver_t *drv;
 
-static reg_entry_t MakeEntry(const char *name, const char *version, size_t size) {
-    reg_entry_t e;
-    memset(&e, 0, sizeof(e));
-    strncpy(e.name, name, WAPP_MAX_NAME_LEN - 1);
-    strncpy(e.version, version, WAPP_MAX_VERSION_LEN - 1);
-    e.size = size;
-    return e;
-}
-
 static void SeedTwo(void) {
     reg_entry_t seed[2] = {
         MakeEntry("app1", "1.0.0", 42),

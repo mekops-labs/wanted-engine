@@ -28,19 +28,6 @@ static int _ProcReadVersion(vfs_ctx_t c, void *buf, size_t len) {
 /* Minimal tar layer with a single file "data.bin" containing "0123456789". */
 static uint8_t tar_layer[512 * 4];
 
-static void TarHeader(uint8_t hdr[512], const char *name, uint32_t size,
-                      char typeflag) {
-    memset(hdr, 0, 512);
-    strncpy((char *)hdr, name, 99);
-    for (int i = 10; i >= 0; i--) {
-        hdr[124 + i] = (uint8_t)('0' + (size & 7));
-        size >>= 3;
-    }
-    hdr[124 + 11] = '\0';
-    hdr[156] = (uint8_t)typeflag;
-    memcpy(hdr + 257, "ustar", 5);
-}
-
 static vfs_ctx_t BuildTarVfs(void) {
     memset(tar_layer, 0, sizeof(tar_layer));
     TarHeader(tar_layer, "data.bin", 10, '0');
