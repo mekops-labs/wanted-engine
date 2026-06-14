@@ -201,34 +201,29 @@ static int _Close(vfs_driver_ctx_t c, int fd) {
     return PlatformNetClose(c->netCtx);
 }
 
+/* Establish the connection lazily on the first I/O. */
+static int ensureConnected(vfs_driver_ctx_t c) {
+    if (c->connected)
+        return 0;
+    int ret = PlatformNetConnect(c->netCtx, c->addr, c->port);
+    if (ret < 0)
+        return ret;
+    c->connected = true;
+    return 0;
+}
+
 static int _Read(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte) {
-    int ret;
-
-    if (!c->connected) {
-        if ((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
-            return ret;
-        }
-        c->connected = true;
-    }
-
-    ret = PlatformNetRecv(c->netCtx, buf, nbyte, 0);
-
-    return ret;
+    int ret = ensureConnected(c);
+    if (ret < 0)
+        return ret;
+    return PlatformNetRecv(c->netCtx, buf, nbyte, 0);
 }
 
 static int _Write(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte) {
-    int ret;
-
-    if (!c->connected) {
-        if ((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
-            return ret;
-        }
-        c->connected = true;
-    }
-
-    ret = PlatformNetSend(c->netCtx, buf, nbyte, 0);
-
-    return ret;
+    int ret = ensureConnected(c);
+    if (ret < 0)
+        return ret;
+    return PlatformNetSend(c->netCtx, buf, nbyte, 0);
 }
 
 static int _Stat(vfs_driver_ctx_t c, int fd, vfs_stat_t *stat) {
@@ -266,34 +261,18 @@ static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
 
 static int _SockRecv(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte,
                      vfs_riflags_t iflags, vfs_roflags_t *oflags) {
-    int ret;
-
-    if (!c->connected) {
-        if ((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
-            return ret;
-        }
-        c->connected = true;
-    }
-
-    ret = PlatformNetRecv(c->netCtx, buf, nbyte, iflags);
-
-    return ret;
+    int ret = ensureConnected(c);
+    if (ret < 0)
+        return ret;
+    return PlatformNetRecv(c->netCtx, buf, nbyte, iflags);
 }
 
 static int _SockSend(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte,
                      vfs_sdflags_t flags) {
-    int ret;
-
-    if (!c->connected) {
-        if ((ret = PlatformNetConnect(c->netCtx, c->addr, c->port)) < 0) {
-            return ret;
-        }
-        c->connected = true;
-    }
-
-    ret = PlatformNetSend(c->netCtx, buf, nbyte, flags);
-
-    return ret;
+    int ret = ensureConnected(c);
+    if (ret < 0)
+        return ret;
+    return PlatformNetSend(c->netCtx, buf, nbyte, flags);
 }
 
 static int _SockShutdown(vfs_driver_ctx_t c, int fd, vfs_sdflags_t flags) {
