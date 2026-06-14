@@ -205,7 +205,7 @@ build-nuttx:
       - third_party/nuttx/nuttx
     expire_in: 20 minutes
   script:
-    - bash test/nuttx-sim.sh deps build
+    - bash test/nuttx-sim.sh kernel
 
 # Run-only against build-nuttx's kernel (NUTTX_SKIP_BUILD): stage the hostfs and
 # boot the sim, no rebuild. The in-WASM selftest suite asserts VFS / control
