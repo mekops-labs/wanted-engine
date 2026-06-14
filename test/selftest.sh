@@ -17,6 +17,7 @@ cd "$ROOT"
 WANTED=${1:-./build/cmd/wanted-cli}
 CONFIG=${2:-./test/selftest-config.json}
 REGISTRY_ROOT=${REGISTRY_ROOT:-./registry}
+VOLUME_ROOT=${VOLUME_ROOT:-./data}
 
 if [ ! -x "$WANTED" ]; then
     echo "FAIL: wanted-cli not found at $WANTED (run 'make build')"
@@ -28,7 +29,7 @@ mkdir -p "$REGISTRY_ROOT"
 # Launched test wapps, packaged into the registry as <name>:<version>.wapp. The
 # `duplex` image is launched as two instances (reader/writer) by the supervisor
 # via the config `image` field — it is staged once, not aliased.
-TEST_WAPPS="trapper:0.0.1-1 looper:0.0.1-1 stackbomb:0.0.1-1 membomb:0.0.1-1 cpuhog:0.0.1-1 blocker:0.0.1-1 pblock:0.0.1-1 escaper:0.0.1-1 fdhog:0.0.1-1 crasher:0.0.1-1 argenv:0.0.1-1 duplex:0.0.1-1"
+TEST_WAPPS="trapper:0.0.1-1 looper:0.0.1-1 stackbomb:0.0.1-1 membomb:0.0.1-1 cpuhog:0.0.1-1 blocker:0.0.1-1 pblock:0.0.1-1 escaper:0.0.1-1 fdhog:0.0.1-1 crasher:0.0.1-1 argenv:0.0.1-1 duplex:0.0.1-1 volcheck:0.0.1-1"
 
 staged=""
 # stage <name>:<ver>
@@ -50,8 +51,13 @@ malformed="noappwasm badwasm truncated"
 cleanup() {
     rm -f $staged
     for m in $malformed; do rm -f "$REGISTRY_ROOT/$m":*.wapp; done
+    rm -rf "$VOLUME_ROOT"
 }
 trap cleanup EXIT
+
+# The volume persistence check asserts a fresh store on its first run, so start
+# from a clean volume root (a prior aborted run may have left one behind).
+rm -rf "$VOLUME_ROOT"
 
 for w in $TEST_WAPPS; do stage "$w"; done
 

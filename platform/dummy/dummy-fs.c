@@ -414,6 +414,10 @@ int PlatformOpenStateDir(const char *path, bool readonly) {
     return fd < 0 ? -EMFILE : fd;
 }
 
+const char *PlatformVolumeRoot(void) {
+    return "/data";
+}
+
 int PlatformFsRename(int old_fd, const char *old_path,
                      int new_fd, const char *new_path) {
     return dummy_rename(&g_dummy_fs, old_fd, old_path, new_fd, new_path);
