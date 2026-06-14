@@ -2,7 +2,7 @@
 # Build and test the WANTED engine on the NuttX simulator.
 #
 #
-# Usage: test/nuttx-sim.sh {deps|build|selftest|syscontrol|clean|all}
+# Usage: test/nuttx-sim.sh {deps|build|kernel|selftest|syscontrol|clean|all}
 #
 # nuttx + nuttx-apps are the mekops forks (wanted + devices changes), pinned as
 # shallow git submodules under third_party/. Env overrides (defaults keep
@@ -105,6 +105,14 @@ build_kernel() {
 # Stage the current variant's hostfs and (re)build the kernel.
 build() {
     stage_hostfs
+    build_kernel
+}
+
+# Build just the kernel (no hostfs staging). Used by the split-CI build-nuttx
+# job, which produces the kernel binary as an artifact for the run jobs and has
+# no supervisor image to stage.
+kernel() {
+    deps
     build_kernel
 }
 
@@ -252,10 +260,11 @@ for cmd in "${@:-all}"; do
     case "$cmd" in
         deps)       deps ;;
         build)      build ;;
+        kernel)     kernel ;;
         selftest)   [ "${NUTTX_SKIP_BUILD:-0}" = 1 ] || deps; selftest ;;
         syscontrol) [ "${NUTTX_SKIP_BUILD:-0}" = 1 ] || deps; syscontrol ;;
         clean)      make -C "$NUTTX_DIR" distclean >/dev/null 2>&1 || true ;;
         all)        deps; selftest; syscontrol ;;
-        *) echo "usage: $0 [deps|build|selftest|syscontrol|clean|all ...]" >&2; exit 2 ;;
+        *) echo "usage: $0 [deps|build|kernel|selftest|syscontrol|clean|all ...]" >&2; exit 2 ;;
     esac
 done
