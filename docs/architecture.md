@@ -48,11 +48,11 @@ The engine boots a single privileged wapp, the **supervisor**, before any other.
 
 The supervisor image is loaded at runtime via `PlatformWappLoad` — it is **not** compiled into the engine binary. Three variants ship under `wasm/supervisor/`:
 
-| Variant | Role |
-|---------|------|
-| `sheriff` | Production control-plane agent (prebuilt `app.wasm` from a separate repo). |
-| `wsh` | Interactive debug shell for inspecting a running engine by hand. |
-| `selftest` | Orchestrates the in-WASM test suite from inside the sandbox. |
+| Variant | Path | Source | Purpose |
+|---------|------|--------|---------|
+| `sheriff` | `wasm/supervisor/sheriff/` | prebuilt `app.wasm` (separate repo) | Production control-plane agent. |
+| `wsh` | `wasm/supervisor/wsh/` | compiled from `wapps/wsh/` | Interactive debug shell for manual inspection. |
+| `selftest` | `wasm/supervisor/selftest/` | compiled from `wapps/selftest/` | Orchestrates the in-WASM test suite. |
 
 The image is selected by `supervisor.imagePath` in the config, falling back to the `WANTED_SUPERVISOR_IMAGE_PATH` build option. A supervisor that exits on its own is respawned; only an explicit `poweroff`/`reboot` ends the engine.
 
