@@ -9,6 +9,8 @@ add_library(platform_dummy STATIC
     ${sources}
 )
 
+target_compile_options(platform_dummy PRIVATE ${WANTED_STRICT_WARNINGS})
+
 target_include_directories(platform_dummy
     PUBLIC  ${CMAKE_SOURCE_DIR}/include
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include

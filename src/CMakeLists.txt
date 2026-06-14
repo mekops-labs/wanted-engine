@@ -103,6 +103,11 @@ target_compile_definitions(${project} PRIVATE
 # Add debug symbols
 target_compile_options(${project} PUBLIC -g)
 
+# Strict-warning guard on our own sources only — tiny-json / c9 (vendored) are
+# compiled into this library and stay exempt.
+set_source_files_properties(${sources} ${vfs-srcs} ${wasi-src}
+    PROPERTIES COMPILE_OPTIONS "${WANTED_STRICT_WARNINGS}")
+
 option(WANTED_DEBUG_TRACES "Enable debug prints for Wanted" OFF)
 if (WANTED_DEBUG_TRACES)
     message("-- Debug tracing for Wanted enabled")
