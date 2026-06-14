@@ -27,6 +27,6 @@ void WantedFree(void *ptr) {
     free(ptr);
 }
 
-size_t WantedGetAllocatedMem() { return allocated; }
+size_t WantedGetAllocatedMem(void) { return allocated; }
 
 #endif

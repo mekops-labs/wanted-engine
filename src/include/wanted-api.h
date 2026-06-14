@@ -138,4 +138,4 @@ typedef struct wantedConfig_t {
 int WantedWappRun(wapp_data_t *ctx);
 void WantedWappStop(wapp_data_t *ctx);
 void WantedWappTerminate(wapp_data_t *ctx);
-wapp_t *WantedGetCurrentSupervisor();
+wapp_t *WantedGetCurrentSupervisor(void);

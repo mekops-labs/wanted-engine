@@ -351,7 +351,7 @@ void PlatformRequestReboot(void) {
     pthread_mutex_unlock(&state_mtx);
 }
 
-void PlatformWappLoop() {
+void PlatformWappLoop(void) {
     uint8_t supervisorOk;
 
     for (;;) {
