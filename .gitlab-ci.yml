@@ -92,7 +92,7 @@ build-nuttx:
     - nuttx-cache-key
   cache:
     - *ccache_cache
-    - *nuttx_tree_cache
+#    - *nuttx_tree_cache
   artifacts:
     paths:
       - third_party/nuttx/nuttx
