@@ -32,26 +32,6 @@ stages:
   paths:
     - .ccache
 
-# Generate a dynamic cache key based on the actual submodule pins. This ensures
-# the cache invalidates automatically when submodules are updated, without
-# manual key bumping.
-nuttx-cache-key:
-  stage: .pre
-  script:
-    - git ls-tree HEAD third_party/nuttx third_party/nuttx-apps > nuttx.status
-    - echo "NUTTX_CACHE_KEY=nuttx-tree-$(md5sum nuttx.status | cut -d' ' -f1)" > nuttx.env
-  artifacts:
-    reports:
-      dotenv: nuttx.env
-
-# NuttX fork checkout, cached across pipelines so build-nuttx need not re-fetch
-# the (large) nuttx{,-apps} submodules each run. The key is dynamic (see above).
-.nuttx_tree_cache: &nuttx_tree_cache
-  key: $NUTTX_CACHE_KEY
-  paths:
-    - third_party/nuttx
-    - third_party/nuttx-apps
-
 .build_job_template: &build_defs  # Hidden yaml configuration that defines an anchor named 'job_configuration'
   stage: build
   cache:
@@ -88,11 +68,8 @@ nuttx-cache-key:
 # NuttX built-in over hostfs. The build image carries the sim prerequisites.
 build-nuttx:
   stage: build
-  needs:
-    - nuttx-cache-key
   cache:
     - *ccache_cache
-#    - *nuttx_tree_cache
   artifacts:
     paths:
       - third_party/nuttx/nuttx
