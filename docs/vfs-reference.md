@@ -88,6 +88,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `wanted` | `drivers[]` | `/dev/wanted` | The control-plane namespace; privileged supervisors only. Fully specified in the [Control Plane Reference](control-plane-reference.md). |
 | `null` | `drivers[]` | `/dev/null` | Bit bucket. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
+| `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
 | `config` | `mounts[]` | chosen `path` (e.g. `/etc/config`) | Read-only config-file injection, reachable outside `/dev`. |
 | `9p` | `mounts[]` | chosen `path` | 9P2000 client for an external FS plugin. |
 | `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |

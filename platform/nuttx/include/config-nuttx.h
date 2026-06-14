@@ -5,6 +5,7 @@
 #define DEFAULT_ROOT "./"
 
 #define REGISTRY_ROOT "./registry"
+#define VOLUME_ROOT "./data"
 #define REGISTRY_EXT ".wapp"
 #define REGISTRY_VERSION_SEPARATOR ':'
 
