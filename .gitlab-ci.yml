@@ -46,7 +46,7 @@ stages:
   stage: test
   script:
     - cd "$BUILD_DIR"
-    - ctest --output-junit rspec.xml
+    - ctest -j"$(nproc)" --output-junit rspec.xml
   artifacts:
     when: always
     paths:
