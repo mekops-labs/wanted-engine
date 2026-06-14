@@ -25,6 +25,7 @@
 #include <cwalk.h>
 #include <debug_trace.h>
 #include <platform.h>
+#include <vfs-posix.h>
 #include <vfs.h>
 #include <wanted-api.h>
 #include <wanted_malloc.h>
@@ -119,27 +120,6 @@ static int _Destroy(struct vfs_driver_t *d) {
     return 0;
 }
 
-static inline vfs_filetype_t convertFiletype(uint32_t t) {
-    switch (t & S_IFMT) {
-    case S_IFSOCK:
-        return VFS_FILETYPE_SOCKET_STREAM;
-    case S_IFLNK:
-        return VFS_FILETYPE_SYMBOLIC_LINK;
-    case S_IFREG:
-        return VFS_FILETYPE_REGULAR_FILE;
-    case S_IFBLK:
-        return VFS_FILETYPE_BLOCK_DEVICE;
-    case S_IFDIR:
-        return VFS_FILETYPE_DIRECTORY;
-    case S_IFCHR:
-        return VFS_FILETYPE_CHARACTER_DEVICE;
-    case S_IFIFO:
-        return VFS_FILETYPE_REGULAR_FILE;
-    default:
-        return VFS_FILETYPE_UNKNOWN;
-    }
-}
-
 /* NuttX defines DT_UNKNOWN/FIFO/CHR/DIR/BLK/REG plus its own DT_SEM/MQ/SHM/MTD,
  * but not DT_LNK/DT_SOCK/DT_WHT; the latter fall through to UNKNOWN. */
 static inline vfs_filetype_t convertDirtype(uint8_t t) {
@@ -161,36 +141,13 @@ static inline vfs_filetype_t convertDirtype(uint8_t t) {
     }
 }
 
-static inline int convertVfsFlagsToNuttx(vfs_oflags_t f) {
-    int flags =
-        ((f & VFS_O_CREAT) ? O_CREAT : 0) |
-        ((f & VFS_O_DIRECTORY) ? O_DIRECTORY : 0) |
-        ((f & VFS_O_EXCL) ? O_EXCL : 0) | ((f & VFS_O_TRUNC) ? O_TRUNC : 0) |
-        ((f & VFS_O_APPEND) ? O_APPEND : 0) |
-        ((f & VFS_O_NONBLOCK) ? O_NONBLOCK : 0) |
-        ((f & VFS_O_DSYNC) ? O_DSYNC : 0) | ((f & VFS_O_SYNC) ? O_SYNC : 0) |
-        ((f & VFS_O_RSYNC) ? O_RSYNC : 0) | ((f & VFS_O_RDWR) ? O_RDWR : 0) |
-        ((f & VFS_O_WRONLY) ? O_WRONLY : 0) |
-        ((f & VFS_O_RDONLY) ? O_RDONLY : 0);
-
-    return flags;
-}
-
-static inline uint64_t convertTimespec(const struct timespec *ts) {
-    if (ts->tv_sec < 0)
-        return 0;
-    if ((uint64_t)ts->tv_sec >= UINT64_MAX / 1000000000ULL)
-        return UINT64_MAX;
-    return (uint64_t)ts->tv_sec * 1000000000ULL + ts->tv_nsec;
-}
-
 static int _Start(vfs_driver_ctx_t d) { return 0; }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     char joined[PATH_MAX];
     cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
 
-    int fl = convertVfsFlagsToNuttx(flags);
+    int fl = convertVfsFlags(flags);
 
     DEBUG_TRACE("flags: %x, path: %s", fl, joined);
     int mode = 0644;
@@ -208,7 +165,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
      * it, so the kernel resolves against `fd` directly. Prepending d->rootPath
      * would be both redundant and wrong (cwk_path_change_root drops the
      * separator, yielding e.g. "/dir" + "file" → "/dirfile"). */
-    int fl = convertVfsFlagsToNuttx(flags);
+    int fl = convertVfsFlags(flags);
 
     DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, path);
 
