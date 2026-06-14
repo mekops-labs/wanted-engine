@@ -11,6 +11,9 @@
 #   NUTTX_DIR   NuttX RTOS submodule   (default: $ENGINE_DIR/third_party/nuttx)
 #   APPS_DIR    nuttx-apps submodule   (default: $ENGINE_DIR/third_party/nuttx-apps)
 #   SIMROOT     sim launch dir / hostfs root for /data (default: $ENGINE_DIR/build-nuttx/simroot)
+#   NUTTX_SKIP_BUILD=1  run-only: skip deps + kernel build, just stage + run
+#                       against a prebuilt $NUTTX_DIR/nuttx (split-CI run jobs)
+#   NUTTX_CLEAN=1       force a full distclean + reconfigure before building
 set -euo pipefail
 
 ENGINE_DIR=${ENGINE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -45,12 +48,17 @@ deps() {
       ln -sfn "$rel"             engine
       ln -sfn "$rel/vendor/wamr" wamr )
 
+    # Keep the engine/wamr symlinks out of the apps submodule's status. Tolerate
+    # a restored-from-cache tree whose submodule git dir is absent — the symlinks
+    # above are what the build needs; this exclude is only cosmetic.
     local gd
-    gd=$(git -C "$APPS_DIR" rev-parse --absolute-git-dir)
-    for ex in '/system/wanted/engine' '/system/wanted/wamr'; do
-        grep -qxF "$ex" "$gd/info/exclude" 2>/dev/null || \
-            echo "$ex" >> "$gd/info/exclude"
-    done
+    gd=$(git -C "$APPS_DIR" rev-parse --absolute-git-dir 2>/dev/null) || gd=""
+    if [ -n "$gd" ]; then
+        for ex in '/system/wanted/engine' '/system/wanted/wamr'; do
+            grep -qxF "$ex" "$gd/info/exclude" 2>/dev/null || \
+                echo "$ex" >> "$gd/info/exclude"
+        done
+    fi
     echo "linked engine sources into $appdir"
 }
 
@@ -74,6 +82,16 @@ stage_hostfs() {
 # the kernel a single time per `all` run and makes repeated local phase runs
 # near-instant. Set NUTTX_CLEAN=1 to force a full reconfigure.
 build_kernel() {
+    # Run-only mode (split CI: a `build` job built the kernel and passed the
+    # binary as an artifact; the selftest/syscontrol jobs only stage + run).
+    # Assert the prebuilt kernel is present and skip configure/make entirely.
+    if [ "${NUTTX_SKIP_BUILD:-0}" = 1 ]; then
+        [ -f "$NUTTX_DIR/nuttx" ] || {
+            echo "NUTTX_SKIP_BUILD=1 but no prebuilt kernel at $NUTTX_DIR/nuttx" >&2
+            exit 1
+        }
+        return 0
+    fi
     local apps_rel
     apps_rel=$(realpath --relative-to="$NUTTX_DIR" "$APPS_DIR")
     cd "$NUTTX_DIR"
@@ -234,8 +252,8 @@ for cmd in "${@:-all}"; do
     case "$cmd" in
         deps)       deps ;;
         build)      build ;;
-        selftest)   deps; selftest ;;
-        syscontrol) deps; syscontrol ;;
+        selftest)   [ "${NUTTX_SKIP_BUILD:-0}" = 1 ] || deps; selftest ;;
+        syscontrol) [ "${NUTTX_SKIP_BUILD:-0}" = 1 ] || deps; syscontrol ;;
         clean)      make -C "$NUTTX_DIR" distclean >/dev/null 2>&1 || true ;;
         all)        deps; selftest; syscontrol ;;
         *) echo "usage: $0 [deps|build|selftest|syscontrol|clean|all ...]" >&2; exit 2 ;;
