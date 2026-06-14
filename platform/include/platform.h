@@ -1,5 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#ifndef PLATFORM_H
+#define PLATFORM_H
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -112,3 +115,5 @@ int PlatformNetSend(void *ctx, const void *buf, size_t nbyte, int flags);
 int PlatformNetAccept(void *ctx);
 int PlatformNetShutdown(void *ctx, int how);
 int PlatformNetFree(void *ctx);
+
+#endif /* PLATFORM_H */
