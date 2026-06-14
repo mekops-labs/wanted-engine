@@ -22,7 +22,7 @@ binaries for those two Linux arches only.
 
 ### 0.6.0
 
-- add `ccache` for compiler caching (engine cmake builds; auto-detected by CMake)
+- add `ccache` for compiler caching, wired as a PATH masquerade (`/usr/lib/ccache`, with `cc`/`c++` added) so both the cmake engine builds and the NuttX kbuild compile route through one shared cache
 
 ### 0.5.0
 

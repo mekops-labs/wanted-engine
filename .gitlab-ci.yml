@@ -22,12 +22,18 @@ stages:
   - integration-tests
 
 
+# One shared ccache across every compiling job and stage (cmake engine builds +
+# the NuttX sim build), keyed the same so the integration stage reuses what the
+# build stage warmed and the cache accumulates across pipelines.
+.ccache_cache: &ccache_cache
+  key: ccache
+  paths:
+    - .ccache
+
 .build_job_template: &build_defs  # Hidden yaml configuration that defines an anchor named 'job_configuration'
   stage: build
   cache:
-    key: "ccache-$CI_JOB_NAME"
-    paths:
-      - .ccache
+    *ccache_cache
   artifacts:
     paths:
     - $BUILD_DIR
@@ -172,5 +178,7 @@ nuttx-integration-tests:
   stage: integration-tests
   needs:
     - build-gcc
+  cache:
+    *ccache_cache
   script:
     - bash test/nuttx-sim.sh all
