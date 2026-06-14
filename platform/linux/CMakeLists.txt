@@ -30,6 +30,8 @@ add_library(platform_linux STATIC
     ${sources}
 )
 
+target_compile_options(platform_linux PRIVATE ${WANTED_STRICT_WARNINGS})
+
 target_link_libraries(platform_linux
     PRIVATE pthread
 )

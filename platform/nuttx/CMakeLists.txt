@@ -18,6 +18,8 @@ add_library(platform_nuttx STATIC
     ${sources}
 )
 
+target_compile_options(platform_nuttx PRIVATE ${WANTED_STRICT_WARNINGS})
+
 # Sim links the host pthread; HW gets threads from NuttX libc.
 target_link_libraries(platform_nuttx
     PRIVATE pthread
