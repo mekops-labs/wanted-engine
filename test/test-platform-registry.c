@@ -11,6 +11,7 @@
 #include <wanted-vfs-api.h>
 
 #include "dummy-fs.h"
+#include "test-utils.h"
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * platform_registry — in-memory registry store exercised via PlatformRegistry*
@@ -20,15 +21,6 @@ TEST_GROUP(platform_registry);
 
 TEST_SETUP(platform_registry)    { DummyRegistryReset(); }
 TEST_TEAR_DOWN(platform_registry) {}
-
-static reg_entry_t MakeEntry(const char *name, const char *version, size_t size) {
-    reg_entry_t e;
-    memset(&e, 0, sizeof(e));
-    strncpy(e.name, name, WAPP_MAX_NAME_LEN - 1);
-    strncpy(e.version, version, WAPP_MAX_VERSION_LEN - 1);
-    e.size = size;
-    return e;
-}
 
 TEST(platform_registry, ReadEmpty_ReturnsZero) {
     reg_entry_t list[4];
