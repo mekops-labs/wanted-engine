@@ -56,9 +56,14 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
             return -EINVAL;
         }
 
-        snprintf(targetName, sizeof(targetName), "%s/%s%s", REGISTRY_ROOT,
-                 targetRef, REGISTRY_EXT);
+        int n = snprintf(targetName, sizeof(targetName), "%s/%s%s",
+                         REGISTRY_ROOT, targetRef, REGISTRY_EXT);
         targetRef[0] = '\0';
+        if (n < 0 || (size_t)n >= sizeof(targetName)) {
+            /* A truncated path would name the wrong file — reject it. */
+            remove(tempName);
+            return -ENAMETOOLONG;
+        }
         if (rename(tempName, targetName) < 0) {
             remove(tempName);
             return -errno;

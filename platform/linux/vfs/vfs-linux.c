@@ -21,7 +21,6 @@
 static const char id[] = {'L', 'i', 'n', 'u'};
 
 static int _Destroy(struct vfs_driver_t *d);
-static int _Start(vfs_driver_ctx_t d);
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags);
@@ -132,8 +131,6 @@ static inline vfs_filetype_t convertDirtype(uint8_t t) {
         return VFS_FILETYPE_UNKNOWN;
     }
 }
-
-static int _Start(vfs_driver_ctx_t d) { return 0; }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     char joined[PATH_MAX];
@@ -273,7 +270,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                 continue;
             }
             dir.d_ino = ep->d_ino;
-            dir.d_namlen = strnlen(ep->d_name, 256);
+            dir.d_namlen = strnlen(ep->d_name, sizeof(ep->d_name));
             dir.d_type = convertDirtype(ep->d_type);
             dir.d_next = telldir(dp);
 
