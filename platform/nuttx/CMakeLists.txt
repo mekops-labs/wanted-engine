@@ -3,12 +3,13 @@ set(sources
     api/clock-sleep.c
     api/random.c
     ${CMAKE_SOURCE_DIR}/platform/posix/clock.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/fs.c
     ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/socket.c
     api/wapps.c
     api/memory.c
     api/registry.c
-    api/fs.c
-    api/socket.c
+    api/fs-volume.c
 )
 
 add_library(platform_nuttx STATIC

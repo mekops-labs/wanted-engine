@@ -1,17 +1,22 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+/* Shared POSIX filesystem primitives: preopen state dirs and the openat-class
+ * rename/mkdir used by the VFS. renameat/mkdirat are unconditional on NuttX; on
+ * a host/glibc build they need the feature-test macros below. */
+
+#ifndef __NuttX__
 #define _DEFAULT_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <config-linux.h>
 #include <platform.h>
 
 /* mkdir -p: walk the path, creating each missing component. Existing
@@ -51,10 +56,6 @@ int PlatformOpenStateDir(const char *path, bool readonly) {
     if (fd < 0)
         return -errno;
     return fd;
-}
-
-const char *PlatformVolumeRoot(void) {
-    return VOLUME_ROOT;
 }
 
 int PlatformFsRename(int old_fd, const char *old_path,

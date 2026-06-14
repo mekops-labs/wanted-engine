@@ -6,13 +6,14 @@ endif()
 set(sources
     vfs/vfs-linux.c
     api/clock-sleep.c
-    api/fs.c
+    api/fs-volume.c
     ${CMAKE_SOURCE_DIR}/platform/posix/clock.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/fs.c
     ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/socket.c
     api/random.c
     api/registry.c
     api/wapps.c
-    api/socket.c
 )
 
 if (SECURE_SOCKETS)
