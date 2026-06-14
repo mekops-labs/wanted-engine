@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+/* pthread-backed platform mutex. Wraps the opaque platform_mutex_t so src/
+ * shared state can serialise access without including <pthread.h> itself.
+ * Shared by every POSIX platform target (Linux and the NuttX POSIX layer). */
+
 #include <pthread.h>
 
 #include <platform.h>
 #include <wanted_malloc.h>
-
-/* pthread-backed platform mutex. Wraps the opaque platform_mutex_t so src/
- * shared state can serialise access without including <pthread.h> itself. */
 
 struct platform_mutex_t {
     pthread_mutex_t mtx;
