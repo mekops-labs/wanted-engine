@@ -13,11 +13,11 @@ int WantedInstallDriver(vfs_ctx_t c, const wapp_t *w, const char *name,
                         const char *path, const char *options);
 
 int WantedParseConfig(const char *buf, size_t bufLen);
-const wantedConfig_t *WantedGetConfig();
+const wantedConfig_t *WantedGetConfig(void);
 
 int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
                         size_t bufLen);
-int WantedCloseRegistry();
+int WantedCloseRegistry(void);
 int WantedRegistryRemove(const reg_entry_t *entry);
 /* Synthesize a small JSON descriptor (name/version/size) for a registry entry
  * into buf — the entry alone is the source, with no image load. */

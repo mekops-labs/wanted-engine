@@ -243,7 +243,7 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
 
 /* ── PUBLIC INTERFACE ────────────────────────────────────────────────────── */
 
-vfs_ctx_t VfsInit() {
+vfs_ctx_t VfsInit(void) {
     struct vfs_ctx_t *c;
 
     c = (struct vfs_ctx_t *)WantedMalloc(sizeof(*c));
