@@ -11,6 +11,7 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     && apt-get install -y --no-install-recommends \
     # Core build toolchain
     build-essential \
+    ccache \
     clang \
     cmake \
     cmake-curses-gui \
