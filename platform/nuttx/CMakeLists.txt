@@ -5,6 +5,7 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/posix/clock.c
     ${CMAKE_SOURCE_DIR}/platform/posix/fs.c
     ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/registry-store.c
     ${CMAKE_SOURCE_DIR}/platform/posix/socket.c
     api/wapps.c
     api/memory.c
