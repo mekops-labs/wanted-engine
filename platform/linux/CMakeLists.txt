@@ -7,7 +7,7 @@ set(sources
     vfs/vfs-linux.c
     api/clock.c
     api/fs.c
-    api/mutex.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
     api/random.c
     api/registry.c
     api/wapps.c
