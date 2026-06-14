@@ -22,11 +22,13 @@ stages:
   - integration-tests
 
 
-# One shared ccache across every compiling job and stage (cmake engine builds +
-# the NuttX sim build), keyed the same so the integration stage reuses what the
-# build stage warmed and the cache accumulates across pipelines.
+# Per-job ccache, reused by that job across pipelines. Caches are NOT shared
+# between jobs on purpose: ccache keys on the compiler and flags, so gcc/clang/
+# coverage entries are mutually incompatible, and parallel build jobs sharing
+# one key would only race to overwrite it. The masquerade (image PATH) is what
+# routes both the cmake builds and the NuttX kbuild through ccache.
 .ccache_cache: &ccache_cache
-  key: ccache
+  key: "ccache-$CI_JOB_NAME"
   paths:
     - .ccache
 
