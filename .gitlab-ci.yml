@@ -6,8 +6,8 @@ variables:
   # exclude them from the default recursive fetch and let that job init them
   # shallow. Other jobs still get the vendored submodules (wamr, etc.).
   GIT_SUBMODULE_PATHS: ':(exclude)third_party/nuttx :(exclude)third_party/nuttx-apps'
-  # ccache persists across pipelines via the per-job cache below. Inert until
-  # the build image carries ccache; the CMake launcher auto-detects it.
+  # ccache persists across pipelines via the per-job cache below. The build
+  # image routes every compile through ccache via the /usr/lib/ccache masquerade.
   CCACHE_DIR: $CI_PROJECT_DIR/.ccache
   CCACHE_BASEDIR: $CI_PROJECT_DIR
   CCACHE_MAXSIZE: "500M"
