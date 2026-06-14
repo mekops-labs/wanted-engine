@@ -1,7 +1,8 @@
 set(sources
     vfs/vfs-nuttx.c
-    api/clock.c
+    api/clock-sleep.c
     api/random.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/clock.c
     ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
     api/wapps.c
     api/memory.c
