@@ -20,6 +20,10 @@ binaries for those two Linux arches only.
 
 ## Changelog
 
+### 0.6.0
+
+- add `ccache` for compiler caching (engine cmake builds; auto-detected by CMake)
+
 ### 0.5.0
 
 - add nuttx tooling

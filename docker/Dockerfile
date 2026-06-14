@@ -1,7 +1,7 @@
 FROM debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.5.0"
+LABEL version="0.6.0"
 
 # Unversioned LLVM packages track the distro default (clang/lld/lldb 19 on
 # trixie). The host engine builds with gcc (build-essential) and this clang;
