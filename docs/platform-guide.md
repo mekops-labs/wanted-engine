@@ -60,7 +60,7 @@ make nuttx-shell     # boot the sim to an interactive wsh prompt
 - **Stop mechanism** — cooperative: `PlatformWappStop` sets the WAMR terminate flag and sends `SIGUSR2` to the worker so a wapp blocked in a host call is interrupted and checks the flag on return. A per-worker `interrupted` flag bridges `clock_nanosleep`'s success-on-signal quirk.
 - **Submodules** — `third_party/nuttx` and `third_party/nuttx-apps` are shallow submodules pinned to the `wanted` branch of the mekops forks; `make nuttx-deps` initialises them (idempotent) and must run once before `nuttx-build`.
 
-**Differences from Linux.** No TLS yet. The cooperative stop cannot pre-empt a bare native call that never checks `EINTR`, where Linux's async cancel can.
+**Differences from Linux.** No TLS yet. The `sim:wanted` board is built without a network stack (`CONFIG_NET` off), so `socket()` fails and `/net` sockets are unavailable on the sim — socket paths are exercised on Linux only, and the selftest skips its `/net` socket check on the sim. The cooperative stop cannot pre-empt a bare native call that never checks `EINTR`, where Linux's async cancel can.
 
 ## NuttX on real HW (upcoming)
 
