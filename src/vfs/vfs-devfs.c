@@ -75,6 +75,11 @@ void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
 
     /* Empty suffix means opening "/dev" itself as a directory. */
     if (!suffix || *suffix == '\0') {
+        if (!c) {
+            if (out_err)
+                *out_err = -EINVAL;
+            return NULL;
+        }
         devfs_handle_t *h = WantedMalloc(sizeof(*h));
         if (!h) {
             if (out_err)
@@ -87,6 +92,12 @@ void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
         if (out_err)
             *out_err = 0;
         return h;
+    }
+
+    if (!c) {
+        if (out_err)
+            *out_err = -EINVAL;
+        return NULL;
     }
 
     const vfs_driver_t *drv = LookupDrv(c, suffix);

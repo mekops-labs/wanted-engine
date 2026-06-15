@@ -67,6 +67,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
 
     n = scandir(REGISTRY_ROOT, &namelist, ParseExt, alphasort);
     if (n < 0) {
+        close(d);
         return -errno;
     }
 
