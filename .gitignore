@@ -1,5 +1,7 @@
 .vscode
 build
+build-*
+compile_commands.json
 wasm/*.wasm*
 wasm/supervisor/*/supervisor.tar
 # wsh's + selftest's app.wasm are compiled from wapps/ (sheriff's is a

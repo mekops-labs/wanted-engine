@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.9)
 
+# Emit compile_commands.json in the build dir so clang-tidy (and editors) can
+# resolve include paths and flags per translation unit.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 include(cmake/VersionFromGit.cmake)
 
 version_from_git(
