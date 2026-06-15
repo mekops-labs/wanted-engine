@@ -17,9 +17,12 @@ image:
   entrypoint: [""]
 
 stages:
+  - lint
   - build
+  - static
   - test
   - integration-tests
+  - security
 
 
 # Per-job ccache, reused by that job across pipelines. Caches are NOT shared
@@ -218,3 +221,75 @@ nuttx-syscontrol:
     NUTTX_SKIP_BUILD: "1"
   script:
     - bash test/nuttx-sim.sh syscontrol
+
+# --- lint / static analysis / security -----------------------------------
+# Every check below runs the same `just` recipe a developer runs locally
+# (`make just <recipe>`), so CI and local results match. The tooling lives in
+# the build image (clang-format/-tidy, cppcheck, shellcheck, semgrep, trivy,
+# osv-scanner). lint gates the pipeline; static and security are observation-
+# only (allow_failure) until their finding lists are triaged, then promoted.
+
+# Blocking: zero tolerance on style drift. Needs no submodules or build.
+format-check:
+  stage: lint
+  needs: []
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - just lint-format
+
+# Blocking: rejects shell scripts with error-level shellcheck findings.
+shell-check:
+  stage: lint
+  needs: []
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - just lint-shell
+
+# clang-tidy reads compile_commands.json from the clang build artifact.
+clang-tidy:
+  stage: static
+  needs:
+    - build-clang
+  variables:
+    TIDY_BUILD_DIR: build-clang
+  allow_failure: true
+  script:
+    - just tidy
+
+# cppcheck parses sources itself, so it needs no build artifact.
+cppcheck:
+  stage: static
+  needs: []
+  allow_failure: true
+  script:
+    - just cppcheck
+
+# Pattern-based C/C++ security scan (semgrep p/c ruleset).
+semgrep:
+  stage: security
+  needs: []
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  allow_failure: true
+  script:
+    - just security
+
+# CVE + secret scan of the build image definition and the working tree.
+trivy:
+  stage: security
+  needs: []
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  allow_failure: true
+  script:
+    - just scan-image
+
+# Scan vendored submodule commits against the OSV database (needs submodules).
+osv-scanner:
+  stage: security
+  needs: []
+  allow_failure: true
+  script:
+    - just scan-deps
