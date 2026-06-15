@@ -14,7 +14,8 @@
                 {"name": "wanted"}
             ],
             "mounts": [
-                {"name": "config", "path": "/etc/config", "options": "selftest-cfgmap-v1"}
+                {"name": "config", "path": "/etc/config", "options": "selftest-cfgmap-v1"},
+                {"name": "platform", "path": "/host", "options": "src=/tmp/wanted-selftest-host"}
             ],
             "sockets": [
                 {"name": "uplink", "address": "tcp://localhost:8899"}

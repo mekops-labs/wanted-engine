@@ -18,6 +18,12 @@ WANTED=${1:-./build/cmd/wanted-cli}
 CONFIG=${2:-./test/selftest-config.json}
 REGISTRY_ROOT=${REGISTRY_ROOT:-./registry}
 VOLUME_ROOT=${VOLUME_ROOT:-./data}
+# Host dir backing the /host `platform` bind mount (an absolute host path, as the
+# mount parser requires), and a secret outside it the planted symlink points at —
+# the bind-mount escape check (a symlink inside the mount that escapes it must not
+# resolve). Must match `src=` in selftest-config.json.
+BIND_HOST_DIR=${BIND_HOST_DIR:-/tmp/wanted-selftest-host}
+BIND_SECRET=${BIND_SECRET:-/tmp/wanted-selftest-secret}
 
 if [ ! -x "$WANTED" ]; then
     echo "FAIL: wanted-cli not found at $WANTED (run 'make build')"
@@ -51,13 +57,23 @@ malformed="noappwasm badwasm truncated"
 cleanup() {
     rm -f $staged
     for m in $malformed; do rm -f "$REGISTRY_ROOT/$m":*.wapp; done
-    rm -rf "$VOLUME_ROOT"
+    rm -rf "$VOLUME_ROOT" "$BIND_HOST_DIR" "$BIND_SECRET"
 }
 trap cleanup EXIT
 
 # The volume persistence check asserts a fresh store on its first run, so start
 # from a clean volume root (a prior aborted run may have left one behind).
 rm -rf "$VOLUME_ROOT"
+
+# Populate the /host bind mount: an in-bounds file, plus a symlink inside the
+# mount that points OUTSIDE it (to BIND_SECRET). The engine must read the former
+# and refuse to resolve the latter through the mount.
+rm -rf "$BIND_HOST_DIR" "$BIND_SECRET"
+mkdir -p "$BIND_HOST_DIR/inside"
+printf 'in-bounds-ok' > "$BIND_HOST_DIR/inside/data.txt"
+printf 'top-secret' > "$BIND_SECRET"
+ln -s "$(cd "$(dirname "$BIND_SECRET")" && pwd)/$(basename "$BIND_SECRET")" \
+    "$BIND_HOST_DIR/escape"
 
 for w in $TEST_WAPPS; do stage "$w"; done
 
