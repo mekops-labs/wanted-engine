@@ -28,11 +28,7 @@ if(ENABLE_CODE_COVERAGE)
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
 endif()
 
-# Engine-only warning guard. The NuttX kbuild already compiles with these; apply
-# them to our own sources on the host build too so a regression (a () prototype,
-# an undefined #if macro) is caught everywhere. Vendored code (WAMR, cwalk,
-# tiny-json, c9, Unity) is exempt — these are applied per engine target/source,
-# not globally.
+# Engine-only warning guard. The NuttX kbuild already compiles with these.
 set(WANTED_STRICT_WARNINGS -Werror=strict-prototypes -Werror=undef)
 
 # Build Wanted static library
