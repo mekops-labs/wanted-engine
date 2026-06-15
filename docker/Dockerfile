@@ -1,7 +1,7 @@
 FROM debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.6.2"
+LABEL version="0.6.3"
 
 # Unversioned LLVM packages track the distro default (clang/lld/lldb 19 on
 # trixie). The host engine builds with gcc (build-essential) and this clang;
@@ -109,6 +109,8 @@ RUN set -eux; \
     tar xzf /tmp/wasi-sdk.tar.gz -C /opt/; \
     ln -s "/opt/${dir}" /opt/wasi-sdk; \
     rm -f /tmp/wasi-sdk.tar.gz
+
+RUN echo "[safe]\n\tdirectory = /src" > /root/.gitconfig
 
 ADD entry.sh /
 
