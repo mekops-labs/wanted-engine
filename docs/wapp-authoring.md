@@ -161,7 +161,7 @@ Build the image, then export its filesystem as the `.wapp` TAR — the exported 
 ```bash
 podman build -t hello-wapp .
 cid=$(podman create hello-wapp)
-podman export "$cid" -o registry/hello:0.0.1-1.wapp
+podman export "$cid" > registry/hello:0.0.1-1.wapp   # redirect, not -o: podman rejects ':' in an -o filename
 podman rm "$cid"
 ```
 
