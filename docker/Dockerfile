@@ -15,6 +15,7 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     clang \
     cmake \
     cmake-curses-gui \
+    just \
     lld \
     ninja-build \
     # Debuggers and runtime analysis
