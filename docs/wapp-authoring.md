@@ -165,7 +165,7 @@ podman export "$cid" -o registry/hello:0.0.1-1.wapp
 podman rm "$cid"
 ```
 
-Install means placing that TAR in the registry directory under `<name>:<version>-<package>.wapp` — the filename **is** the image's identity (name and version). Start it through the control plane (`start hello` from `wsh`); the full run is in the [Quick Start](quickstart.md), and the install/launch verbs are in the [Control Plane Reference](control-plane-reference.md).
+Install means placing that TAR in the registry directory under `<name>:<version>-<package>.wapp` — the filename **is** the image's identity (name and version). Launch it through the control plane — `create`, then `set_config`, then `start` from `wsh`; the full run is in the [Quick Start](quickstart.md), and the install/launch verbs are in the [Control Plane Reference](control-plane-reference.md).
 
 The low-level fallback — no container build — is to tar the single file directly, exactly as the test harness does:
 
