@@ -17,6 +17,11 @@ Unreleased
 - A `platform` `mounts[]` entry is now a full bind mount. Its `options` string carries `src=<hostpath>` to back the wapp-visible `path` with an arbitrary host directory (defaulting to `path`, so existing single-path mounts are unchanged) and `ro`/`rw` to set the access mode (defaulting to `rw`).
 - A `ro` mount is enforced in the engine: the platform VFS driver rejects writes, directory creation, and renames with `-EROFS`, and the host directory is opened without write intent. A read-only mount requires its host directory to already exist (it is never created); a missing one fails the launch.
 - Malformed `platform` options — a relative or empty `src`, or an unrecognised token — are rejected at install.
+- Bind-mount path resolution is confined to the mount's host directory: an absolute symlink, a `..` escape, or a symlink inside the host directory that points outside it cannot resolve through the mount (`openat2(RESOLVE_BENEATH)`). This closes a read escape the `ro` flag cannot. The guard requires Linux ≥ 5.6; on an older kernel the open fails closed rather than resolving unconfined.
+
+### Engine — supervisor launch failure fails loudly
+
+- A supervisor that cannot launch (e.g. a malformed mount in its config) is no longer respawned in an endless silent loop. After three consecutive launch failures the engine reports the failure and the error to stderr and stops (Linux exits non-zero); a cleanly-exited supervisor is still respawned as before.
 
 ### Launch config — drivers / mounts / sockets split
 

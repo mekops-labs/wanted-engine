@@ -23,9 +23,9 @@
 
 #include "tap.h"
 
-#define WANTED_CTL   "/dev/wanted/ctl"
-#define TRAPPER      "trapper"
-#define TRAPPER_CFG  "/dev/wanted/wapps/" TRAPPER "/config"
+#define WANTED_CTL "/dev/wanted/ctl"
+#define TRAPPER "trapper"
+#define TRAPPER_CFG "/dev/wanted/wapps/" TRAPPER "/config"
 #define TRAPPER_STATE "/dev/wanted/wapps/" TRAPPER "/state"
 #define SUPERVISOR_STATE "/dev/wanted/wapps/supervisor/state"
 
@@ -34,46 +34,46 @@
  * via .../log) instead of sharing the platform console — so a launched wapp's
  * stdio teardown on exit cannot close the supervisor's own stdout. No interior
  * whitespace so the control-plane string parser keeps it as one value. */
-#define LAUNCH_CFG \
-    "{\"console\":{\"in\":{\"name\":\"null\"}," \
+#define LAUNCH_CFG                                                             \
+    "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}}"
 #define TRAPPER_LOG "/dev/wanted/wapps/" TRAPPER "/log"
 #define TRAPPER_MARKER "trapper-was-here"
 
-#define LOOPER       "looper"
-#define LOOPER_CFG   "/dev/wanted/wapps/" LOOPER "/config"
-#define LOOPER_CTL   "/dev/wanted/wapps/" LOOPER "/ctl"
+#define LOOPER "looper"
+#define LOOPER_CFG "/dev/wanted/wapps/" LOOPER "/config"
+#define LOOPER_CTL "/dev/wanted/wapps/" LOOPER "/ctl"
 #define LOOPER_STATE "/dev/wanted/wapps/" LOOPER "/state"
 
 /* All-null console: every stdio slot discards/EOFs. A wapp still launches and
  * runs — it is just silent. No interior whitespace (see LAUNCH_CFG). */
-#define NULL_CONSOLE_CFG \
-    "{\"console\":{\"in\":{\"name\":\"null\"}," \
+#define NULL_CONSOLE_CFG                                                       \
+    "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
     "\"out\":{\"name\":\"null\"},\"err\":{\"name\":\"null\"}}}"
 
 /* argenv prints its argv + environ to the log console and exits with code 7.
  * Its config passes known args and envs (no interior whitespace per LAUNCH_CFG)
  * so the supervisor can read them back from the log and assert passthrough. */
-#define ARGENV        "argenv"
-#define ARGENV_CFG    "/dev/wanted/wapps/" ARGENV "/config"
-#define ARGENV_LOG    "/dev/wanted/wapps/" ARGENV "/log"
-#define ARGENV_EXIT   "/dev/wanted/wapps/" ARGENV "/exit_code"
-#define ARGENV_CFG_BODY \
-    "{\"console\":{\"in\":{\"name\":\"null\"}," \
-    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
+#define ARGENV "argenv"
+#define ARGENV_CFG "/dev/wanted/wapps/" ARGENV "/config"
+#define ARGENV_LOG "/dev/wanted/wapps/" ARGENV "/log"
+#define ARGENV_EXIT "/dev/wanted/wapps/" ARGENV "/exit_code"
+#define ARGENV_CFG_BODY                                                        \
+    "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"args\":[\"alpha\",\"beta\"],\"envs\":[\"FOO=bar\",\"BAZ=qux\"]}"
 
 /* volcheck mounts an engine-managed `volume` at /data. On a fresh store it
  * writes a marker and reports "vol-wrote"; on a store that already holds state
  * it reads the marker back and reports "vol-read:<payload>". Two runs of the
  * same instance prove the volume persists across a restart. */
-#define VOLCHECK         "volcheck"
-#define VOLCHECK_CFG     "/dev/wanted/wapps/" VOLCHECK "/config"
-#define VOLCHECK_LOG     "/dev/wanted/wapps/" VOLCHECK "/log"
+#define VOLCHECK "volcheck"
+#define VOLCHECK_CFG "/dev/wanted/wapps/" VOLCHECK "/config"
+#define VOLCHECK_LOG "/dev/wanted/wapps/" VOLCHECK "/log"
 #define VOLCHECK_PAYLOAD "persist-42"
-#define VOLCHECK_CFG_BODY \
-    "{\"console\":{\"in\":{\"name\":\"null\"}," \
-    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
+#define VOLCHECK_CFG_BODY                                                      \
+    "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"}]}"
 
 /* A shared volume is one store two wapps reach by name — the substrate for a
@@ -82,16 +82,16 @@
  * producer writes the marker on the fresh store, the consumer (a different
  * instance) re-opens it, proving the store crosses the wapp boundary. Both bind
  * the image via the config `image` field, since the instance names differ. */
-#define VPROD          "vprod"
-#define VCONS          "vcons"
-#define VPROD_CFG      "/dev/wanted/wapps/" VPROD "/config"
-#define VCONS_CFG      "/dev/wanted/wapps/" VCONS "/config"
-#define VPROD_LOG      "/dev/wanted/wapps/" VPROD "/log"
-#define VCONS_LOG      "/dev/wanted/wapps/" VCONS "/log"
-#define SHARED_CFG_BODY \
-    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"}," \
-    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
-    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"," \
+#define VPROD "vprod"
+#define VCONS "vcons"
+#define VPROD_CFG "/dev/wanted/wapps/" VPROD "/config"
+#define VCONS_CFG "/dev/wanted/wapps/" VCONS "/config"
+#define VPROD_LOG "/dev/wanted/wapps/" VPROD "/log"
+#define VCONS_LOG "/dev/wanted/wapps/" VCONS "/log"
+#define SHARED_CFG_BODY                                                        \
+    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"},"         \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
+    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\","                     \
     "\"options\":\"name=stream,shared\"}]}"
 
 /* Isolation: a private and a shared volume of the *same name* must be different
@@ -99,44 +99,52 @@
  * `name=iso` (no `shared`) — if the two namespaces mixed, isoprv would find the
  * shared marker (vol-open); kept disjoint, it sees a fresh store and writes
  * (vol-wrote). Both run the volcheck image. */
-#define ISO_SHARE      "isoshr"
-#define ISO_PRIV       "isoprv"
-#define ISO_SHARE_CFG  "/dev/wanted/wapps/" ISO_SHARE "/config"
-#define ISO_PRIV_CFG   "/dev/wanted/wapps/" ISO_PRIV "/config"
-#define ISO_SHARE_LOG  "/dev/wanted/wapps/" ISO_SHARE "/log"
-#define ISO_PRIV_LOG   "/dev/wanted/wapps/" ISO_PRIV "/log"
-#define ISO_SHARE_CFG_BODY \
-    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"}," \
-    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
-    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"," \
+#define ISO_SHARE "isoshr"
+#define ISO_PRIV "isoprv"
+#define ISO_SHARE_CFG "/dev/wanted/wapps/" ISO_SHARE "/config"
+#define ISO_PRIV_CFG "/dev/wanted/wapps/" ISO_PRIV "/config"
+#define ISO_SHARE_LOG "/dev/wanted/wapps/" ISO_SHARE "/log"
+#define ISO_PRIV_LOG "/dev/wanted/wapps/" ISO_PRIV "/log"
+#define ISO_SHARE_CFG_BODY                                                     \
+    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"},"         \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
+    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\","                     \
     "\"options\":\"name=iso,shared\"}]}"
-#define ISO_PRIV_CFG_BODY \
-    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"}," \
-    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
-    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"," \
+#define ISO_PRIV_CFG_BODY                                                      \
+    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"},"         \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
+    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\","                     \
     "\"options\":\"name=iso\"}]}"
 
 /* A read-only shared volume must deny writes. vroro mounts a fresh
  * `name=roonly,shared,ro` store; volcheck finds no marker and tries to create
- * one, which the ro grant rejects (-EROFS), so it reports "vol-fail". This is the
- * publisher's mount in a producer→processor→publisher chain — read the shared
- * feed, never mutate it. */
-#define VRORO          "vroro"
-#define VRORO_CFG      "/dev/wanted/wapps/" VRORO "/config"
-#define VRORO_LOG      "/dev/wanted/wapps/" VRORO "/log"
-#define VRORO_CFG_BODY \
-    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"}," \
-    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
-    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"," \
+ * one, which the ro grant rejects (-EROFS), so it reports "vol-fail". This is
+ * the publisher's mount in a producer→processor→publisher chain — read the
+ * shared feed, never mutate it. */
+#define VRORO "vroro"
+#define VRORO_CFG "/dev/wanted/wapps/" VRORO "/config"
+#define VRORO_LOG "/dev/wanted/wapps/" VRORO "/log"
+#define VRORO_CFG_BODY                                                         \
+    "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"},"         \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
+    "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\","                     \
     "\"options\":\"name=roonly,shared,ro\"}]}"
 
 /* The supervisor's own launch config (selftest-config.json) wires the three
  * launch-config resource sections, so they are verified in our own namespace:
  * a `config` map mounted at an arbitrary path outside /dev, a named socket, and
  * the `wanted` device driver. */
-#define CFGMAP_PATH   "/etc/config"
+#define CFGMAP_PATH "/etc/config"
 #define CFGMAP_MARKER "selftest-cfgmap-v1"
-#define SOCKET_NAME   "uplink"
+#define SOCKET_NAME "uplink"
+
+/* A `platform` bind mount at /host (selftest-config.json, backed by a host dir
+ * the runner populates): an in-bounds file reads back, but a symlink the host
+ * planted inside the dir that points OUTSIDE it must not resolve through the
+ * mount — the bind-mount confinement the read-only flag cannot provide. */
+#define BIND_INSIDE "/host/inside/data.txt"
+#define BIND_INSIDE_MARKER "in-bounds-ok"
+#define BIND_ESCAPE "/host/escape"
 
 /* Read up to cap-1 bytes of a path into buf (NUL-terminated). <0 on open
  * error, else byte count. */
@@ -170,7 +178,8 @@ static int create_wapp(const char *name) {
     return write_path(WANTED_CTL, cmd) >= 0;
 }
 
-/* Launch an already-configured wapp through its own ctl node (defined below). */
+/* Launch an already-configured wapp through its own ctl node (defined below).
+ */
 static int start_wapp(const char *name);
 
 /* True if directory `dir` contains an entry named `name`. */
@@ -195,14 +204,16 @@ static void positive_checks(void) {
 
     tap_ok(read_path("/app.wasm", buf, sizeof(buf)) > 0,
            "TarFS: /app.wasm is readable");
-    tap_ok(dir_has("/dev", "wanted"), "VFS: /dev exposes the wanted control plane");
+    tap_ok(dir_has("/dev", "wanted"),
+           "VFS: /dev exposes the wanted control plane");
     tap_ok(dir_has("/dev", "pipe"), "VFS: /dev exposes pipe");
     tap_ok(dir_has("/proc", "wapps"), "VFS: /proc exposes wapps");
 
     /* /dev/null reads as EOF. */
     int fd = open("/dev/null", O_RDONLY);
     int n = (fd >= 0) ? read(fd, buf, sizeof(buf)) : -1;
-    if (fd >= 0) close(fd);
+    if (fd >= 0)
+        close(fd);
     tap_ok(fd >= 0 && n == 0, "VFS: /dev/null reads as EOF");
 
     /* /proc/wapps lists the running supervisor. */
@@ -229,12 +240,14 @@ static void positive_checks(void) {
 
     /* TarFS is read-only: opening app.wasm for write must fail. */
     int wfd = open("/app.wasm", O_WRONLY);
-    if (wfd >= 0) close(wfd);
+    if (wfd >= 0)
+        close(wfd);
     tap_ok(wfd < 0, "TarFS: /app.wasm is read-only (write rejected)");
 
     /* Sandbox: a path escaping the root must not resolve to the host. */
     int efd = open("/../../../../etc/passwd", O_RDONLY);
-    if (efd >= 0) close(efd);
+    if (efd >= 0)
+        close(efd);
     tap_ok(efd < 0, "sandbox: parent-traversal past root is denied");
 
     /* Our own control-plane state reads running. */
@@ -247,7 +260,8 @@ static void positive_checks(void) {
 static void robustness_checks(void) {
     char buf[64];
 
-    int cfg_ok = create_wapp(TRAPPER) && write_path(TRAPPER_CFG, LAUNCH_CFG) >= 0;
+    int cfg_ok =
+        create_wapp(TRAPPER) && write_path(TRAPPER_CFG, LAUNCH_CFG) >= 0;
     int start_ok = start_wapp(TRAPPER);
     tap_ok(cfg_ok && start_ok, "control plane: launched the " TRAPPER " wapp");
 
@@ -276,7 +290,8 @@ static void robustness_checks(void) {
            "robustness: supervisor still running after the trap");
 
     /* The log console captured the wapp's output without touching the platform
-     * console (this very TAP stream proves the supervisor's stdout survived). */
+     * console (this very TAP stream proves the supervisor's stdout survived).
+     */
     tap_ok(read_path(TRAPPER_LOG, buf, sizeof(buf)) > 0 &&
                strstr(buf, TRAPPER_MARKER) != NULL,
            "log: supervisor reads the launched wapp's captured output");
@@ -340,7 +355,7 @@ static int wait_dead(const char *name) {
  * supervisor and the host survive. Covers the stack-overflow and
  * memory-exhaustion classes (the OOB trap is covered by robustness_checks). */
 static void containment_checks(void) {
-    static const char *const wapps[] = { "stackbomb", "membomb" };
+    static const char *const wapps[] = {"stackbomb", "membomb"};
     char buf[64], desc[96];
 
     for (unsigned i = 0; i < sizeof(wapps) / sizeof(*wapps); i++) {
@@ -379,15 +394,16 @@ static void lifecycle_checks(void) {
     tap_ok(started && wait_state(LOOPER_STATE, 1),
            "lifecycle: looper runs concurrently with the supervisor");
 
-    int stopped = write_path(LOOPER_CTL, "stop") >= 0 &&
-                  wait_state(LOOPER_STATE, 0);
+    int stopped =
+        write_path(LOOPER_CTL, "stop") >= 0 && wait_state(LOOPER_STATE, 0);
     tap_ok(stopped, "lifecycle: control-plane stop terminates the looper");
 }
 
 /* Console backing: a wapp's stdio slots default when the launch config omits
  * them (stdin->null, stdout/stderr->log), and an explicit all-null console is
  * also valid. Either way the wapp must launch — a wapp with unwired stdio fds
- * fails to start. Reuses the looper (a clean long-runner), stopped after each. */
+ * fails to start. Reuses the looper (a clean long-runner), stopped after each.
+ */
 static void console_checks(void) {
     /* Empty config (no console block): the unset slots resolve to their
      * defaults. A start still requires a config to have been written, so the
@@ -403,8 +419,7 @@ static void console_checks(void) {
     /* Explicit all-null console: silent, but still runs. */
     int nul = create_wapp(LOOPER) &&
               write_path(LOOPER_CFG, NULL_CONSOLE_CFG) >= 0 &&
-              start_wapp(LOOPER) &&
-              wait_state(LOOPER_STATE, 1);
+              start_wapp(LOOPER) && wait_state(LOOPER_STATE, 1);
     tap_ok(nul, "console: an all-null console launches a (silent) wapp");
     if (nul) {
         write_path(LOOPER_CTL, "stop");
@@ -421,40 +436,41 @@ static int stop_wapp(const char *name) {
 }
 
 /* Launch a wapp that parks in a blocking host call, stop it, and report whether
- * the stop *interrupted* the call promptly. cpuhog covers the other axis (a wapp
- * busy in the interpreter, where the terminate flag is checked per instruction);
- * these cover a wapp with no instruction boundaries to check because it is parked
- * in a host call. The stop must reach it anyway: the engine sets the terminate
- * flag and signals the worker to EINTR the call, so the interpreter regains
- * control and unwinds. Promptness is judged in a 2 s window — well under any
- * self-return — so it isolates the interrupt path; *alive_out reports whether the
- * supervisor survived. On a non-prompt result the wapp is reaped (bounded) so the
- * suite can continue and the failure is recorded rather than hanging. */
+ * the stop *interrupted* the call promptly. cpuhog covers the other axis (a
+ * wapp busy in the interpreter, where the terminate flag is checked per
+ * instruction); these cover a wapp with no instruction boundaries to check
+ * because it is parked in a host call. The stop must reach it anyway: the
+ * engine sets the terminate flag and signals the worker to EINTR the call, so
+ * the interpreter regains control and unwinds. Promptness is judged in a 2 s
+ * window — well under any self-return — so it isolates the interrupt path;
+ * *alive_out reports whether the supervisor survived. On a non-prompt result
+ * the wapp is reaped (bounded) so the suite can continue and the failure is
+ * recorded rather than hanging. */
 static int stop_interrupts(const char *name, int *alive_out) {
     char state[96], buf[64];
     wapp_node(state, sizeof(state), name, "state");
 
     launch(name);
-    wait_state(state, 1);                /* running, inside the blocking call */
+    wait_state(state, 1); /* running, inside the blocking call */
     stop_wapp(name);
 
     int prompt = 0;
     for (int i = 0; i < 2; i++) {
         sleep(1);
-        if (read_path(state, buf, sizeof(buf)) > 0 &&
-            !strstr(buf, "running") && !strstr(buf, "starting")) {
+        if (read_path(state, buf, sizeof(buf)) > 0 && !strstr(buf, "running") &&
+            !strstr(buf, "starting")) {
             prompt = 1;
             break;
         }
     }
     if (!prompt)
-        wait_dead(name);                 /* bound a stuck slot so the suite goes on */
+        wait_dead(name); /* bound a stuck slot so the suite goes on */
 
     *alive_out = read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
                  strstr(buf, "running") != NULL;
 
-    printf("# %s: stop interrupts the blocked host call: %s\n",
-           name, prompt ? "yes" : "no");
+    printf("# %s: stop interrupts the blocked host call: %s\n", name,
+           prompt ? "yes" : "no");
     fflush(stdout);
     return prompt;
 }
@@ -464,18 +480,18 @@ static int stop_interrupts(const char *name, int *alive_out) {
 static void blocker_check(void) {
     int alive = 0;
     int prompt = stop_interrupts("blocker", &alive);
-    tap_ok(prompt && alive,
-           "robustness: stop interrupts a sleep-blocked wapp and reaps it promptly");
+    tap_ok(prompt && alive, "robustness: stop interrupts a sleep-blocked wapp "
+                            "and reaps it promptly");
 }
 
-/* pblock parks in a read on an empty pipe that never completes on its own, so it
- * can only be ended by the stop interrupting the host call — the strict form of
- * the blocker check (no self-return to fall back on). */
+/* pblock parks in a read on an empty pipe that never completes on its own, so
+ * it can only be ended by the stop interrupting the host call — the strict form
+ * of the blocker check (no self-return to fall back on). */
 static void ioblock_check(void) {
     int alive = 0;
     int prompt = stop_interrupts("pblock", &alive);
-    tap_ok(prompt && alive,
-           "robustness: stop interrupts an I/O-blocked wapp (read on an empty pipe)");
+    tap_ok(prompt && alive, "robustness: stop interrupts an I/O-blocked wapp "
+                            "(read on an empty pipe)");
 }
 
 /* Control-plane edge cases that must not crash the engine: stopping a wapp that
@@ -492,8 +508,7 @@ static void edge_checks(void) {
     /* No node exists for a wapp that was never launched, so the stop fails to
      * open cleanly and the supervisor keeps running. */
     int rc = stop_wapp("ghost");
-    tap_ok(rc < 0 &&
-               read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
+    tap_ok(rc < 0 && read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
                strstr(buf, "running") != NULL,
            "edge: stopping an unknown wapp errors cleanly");
 }
@@ -518,9 +533,9 @@ static void sandbox_check(void) {
 }
 
 /* Launch a wapp that exhausts a sandbox resource (file descriptors) and assert
- * the abuse is contained: the wapp is reaped and the supervisor survives — never
- * a host crash. Whether the engine bounded the fd table below the wapp's probe
- * cap is reported as a diagnostic. */
+ * the abuse is contained: the wapp is reaped and the supervisor survives —
+ * never a host crash. Whether the engine bounded the fd table below the wapp's
+ * probe cap is reported as a diagnostic. */
 static void resource_check(void) {
     char log[96], verdict[64], buf[64];
     wapp_node(log, sizeof(log), "fdhog", "log");
@@ -545,9 +560,7 @@ static void resource_check(void) {
  * reaches a running state — and stay up; a crash in the loader would take the
  * whole engine down and the TAP plan would never print. */
 static void malformed_check(void) {
-    static const char *const bad[] = {
-        "noappwasm", "badwasm", "truncated"
-    };
+    static const char *const bad[] = {"noappwasm", "badwasm", "truncated"};
     char state[96], cfg[96], buf[64];
     int contained = 1;
 
@@ -559,7 +572,7 @@ static void malformed_check(void) {
         write_path(cfg, "{}");
         start_wapp(bad[i]);
         wapp_node(state, sizeof(state), bad[i], "state");
-        wait_dead(bad[i]);               /* never lingers running/starting */
+        wait_dead(bad[i]); /* never lingers running/starting */
         if (read_path(state, buf, sizeof(buf)) > 0 &&
             (strstr(buf, "running") || strstr(buf, "starting")))
             contained = 0;
@@ -567,8 +580,8 @@ static void malformed_check(void) {
 
     int alive = read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
                 strstr(buf, "running") != NULL;
-    tap_ok(contained && alive,
-           "robustness: malformed images are rejected without crashing the engine");
+    tap_ok(contained && alive, "robustness: malformed images are rejected "
+                               "without crashing the engine");
 }
 
 /* Rapidly restart a wapp that dies the instant it starts. Each cycle must
@@ -589,8 +602,9 @@ static void crashloop_check(void) {
 
     int alive = read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
                 strstr(buf, "running") != NULL;
-    tap_ok(cycles == CRASH_CYCLES && alive,
-           "robustness: a crash-looping wapp does not thrash or wedge the engine");
+    tap_ok(
+        cycles == CRASH_CYCLES && alive,
+        "robustness: a crash-looping wapp does not thrash or wedge the engine");
 }
 
 /* Prove /dev/pipe is a process-wide channel between two distinct wapps (the
@@ -604,14 +618,16 @@ static void crashloop_check(void) {
 #define READER_CFG "/dev/wanted/wapps/reader/config"
 #define WRITER_CFG "/dev/wanted/wapps/writer/config"
 #define READER_LOG "/dev/wanted/wapps/reader/log"
-#define READER_CFG_BODY \
-    "{\"image\":\"duplex\"," \
-    "\"console\":{\"in\":{\"name\":\"null\"}," \
-    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}," \
+#define READER_CFG_BODY                                                        \
+    "{\"image\":\"duplex\","                                                   \
+    "\"console\":{\"in\":{\"name\":\"null\"},"                                 \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"envs\":[\"ROLE=reader\"]}"
 /* writer pins the image by tag ("duplex:0.0.1-1") — exact resolution — while
- * reader uses the bare name ("duplex") — first-match. Both run the one image. */
-#define WRITER_CFG_BODY "{\"image\":\"duplex:0.0.1-1\",\"envs\":[\"ROLE=writer\"]}"
+ * reader uses the bare name ("duplex") — first-match. Both run the one image.
+ */
+#define WRITER_CFG_BODY                                                        \
+    "{\"image\":\"duplex:0.0.1-1\",\"envs\":[\"ROLE=writer\"]}"
 static void pipe_duplex_check(void) {
     char buf[128];
 
@@ -619,8 +635,8 @@ static void pipe_duplex_check(void) {
     create_wapp("writer");
     write_path(READER_CFG, READER_CFG_BODY); /* log console + ROLE=reader */
     write_path(WRITER_CFG, WRITER_CFG_BODY); /* ROLE=writer */
-    start_wapp("reader");                    /* blocks reading /dev/pipe/duplex */
-    start_wapp("writer");                    /* writes the payload to it */
+    start_wapp("reader"); /* blocks reading /dev/pipe/duplex */
+    start_wapp("writer"); /* writes the payload to it */
     wait_dead("reader");
 
     int got = read_path(READER_LOG, buf, sizeof(buf)) > 0;
@@ -646,8 +662,7 @@ static void argenv_check(void) {
                strstr(buf, "arg 0=argenv") != NULL && /* engine-set argv[0] */
                strstr(buf, "arg 1=alpha") != NULL &&
                strstr(buf, "arg 2=beta") != NULL &&
-               strstr(buf, "FOO=bar") != NULL &&
-               strstr(buf, "BAZ=qux") != NULL,
+               strstr(buf, "FOO=bar") != NULL && strstr(buf, "BAZ=qux") != NULL,
            "argv/env: configured args and envs reach the launched wapp");
 
     int n = read_path(ARGENV_EXIT, buf, sizeof(buf));
@@ -669,15 +684,17 @@ static void mounts_check(void) {
 
     int n = read_path(CFGMAP_PATH, buf, sizeof(buf));
     tap_ok(n > 0 && strstr(buf, CFGMAP_MARKER) != NULL,
-           "mounts: config-map reads back its content at /etc/config (outside /dev)");
+           "mounts: config-map reads back its content at /etc/config (outside "
+           "/dev)");
 
     tap_ok(dir_has("/", "etc"),
            "mounts: a deep mount surfaces a synthetic parent in ls /");
 
-    /* A socket needs an IP netstack: socket() must succeed even to enumerate the
-     * node, because listing /net stats each entry and stat'ing a socket node
-     * opens it. The sim:wanted board is built without CONFIG_NET, so socket()
-     * fails there and /net enumeration aborts. Distinguish three outcomes:
+    /* A socket needs an IP netstack: socket() must succeed even to enumerate
+     * the node, because listing /net stats each entry and stat'ing a socket
+     * node opens it. The sim:wanted board is built without CONFIG_NET, so
+     * socket() fails there and /net enumeration aborts. Distinguish three
+     * outcomes:
      *   - found        → the socket is present (assert pass);
      *   - readdir abort → no netstack on this build (skip with a diagnostic);
      *   - enumerable but absent → a real regression (assert fail). */
@@ -708,6 +725,32 @@ static void mounts_check(void) {
     }
 }
 
+/* A `platform` bind mount must confine path resolution to its host directory.
+ * An in-bounds file reads back; a symlink the host planted inside the mount
+ * that points outside it must not resolve through the mount. (Host-side
+ * symlinks only exist on Linux; on a target without them the escape simply
+ * cannot be set up, so a missing escape node is not a failure.) */
+static void bind_mount_escape_check(void) {
+    /* The /host bind mount is wired only in the Linux selftest config; a build
+     * without it (e.g. the NuttX sim) has nothing to confine. */
+    int probe = open("/host", O_RDONLY | O_DIRECTORY);
+    if (probe < 0) {
+        tap_diag("bind mount: skipped — no /host platform mount on this build");
+        return;
+    }
+    close(probe);
+
+    char buf[64];
+    int n = read_path(BIND_INSIDE, buf, sizeof(buf));
+    tap_ok(n > 0 && strstr(buf, BIND_INSIDE_MARKER) != NULL,
+           "bind mount: an in-bounds file reads through the platform mount");
+
+    int fd = open(BIND_ESCAPE, O_RDONLY);
+    if (fd >= 0)
+        close(fd);
+    tap_ok(fd < 0, "bind mount: a symlink escaping the mount root is denied");
+}
+
 /* Configure instance `name` with `cfg` and return true if the engine REJECTED
  * it — the wapp never reached running/starting. Each `cfg` pins image:looper (a
  * known-good image) so the image loads and the ONLY failure source is the
@@ -732,39 +775,52 @@ static int rejects_config(const char *name, const char *cfg) {
  * start rather than coming up half-configured. A valid config mount on a
  * launched wapp still runs, proving the rejection is specific. */
 static void launch_config_validation_check(void) {
-    static const struct { const char *name, *cfg; } bad[] = {
-        { "m_dev",  "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\",\"path\":\"/dev/x\",\"options\":\"y\"}]}" },
-        { "m_net",  "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\",\"path\":\"/net/x\",\"options\":\"y\"}]}" },
-        { "m_proc", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\",\"path\":\"/proc/x\",\"options\":\"y\"}]}" },
-        { "d_path", "{\"image\":\"looper\",\"drivers\":[{\"name\":\"null\",\"path\":\"/x\"}]}" },
-        { "s_path", "{\"image\":\"looper\",\"sockets\":[{\"name\":\"s\",\"path\":\"/net/x\",\"address\":\"tcp://localhost:9999\"}]}" },
-        { "s_addr", "{\"image\":\"looper\",\"sockets\":[{\"name\":\"s\",\"address\":\"bogus\"}]}" },
-        { "m_psrc", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"platform\",\"path\":\"/p\",\"options\":\"src=relative\"}]}" },
-        { "m_popt", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"platform\",\"path\":\"/p\",\"options\":\"bogus\"}]}" },
-        { "m_vnam", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"volume\",\"path\":\"/d\",\"options\":\"name=../escape\"}]}" },
-        { "m_vopt", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"volume\",\"path\":\"/d\",\"options\":\"bogus\"}]}" },
+    static const struct {
+        const char *name, *cfg;
+    } bad[] = {
+        {"m_dev", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\","
+                  "\"path\":\"/dev/x\",\"options\":\"y\"}]}"},
+        {"m_net", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\","
+                  "\"path\":\"/net/x\",\"options\":\"y\"}]}"},
+        {"m_proc", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\","
+                   "\"path\":\"/proc/x\",\"options\":\"y\"}]}"},
+        {"d_path", "{\"image\":\"looper\",\"drivers\":[{\"name\":\"null\","
+                   "\"path\":\"/x\"}]}"},
+        {"s_path",
+         "{\"image\":\"looper\",\"sockets\":[{\"name\":\"s\",\"path\":\"/net/"
+         "x\",\"address\":\"tcp://localhost:9999\"}]}"},
+        {"s_addr", "{\"image\":\"looper\",\"sockets\":[{\"name\":\"s\","
+                   "\"address\":\"bogus\"}]}"},
+        {"m_psrc", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"platform\","
+                   "\"path\":\"/p\",\"options\":\"src=relative\"}]}"},
+        {"m_popt", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"platform\","
+                   "\"path\":\"/p\",\"options\":\"bogus\"}]}"},
+        {"m_vnam", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"volume\","
+                   "\"path\":\"/d\",\"options\":\"name=../escape\"}]}"},
+        {"m_vopt", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"volume\","
+                   "\"path\":\"/d\",\"options\":\"bogus\"}]}"},
     };
     char buf[80], desc[96];
     int all = 1;
 
     for (unsigned i = 0; i < sizeof(bad) / sizeof(*bad); i++) {
         int rejected = rejects_config(bad[i].name, bad[i].cfg);
-        snprintf(desc, sizeof(desc), "launch-config reject %s: %s",
-                 bad[i].name, rejected ? "ok" : "ACCEPTED");
+        snprintf(desc, sizeof(desc), "launch-config reject %s: %s", bad[i].name,
+                 rejected ? "ok" : "ACCEPTED");
         tap_diag(desc);
         if (!rejected)
             all = 0;
     }
-    tap_ok(all,
-           "launch config: malformed drivers/mounts/sockets are rejected at install");
+    tap_ok(all, "launch config: malformed drivers/mounts/sockets are rejected "
+                "at install");
 
     /* A valid config mount on a launched wapp must still come up. */
-    int ok = create_wapp("cfgok") &&
-             write_path("/dev/wanted/wapps/cfgok/config",
-                        "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\","
-                        "\"path\":\"/etc/cfg\",\"options\":\"z\"}]}") >= 0 &&
-             start_wapp("cfgok") &&
-             wait_state("/dev/wanted/wapps/cfgok/state", 1);
+    int ok =
+        create_wapp("cfgok") &&
+        write_path("/dev/wanted/wapps/cfgok/config",
+                   "{\"image\":\"looper\",\"mounts\":[{\"name\":\"config\","
+                   "\"path\":\"/etc/cfg\",\"options\":\"z\"}]}") >= 0 &&
+        start_wapp("cfgok") && wait_state("/dev/wanted/wapps/cfgok/state", 1);
     tap_ok(ok, "launch config: a valid config mount launches the wapp");
     if (ok) {
         write_path("/dev/wanted/wapps/cfgok/ctl", "stop");
@@ -777,11 +833,11 @@ static void launch_config_validation_check(void) {
 }
 
 /* An engine-managed `volume` is a writable, persistent, named store: the engine
- * owns the host location (the wapp names only the volume) and it survives a wapp
- * restart. volcheck writes a marker on a fresh store and, on a populated one,
- * re-opens it and reads it back. Running the same instance twice — the engine
- * names the volume by instance, so both runs see the same store — proves the
- * first run's write persists into the second.
+ * owns the host location (the wapp names only the volume) and it survives a
+ * wapp restart. volcheck writes a marker on a fresh store and, on a populated
+ * one, re-opens it and reads it back. Running the same instance twice — the
+ * engine names the volume by instance, so both runs see the same store — proves
+ * the first run's write persists into the second.
  *
  * Persistence (the marker re-opens after the restart) is asserted on every
  * platform. The byte-level read-back is asserted where the host-fs preopen
@@ -796,7 +852,9 @@ static void volume_check(void) {
              start_wapp(VOLCHECK) && wait_dead(VOLCHECK);
     int wrote = r1 && read_path(VOLCHECK_LOG, buf, sizeof(buf)) > 0 &&
                 strstr(buf, "vol-wrote") != NULL;
-    tap_ok(wrote, "volume: a fresh volume mounts writable and the wapp writes its state");
+    tap_ok(
+        wrote,
+        "volume: a fresh volume mounts writable and the wapp writes its state");
 
     /* The launch config is consumed on start, so re-arm it before relaunching
      * the same instance. The store is named by the instance, not the config. */
@@ -810,18 +868,19 @@ static void volume_check(void) {
     if (n > 0 && strstr(buf, "vol-read:" VOLCHECK_PAYLOAD) != NULL) {
         tap_ok(1, "volume: the persisted bytes read back through the preopen");
     } else {
-        tap_diag("volume: byte read-back skipped — this build's host-fs preopen "
-                 "opens the persisted file but reads back no content (e.g. the "
-                 "NuttX sim hostfs)");
+        tap_diag(
+            "volume: byte read-back skipped — this build's host-fs preopen "
+            "opens the persisted file but reads back no content (e.g. the "
+            "NuttX sim hostfs)");
     }
 }
 
 /* A shared volume crosses the wapp isolation boundary by design: two instances
- * that name the same `shared` volume see one store. The producer writes a marker
- * to a fresh shared volume; the consumer — a separate instance — re-opens that
- * marker, proving the store is shared, not per-wapp. The byte read-back is
- * asserted only where the host-fs preopen returns content (skipped on the NuttX
- * sim hostfs, like the persistence check). */
+ * that name the same `shared` volume see one store. The producer writes a
+ * marker to a fresh shared volume; the consumer — a separate instance —
+ * re-opens that marker, proving the store is shared, not per-wapp. The byte
+ * read-back is asserted only where the host-fs preopen returns content (skipped
+ * on the NuttX sim hostfs, like the persistence check). */
 static void shared_volume_check(void) {
     char buf[160];
 
@@ -838,21 +897,25 @@ static void shared_volume_check(void) {
     int n = c ? read_path(VCONS_LOG, buf, sizeof(buf)) : -1;
 
     tap_ok(n > 0 && strstr(buf, "vol-open") != NULL,
-           "shared volume: a second wapp reaches the producer's store (cross-wapp share)");
+           "shared volume: a second wapp reaches the producer's store "
+           "(cross-wapp share)");
 
     if (n > 0 && strstr(buf, "vol-read:" VOLCHECK_PAYLOAD) != NULL) {
-        tap_ok(1, "shared volume: the shared bytes read back through the preopen");
+        tap_ok(1,
+               "shared volume: the shared bytes read back through the preopen");
     } else {
-        tap_diag("shared volume: byte read-back skipped — host-fs preopen opens "
-                 "the shared file but reads back no content (e.g. the NuttX sim)");
+        tap_diag(
+            "shared volume: byte read-back skipped — host-fs preopen opens "
+            "the shared file but reads back no content (e.g. the NuttX sim)");
     }
 }
 
 /* Private and shared namespaces must never alias: a `name=iso` private volume
- * and a `name=iso` shared volume are different stores. The shared instance writes
- * its marker; the private instance, naming the same volume, must see a fresh
- * store (write, not read) — finding the shared marker would be a namespace leak.
- * This is the open-based proof (it holds even where byte read-back does not). */
+ * and a `name=iso` shared volume are different stores. The shared instance
+ * writes its marker; the private instance, naming the same volume, must see a
+ * fresh store (write, not read) — finding the shared marker would be a
+ * namespace leak. This is the open-based proof (it holds even where byte
+ * read-back does not). */
 static void volume_isolation_check(void) {
     char buf[160];
 
@@ -869,13 +932,13 @@ static void volume_isolation_check(void) {
                      strstr(buf, "vol-wrote") != NULL &&
                      strstr(buf, "vol-open") == NULL;
 
-    tap_ok(shared_wrote && priv_fresh,
-           "volume: a private volume never aliases a shared volume of the same name");
+    tap_ok(shared_wrote && priv_fresh, "volume: a private volume never aliases "
+                                       "a shared volume of the same name");
 }
 
-/* `ro` is orthogonal to `shared`: a read-only shared volume is provisioned by the
- * engine but denies the wapp every write. vroro tries to create a marker on a
- * fresh ro shared store and is refused (-EROFS), reporting "vol-fail". */
+/* `ro` is orthogonal to `shared`: a read-only shared volume is provisioned by
+ * the engine but denies the wapp every write. vroro tries to create a marker on
+ * a fresh ro shared store and is refused (-EROFS), reporting "vol-fail". */
 static void volume_readonly_check(void) {
     char buf[160];
 
@@ -888,14 +951,14 @@ static void volume_readonly_check(void) {
 }
 
 /* Multiple readers on one pipe. A named pipe is a single consume-once ring, not
- * a broadcast: with two readers blocked on /dev/pipe/duplex and one writer (this
- * supervisor) writing a single payload, exactly one reader receives it and the
- * other reaches EOF — proving multi-reader attach is safe and each byte is
- * delivered once. MAX_WAPPS=3, so the supervisor is the writer and the two
+ * a broadcast: with two readers blocked on /dev/pipe/duplex and one writer
+ * (this supervisor) writing a single payload, exactly one reader receives it
+ * and the other reaches EOF — proving multi-reader attach is safe and each byte
+ * is delivered once. MAX_WAPPS=3, so the supervisor is the writer and the two
  * readers are the only launched wapps. Both reader instances run the one duplex
  * image (ROLE=reader) and echo what they read to their log. */
-#define MREAD_A     "mreadA"
-#define MREAD_B     "mreadB"
+#define MREAD_A "mreadA"
+#define MREAD_B "mreadB"
 #define MREAD_A_LOG "/dev/wanted/wapps/" MREAD_A "/log"
 #define MREAD_B_LOG "/dev/wanted/wapps/" MREAD_B "/log"
 #define DUPLEX_CHAN "/dev/pipe/duplex"
@@ -925,42 +988,44 @@ static void multi_reader_pipe_check(void) {
                 strstr(buf, DUPLEX_PAYLOAD) != NULL;
     int got_b = read_path(MREAD_B_LOG, buf, sizeof(buf)) > 0 &&
                 strstr(buf, DUPLEX_PAYLOAD) != NULL;
-    tap_ok(got_a != got_b,
-           "pipe: two readers on one pipe — payload reaches exactly one (consume-once)");
+    tap_ok(got_a != got_b, "pipe: two readers on one pipe — payload reaches "
+                           "exactly one (consume-once)");
 }
 
 int main(void) {
-    /* Phases run in order. Announce each before running it (with a current/total
-     * counter) so a long, mostly-sleeping check — the control-plane stop/wait
-     * phases take seconds — is visibly progressing rather than looking hung
-     * between `ok` lines. The table is the single source for the order and the
-     * total, so adding a phase updates the counter automatically. */
+    /* Phases run in order. Announce each before running it (with a
+     * current/total counter) so a long, mostly-sleeping check — the
+     * control-plane stop/wait phases take seconds — is visibly progressing
+     * rather than looking hung between `ok` lines. The table is the single
+     * source for the order and the total, so adding a phase updates the counter
+     * automatically. */
     static const struct {
         const char *name;
         void (*run)(void);
     } phases[] = {
-        { "positive_checks",    positive_checks    },
-        { "mounts_check",       mounts_check       },
-        { "pipe_duplex_check",  pipe_duplex_check  },
-        { "multi_reader_pipe_check", multi_reader_pipe_check },
-        { "robustness_checks",  robustness_checks  },
-        { "containment_checks", containment_checks },
-        { "cpuhog_check",       cpuhog_check       },
-        { "console_checks",     console_checks     },
-        { "argenv_check",       argenv_check       },
-        { "lifecycle_checks",   lifecycle_checks   },
-        { "blocker_check",      blocker_check      },
-        { "ioblock_check",      ioblock_check      },
-        { "edge_checks",        edge_checks        },
-        { "sandbox_check",      sandbox_check      },
-        { "resource_check",     resource_check     },
-        { "malformed_check",    malformed_check    },
-        { "crashloop_check",    crashloop_check    },
-        { "launch_config_validation_check", launch_config_validation_check },
-        { "volume_check",       volume_check       },
-        { "shared_volume_check", shared_volume_check },
-        { "volume_isolation_check", volume_isolation_check },
-        { "volume_readonly_check", volume_readonly_check },
+        {"positive_checks", positive_checks},
+        {"mounts_check", mounts_check},
+        {"bind_mount_escape_check", bind_mount_escape_check},
+        {"pipe_duplex_check", pipe_duplex_check},
+        {"multi_reader_pipe_check", multi_reader_pipe_check},
+        {"robustness_checks", robustness_checks},
+        {"containment_checks", containment_checks},
+        {"cpuhog_check", cpuhog_check},
+        {"console_checks", console_checks},
+        {"argenv_check", argenv_check},
+        {"lifecycle_checks", lifecycle_checks},
+        {"blocker_check", blocker_check},
+        {"ioblock_check", ioblock_check},
+        {"edge_checks", edge_checks},
+        {"sandbox_check", sandbox_check},
+        {"resource_check", resource_check},
+        {"malformed_check", malformed_check},
+        {"crashloop_check", crashloop_check},
+        {"launch_config_validation_check", launch_config_validation_check},
+        {"volume_check", volume_check},
+        {"shared_volume_check", shared_volume_check},
+        {"volume_isolation_check", volume_isolation_check},
+        {"volume_readonly_check", volume_readonly_check},
     };
     const int total = (int)(sizeof(phases) / sizeof(phases[0]));
 
@@ -969,8 +1034,8 @@ int main(void) {
 
     for (int i = 0; i < total; i++) {
         char label[64];
-        snprintf(label, sizeof(label), "phase %d/%d: %s",
-                 i + 1, total, phases[i].name);
+        snprintf(label, sizeof(label), "phase %d/%d: %s", i + 1, total,
+                 phases[i].name);
         tap_diag(label);
         phases[i].run();
     }

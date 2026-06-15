@@ -100,6 +100,8 @@ A `platform` mount is a **bind mount** — the Docker `-v /host/path:/wapp/path[
 - `src=<hostpath>` — the absolute host directory backing the mount. Omitted, it defaults to `path`, so the host and wapp paths are identical (the original behaviour). With `src`, the wapp sees the directory under the clean internal `path` (e.g. `/cfg`) while the operator decides which host directory backs it — the same image is repointable per deployment.
 - `ro` / `rw` — access mode. Omitted, it defaults to `rw`. A `ro` mount denies the wapp every write (engine-enforced with `-EROFS`); the host directory must already exist (a read-only mount is never created).
 
+Path resolution under the mount is confined to its host directory: an absolute symlink, a `..` escape, or a symlink inside the directory that points outside it cannot resolve through the mount — the wapp sees only what lives beneath `src`. This holds for read-only and read-write mounts alike (it closes a read escape `ro` cannot). On Linux it requires kernel ≥ 5.6; on an older kernel an open through the mount fails rather than resolving unconfined.
+
 ```jsonc
 { "name": "platform", "path": "/cfg",         "options": "src=/etc/app,ro" }  // map + read-only
 { "name": "platform", "path": "/host",        "options": "src=/home/user/wapp" }  // map, writable
