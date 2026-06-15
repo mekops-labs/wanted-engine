@@ -6,7 +6,6 @@
 
 #include "vfs-internal.h"
 
-// TODO: need to by more dynamic and support a tree of file entries
 #define MAX_ENTRIES 10
 
 /* The virt driver tracks its own opens internally via a per-driver fildes[]
