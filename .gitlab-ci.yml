@@ -223,11 +223,6 @@ nuttx-syscontrol:
     - bash test/nuttx-sim.sh syscontrol
 
 # --- lint / static analysis / security -----------------------------------
-# Every check below runs the same `just` recipe a developer runs locally
-# (`make just <recipe>`), so CI and local results match. The tooling lives in
-# the build image (clang-format/-tidy, cppcheck, shellcheck, semgrep, trivy,
-# osv-scanner). lint gates the pipeline; static and security are observation-
-# only (allow_failure) until their finding lists are triaged, then promoted.
 
 # Blocking: zero tolerance on style drift. Needs no submodules or build.
 format-check:

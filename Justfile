@@ -1,9 +1,5 @@
 # WANTED Engine — in-container command runner.
 #
-# These recipes run *inside* the build container (CI already runs there; locally
-# enter it with `make shell` then `just <recipe>`). The host-side container
-# wrapper lives in the Makefile. CI calls these recipes so the exact lint and
-# static-analysis commands are reproducible locally.
 
 # First-party C/H sources (vendored deps and generated trees are excluded).
 src_dirs := "src platform cmd include"
