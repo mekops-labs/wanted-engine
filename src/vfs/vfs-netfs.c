@@ -160,6 +160,24 @@ int NetFs_Stat(vfs_ctx_t c, void *handle, vfs_stat_t *stat) {
     return TRY_DRV(h->drv, Stat, h->drv_fd, stat);
 }
 
+int NetFs_StatPath(vfs_ctx_t c, const char *suffix, vfs_stat_t *stat) {
+    if (!stat)
+        return -EINVAL;
+    memset(stat, 0, sizeof(*stat));
+
+    /* Empty suffix is "/net" itself. */
+    if (!suffix || *suffix == '\0') {
+        stat->filetype = VFS_FILETYPE_DIRECTORY;
+        return 0;
+    }
+
+    const vfs_driver_t *drv = LookupDrv(c, suffix);
+    if (!drv)
+        return -ENOENT;
+    stat->filetype = drv->filetype;
+    return 0;
+}
+
 int NetFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
                   uint64_t *cookie, size_t *bufUsed) {
     netfs_handle_t *h = handle;

@@ -80,7 +80,8 @@ static int VfsMount(vfs_ctx_t c, const char *prefix, vfs_fd_type_t type,
     return 0;
 }
 
-int VfsMountDriver(vfs_ctx_t c, const char *prefix, const vfs_driver_t *driver) {
+int VfsMountDriver(vfs_ctx_t c, const char *prefix,
+                   const vfs_driver_t *driver) {
     if (!c || !prefix || !driver)
         return -EINVAL;
     if (prefix[0] != '/' || prefix[1] == '\0')
@@ -124,8 +125,7 @@ int VfsFlatDirReadDir(const vfs_dir_entry_t *entries, size_t count, void *buf,
 /* ── Internal helpers ────────────────────────────────────────────────────── */
 
 static inline bool CheckFd(struct vfs_ctx_t *c, int fd) {
-    return c && fd >= 0 && fd < VFS_MAX_FDS &&
-           c->fds[fd].type != VFS_TYPE_NONE;
+    return c && fd >= 0 && fd < VFS_MAX_FDS && c->fds[fd].type != VFS_TYPE_NONE;
 }
 
 static int FindFirstClosedFd(struct vfs_ctx_t *c) {
@@ -140,10 +140,15 @@ static int FindFirstClosedFd(struct vfs_ctx_t *c) {
 
 /* ── Route open (mount-table dispatch) ───────────────────────────────────── */
 
-static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
-    /* Longest-prefix match against the mount table. */
-    vfs_fd_type_t type = VFS_TYPE_NONE;
-    const vfs_driver_t *mount_drv = NULL;
+/* Longest-prefix match against the mount table. Fills `type` and `mount_drv`,
+ * and points `suffix` at the driver-relative path (past the mount prefix and
+ * any leading slash; empty = the mount root). No side effects: unlike
+ * route_open it never opens the resolved node, so callers that only need the
+ * routing decision (e.g. stat) can avoid an open with side effects. */
+static int RouteMatch(vfs_ctx_t c, const char *path, vfs_fd_type_t *type,
+                      const vfs_driver_t **mount_drv, const char **suffix) {
+    vfs_fd_type_t t = VFS_TYPE_NONE;
+    const vfs_driver_t *drv = NULL;
     size_t best_len = 0;
 
     for (uint8_t i = 0; i < c->mounts_cnt; i++) {
@@ -158,18 +163,32 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
         }
         if (matches && plen > best_len) {
             best_len = plen;
-            type = c->mounts[i].type;
-            mount_drv = c->mounts[i].drv;
+            t = c->mounts[i].type;
+            drv = c->mounts[i].drv;
         }
     }
 
-    if (type == VFS_TYPE_NONE)
+    if (t == VFS_TYPE_NONE)
         return -ENOENT;
 
     /* Suffix passed to subsystems: skip mount prefix and any leading slash. */
-    const char *suffix = path + best_len;
-    if (*suffix == '/')
-        suffix++;
+    const char *s = path + best_len;
+    if (*s == '/')
+        s++;
+
+    *type = t;
+    *mount_drv = drv;
+    *suffix = s;
+    return 0;
+}
+
+static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
+    vfs_fd_type_t type;
+    const vfs_driver_t *mount_drv;
+    const char *suffix;
+    int r = RouteMatch(c, path, &type, &mount_drv, &suffix);
+    if (r < 0)
+        return r;
 
     /* A driver mount delegates directly to its bound driver: the suffix below
      * the mount prefix is the driver-relative path (empty suffix = the mount
@@ -252,10 +271,10 @@ vfs_ctx_t VfsInit(void) {
 
     memset(c, 0, sizeof(*c));
 
-    VfsMount(c, "/",     VFS_TYPE_TARFS, NULL);
-    VfsMount(c, "/dev",  VFS_TYPE_DEV,   NULL);
-    VfsMount(c, "/net",  VFS_TYPE_NET,   NULL);
-    VfsMount(c, "/proc", VFS_TYPE_PROC,  NULL);
+    VfsMount(c, "/", VFS_TYPE_TARFS, NULL);
+    VfsMount(c, "/dev", VFS_TYPE_DEV, NULL);
+    VfsMount(c, "/net", VFS_TYPE_NET, NULL);
+    VfsMount(c, "/proc", VFS_TYPE_PROC, NULL);
 
     return c;
 }
@@ -429,8 +448,9 @@ int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver) {
         return -EINVAL;
     }
 
-    /* stdio slots 0/1/2 equal the POSIX native fds — platform drivers use drv_fd
-     * directly as the native fd; non-platform drivers (log, null) ignore it. */
+    /* stdio slots 0/1/2 equal the POSIX native fds — platform drivers use
+     * drv_fd directly as the native fd; non-platform drivers (log, null) ignore
+     * it. */
     c->fds[slot].type = VFS_TYPE_STREAM;
     c->fds[slot].driver = driver;
     c->fds[slot].drv_fd = slot;
@@ -460,8 +480,8 @@ int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags) {
 
     /* PLATFORM parent: bypass the mount-table router. Relative paths resolve
      * against the host directory fd directly via the driver's OpenAt. */
-    if (fd >= 0 && fd < VFS_MAX_FDS &&
-        c->fds[fd].type == VFS_TYPE_PLATFORM && path[0] != '/') {
+    if (fd >= 0 && fd < VFS_MAX_FDS && c->fds[fd].type == VFS_TYPE_PLATFORM &&
+        path[0] != '/') {
         const vfs_driver_t *drv = c->fds[fd].driver;
         if (!drv || !drv->OpenAt)
             return -ENOTSUP;
@@ -534,8 +554,7 @@ int VfsClose(vfs_ctx_t c, int fd) {
     }
     case VFS_TYPE_STREAM: {
         const vfs_driver_t *drv = c->fds[fd].driver;
-        r = (drv && drv->Close) ? drv->Close(drv->ctx, c->fds[fd].drv_fd)
-                                : 0;
+        r = (drv && drv->Close) ? drv->Close(drv->ctx, c->fds[fd].drv_fd) : 0;
         /* Stream slots are preopens — VfsDestroy still owns the driver. */
         return r;
     }
@@ -581,6 +600,24 @@ int VfsStatAt(vfs_ctx_t c, int fd, const char *path, vfs_stat_t *stat) {
 
     if (!CheckFd(c, fd))
         return -EBADF;
+
+    /* A /net node is stat'd by name: opening a socket node has the side effect
+     * of creating the socket, so report the registered driver's filetype
+     * directly. A PLATFORM parent never routes to /net (its relative paths
+     * resolve against a host directory), so skip the fast path there. */
+    bool platform_parent =
+        (c->fds[fd].type == VFS_TYPE_PLATFORM && path[0] != '/');
+    if (!platform_parent) {
+        char norm[VFS_FD_PATH_LEN];
+        if (VfsResolvePath(c, fd, path, norm, sizeof(norm)) == 0) {
+            vfs_fd_type_t type;
+            const vfs_driver_t *drv;
+            const char *suffix;
+            if (RouteMatch(c, norm, &type, &drv, &suffix) == 0 &&
+                type == VFS_TYPE_NET)
+                return NetFs_StatPath(c, suffix, stat);
+        }
+    }
 
     int newfd = VfsOpenAt(c, fd, path, 0);
     if (newfd < 0)
@@ -778,7 +815,8 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
             const char *slash = strchr(name, '/');
             size_t namlen = slash ? (size_t)(slash - name) : strlen(name);
             /* Dedup against earlier mounts contributing the same component
-             * (e.g. "/etc/config" and "/etc/secrets" both surface one "etc"). */
+             * (e.g. "/etc/config" and "/etc/secrets" both surface one "etc").
+             */
             bool dup = false;
             for (uint8_t j = 0; j < idx; j++) {
                 const char *p2 = c->mounts[j].prefix;
@@ -881,8 +919,8 @@ int VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags) {
     return -ENOTSOCK;
 }
 
-int VfsBindPlatformFd(vfs_ctx_t c, const char *path,
-                      const vfs_driver_t *driver, int host_fd, bool readonly) {
+int VfsBindPlatformFd(vfs_ctx_t c, const char *path, const vfs_driver_t *driver,
+                      int host_fd, bool readonly) {
     if (!c || !path || !driver)
         return -EINVAL;
 
@@ -904,8 +942,8 @@ int VfsBindPlatformFd(vfs_ctx_t c, const char *path,
     return slot;
 }
 
-int VfsRename(vfs_ctx_t c, int old_fd, const char *old_path,
-              int new_fd, const char *new_path) {
+int VfsRename(vfs_ctx_t c, int old_fd, const char *old_path, int new_fd,
+              const char *new_path) {
     DEBUG_TRACE("%d, %s -> %d, %s", old_fd, old_path, new_fd, new_path);
 
     if (!CheckFd(c, old_fd) || !CheckFd(c, new_fd))

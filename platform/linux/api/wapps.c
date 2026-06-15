@@ -30,6 +30,12 @@ pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
         return err;                                                            \
     }
 
+/* Consecutive supervisor launch FAILUREs tolerated before the engine aborts.
+ * A clean supervisor exit is respawned indefinitely; a supervisor that cannot
+ * launch (e.g. a malformed mount in its config) would otherwise respawn-loop in
+ * silence, so bail loudly once it fails this many times in a row. */
+#define MAX_SUPERVISOR_LAUNCH_FAILURES 3
+
 typedef struct {
     pthread_t t;
     status_t status;
@@ -260,7 +266,8 @@ int PlatformWappRelease(const char *name) {
     /* Free the mapped image + struct. The supervisor image is a persistent
      * singleton reused across respawns — never free that one. state.n was
      * already decremented when the worker reached its terminal status, so the
-     * slot does not count against the pool and must not be decremented again. */
+     * slot does not count against the pool and must not be decremented again.
+     */
     wapp_t *w = state.threads[slot].data.wapp;
     if (w != NULL && w != WantedGetCurrentSupervisor()) {
         PlatformWappUnload(w);
@@ -294,6 +301,7 @@ void PlatformRequestReboot(void) {
 
 void PlatformWappLoop(void) {
     uint8_t supervisorOk;
+    int supervisorFailures = 0;
 
     for (;;) {
         sleep(1);
@@ -304,7 +312,8 @@ void PlatformWappLoop(void) {
         pthread_mutex_unlock(&state_mtx);
 
         if (shutdown) {
-            /* Return so WantedStart and main unwind to a normal process exit. */
+            /* Return so WantedStart and main unwind to a normal process exit.
+             */
             return;
         }
         if (reboot) {
@@ -320,21 +329,48 @@ void PlatformWappLoop(void) {
         }
 
         supervisorOk = 0;
+        int supervisorFailed = 0;
+        int supervisorErr = 0;
         for (int i = 0; i < MAX_WAPPS; i++) {
             /* at least 1 supervisor needs to be running */
             if (state.threads[i].data.wapp == NULL)
                 continue;
-
             if (strncmp((const char *)state.threads[i].data.wapp->name,
-                        "supervisor", strlen("supervisor")) == 0 &&
-                state.threads[i].status == RUNNING) {
+                        "supervisor", strlen("supervisor")) != 0)
+                continue;
+            if (state.threads[i].status == RUNNING) {
                 supervisorOk++;
+            } else if (state.threads[i].status == FAILURE) {
+                supervisorFailed = 1;
+                /* WantedWappRun's negative return — the launch error (e.g.
+                 * -EINVAL for a malformed mount, -EROFS for a missing backing
+                 * dir). */
+                supervisorErr = state.threads[i].data.lastStatus;
             }
         }
 
-        if (!supervisorOk) {
-            PlatformWappStart(WantedGetCurrentSupervisor());
+        if (supervisorOk) {
+            supervisorFailures = 0;
+            continue;
         }
+
+        /* No supervisor running. A clean exit is respawned (the supervisor is a
+         * persistent singleton). A launch FAILURE that repeats is a fatal
+         * misconfiguration — e.g. a malformed mount in the supervisor config —
+         * so abort loudly instead of respawning in silence forever. */
+        if (supervisorFailed &&
+            ++supervisorFailures >= MAX_SUPERVISOR_LAUNCH_FAILURES) {
+            fprintf(
+                stderr,
+                "wanted: supervisor failed to launch %d times in a row "
+                "(error %d: %s); aborting — check the supervisor config\n",
+                supervisorFailures, supervisorErr,
+                strerror(supervisorErr < 0 ? -supervisorErr : supervisorErr));
+            exit(EXIT_FAILURE);
+        }
+        if (!supervisorFailed)
+            supervisorFailures = 0;
+        PlatformWappStart(WantedGetCurrentSupervisor());
     }
 }
 
@@ -367,8 +403,10 @@ int PlatformWappGetState(wapp_state_t *wapps, size_t appsLen) {
 #include <malloc.h>
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
     struct mallinfo2 mi = mallinfo2();
-    if (heap_used)  *heap_used  = mi.uordblks;
-    if (heap_total) *heap_total = mi.arena;
+    if (heap_used)
+        *heap_used = mi.uordblks;
+    if (heap_total)
+        *heap_total = mi.arena;
 }
 
 const char *PlatformName(void) { return "linux"; }

@@ -213,14 +213,28 @@ syscontrol() {
     # SIM_ALIVE (1/0) + SIM_OUT. The sim is killed by PID, never orphaned.
     SIM_OUT=""; SIM_ALIVE=0
     drive_sim() {
-        local fifo ep
+        local fifo ep i
         SIM_OUT=$(mktemp); fifo=$(mktemp -u); mkfifo "$fifo"
         ( cd "$SIMROOT" && exec "$NUTTX_DIR/nuttx" ) <"$fifo" >"$SIM_OUT" 2>&1 &
         ep=$!
         exec 9>"$fifo"
+        # Wait for wsh to reach its prompt before driving it. Boot time varies by
+        # runner (a slow one is not ready at a fixed 2s), so poll for the banner
+        # rather than assume a delay — sending a command before stdin is read
+        # would be lost and a quiesce/poweroff would be missed.
+        for i in $(seq 1 200); do
+            grep -q "Wsh v" "$SIM_OUT" 2>/dev/null && break
+            sleep 0.1
+        done
         local spec
         for spec in "$@"; do sleep "${spec%%:*}"; printf '%s\n' "${spec#*:}" >&9; done
-        sleep 2
+        # Poll the outcome: poweroff/reboot return from the engine loop (the sim
+        # exits); exit respawns (it stays up). The loop ticks ~1s, so give it a
+        # few seconds to act rather than sampling liveness once.
+        for i in $(seq 1 50); do
+            kill -0 "$ep" 2>/dev/null || break
+            sleep 0.1
+        done
         if kill -0 "$ep" 2>/dev/null; then SIM_ALIVE=1; else SIM_ALIVE=0; fi
         exec 9>&-
         kill -9 "$ep" 2>/dev/null || true
