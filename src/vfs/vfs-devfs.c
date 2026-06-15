@@ -104,7 +104,8 @@ void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
     const char *sub_path = NULL;
 
     if (!drv) {
-        /* Prefix match: entry "X" matches suffix "X/rest", passes "rest" down. */
+        /* Prefix match: entry "X" matches suffix "X/rest", passes "rest" down.
+         */
         for (uint8_t i = 0; i < c->devfs_cnt; i++) {
             size_t nlen = strnlen(c->devfs[i].name, MAX_ENTRY_NAME_LEN);
             if (nlen > 0 && strncmp(c->devfs[i].name, suffix, nlen) == 0 &&

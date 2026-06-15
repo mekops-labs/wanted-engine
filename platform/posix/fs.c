@@ -51,15 +51,16 @@ int PlatformOpenStateDir(const char *path, bool readonly) {
             return rc;
     }
     /* The directory fd carries no write intent; per-file write capability is
-     * granted (or, for a read-only mount, denied) by the VFS platform driver. */
+     * granted (or, for a read-only mount, denied) by the VFS platform driver.
+     */
     int fd = open(path, O_RDONLY | O_DIRECTORY);
     if (fd < 0)
         return -errno;
     return fd;
 }
 
-int PlatformFsRename(int old_fd, const char *old_path,
-                     int new_fd, const char *new_path) {
+int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
+                     const char *new_path) {
     if (!old_path || !new_path)
         return -EINVAL;
     if (renameat(old_fd, old_path, new_fd, new_path) < 0)

@@ -5,8 +5,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <vfs.h>
 #include <vfs-tarfs.h>
+#include <vfs.h>
 #include <wanted.h>
 
 // TODO: make configurable
@@ -80,8 +80,8 @@ typedef enum wapp_action_t {
 } wapp_action_t;
 
 typedef struct wapp_t {
-    char name[WAPP_MAX_NAME_LEN];    /* instance identity (set at launch) */
-    char image[WAPP_MAX_NAME_LEN];   /* registry image identity (set by loader) */
+    char name[WAPP_MAX_NAME_LEN];  /* instance identity (set at launch) */
+    char image[WAPP_MAX_NAME_LEN]; /* registry image identity (set by loader) */
     char version[WAPP_MAX_VERSION_LEN]; /* image version tag (set by loader) */
     wapp_config_t cfg;
     /* OCI layer stack (newest first, index 0 = topmost) */
@@ -105,7 +105,8 @@ typedef struct wapp_data_t {
 
 typedef enum status_t {
     NOT_STARTED,
-    CREATED, /* namespace reserved via `create`, launch config not yet started */
+    CREATED, /* namespace reserved via `create`, launch config not yet started
+              */
     STARTING,
     RUNNING,
     EXITED,
@@ -114,7 +115,8 @@ typedef enum status_t {
 
 typedef struct wapp_state_t {
     char name[WAPP_MAX_NAME_LEN];
-    char image[WAPP_MAX_NAME_LEN]; /* registry image the instance was launched from */
+    char image[WAPP_MAX_NAME_LEN]; /* registry image the instance was launched
+                                      from */
     uint8_t id;
     char version[WAPP_MAX_VERSION_LEN]; /* image version tag */
     status_t status;
@@ -131,7 +133,8 @@ typedef struct reg_entry_t {
 
 typedef struct wantedConfig_t {
     wapp_config_t supervisorCfg;
-    char supervisorImagePath[MAX_PATH_LEN]; /* empty = use compiled-in default */
+    char
+        supervisorImagePath[MAX_PATH_LEN]; /* empty = use compiled-in default */
     bool privileged; /* enables privileged /proc entries when true */
 } wantedConfig_t;
 

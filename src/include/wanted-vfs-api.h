@@ -52,11 +52,11 @@ int WantedParseWappConfigJson(const char *buf, size_t bufLen,
  *   3 = UNCALIBRATED         default; wall clock is meaningless
  * Updaters (RTC probe, SNTP daemon, host time provider) call
  * WantedSetClockQuality whenever the calibration state changes. */
-#define WANTED_CLOCK_HARDWARE_RTC       0
-#define WANTED_CLOCK_SNTP_CALIBRATED    1
+#define WANTED_CLOCK_HARDWARE_RTC 0
+#define WANTED_CLOCK_SNTP_CALIBRATED 1
 #define WANTED_CLOCK_SIMPLE_CALIBRATION 2
-#define WANTED_CLOCK_UNCALIBRATED       3
+#define WANTED_CLOCK_UNCALIBRATED 3
 
-void    WantedSetClockQuality(uint8_t q);
+void WantedSetClockQuality(uint8_t q);
 uint8_t WantedGetClockQuality(void);
-int     WantedProcReadClockQuality(vfs_ctx_t c, void *buf, size_t bufLen);
+int WantedProcReadClockQuality(vfs_ctx_t c, void *buf, size_t bufLen);

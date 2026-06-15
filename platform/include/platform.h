@@ -103,8 +103,8 @@ const char *PlatformVolumeRoot(void);
 /* Thin wrappers over native fs primitives, used by VFS path_rename and
  * path_create_directory to operate on preopen-rooted directories. Both fds
  * are native (openat-class) directory descriptors. */
-int PlatformFsRename(int old_fd, const char *old_path,
-                     int new_fd, const char *new_path);
+int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
+                     const char *new_path);
 int PlatformFsMkdir(int fd, const char *path);
 
 void *PlatformNetOpen(int socket_type);

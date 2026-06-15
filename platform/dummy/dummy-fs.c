@@ -14,8 +14,8 @@
 /* ── Constants ──────────────────────────────────────────────────────────── */
 
 #define DUMMY_FS_MAX_NODES 32
-#define DUMMY_FS_MAX_FDS   16
-#define DUMMY_FS_PATH_LEN  64
+#define DUMMY_FS_MAX_FDS 16
+#define DUMMY_FS_PATH_LEN 64
 #define DUMMY_FS_FILE_SIZE 256
 
 /* Driver-internal fd base — keeps dummy fds out of the 0/1/2 stdio range. */
@@ -31,19 +31,19 @@ typedef enum {
 
 typedef struct {
     dummy_node_type_t type;
-    char     path[DUMMY_FS_PATH_LEN];
-    uint8_t  data[DUMMY_FS_FILE_SIZE];
+    char path[DUMMY_FS_PATH_LEN];
+    uint8_t data[DUMMY_FS_FILE_SIZE];
     uint32_t size;
 } dummy_node_t;
 
 typedef struct {
-    int      used;
-    int      node_idx;
+    int used;
+    int node_idx;
     uint32_t pos;
 } dummy_fd_slot_t;
 
 typedef struct {
-    dummy_node_t    nodes[DUMMY_FS_MAX_NODES];
+    dummy_node_t nodes[DUMMY_FS_MAX_NODES];
     dummy_fd_slot_t fds[DUMMY_FS_MAX_FDS];
 } dummy_fs_t;
 
@@ -72,7 +72,8 @@ static int node_find(dummy_fs_t *fs, const char *path) {
     return -1;
 }
 
-static int node_alloc(dummy_fs_t *fs, const char *path, dummy_node_type_t type) {
+static int node_alloc(dummy_fs_t *fs, const char *path,
+                      dummy_node_type_t type) {
     for (int i = 0; i < DUMMY_FS_MAX_NODES; i++) {
         if (fs->nodes[i].type == DUMMY_NODE_NONE) {
             fs->nodes[i].type = type;
@@ -88,9 +89,9 @@ static int node_alloc(dummy_fs_t *fs, const char *path, dummy_node_type_t type) 
 static int fd_alloc(dummy_fs_t *fs, int node_idx) {
     for (int i = 0; i < DUMMY_FS_MAX_FDS; i++) {
         if (!fs->fds[i].used) {
-            fs->fds[i].used     = 1;
+            fs->fds[i].used = 1;
             fs->fds[i].node_idx = node_idx;
-            fs->fds[i].pos      = 0;
+            fs->fds[i].pos = 0;
             return i + DUMMY_FD_BASE;
         }
     }
@@ -106,7 +107,7 @@ static dummy_fd_slot_t *fd_get(dummy_fs_t *fs, int fd) {
 
 /* Is node_path a direct (non-nested) child of dir_path? */
 static int is_direct_child(const char *dir_path, const char *node_path) {
-    size_t dir_len  = strlen(dir_path);
+    size_t dir_len = strlen(dir_path);
     size_t node_len = strlen(node_path);
     if (node_len <= dir_len)
         return 0;
@@ -144,7 +145,8 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     if (ni < 0) {
         if (!(flags & VFS_O_CREAT))
             return -ENOENT;
-        dummy_node_type_t t = (flags & VFS_O_DIRECTORY) ? DUMMY_NODE_DIR : DUMMY_NODE_FILE;
+        dummy_node_type_t t =
+            (flags & VFS_O_DIRECTORY) ? DUMMY_NODE_DIR : DUMMY_NODE_FILE;
         ni = node_alloc(fs, path, t);
         if (ni < 0)
             return -ENOSPC;
@@ -173,7 +175,8 @@ static int _OpenAt(vfs_driver_ctx_t d, int dir_drv_fd, const char *rel_path,
         return -ENOTDIR;
 
     char abs_path[DUMMY_FS_PATH_LEN];
-    path_join(fs->nodes[dfd->node_idx].path, rel_path, abs_path, sizeof(abs_path));
+    path_join(fs->nodes[dfd->node_idx].path, rel_path, abs_path,
+              sizeof(abs_path));
     return _Open(d, abs_path, flags);
 }
 
@@ -193,12 +196,12 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
         return -EBADF;
     dummy_node_t *n = &fs->nodes[dfd->node_idx];
     memset(s, 0, sizeof(*s));
-    s->dev      = 0x796D6D44U; /* 'Dmmy' */
-    s->ino      = (uint32_t)dfd->node_idx;
+    s->dev = 0x796D6D44U; /* 'Dmmy' */
+    s->ino = (uint32_t)dfd->node_idx;
     s->filetype = (n->type == DUMMY_NODE_DIR) ? VFS_FILETYPE_DIRECTORY
                                               : VFS_FILETYPE_REGULAR_FILE;
-    s->size     = n->size;
-    s->nlink    = 1;
+    s->size = n->size;
+    s->nlink = 1;
     return 0;
 }
 
@@ -210,7 +213,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     dummy_node_t *n = &fs->nodes[dfd->node_idx];
     if (n->type == DUMMY_NODE_DIR)
         return -EISDIR;
-    uint32_t avail   = (dfd->pos < n->size) ? (n->size - dfd->pos) : 0;
+    uint32_t avail = (dfd->pos < n->size) ? (n->size - dfd->pos) : 0;
     uint32_t to_read = ((uint32_t)nbyte < avail) ? (uint32_t)nbyte : avail;
     if (to_read > 0)
         memcpy(buf, n->data + dfd->pos, to_read);
@@ -228,7 +231,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     dummy_node_t *n = &fs->nodes[dfd->node_idx];
     if (n->type == DUMMY_NODE_DIR)
         return -EISDIR;
-    uint32_t avail    = DUMMY_FS_FILE_SIZE - dfd->pos;
+    uint32_t avail = DUMMY_FS_FILE_SIZE - dfd->pos;
     uint32_t to_write = ((uint32_t)nbyte < avail) ? (uint32_t)nbyte : avail;
     if (to_write > 0)
         memcpy(n->data + dfd->pos, buf, to_write);
@@ -249,10 +252,17 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
     dummy_node_t *n = &fs->nodes[dfd->node_idx];
     long new_pos;
     switch (whence) {
-    case VFS_SEEK_SET: new_pos = off; break;
-    case VFS_SEEK_CUR: new_pos = (long)dfd->pos + off; break;
-    case VFS_SEEK_END: new_pos = (long)n->size + off; break;
-    default: return -EINVAL;
+    case VFS_SEEK_SET:
+        new_pos = off;
+        break;
+    case VFS_SEEK_CUR:
+        new_pos = (long)dfd->pos + off;
+        break;
+    case VFS_SEEK_END:
+        new_pos = (long)n->size + off;
+        break;
+    default:
+        return -EINVAL;
     }
     if (new_pos < 0)
         return -EINVAL;
@@ -287,19 +297,19 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
             continue;
 
         const char *slash = strrchr(n->path, '/');
-        const char *name  = slash ? slash + 1 : n->path;
-        uint32_t namelen  = (uint32_t)strlen(name);
+        const char *name = slash ? slash + 1 : n->path;
+        uint32_t namelen = (uint32_t)strlen(name);
 
         if (used + sizeof(vfs_dirent_t) + namelen > bufLen)
             break;
 
         vfs_dirent_t ent;
         memset(&ent, 0, sizeof(ent));
-        ent.d_ino    = (uint64_t)i;
+        ent.d_ino = (uint64_t)i;
         ent.d_namlen = namelen;
-        ent.d_next   = (uint64_t)(i + 1);
-        ent.d_type   = (n->type == DUMMY_NODE_DIR) ? VFS_FILETYPE_DIRECTORY
-                                                   : VFS_FILETYPE_REGULAR_FILE;
+        ent.d_next = (uint64_t)(i + 1);
+        ent.d_type = (n->type == DUMMY_NODE_DIR) ? VFS_FILETYPE_DIRECTORY
+                                                 : VFS_FILETYPE_REGULAR_FILE;
         memcpy((uint8_t *)buf + used, &ent, sizeof(vfs_dirent_t));
         memcpy((uint8_t *)buf + used + sizeof(vfs_dirent_t), name, namelen);
         used += sizeof(vfs_dirent_t) + namelen;
@@ -321,8 +331,10 @@ static int dummy_rename(dummy_fs_t *fs, int old_fd, const char *old_path,
 
     char abs_old[DUMMY_FS_PATH_LEN];
     char abs_new[DUMMY_FS_PATH_LEN];
-    path_join(fs->nodes[old_dfd->node_idx].path, old_path, abs_old, sizeof(abs_old));
-    path_join(fs->nodes[new_dfd->node_idx].path, new_path, abs_new, sizeof(abs_new));
+    path_join(fs->nodes[old_dfd->node_idx].path, old_path, abs_old,
+              sizeof(abs_old));
+    path_join(fs->nodes[new_dfd->node_idx].path, new_path, abs_new,
+              sizeof(abs_new));
 
     int ni = node_find(fs, abs_old);
     if (ni < 0)
@@ -371,7 +383,8 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt,
     if (!drv)
         return NULL;
 
-    struct vfs_driver_ctx_t *ctx = WantedMalloc(sizeof(struct vfs_driver_ctx_t));
+    struct vfs_driver_ctx_t *ctx =
+        WantedMalloc(sizeof(struct vfs_driver_ctx_t));
     if (!ctx) {
         WantedFree(drv);
         return NULL;
@@ -380,20 +393,20 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt,
     ctx->readonly = readonly;
 
     memset(drv, 0, sizeof(*drv));
-    drv->bytesId  = *(uint32_t *)(id);
+    drv->bytesId = *(uint32_t *)(id);
     drv->filetype = VFS_FILETYPE_DIRECTORY;
-    drv->ctx      = ctx;
-    drv->Destroy  = _Destroy;
-    drv->Open     = _Open;
-    drv->OpenAt   = _OpenAt;
-    drv->Close    = _Close;
-    drv->Stat     = _Stat;
-    drv->Read     = _Read;
-    drv->Write    = _Write;
-    drv->Seek     = _Seek;
-    drv->ReadDir  = _ReadDir;
-    drv->Rename   = _Rename;
-    drv->Mkdir    = _Mkdir;
+    drv->ctx = ctx;
+    drv->Destroy = _Destroy;
+    drv->Open = _Open;
+    drv->OpenAt = _OpenAt;
+    drv->Close = _Close;
+    drv->Stat = _Stat;
+    drv->Read = _Read;
+    drv->Write = _Write;
+    drv->Seek = _Seek;
+    drv->ReadDir = _ReadDir;
+    drv->Rename = _Rename;
+    drv->Mkdir = _Mkdir;
     return drv;
 }
 
@@ -414,12 +427,10 @@ int PlatformOpenStateDir(const char *path, bool readonly) {
     return fd < 0 ? -EMFILE : fd;
 }
 
-const char *PlatformVolumeRoot(void) {
-    return "/data";
-}
+const char *PlatformVolumeRoot(void) { return "/data"; }
 
-int PlatformFsRename(int old_fd, const char *old_path,
-                     int new_fd, const char *new_path) {
+int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
+                     const char *new_path) {
     return dummy_rename(&g_dummy_fs, old_fd, old_path, new_fd, new_path);
 }
 
@@ -438,9 +449,7 @@ int PlatformFsMkdir(int fd, const char *path) {
 
 /* ── Reset ──────────────────────────────────────────────────────────────── */
 
-void DummyFsReset(void) {
-    memset(&g_dummy_fs, 0, sizeof(g_dummy_fs));
-}
+void DummyFsReset(void) { memset(&g_dummy_fs, 0, sizeof(g_dummy_fs)); }
 
 /* ── Clock / PRNG ───────────────────────────────────────────────────────── */
 
@@ -476,13 +485,11 @@ int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t duration,
 }
 
 void DummyClockReset(void) {
-    g_clock_ns    = 0;
-    g_prng_state  = 0xDEAD1234U;
+    g_clock_ns = 0;
+    g_prng_state = 0xDEAD1234U;
 }
 
-void DummyClockAdvance(uint64_t ns) {
-    g_clock_ns += ns;
-}
+void DummyClockAdvance(uint64_t ns) { g_clock_ns += ns; }
 
 /* xorshift32 — deterministic, fixed seed. Typo in name is intentional:
  * matches the platform.h declaration. */

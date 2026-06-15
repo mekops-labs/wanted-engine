@@ -14,8 +14,7 @@
  * opens that path to get the actual wapp array.
  */
 
-#define CONFIG_ID                                                              \
-    { 'W', 'c', 'f', 'g' }
+#define CONFIG_ID {'W', 'c', 'f', 'g'}
 
 static const char WANTED_META_CFG[] =
     "{\"config_file\":\"/proc/wapps\",\"debug\":false}";
@@ -46,8 +45,7 @@ static int _cfg_Destroy(struct vfs_driver_t *d) {
     return 0;
 }
 
-static int _cfg_Open(vfs_driver_ctx_t d, const char *path,
-                     vfs_oflags_t flags) {
+static int _cfg_Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     if (cfg_opened)
         return -EBUSY;
     cfg_opened = true;
@@ -96,4 +94,3 @@ static int _cfg_Write(vfs_driver_ctx_t d, int fd, const void *buf,
                       size_t nbyte) {
     return -EROFS;
 }
-

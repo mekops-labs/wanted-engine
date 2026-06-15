@@ -24,23 +24,21 @@
  *
  *   wapps/                 ReadDir → one entry per known (running) wapp
  *     <name>/              synthetic dir; ReadDir → the control files below
- *       ctl       (w)      line verb: "start [<image>]" | "stop" (identity=path)
- *       state     (r)      plain-text token: not_started|starting|running|...
- *       image     (r)      plain-text registry image the instance runs
- *       version   (r)      plain-text version, e.g. "1.0.0-0"
- *       id        (r)      plain-text engine wapp id
- *       exit_code (r)      plain-text WASI exit code (authoritative when exited)
- *       config    (w)      JSON start config: { console, drivers[], preopens,
- *                          args[], envs[] }
- *       log       (r)      ring-buffered stdout/stderr captured by the log driver
+ *       ctl       (w)      line verb: "start [<image>]" | "stop"
+ * (identity=path) state     (r)      plain-text token:
+ * not_started|starting|running|... image     (r)      plain-text registry image
+ * the instance runs version   (r)      plain-text version, e.g. "1.0.0-0" id
+ * (r)      plain-text engine wapp id exit_code (r)      plain-text WASI exit
+ * code (authoritative when exited) config    (w)      JSON start config: {
+ * console, drivers[], preopens, args[], envs[] } log       (r) ring-buffered
+ * stdout/stderr captured by the log driver
  *
  * Every open allocates its own slot in the fd table below; read EOF is latched
  * per-fd, so concurrent readers (the supervisor reopens on every tick) keep
  * independent cursors.
  * ───────────────────────────────────────────────────────────────────────── */
 
-#define ID                                                                     \
-    { 'W', 'a', 'p', 'p' }
+#define ID {'W', 'a', 'p', 'p'}
 
 /* Longest control verb / read token we emit; bounds the write line buffer so
  * a write() never drives an unbounded (VLA) stack allocation. The widest root
@@ -50,16 +48,16 @@
 
 typedef enum {
     NODE_NONE = 0,
-    NODE_ROOT,    /* wapps/            */
-    NODE_WAPP,    /* wapps/<name>/     */
-    NODE_CTL,     /* wapps/<name>/ctl     */
-    NODE_STATE,   /* wapps/<name>/state   */
-    NODE_IMAGE,   /* wapps/<name>/image   */
-    NODE_VERSION, /* wapps/<name>/version */
-    NODE_ID,      /* wapps/<name>/id      */
+    NODE_ROOT,      /* wapps/            */
+    NODE_WAPP,      /* wapps/<name>/     */
+    NODE_CTL,       /* wapps/<name>/ctl     */
+    NODE_STATE,     /* wapps/<name>/state   */
+    NODE_IMAGE,     /* wapps/<name>/image   */
+    NODE_VERSION,   /* wapps/<name>/version */
+    NODE_ID,        /* wapps/<name>/id      */
     NODE_EXIT_CODE, /* wapps/<name>/exit_code */
-    NODE_CONFIG,  /* wapps/<name>/config  */
-    NODE_LOG,     /* wapps/<name>/log     */
+    NODE_CONFIG,    /* wapps/<name>/config  */
+    NODE_LOG,       /* wapps/<name>/log     */
 } wapp_node_t;
 
 #define WAPPS_MAX_OPEN 8
@@ -242,10 +240,11 @@ static int StartWapp(struct vfs_driver_ctx_t *d, const char *name,
     memset(wapp, 0, sizeof(*wapp));
     strncpy(wapp->name, name, WAPP_MAX_NAME_LEN - 1);
 
-    /* The launch attempt owns the reservation: copy its config onto the wapp and
-     * clear the slot now, so a failed load/start frees the pending pool and a
-     * later start never silently reuses stale config. (A bare `created` slot is
-     * rejected by the gate above and is left intact for a later config+start.) */
+    /* The launch attempt owns the reservation: copy its config onto the wapp
+     * and clear the slot now, so a failed load/start frees the pending pool and
+     * a later start never silently reuses stale config. (A bare `created` slot
+     * is rejected by the gate above and is left intact for a later
+     * config+start.) */
     if (pend != NULL) {
         wapp->cfg = pend->cfg;
         memset(pend, 0, sizeof(*pend));
@@ -257,11 +256,12 @@ static int StartWapp(struct vfs_driver_ctx_t *d, const char *name,
      * like-named image, while many instances can share one image. The loader
      * resolves the image's registry entry and stamps image identity (image +
      * version) onto the wapp; it never touches wapp->name. */
-    const char *img = haveImage ? image
-                                : (wapp->cfg.image[0] ? wapp->cfg.image : name);
+    const char *img =
+        haveImage ? image : (wapp->cfg.image[0] ? wapp->cfg.image : name);
 
     /* An image reference is "<name>[:<tag>]": a bare name resolves to the first
-     * matching entry (empty version), a "<name>:<tag>" pins the version exactly. */
+     * matching entry (empty version), a "<name>:<tag>" pins the version
+     * exactly. */
     memset(&e, 0, sizeof(e));
     const char *colon = strchr(img, ':');
     if (colon != NULL) {
@@ -289,7 +289,8 @@ static int StartWapp(struct vfs_driver_ctx_t *d, const char *name,
     /* Ownership of `wapp` and its mapped image transfers to the platform
      * thread slot; the worker thread dereferences it for the wapp's whole
      * lifetime. The slot releases it when later reused (see PlatformWappStart).
-     * Freeing here would be a use-after-free against the just-spawned thread. */
+     * Freeing here would be a use-after-free against the just-spawned thread.
+     */
     return ret;
 
 UNLOAD:
@@ -307,7 +308,8 @@ static int _Destroy(struct vfs_driver_t *d) {
 }
 
 /* True if the engine knows this wapp name — it is live (a platform slot) or has
- * a `create` reservation. The per-wapp namespace exists only for a known wapp. */
+ * a `create` reservation. The per-wapp namespace exists only for a known wapp.
+ */
 static bool WappKnown(struct vfs_driver_ctx_t *d, const char *name) {
     wapp_state_t st;
     return LookupState(name, &st) || pending_find(d, name) != NULL;
@@ -324,9 +326,9 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 
     /* A wapp's directory and every node under it exist only once the wapp has
      * been brought into being by `create` (or is already live). Opening any of
-     * them for an unknown name returns ENOENT rather than synthesising a default
-     * — a name cannot be probed by guessing its path, and config/start are
-     * reachable only from a directory that `create` actually made. */
+     * them for an unknown name returns ENOENT rather than synthesising a
+     * default — a name cannot be probed by guessing its path, and config/start
+     * are reachable only from a directory that `create` actually made. */
     if (node != NODE_ROOT && !WappKnown(d, name))
         return -ENOENT;
 
@@ -354,13 +356,12 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     if (fd < 0 || fd >= WAPPS_MAX_OPEN || !d->fds[fd].in_use)
         return -EBADF;
 
-    bool isDir =
-        d->fds[fd].node == NODE_ROOT || d->fds[fd].node == NODE_WAPP;
+    bool isDir = d->fds[fd].node == NODE_ROOT || d->fds[fd].node == NODE_WAPP;
 
     stat->dev = WantedWappsDriver.bytesId;
     stat->ino = 0;
-    stat->filetype = isDir ? VFS_FILETYPE_DIRECTORY
-                           : VFS_FILETYPE_CHARACTER_DEVICE;
+    stat->filetype =
+        isDir ? VFS_FILETYPE_DIRECTORY : VFS_FILETYPE_CHARACTER_DEVICE;
     stat->nlink = 0;
     stat->size = 0;
     stat->atim = 0;
@@ -379,10 +380,10 @@ static size_t RenderRead(wapp_node_t node, const char *name, char *out,
 
     switch (node) {
     case NODE_STATE: {
-        /* For a wapp the platform doesn't run yet, the reservation distinguishes
-         * a bare `create` (slot exists, no config → created) from one whose
-         * config has been written (→ not_started, ready to start). An unknown
-         * name (no reservation) is the not_started default. */
+        /* For a wapp the platform doesn't run yet, the reservation
+         * distinguishes a bare `create` (slot exists, no config → created) from
+         * one whose config has been written (→ not_started, ready to start). An
+         * unknown name (no reservation) is the not_started default. */
         status_t s;
         if (live) {
             s = st.status;
@@ -393,9 +394,9 @@ static size_t RenderRead(wapp_node_t node, const char *name, char *out,
         return (size_t)snprintf(out, cap, "%s", statusToString(s));
     }
     case NODE_IMAGE:
-        /* The registry image the instance runs. Known only once the platform has
-         * launched it (the loader stamps it); a created/not-started reservation
-         * has not bound an image yet, so it reads empty. */
+        /* The registry image the instance runs. Known only once the platform
+         * has launched it (the loader stamps it); a created/not-started
+         * reservation has not bound an image yet, so it reads empty. */
         return (size_t)snprintf(out, cap, "%s", live ? st.image : "");
     case NODE_VERSION:
         /* The image's version tag — an opaque string (e.g. "1.0.0-1", "stable",
@@ -431,7 +432,8 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     /* The log can be larger than a control line, so read it straight from the
      * log store into the caller's buffer rather than via the line buffer. */
     if (node == NODE_LOG) {
-        size_t n = LogStoreRead(LogStore(), d->fds[fd].name, (char *)buf, nbyte);
+        size_t n =
+            LogStoreRead(LogStore(), d->fds[fd].name, (char *)buf, nbyte);
         d->fds[fd].read_done = true;
         return (int)n;
     }
@@ -622,16 +624,14 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
  * /dev/wanted driver, so an ordinary wapp cannot issue these commands.
  * ───────────────────────────────────────────────────────────────────────── */
 
-#define CTL_ID                                                                 \
-    { 'W', 'c', 't', 'l' }
+#define CTL_ID {'W', 'c', 't', 'l'}
 
 static int _ctl_Destroy(struct vfs_driver_t *d) {
     (void)d;
     return 0;
 }
 
-static int _ctl_Open(vfs_driver_ctx_t d, const char *path,
-                     vfs_oflags_t flags) {
+static int _ctl_Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     (void)d;
     (void)path;
     (void)flags;
@@ -694,7 +694,8 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
 
     /* "create <name>": register the per-wapp namespace ahead of a config write
      * and start, without launching anything. Reserves a pending slot (zeroed
-     * config) so wapps/<name>/ enumerates and a later config write targets it. */
+     * config) so wapps/<name>/ enumerates and a later config write targets it.
+     */
     static const char CREATE_VERB[] = "create ";
     size_t clen = sizeof(CREATE_VERB) - 1;
     if (strncmp(line, CREATE_VERB, clen) == 0) {
@@ -717,10 +718,10 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
     }
 
     /* "delete <name>": release a wapp slot so the name leaves wapps/ and its
-     * nodes return -ENOENT again. Frees a `create` reservation and/or a terminal
-     * (exited/failure) platform slot. A running wapp is rejected with -EBUSY —
-     * it must be stopped first (no implicit stop-then-delete). An unknown name
-     * (no reservation, no platform slot) is -ENOENT. */
+     * nodes return -ENOENT again. Frees a `create` reservation and/or a
+     * terminal (exited/failure) platform slot. A running wapp is rejected with
+     * -EBUSY — it must be stopped first (no implicit stop-then-delete). An
+     * unknown name (no reservation, no platform slot) is -ENOENT. */
     static const char DELETE_VERB[] = "delete ";
     size_t dlen = sizeof(DELETE_VERB) - 1;
     if (strncmp(line, DELETE_VERB, dlen) == 0) {
@@ -737,8 +738,9 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
             return -ENOENT;
 
         /* Release the platform slot first: a running wapp returns -EBUSY, which
-         * leaves the reservation (if any) intact so the caller can retry after a
-         * stop rather than losing buffered config to a half-applied delete. */
+         * leaves the reservation (if any) intact so the caller can retry after
+         * a stop rather than losing buffered config to a half-applied delete.
+         */
         if (live) {
             int ret = PlatformWappRelease(dname);
             if (ret < 0)

@@ -7,7 +7,8 @@
 
 #include <vfs.h>
 
-/* Maximum number of OCI layers per wapp. Also used by wapp_t in wanted-api.h. */
+/* Maximum number of OCI layers per wapp. Also used by wapp_t in wanted-api.h.
+ */
 #define TARFS_MAX_LAYERS 4
 
 /* Opaque tarfs context — built from an ordered array of OCI TAR layers.

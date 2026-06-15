@@ -19,7 +19,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 #define DUMMY_NET_MAX_SOCKS 4
-#define DUMMY_NET_BUF       256
+#define DUMMY_NET_BUF 256
 
 typedef struct {
     int used;
@@ -33,19 +33,19 @@ static int g_connect_result;
 static int g_accept_result;
 
 static uint8_t g_rx[DUMMY_NET_BUF];
-static size_t  g_rx_len;
-static size_t  g_rx_off;
+static size_t g_rx_len;
+static size_t g_rx_off;
 
 static uint8_t g_tx[DUMMY_NET_BUF];
-static size_t  g_tx_len;
+static size_t g_tx_len;
 
 /* ── Test control ───────────────────────────────────────────────────────── */
 
 void DummyNetReset(void) {
     memset(g_socks, 0, sizeof(g_socks));
-    g_open_fail       = 0;
-    g_connect_result  = 0;
-    g_accept_result   = 0;
+    g_open_fail = 0;
+    g_connect_result = 0;
+    g_accept_result = 0;
     memset(g_rx, 0, sizeof(g_rx));
     g_rx_len = 0;
     g_rx_off = 0;
@@ -53,8 +53,8 @@ void DummyNetReset(void) {
     g_tx_len = 0;
 }
 
-void DummyNetSetOpenFail(int fail)       { g_open_fail = fail; }
-void DummyNetSetConnectResult(int result){ g_connect_result = result; }
+void DummyNetSetOpenFail(int fail) { g_open_fail = fail; }
+void DummyNetSetConnectResult(int result) { g_connect_result = result; }
 void DummyNetSetAcceptResult(int result) { g_accept_result = result; }
 
 void DummyNetSeedRecv(const uint8_t *buf, size_t len) {

@@ -11,14 +11,8 @@ JSON({
             "out" : {"name" : "platform"},
             "err" : {"name" : "platform"}
         },
-        "drivers" : [
-            {"name" : "wanted"}
-        ],
-        "mounts" : [
-            {"name" : "platform", "path" : "/var/lib/sheriff"}
-        ],
-        "sockets" : [
-            {"name" : "s", "address" : "tcp://localhost:8888"}
-        ]
+        "drivers" : [ {"name" : "wanted"} ],
+        "mounts" : [ {"name" : "platform", "path" : "/var/lib/sheriff"} ],
+        "sockets" : [ {"name" : "s", "address" : "tcp://localhost:8888"} ]
     }
 })

@@ -18,12 +18,11 @@
 #define DUMMY_WAPP_MAX_ENTRIES MAX_WAPPS
 
 static wapp_state_t g_state[DUMMY_WAPP_MAX_ENTRIES];
-static int          g_used[DUMMY_WAPP_MAX_ENTRIES];
+static int g_used[DUMMY_WAPP_MAX_ENTRIES];
 
 static int state_find(const char *name) {
     for (int i = 0; i < DUMMY_WAPP_MAX_ENTRIES; i++) {
-        if (g_used[i] &&
-            strncmp(g_state[i].name, name, WAPP_MAX_NAME_LEN) == 0)
+        if (g_used[i] && strncmp(g_state[i].name, name, WAPP_MAX_NAME_LEN) == 0)
             return i;
     }
     return -1;

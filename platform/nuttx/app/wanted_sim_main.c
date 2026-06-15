@@ -11,13 +11,13 @@
  * to the standard entry point. Used only by the sim test / interactive board
  * config; the production NSH built-in entry remains wanted_main. */
 
+#include <stdio.h>
 #include <sys/boardctl.h>
 #include <sys/mount.h>
-#include <stdio.h>
 #include <unistd.h>
 
 #define HOSTFS_TARGET "/data"
-#define HOSTFS_DATA   "fs=."
+#define HOSTFS_DATA "fs=."
 
 int wanted_main(int argc, char *argv[]);
 
@@ -34,7 +34,8 @@ int wanted_sim_main(int argc, char *argv[]) {
      * reboot request on a sim that has no BOARDIOC_RESET. Power the simulator
      * off so the host process exits and the controlling terminal is restored;
      * otherwise NuttX idles as init returns and the raw-mode tty hangs. Falls
-     * through if the config lacks BOARDCTL_POWEROFF (then init just returns). */
+     * through if the config lacks BOARDCTL_POWEROFF (then init just returns).
+     */
     boardctl(BOARDIOC_POWEROFF, rc);
     return rc;
 }

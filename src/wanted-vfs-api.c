@@ -163,10 +163,14 @@ static vfs_driver_t *PlatformFsInitRW(const wapp_t *wapp, const char *options) {
 /* Global driver table — single registry used by WantedInstallDriver to resolve
  * a config driver name into an init callback. */
 static const vfs_driver_table_t global_driver_table[] = {
-    {"null", VfsNullInit},           {"log", VfsLogInit},
-    {"9p", Vfs9PInit},               {"config", VfsConfigInit},
-    {"platform", PlatformFsInitRW},  {"socket", VfsSocketInit},
-    {"wanted", VfsWantedInit},       {NULL, NULL},
+    {"null", VfsNullInit},
+    {"log", VfsLogInit},
+    {"9p", Vfs9PInit},
+    {"config", VfsConfigInit},
+    {"platform", PlatformFsInitRW},
+    {"socket", VfsSocketInit},
+    {"wanted", VfsWantedInit},
+    {NULL, NULL},
 };
 
 /* Route a resolved driver to its mount target:
@@ -265,11 +269,11 @@ static void ParseResourceArray(json_t const *params, const char *section,
  * Wapp identity is not read here — for the config node it travels in the
  * path. */
 static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
-    /* image: the registry image this instance runs, as a reference "<name>[:<tag>]".
-     * Optional — when omitted the launch path defaults it to the instance name,
-     * so a single-instance wapp needs no config change. A bare name resolves to
-     * the first match; a pinned tag resolves exactly. Lets N instances share one
-     * image. */
+    /* image: the registry image this instance runs, as a reference
+     * "<name>[:<tag>]". Optional — when omitted the launch path defaults it to
+     * the instance name, so a single-instance wapp needs no config change. A
+     * bare name resolves to the first match; a pinned tag resolves exactly.
+     * Lets N instances share one image. */
     const char *image = json_getPropertyValue(params, "image");
     if (image != NULL) {
         strncpy(cfg->image, image, WAPP_MAX_IMAGE_REF_LEN - 1);
@@ -335,8 +339,7 @@ static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
     if (args && JSON_ARRAY == json_getType(args)) {
         json_t const *a;
         int ai = 0;
-        for (a = json_getChild(args);
-             a && ai < WAPP_MAX_ARGS;
+        for (a = json_getChild(args); a && ai < WAPP_MAX_ARGS;
              a = json_getSibling(a)) {
             if (JSON_TEXT != json_getType(a))
                 continue;
@@ -356,8 +359,7 @@ static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
     if (envs && JSON_ARRAY == json_getType(envs)) {
         json_t const *e;
         int ei = 0;
-        for (e = json_getChild(envs);
-             e && ei < WAPP_MAX_ENVS;
+        for (e = json_getChild(envs); e && ei < WAPP_MAX_ENVS;
              e = json_getSibling(e)) {
             if (JSON_TEXT != json_getType(e))
                 continue;

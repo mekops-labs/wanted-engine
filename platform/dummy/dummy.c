@@ -16,15 +16,25 @@
  * scope. Read/Remove are implemented in dummy-registry.c. */
 int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
                           size_t nbytes) {
-    (void)s; (void)ref; (void)buf; (void)nbytes; return -ENOSYS;
+    (void)s;
+    (void)ref;
+    (void)buf;
+    (void)nbytes;
+    return -ENOSYS;
 }
-int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) { (void)entry; (void)w; return -ENOSYS; }
+int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
+    (void)entry;
+    (void)w;
+    return -ENOSYS;
+}
 
 /* PlatformNet* live in dummy-net.c (controllable in-memory mock). */
 
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
-    if (heap_used) *heap_used = 0;
-    if (heap_total) *heap_total = 0;
+    if (heap_used)
+        *heap_used = 0;
+    if (heap_total)
+        *heap_total = 0;
 }
 
 const char *PlatformName(void) { return "dummy"; }

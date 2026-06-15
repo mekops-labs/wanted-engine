@@ -3,6 +3,4 @@
 #include <config-nuttx.h>
 #include <platform.h>
 
-const char *PlatformVolumeRoot(void) {
-    return VOLUME_ROOT;
-}
+const char *PlatformVolumeRoot(void) { return VOLUME_ROOT; }
