@@ -1,0 +1,24 @@
+# Static analysis check set for the WANTED engine. Curated against the codebase
+# to keep the false-positive rate low on embedded C idioms (short identifiers
+# like fd/rc, single-line statements, feature-test macros, etc.). HeaderFilterRegex
+# restricts findings to first-party headers so vendored deps (wamr, tiny-json,
+# cwalk, c9) never surface.
+Checks: >
+  clang-diagnostic-*,
+  bugprone-*,
+  cert-*,
+  misc-*,
+  readability-*,
+  -misc-include-cleaner,
+  -readability-identifier-length,
+  -readability-braces-around-statements,
+  -readability-isolate-declaration,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -bugprone-reserved-identifier,
+  -bugprone-easily-swappable-parameters,
+  -cert-err33-c
+
+HeaderFilterRegex: '.*(src|platform|include)/.*'
+
+WarningsAsErrors: ''
