@@ -86,6 +86,43 @@ TEST(vfs_prefix_router, NetPathTakesTypedFdSlot) {
     TEST_ASSERT_EQUAL_INT(VFS_TYPE_NONE, vfs->fds[fd].type);
 }
 
+/* A net driver whose Open has a side effect (here: counts calls and fails like
+ * a socket node on a netless build). Used to prove stat never opens the node.
+ */
+static int g_boom_open_calls;
+static int BoomOpen(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
+    (void)d;
+    (void)path;
+    (void)flags;
+    g_boom_open_calls++;
+    return -ECONNABORTED;
+}
+static vfs_driver_t boom_drv = {
+    .filetype = VFS_FILETYPE_SOCKET_STREAM,
+    .Open = BoomOpen,
+};
+
+TEST(vfs_prefix_router, NetStatDoesNotOpenSocket) {
+    g_boom_open_calls = 0;
+    TEST_ASSERT_EQUAL_INT(0, NetFs_Register(vfs, "boom", &boom_drv));
+
+    int base = VfsOpen(vfs, "/net", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(base >= ROOT_FD);
+
+    /* Stat reports the driver's filetype without invoking Open. */
+    vfs_stat_t st;
+    memset(&st, 0, sizeof(st));
+    TEST_ASSERT_EQUAL_INT(0, VfsStatAt(vfs, base, "/net/boom", &st));
+    TEST_ASSERT_EQUAL_INT(VFS_FILETYPE_SOCKET_STREAM, st.filetype);
+    TEST_ASSERT_EQUAL_INT(0, g_boom_open_calls);
+
+    /* A real open still routes into the driver (creating the socket). */
+    TEST_ASSERT_EQUAL_INT(-ECONNABORTED, VfsOpen(vfs, "/net/boom", VFS_O_RDWR));
+    TEST_ASSERT_EQUAL_INT(1, g_boom_open_calls);
+
+    VfsClose(vfs, base);
+}
+
 TEST(vfs_prefix_router, NonRoutedPathReturnsEnoent) {
     /* Without a tarfs context attached, root-relative paths have no sink. */
     int fd = VfsOpen(vfs, "/", 0);
@@ -115,6 +152,7 @@ TEST(vfs_prefix_router, DevFsRejectsDuplicateRegister) {
 TEST_GROUP_RUNNER(vfs_prefix_router) {
     RUN_TEST_CASE(vfs_prefix_router, DevPathTakesTypedFdSlot);
     RUN_TEST_CASE(vfs_prefix_router, NetPathTakesTypedFdSlot);
+    RUN_TEST_CASE(vfs_prefix_router, NetStatDoesNotOpenSocket);
     RUN_TEST_CASE(vfs_prefix_router, NonRoutedPathReturnsEnoent);
     RUN_TEST_CASE(vfs_prefix_router, MissingDevSuffixReturnsEnoent);
     RUN_TEST_CASE(vfs_prefix_router, DevFsExactMatchOnly);
