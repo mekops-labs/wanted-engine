@@ -49,6 +49,11 @@ typedef enum {
      * config-map at "/etc/config"). The mount entry owns the driver; ops
      * delegate through it using drv_fd as the driver-internal fd. */
     VFS_TYPE_DRIVER,
+    /* Synthetic intermediate directory: a path that is not itself a mount but is
+     * a strict ancestor of one (e.g. "/etc" when "/etc/config" is mounted). It
+     * has no backing driver; stat reports a directory and readdir enumerates the
+     * immediate child components of the mounts beneath it. */
+    VFS_TYPE_MOUNTDIR,
 } vfs_fd_type_t;
 
 typedef struct vfs_fd_t {
