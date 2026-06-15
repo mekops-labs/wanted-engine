@@ -16,3 +16,4 @@ wapps/*/*.o
 # NuttX sim scratch (staged hostfs root; test/nuttx-sim.sh). The nuttx +
 # nuttx-apps trees themselves are the third_party/ submodules.
 /build-nuttx/
+utils/measure_structs
