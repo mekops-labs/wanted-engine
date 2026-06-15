@@ -1,18 +1,24 @@
 set(sources
     vfs/vfs-nuttx.c
-    api/clock.c
+    api/clock-sleep.c
     api/random.c
-    api/mutex.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/clock.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/fs.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/registry-store.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/socket.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/wapps-image.c
     api/wapps.c
     api/memory.c
     api/registry.c
-    api/fs.c
-    api/socket.c
+    api/fs-volume.c
 )
 
 add_library(platform_nuttx STATIC
     ${sources}
 )
+
+target_compile_options(platform_nuttx PRIVATE ${WANTED_STRICT_WARNINGS})
 
 # Sim links the host pthread; HW gets threads from NuttX libc.
 target_link_libraries(platform_nuttx

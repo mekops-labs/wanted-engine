@@ -1,44 +1,63 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+/* Shared POSIX BSD sockets. TLS (secure sockets) is compiled in only when
+ * SECURE_SOCKETS is set (the Linux build with OpenSSL); other targets reject
+ * the secure socket types. */
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
-#include <resolv.h>
+#include <netinet/in.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <network.h>
+#include <debug_trace.h>
 #include <vfs-drivers.h>
 #include <wanted_malloc.h>
+#if SECURE_SOCKETS
+#include <network.h>
+#endif
 
 struct netCtx {
+#if SECURE_SOCKETS
     void *ssl;
     void *sslCtx;
     bool secure;
+#endif
     int socket;
 };
 
 void *PlatformNetOpen(int socket_type) {
     int sock;
     int type;
-    int ret;
 
     struct netCtx *netCtx;
 
     switch (socket_type) {
     case VFS_SKT_TCP:
-    case VFS_SKT_STCP:
         type = SOCK_STREAM;
         break;
     case VFS_SKT_UDP:
+        type = SOCK_DGRAM;
+        break;
+#if SECURE_SOCKETS
+    case VFS_SKT_STCP:
+        type = SOCK_STREAM;
+        break;
     case VFS_SKT_SUDP:
         type = SOCK_DGRAM;
         break;
+#else
+    case VFS_SKT_STCP:
+    case VFS_SKT_SUDP:
+        /* Secure sockets require TLS. */
+        DEBUG_TRACE("not implemented");
+        return NULL;
+#endif
     default:
         return NULL;
-        break;
     }
 
     if ((sock = socket(AF_INET, type, 0)) < 0) {
@@ -50,12 +69,14 @@ void *PlatformNetOpen(int socket_type) {
         close(sock);
         return NULL;
     }
-    bzero(netCtx, sizeof(struct netCtx));
+    memset(netCtx, 0, sizeof(struct netCtx));
 
     netCtx->socket = sock;
+#if SECURE_SOCKETS
     if (socket_type == VFS_SKT_STCP || socket_type == VFS_SKT_SUDP) {
         netCtx->secure = true;
     }
+#endif
 
     return netCtx;
 }
@@ -82,16 +103,17 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
         return -EINVAL;
     }
 
-    bzero(&addr, sizeof(addr));
+    memset(&addr, 0, sizeof(addr));
 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = *(long *)(host->h_addr);
+    memcpy(&addr.sin_addr.s_addr, host->h_addr, sizeof(addr.sin_addr.s_addr));
 
     if (connect(c->socket, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
         return -errno;
     }
 
+#if SECURE_SOCKETS
     /* Initialize secure connection */
     if (c->secure) {
         if ((c->sslCtx = TLSInitCtx()) == NULL) {
@@ -103,6 +125,7 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
             return -ECONNREFUSED;
         }
     }
+#endif
 
     return 0;
 }
@@ -112,6 +135,7 @@ int PlatformNetClose(struct netCtx *c) {
         return -EINVAL;
     }
 
+#if SECURE_SOCKETS
     if (c->secure) {
         TLSShutdown(c->ssl);
         TLSFree(c->ssl);
@@ -119,6 +143,7 @@ int PlatformNetClose(struct netCtx *c) {
         TLSFreeCtx(c->sslCtx);
         c->sslCtx = NULL;
     }
+#endif
 
     close(c->socket);
 
@@ -132,14 +157,16 @@ int PlatformNetRecv(struct netCtx *c, void *buf, size_t nbyte, int flags) {
         return -EINVAL;
     }
 
+#if SECURE_SOCKETS
     if (c->secure) {
         if ((ret = TLSRead(c->ssl, buf, nbyte)) < 0) {
             return -EIO;
         }
-    } else {
-        if ((ret = recv(c->socket, buf, nbyte, flags)) < 0) {
-            return -errno;
-        }
+        return ret;
+    }
+#endif
+    if ((ret = recv(c->socket, buf, nbyte, flags)) < 0) {
+        return -errno;
     }
     return ret;
 }
@@ -152,14 +179,16 @@ int PlatformNetSend(struct netCtx *c, const void *buf, size_t nbyte,
         return -EINVAL;
     }
 
+#if SECURE_SOCKETS
     if (c->secure) {
         if ((ret = TLSWrite(c->ssl, buf, nbyte)) < 0) {
             return -EIO;
         }
-    } else {
-        if ((ret = send(c->socket, buf, nbyte, flags)) < 0) {
-            return -errno;
-        }
+        return ret;
+    }
+#endif
+    if ((ret = send(c->socket, buf, nbyte, flags)) < 0) {
+        return -errno;
     }
     return ret;
 }
@@ -176,6 +205,7 @@ int PlatformNetAccept(struct netCtx *c) {
         return -errno;
     }
 
+#if SECURE_SOCKETS
     if (c->secure) {
         c->ssl = TLSOpenConnection(c->sslCtx, newFd);
         if (c->ssl == NULL) {
@@ -183,6 +213,7 @@ int PlatformNetAccept(struct netCtx *c) {
         }
         TLSAccept(c->ssl);
     }
+#endif
 
     return newFd;
 }
@@ -192,9 +223,11 @@ int PlatformNetShutdown(struct netCtx *c, int how) {
         return -EINVAL;
     }
 
+#if SECURE_SOCKETS
     if (c->secure) {
         TLSShutdown(c->ssl);
     }
+#endif
 
     if (shutdown(c->socket, how) != 0) {
         return -errno;

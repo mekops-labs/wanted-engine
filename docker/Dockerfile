@@ -1,7 +1,7 @@
 FROM debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.5.0"
+LABEL version="0.6.0"
 
 # Unversioned LLVM packages track the distro default (clang/lld/lldb 19 on
 # trixie). The host engine builds with gcc (build-essential) and this clang;
@@ -11,6 +11,7 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     && apt-get install -y --no-install-recommends \
     # Core build toolchain
     build-essential \
+    ccache \
     clang \
     cmake \
     cmake-curses-gui \
@@ -49,6 +50,14 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     gettext \
     libelf-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Route every host compile through ccache via the masquerade dir on PATH. The
+# package ships gcc/clang/g++ symlinks; add cc/c++ so the NuttX kbuild (which
+# invokes `cc`) is cached too. One shared cache then serves the cmake engine
+# builds and the NuttX sim build alike.
+RUN ln -sf ../../bin/ccache /usr/lib/ccache/cc \
+    && ln -sf ../../bin/ccache /usr/lib/ccache/c++
+ENV PATH="/usr/lib/ccache:${PATH}"
 
 # Wapp (WebAssembly) toolchain: the full wasi-sdk bundle ships its own clang
 # and lld plus the wasi-sysroot. wapps are built with /opt/wasi-sdk/bin/clang

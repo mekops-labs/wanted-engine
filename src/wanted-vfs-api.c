@@ -110,7 +110,7 @@ int WantedParseConfig(const char *buf, size_t bufLen) {
     return ParseConfig(buf, bufLen, &currentConfig);
 }
 
-const wantedConfig_t *WantedGetConfig() { return &currentConfig; }
+const wantedConfig_t *WantedGetConfig(void) { return &currentConfig; }
 
 int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
                         size_t bufLen) {
@@ -134,7 +134,7 @@ int WantedRegistryRemove(const reg_entry_t *entry) {
     return PlatformRegistryRemove(entry);
 }
 
-int WantedCloseRegistry() {
+int WantedCloseRegistry(void) {
     return PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
 }
 

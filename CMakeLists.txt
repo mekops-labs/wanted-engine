@@ -28,6 +28,9 @@ if(ENABLE_CODE_COVERAGE)
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
 endif()
 
+# Engine-only warning guard. The NuttX kbuild already compiles with these.
+set(WANTED_STRICT_WARNINGS -Werror=strict-prototypes -Werror=undef)
+
 # Build Wanted static library
 add_subdirectory(${CMAKE_SOURCE_DIR}/src)
 

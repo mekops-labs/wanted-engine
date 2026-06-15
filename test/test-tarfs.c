@@ -9,21 +9,7 @@
 #include <vfs-tarfs.h>
 #include <vfs.h>
 
-/* Minimal TAR header builder for in-memory fixture archives.
- * Fills only the fields our parser reads: name, size (11-digit octal NUL),
- * typeflag, and the ustar magic so the block doesn't look empty. */
-static void TarHeader(uint8_t hdr[512], const char *name, uint32_t size,
-                      char typeflag) {
-    memset(hdr, 0, 512);
-    strncpy((char *)hdr, name, 99);
-    for (int i = 10; i >= 0; i--) {
-        hdr[124 + i] = (uint8_t)('0' + (size & 7));
-        size >>= 3;
-    }
-    hdr[124 + 11] = '\0';
-    hdr[156] = (uint8_t)typeflag;
-    memcpy(hdr + 257, "ustar", 5);
-}
+#include "test-utils.h"
 
 static uint8_t singleLayer[512 * 4]; /* header + data + 2 zero blocks */
 

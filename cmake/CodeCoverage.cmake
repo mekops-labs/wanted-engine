@@ -153,8 +153,12 @@ FUNCTION(SETUP_TARGET_FOR_COVERAGE_COBERTURA _targetname _testrunner _outputname
 
 		# Running gcovr. Filter path must NOT be quoted here: CMake passes the
 		# argument verbatim, so embedded quotes become literal and match nothing.
-		COMMAND ${GCOVR_PATH} --exclude-unreachable-branches --print-summary --txt -r ${CMAKE_SOURCE_DIR} -f ${CMAKE_SOURCE_DIR}/src/
-		COMMAND ${GCOVR_PATH} --xml-pretty --exclude-unreachable-branches -r ${CMAKE_SOURCE_DIR} -f ${CMAKE_SOURCE_DIR}/src/ -o ${_outputname}.xml
+		# Search only the build tree (last arg) for .gcda — the report root and
+		# filter stay at the source. Scanning the whole source root makes gcovr
+		# trip over stray .gcda left in third_party/ by an out-of-tree build
+		# (e.g. the NuttX sim) on a reused CI workspace.
+		COMMAND ${GCOVR_PATH} --exclude-unreachable-branches --print-summary --txt -r ${CMAKE_SOURCE_DIR} -f ${CMAKE_SOURCE_DIR}/src/ ${CMAKE_BINARY_DIR}
+		COMMAND ${GCOVR_PATH} --xml-pretty --exclude-unreachable-branches -r ${CMAKE_SOURCE_DIR} -f ${CMAKE_SOURCE_DIR}/src/ -o ${_outputname}.xml ${CMAKE_BINARY_DIR}
 
 		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 		COMMENT "Running gcovr to produce Cobertura code coverage report."

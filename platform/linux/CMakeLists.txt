@@ -5,13 +5,17 @@ endif()
 
 set(sources
     vfs/vfs-linux.c
-    api/clock.c
-    api/fs.c
-    api/mutex.c
+    api/clock-sleep.c
+    api/fs-volume.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/clock.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/fs.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/registry-store.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/socket.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/wapps-image.c
     api/random.c
     api/registry.c
     api/wapps.c
-    api/socket.c
 )
 
 if (SECURE_SOCKETS)
@@ -25,6 +29,8 @@ endif ()
 add_library(platform_linux STATIC
     ${sources}
 )
+
+target_compile_options(platform_linux PRIVATE ${WANTED_STRICT_WARNINGS})
 
 target_link_libraries(platform_linux
     PRIVATE pthread

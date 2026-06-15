@@ -1,5 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#ifndef PLATFORM_H
+#define PLATFORM_H
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -52,7 +55,7 @@ int PlatformWappStop(const char *name);
  * terminal slot (EXITED/FAILURE) is releasable — a running or starting wapp
  * returns -EBUSY (stop it first); an unknown name returns -ENOENT. */
 int PlatformWappRelease(const char *name);
-void PlatformWappLoop();
+void PlatformWappLoop(void);
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total);
 
@@ -112,3 +115,5 @@ int PlatformNetSend(void *ctx, const void *buf, size_t nbyte, int flags);
 int PlatformNetAccept(void *ctx);
 int PlatformNetShutdown(void *ctx, int how);
 int PlatformNetFree(void *ctx);
+
+#endif /* PLATFORM_H */

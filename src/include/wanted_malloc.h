@@ -6,4 +6,4 @@
 
 void *WantedMalloc(size_t s);
 void WantedFree(void *ptr);
-size_t WantedGetAllocatedMem();
+size_t WantedGetAllocatedMem(void);

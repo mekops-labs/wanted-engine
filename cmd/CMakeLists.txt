@@ -1,5 +1,7 @@
 add_executable(${project}-cli ${CMAKE_CURRENT_SOURCE_DIR}/main.c)
 
+target_compile_options(${project}-cli PRIVATE ${WANTED_STRICT_WARNINGS})
+
 target_include_directories(${project}-cli
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include)
