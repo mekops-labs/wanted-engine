@@ -75,8 +75,18 @@ nuttx-shell: nuttx-build ## build the wsh sim and drop into the interactive wsh 
 shell: ## open an interactive shell in the build container
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" --entrypoint="" $(IMAGE) bash
 
-clean: ## remove the build directory
-	rm -rf $(CURDIR)/$(BUILD_DIR)
+clean: ## remove every build artifact (Linux + NuttX sim + wasm/wapps + submodule objects)
+	rm -rf $(CURDIR)/$(BUILD_DIR) $(CURDIR)/build-nuttx $(CURDIR)/registry
+	rm -f $(CURDIR)/utils/measure_structs
+	# Only wsh/selftest app.wasm are generated from wapps/ source; sheriff's is a
+	# committed blob, so never delete it.
+	rm -f $(CURDIR)/wasm/*.wasm* $(CURDIR)/wasm/supervisor/*/supervisor.tar \
+	      $(CURDIR)/wasm/supervisor/wsh/app.wasm \
+	      $(CURDIR)/wasm/supervisor/selftest/app.wasm
+	rm -f $(CURDIR)/wapps/*/*.wasm $(CURDIR)/wapps/*/*.wasm.h $(CURDIR)/wapps/*/*.o
+	# NuttX kernel objects + .config live in the submodule tree; an incremental
+	# rebuild over a stale tree silently runs old code, so distclean it too.
+	$(RUN) 'cd /src && ./test/nuttx-sim.sh clean'
 
 # docs-sync runs on the host, not in the build container: it only copies Markdown
 # (no toolchain needed) to the destination directory.

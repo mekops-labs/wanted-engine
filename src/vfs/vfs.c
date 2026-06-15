@@ -182,6 +182,33 @@ static int RouteMatch(vfs_ctx_t c, const char *path, vfs_fd_type_t *type,
     return 0;
 }
 
+/* True if `path` is a strict ancestor (at a component boundary) of some mount
+ * prefix without being a mount itself — e.g. "/etc" when "/etc/config" is
+ * mounted. Such a path has no backing driver but must still stat and list as a
+ * directory, since it appears as a synthetic entry in the parent's readdir. */
+static bool IsMountAncestor(vfs_ctx_t c, const char *path) {
+    size_t len = strlen(path);
+    for (uint8_t i = 0; i < c->mounts_cnt; i++) {
+        const char *pfx = c->mounts[i].prefix;
+        if (strncmp(pfx, path, len) == 0 && pfx[len] == '/' &&
+            pfx[len + 1] != '\0')
+            return true;
+    }
+    return false;
+}
+
+/* Claim a typed-FD slot for a synthetic mount directory at `path`. */
+static int OpenMountDir(vfs_ctx_t c, const char *path) {
+    int fd = FindFirstClosedFd(c);
+    if (fd < 0)
+        return fd;
+    c->fds[fd].type = VFS_TYPE_MOUNTDIR;
+    c->fds[fd].flags = VFS_O_RDONLY;
+    strncpy(c->fds[fd].path, path, VFS_FD_PATH_LEN - 1);
+    c->fds[fd].path[VFS_FD_PATH_LEN - 1] = '\0';
+    return fd;
+}
+
 static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     vfs_fd_type_t type;
     const vfs_driver_t *mount_drv;
@@ -225,13 +252,20 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     } else if (type == VFS_TYPE_PROC) {
         handle = ProcFs_Open(c, suffix, flags, &open_err);
     } else if (type == VFS_TYPE_TARFS) {
-        if (c->tarfs == NULL)
+        bool read_only = (flags & 03) == VFS_O_RDONLY &&
+                         !(flags & (VFS_O_CREAT | VFS_O_TRUNC));
+        if (c->tarfs == NULL) {
+            if (read_only && IsMountAncestor(c, path))
+                return OpenMountDir(c, path);
             return -ENOENT;
-        if ((flags & 03) != VFS_O_RDONLY ||
-            (flags & (VFS_O_CREAT | VFS_O_TRUNC))) {
-            return -EROFS;
         }
+        if (!read_only)
+            return -EROFS;
         handle = TarFs_Open(c->tarfs, path, flags);
+        /* No real TARFS entry, but the path is an ancestor of a mount: surface
+         * the synthetic intermediate directory rather than -ENOENT. */
+        if (handle == NULL && IsMountAncestor(c, path))
+            return OpenMountDir(c, path);
     } else {
         return -ENOTSUP;
     }
@@ -542,6 +576,10 @@ int VfsClose(vfs_ctx_t c, int fd) {
     case VFS_TYPE_TARFS:
         r = TarFs_Close(c->tarfs, c->fds[fd].internal_ctx);
         break;
+    case VFS_TYPE_MOUNTDIR:
+        /* Synthetic directory: no backing driver, just release the slot. */
+        c->fds[fd].type = VFS_TYPE_NONE;
+        return 0;
     case VFS_TYPE_DRIVER: {
         /* Close the driver-internal fd; the mount table still owns the driver
          * (VfsDestroy calls Destroy). */
@@ -647,6 +685,11 @@ int VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat) {
     case VFS_TYPE_PLATFORM:
     case VFS_TYPE_DRIVER:
         return TRY_DRV(c->fds[fd].driver, Stat, c->fds[fd].drv_fd, stat);
+    case VFS_TYPE_MOUNTDIR:
+        memset(stat, 0, sizeof(*stat));
+        stat->filetype = VFS_FILETYPE_DIRECTORY;
+        stat->nlink = 1;
+        return 0;
     default:
         return -EBADF;
     }
@@ -749,6 +792,65 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
  * so the spaces don't overlap. */
 #define MOUNT_PHASE_BIT (UINT64_C(1) << 63)
 
+/* Pack synthetic directory entries for the mounts that live immediately below
+ * `base` (an absolute path; "" with baselen 0 means root). For each such mount
+ * the first path component past `base` is emitted as a directory, deduplicating
+ * components shared by sibling mounts (e.g. "/etc/config" and "/etc/secrets"
+ * both surface a single "etc" under root). `*idx` is the mount index to resume
+ * from and is advanced as entries are consumed; `cookieBit` is OR'd into the
+ * stored cursor so callers can multiplex this phase with another (the root fd
+ * runs a TarFS phase first). Returns the bytes written into `mbuf`. */
+static size_t MountChildren(vfs_ctx_t c, const char *base, size_t baselen,
+                            uint8_t *mbuf, size_t mspace, uint64_t *idx,
+                            uint64_t cookieBit) {
+    size_t mused = 0;
+    uint64_t i = *idx;
+    for (; i < c->mounts_cnt; i++) {
+        const char *pfx = c->mounts[i].prefix;
+        if (strncmp(pfx, base, baselen) != 0 || pfx[baselen] != '/' ||
+            pfx[baselen + 1] == '\0')
+            continue;
+        const char *name = pfx + baselen + 1;
+        const char *slash = strchr(name, '/');
+        size_t namlen = slash ? (size_t)(slash - name) : strlen(name);
+        bool dup = false;
+        for (uint64_t j = 0; j < i; j++) {
+            const char *p2 = c->mounts[j].prefix;
+            if (strncmp(p2, base, baselen) != 0 || p2[baselen] != '/' ||
+                p2[baselen + 1] == '\0')
+                continue;
+            const char *n2 = p2 + baselen + 1;
+            const char *s2 = strchr(n2, '/');
+            size_t l2 = s2 ? (size_t)(s2 - n2) : strlen(n2);
+            if (l2 == namlen && strncmp(n2, name, namlen) == 0) {
+                dup = true;
+                break;
+            }
+        }
+        if (dup)
+            continue;
+        if (mused + sizeof(vfs_dirent_t) + namlen > mspace)
+            break;
+        /* A leaf component (no further path below) is the mount itself, so it
+         * reports the bound driver's filetype — e.g. a config-map mounted at a
+         * file path lists as a regular file. An intermediate component is a
+         * synthetic parent directory. Fixed namespaces have no driver. */
+        vfs_filetype_t ftype = VFS_FILETYPE_DIRECTORY;
+        if (slash == NULL && c->mounts[i].drv != NULL)
+            ftype = c->mounts[i].drv->filetype;
+        vfs_dirent_t dir = {0};
+        dir.d_ino = (uint64_t)(0x10000 + i);
+        dir.d_namlen = (uint32_t)namlen;
+        dir.d_type = ftype;
+        dir.d_next = cookieBit | (i + 1);
+        memcpy(mbuf + mused, &dir, sizeof(dir));
+        memcpy(mbuf + mused + sizeof(dir), name, namlen);
+        mused += sizeof(dir) + namlen;
+    }
+    *idx = i;
+    return mused;
+}
+
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
                size_t *bufUsed) {
     if (!CheckFd(c, fd))
@@ -800,51 +902,23 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
             *cookie = MOUNT_PHASE_BIT;
         }
 
-        /* Mount-table phase: append after any existing content. */
+        /* Mount-table phase: append after any existing content. Root lists the
+         * first component of every non-"/" mount (base "", baselen 0). */
         uint64_t idx = *cookie & ~MOUNT_PHASE_BIT;
-        uint8_t *mbuf = (uint8_t *)buf + *bufUsed;
-        size_t mspace = bufLen - *bufUsed;
-        size_t mused = 0;
-        for (; idx < c->mounts_cnt; idx++) {
-            const char *pfx = c->mounts[idx].prefix;
-            if (pfx[1] == '\0')
-                continue; /* skip "/" */
-            const char *name = pfx + 1;
-            /* Emit only the first path component, so a deep mount such as
-             * "/etc/config" surfaces at root as a synthetic "etc" directory. */
-            const char *slash = strchr(name, '/');
-            size_t namlen = slash ? (size_t)(slash - name) : strlen(name);
-            /* Dedup against earlier mounts contributing the same component
-             * (e.g. "/etc/config" and "/etc/secrets" both surface one "etc").
-             */
-            bool dup = false;
-            for (uint8_t j = 0; j < idx; j++) {
-                const char *p2 = c->mounts[j].prefix;
-                if (p2[1] == '\0')
-                    continue;
-                const char *n2 = p2 + 1;
-                const char *s2 = strchr(n2, '/');
-                size_t l2 = s2 ? (size_t)(s2 - n2) : strlen(n2);
-                if (l2 == namlen && strncmp(n2, name, namlen) == 0) {
-                    dup = true;
-                    break;
-                }
-            }
-            if (dup)
-                continue;
-            if (mused + sizeof(vfs_dirent_t) + namlen > mspace)
-                break;
-            vfs_dirent_t dir = {0};
-            dir.d_ino = (uint64_t)(0x10000 + idx);
-            dir.d_namlen = (uint32_t)namlen;
-            dir.d_type = VFS_FILETYPE_DIRECTORY;
-            dir.d_next = MOUNT_PHASE_BIT | (idx + 1);
-            memcpy(mbuf + mused, &dir, sizeof(dir));
-            memcpy(mbuf + mused + sizeof(dir), name, namlen);
-            mused += sizeof(dir) + namlen;
-        }
+        size_t mused = MountChildren(c, "", 0, (uint8_t *)buf + *bufUsed,
+                                     bufLen - *bufUsed, &idx, MOUNT_PHASE_BIT);
         *cookie = MOUNT_PHASE_BIT | idx;
         *bufUsed += mused;
+        return 0;
+    }
+    case VFS_TYPE_MOUNTDIR: {
+        /* Synthetic intermediate directory: list the next path component of
+         * every mount nested beneath this fd's path. */
+        const char *base = c->fds[fd].path;
+        uint64_t idx = *cookie;
+        *bufUsed = MountChildren(c, base, strlen(base), (uint8_t *)buf, bufLen,
+                                 &idx, 0);
+        *cookie = idx;
         return 0;
     }
     default:
