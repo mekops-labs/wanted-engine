@@ -1,7 +1,7 @@
 FROM debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.6.0"
+LABEL version="0.6.2"
 
 # Unversioned LLVM packages track the distro default (clang/lld/lldb 19 on
 # trixie). The host engine builds with gcc (build-essential) and this clang;
@@ -26,6 +26,8 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     # Static analysis and formatting
     clang-format \
     clang-tidy \
+    cppcheck \
+    shellcheck \
     # WebAssembly tooling
     wabt \
     # Coverage reporting
@@ -36,6 +38,7 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     git \
     jq \
     python-is-python3 \
+    python3-venv \
     xxd \
     # Container plumbing
     dumb-init \
@@ -59,6 +62,30 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
 RUN ln -sf ../../bin/ccache /usr/lib/ccache/cc \
     && ln -sf ../../bin/ccache /usr/lib/ccache/c++
 ENV PATH="/usr/lib/ccache:${PATH}"
+
+# semgrep (pattern-based source scan). The Debian environment is externally
+# managed and semgrep's deps collide with distro packages, so install it into a
+# dedicated venv and expose the entry point on PATH.
+RUN python3 -m venv /opt/semgrep \
+    && /opt/semgrep/bin/pip install --no-cache-dir semgrep \
+    && ln -s /opt/semgrep/bin/semgrep /usr/local/bin/semgrep
+
+# trivy (image/fs CVE + secret scan) and osv-scanner (vendored submodule CVEs)
+# are installed from upstream release artifacts for the build platform.
+ARG TRIVY_VER=0.71.1
+ARG OSV_SCANNER_VER=1.9.2
+ARG TARGETARCH=amd64
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) trivy_arch=64bit; osv_arch=amd64 ;; \
+      arm64) trivy_arch=ARM64; osv_arch=arm64 ;; \
+      *) echo "no scanner build for TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VER}/trivy_${TRIVY_VER}_Linux-${trivy_arch}.tar.gz" \
+        | tar xz -C /usr/local/bin trivy; \
+    curl -sSfL "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VER}/osv-scanner_linux_${osv_arch}" \
+        -o /usr/local/bin/osv-scanner; \
+    chmod +x /usr/local/bin/osv-scanner
 
 # Wapp (WebAssembly) toolchain: the full wasi-sdk bundle ships its own clang
 # and lld plus the wasi-sysroot. wapps are built with /opt/wasi-sdk/bin/clang
