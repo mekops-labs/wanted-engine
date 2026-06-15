@@ -4,7 +4,8 @@
  *
  * Mirrors cmd/main.c: load a JSON config from argv[1] when given, otherwise use
  * the compiled-in default, then run the engine via WantedStart. NuttX builds no
- * standalone cmd/ executable; this is registered as the "wanted" built-in app. */
+ * standalone cmd/ executable; this is registered as the "wanted" built-in app.
+ */
 
 #include <errno.h>
 #include <stdbool.h>

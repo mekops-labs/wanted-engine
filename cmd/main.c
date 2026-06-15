@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <errno.h>
+#include <platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <platform.h>
 #include <wanted.h>
 
 #define STR(...) #__VA_ARGS__

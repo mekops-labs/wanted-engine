@@ -16,18 +16,18 @@ extern "C" {
  * is what the wapp sees via fd_prestat_dir_name. */
 typedef struct wasi_preopen_t {
     char path[64];
-    int  fd;
+    int fd;
 } wasi_preopen_t;
 
 typedef struct wasi_ctx_t {
-    int32_t     exit_code;
-    uint32_t    argc;
+    int32_t exit_code;
+    uint32_t argc;
     const char **argv;
-    uint32_t    envc;
+    uint32_t envc;
     const char **envp;
-    vfs_ctx_t   vfsCtx;
+    vfs_ctx_t vfsCtx;
     wasi_preopen_t preopens[WASI_MAX_PREOPENS];
-    uint8_t        preopens_cnt;
+    uint8_t preopens_cnt;
 } wasi_ctx_t;
 
 void RegisterWASINatives(void);

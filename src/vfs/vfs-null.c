@@ -3,8 +3,7 @@
 #include <vfs-drivers.h>
 #include <vfs.h>
 
-#define ID                                                                     \
-    { 'N', 'u', 'l', 'l' }
+#define ID {'N', 'u', 'l', 'l'}
 
 static int _Destroy(struct vfs_driver_t *d);
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);

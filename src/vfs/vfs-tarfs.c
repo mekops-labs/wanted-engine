@@ -96,7 +96,8 @@ static bool IsZeroBlock(const uint8_t *b) {
 
 /* Binary search over the sorted prefix [0, n). Only valid when n entries have
  * already been sorted — i.e. called with the length from a prior layer, not
- * including entries currently being appended for the layer under construction. */
+ * including entries currently being appended for the layer under construction.
+ */
 static bool IndexContains(const tar_index_entry_t *idx, uint16_t n,
                           const char *path) {
     uint16_t lo = 0, hi = n;
@@ -114,8 +115,8 @@ static bool IndexContains(const tar_index_entry_t *idx, uint16_t n,
 }
 
 static int GrowIndex(vfs_tarfs_ctx_t *ctx) {
-    uint16_t new_cap = ctx->index_cap ? (uint16_t)(ctx->index_cap * 2)
-                                      : INDEX_INIT_CAP;
+    uint16_t new_cap =
+        ctx->index_cap ? (uint16_t)(ctx->index_cap * 2) : INDEX_INIT_CAP;
     tar_index_entry_t *next =
         WantedMalloc((size_t)new_cap * sizeof(tar_index_entry_t));
     if (!next)
@@ -132,8 +133,8 @@ static int GrowIndex(vfs_tarfs_ctx_t *ctx) {
 
 static int RememberOwned(vfs_tarfs_ctx_t *ctx, char *s) {
     if (ctx->owned_len == ctx->owned_cap) {
-        uint16_t nc = ctx->owned_cap ? (uint16_t)(ctx->owned_cap * 2)
-                                     : OWNED_INIT_CAP;
+        uint16_t nc =
+            ctx->owned_cap ? (uint16_t)(ctx->owned_cap * 2) : OWNED_INIT_CAP;
         char **next = WantedMalloc((size_t)nc * sizeof(char *));
         if (!next)
             return -ENOMEM;
@@ -152,8 +153,8 @@ static int RememberOwned(vfs_tarfs_ctx_t *ctx, char *s) {
  * into the pool. Returns NULL on allocation failure. */
 static const char *InternPath(vfs_tarfs_ctx_t *ctx, const char *s, size_t len) {
     if (ctx->path_pool_used + len + 1 > ctx->path_pool_cap) {
-        size_t new_cap = ctx->path_pool_cap ? ctx->path_pool_cap * 2
-                                            : PATH_POOL_INIT_CAP;
+        size_t new_cap =
+            ctx->path_pool_cap ? ctx->path_pool_cap * 2 : PATH_POOL_INIT_CAP;
         while (new_cap < ctx->path_pool_used + len + 1)
             new_cap *= 2;
         char *next = WantedMalloc(new_cap);
@@ -301,17 +302,22 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
             /* PAX local extended header: parse path= and size= keys. */
             const char *pax_path = NULL;
             size_t pax_path_len = 0;
-            ParsePaxData(buf + off + TAR_BLOCK_SIZE, size,
-                         &pax_path, &pax_path_len, &override_size);
+            ParsePaxData(buf + off + TAR_BLOCK_SIZE, size, &pax_path,
+                         &pax_path_len, &override_size);
             if (pax_path && pax_path_len > 0) {
                 /* Normalise leading "./" or "/" before interning. */
-                if (pax_path_len >= 2 && pax_path[0] == '.' && pax_path[1] == '/')
-                    { pax_path += 2; pax_path_len -= 2; }
-                else if (pax_path_len >= 1 && pax_path[0] == '/')
-                    { pax_path += 1; pax_path_len -= 1; }
+                if (pax_path_len >= 2 && pax_path[0] == '.' &&
+                    pax_path[1] == '/') {
+                    pax_path += 2;
+                    pax_path_len -= 2;
+                } else if (pax_path_len >= 1 && pax_path[0] == '/') {
+                    pax_path += 1;
+                    pax_path_len -= 1;
+                }
                 if (pax_path_len > 0) {
                     const char *p = InternPath(ctx, pax_path, pax_path_len);
-                    if (!p) return -ENOMEM;
+                    if (!p)
+                        return -ENOMEM;
                     override_path = p;
                 }
             }
@@ -328,10 +334,13 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
             if (size > 0 && off + TAR_BLOCK_SIZE < len) {
                 const char *p = (const char *)(buf + off + TAR_BLOCK_SIZE);
                 size_t pl = strnlen(p, size);
-                if (pl >= 2 && p[0] == '.' && p[1] == '/')
-                    { p += 2; pl -= 2; }
-                else if (pl >= 1 && p[0] == '/')
-                    { p += 1; pl -= 1; }
+                if (pl >= 2 && p[0] == '.' && p[1] == '/') {
+                    p += 2;
+                    pl -= 2;
+                } else if (pl >= 1 && p[0] == '/') {
+                    p += 1;
+                    pl -= 1;
+                }
                 if (pl > 0)
                     override_path = p;
             }
@@ -378,7 +387,8 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
                 memcpy(concat + prefix_len + 1, name, name_field_len);
                 concat[total] = '\0';
                 const char *p = InternPath(ctx, concat, total);
-                if (!p) return -ENOMEM;
+                if (!p)
+                    return -ENOMEM;
                 eff_path = p;
             } else {
                 eff_path = name;
@@ -402,8 +412,7 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
         }
 
         const char *base = Basename(eff_path);
-        bool is_whiteout =
-            strncmp(base, ".wh.", 4) == 0 && base[4] != '\0';
+        bool is_whiteout = strncmp(base, ".wh.", 4) == 0 && base[4] != '\0';
 
         const char *entry_path;
         uint16_t entry_layer;
@@ -561,8 +570,7 @@ static uint16_t LowerBound(const tar_index_entry_t *idx, uint16_t n,
 static const tar_index_entry_t *FindExact(const vfs_tarfs_ctx_t *ctx,
                                           const char *path) {
     uint16_t pos = LowerBound(ctx->index, ctx->index_len, path);
-    if (pos < ctx->index_len &&
-        strcmp(ctx->index[pos].path_ptr, path) == 0) {
+    if (pos < ctx->index_len && strcmp(ctx->index[pos].path_ptr, path) == 0) {
         return &ctx->index[pos];
     }
     return NULL;
@@ -780,8 +788,7 @@ int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
 
         const char *slash = strchr(suffix, '/');
         bool is_subdir = (slash != NULL);
-        size_t namlen =
-            is_subdir ? (size_t)(slash - suffix) : strlen(suffix);
+        size_t namlen = is_subdir ? (size_t)(slash - suffix) : strlen(suffix);
 
         if (!is_subdir && e->layer_idx == TARFS_WHITEOUT) {
             i++;

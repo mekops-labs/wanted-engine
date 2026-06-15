@@ -19,8 +19,7 @@
 #include <vfs.h>
 #include <wanted_malloc.h>
 
-#define ID                                                                     \
-    { 'L', 'o', 'g', 's' }
+#define ID {'L', 'o', 'g', 's'}
 
 struct vfs_driver_ctx_t {
     char name[WAPP_MAX_NAME_LEN];
@@ -77,23 +76,30 @@ static int _Destroy(struct vfs_driver_t *d) {
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
-    (void)d; (void)path; (void)flags;
+    (void)d;
+    (void)path;
+    (void)flags;
     return 0;
 }
 
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
-    (void)d; (void)fd; (void)path; (void)flags;
+    (void)d;
+    (void)fd;
+    (void)path;
+    (void)flags;
     return 0;
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
-    (void)d; (void)fd;
+    (void)d;
+    (void)fd;
     return 0;
 }
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
-    (void)d; (void)fd;
+    (void)d;
+    (void)fd;
     memset(stat, 0, sizeof(*stat));
     stat->dev = *(const uint32_t *)id;
     stat->filetype = VFS_FILETYPE_CHARACTER_DEVICE;
@@ -101,7 +107,10 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 }
 
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
-    (void)d; (void)fd; (void)buf; (void)nbyte;
+    (void)d;
+    (void)fd;
+    (void)buf;
+    (void)nbyte;
     return 0; /* EOF — the supervisor reads the log via the control plane */
 }
 

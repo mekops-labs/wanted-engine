@@ -13,8 +13,7 @@
 
 #include <platform.h>
 
-#define ID                                                                     \
-    { 'W', 'r', 'e', 'g' }
+#define ID {'W', 'r', 'e', 'g'}
 
 // TODO: make configurable
 #define MAX_REG_ENTRIES 50
@@ -95,7 +94,8 @@ static bool ValidInstallRef(const char *ref) {
     if (strchr(colon + 1, (int)VERSION_SEPARATOR) != NULL)
         return false; /* a tag carries no separator */
     return ValidRefComponent(ref, (size_t)(colon - ref), WAPP_MAX_NAME_LEN) &&
-           ValidRefComponent(colon + 1, strlen(colon + 1), WAPP_MAX_VERSION_LEN);
+           ValidRefComponent(colon + 1, strlen(colon + 1),
+                             WAPP_MAX_VERSION_LEN);
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {

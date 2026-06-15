@@ -26,17 +26,21 @@ struct vfs_driver_ctx_t {
 };
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
-    (void)d; (void)path; (void)flags;
+    (void)d;
+    (void)path;
+    (void)flags;
     return 0;
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
-    (void)d; (void)fd;
+    (void)d;
+    (void)fd;
     return 0;
 }
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
-    (void)d; (void)fd;
+    (void)d;
+    (void)fd;
     if (NULL == stat)
         return -EINVAL;
     memset(stat, 0, sizeof(*stat));
@@ -74,8 +78,8 @@ vfs_driver_t *VfsStdioAliasInit(const vfs_driver_t *target, int target_fd) {
         return NULL;
     memset(driver, 0, sizeof(*driver));
 
-    driver->ctx =
-        (struct vfs_driver_ctx_t *)WantedMalloc(sizeof(struct vfs_driver_ctx_t));
+    driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(
+        sizeof(struct vfs_driver_ctx_t));
     if (NULL == driver->ctx) {
         WantedFree(driver);
         return NULL;

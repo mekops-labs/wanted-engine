@@ -178,8 +178,9 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
     (void)d;
     /* The console stream slots borrow the engine's native stdio (fd 0/1/2). The
      * VFS does not own those — they belong to the process and must survive a
-     * supervisor teardown so the respawned supervisor still has a console. Files
-     * this driver opens always get fd >= 3, so this only spares borrowed stdio. */
+     * supervisor teardown so the respawned supervisor still has a console.
+     * Files this driver opens always get fd >= 3, so this only spares borrowed
+     * stdio. */
     if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO)
         return 0;
     int ret = close(fd);

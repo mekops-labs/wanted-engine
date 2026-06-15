@@ -7,15 +7,15 @@
 
 /* wanted includes */
 #include <platform.h>
-#include <vfs.h>
 #include <vfs-drivers.h>
+#include <vfs.h>
 #include <wanted_malloc.h>
 #include <wasi.h>
 
 #include "wasi_types.h"
 
 typedef struct wasi_iovec_t {
-    uint32_t buf;     /* wasm linear-memory offset */
+    uint32_t buf; /* wasm linear-memory offset */
     uint32_t buf_len;
 } wasi_iovec_t;
 
@@ -88,14 +88,14 @@ static inline wasi_ctx_t *get_ctx(wasm_exec_env_t e) {
  * WASI API implementation
  */
 
-static int32_t wasi_args_get(wasm_exec_env_t exec_env,
-                             int32_t argv_app, int32_t argv_buf_app) {
+static int32_t wasi_args_get(wasm_exec_env_t exec_env, int32_t argv_app,
+                             int32_t argv_buf_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
 
-    uint32_t *argv = (uint32_t *)vaddr(exec_env, argv_app,
-                                       ctx->argc * sizeof(uint32_t));
+    uint32_t *argv =
+        (uint32_t *)vaddr(exec_env, argv_app, ctx->argc * sizeof(uint32_t));
     if (!argv && ctx->argc > 0)
         return __WASI_ERRNO_FAULT;
 
@@ -120,8 +120,8 @@ static int32_t wasi_args_get(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_args_sizes_get(wasm_exec_env_t exec_env,
-                                   int32_t argc_app, int32_t argv_buf_size_app) {
+static int32_t wasi_args_sizes_get(wasm_exec_env_t exec_env, int32_t argc_app,
+                                   int32_t argv_buf_size_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -141,14 +141,14 @@ static int32_t wasi_args_sizes_get(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_environ_get(wasm_exec_env_t exec_env,
-                                int32_t env_app, int32_t env_buf_app) {
+static int32_t wasi_environ_get(wasm_exec_env_t exec_env, int32_t env_app,
+                                int32_t env_buf_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
 
-    uint32_t *env = (uint32_t *)vaddr(exec_env, env_app,
-                                      ctx->envc * sizeof(uint32_t));
+    uint32_t *env =
+        (uint32_t *)vaddr(exec_env, env_app, ctx->envc * sizeof(uint32_t));
     if (!env && ctx->envc > 0)
         return __WASI_ERRNO_FAULT;
 
@@ -207,8 +207,8 @@ static wasi_preopen_t *resolve_preopen(wasi_ctx_t *ctx, int fd) {
             return p;
         if (p->fd == -1) {
             /* Lazy entry — bind now. */
-            int host_fd = VfsOpen(ctx->vfsCtx, p->path,
-                                  VFS_O_RDONLY | VFS_O_DIRECTORY);
+            int host_fd =
+                VfsOpen(ctx->vfsCtx, p->path, VFS_O_RDONLY | VFS_O_DIRECTORY);
             if (host_fd < 0)
                 continue;
             p->fd = host_fd;
@@ -219,9 +219,8 @@ static wasi_preopen_t *resolve_preopen(wasi_ctx_t *ctx, int fd) {
     return NULL;
 }
 
-static int32_t wasi_fd_prestat_dir_name(wasm_exec_env_t exec_env,
-                                        int32_t fd, int32_t path_app,
-                                        int32_t path_len) {
+static int32_t wasi_fd_prestat_dir_name(wasm_exec_env_t exec_env, int32_t fd,
+                                        int32_t path_app, int32_t path_len) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -239,8 +238,8 @@ static int32_t wasi_fd_prestat_dir_name(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_fd_prestat_get(wasm_exec_env_t exec_env,
-                                   int32_t fd, int32_t buf_app) {
+static int32_t wasi_fd_prestat_get(wasm_exec_env_t exec_env, int32_t fd,
+                                   int32_t buf_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -264,8 +263,8 @@ static int32_t wasi_fd_prestat_get(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_fd_fdstat_get(wasm_exec_env_t exec_env,
-                                  int32_t fd, int32_t fdstat_app) {
+static int32_t wasi_fd_fdstat_get(wasm_exec_env_t exec_env, int32_t fd,
+                                  int32_t fdstat_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -293,16 +292,18 @@ static int32_t wasi_fd_fdstat_get(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_fd_fdstat_set_flags(wasm_exec_env_t exec_env,
-                                        int32_t fd, int32_t flags) {
-    (void)exec_env; (void)fd; (void)flags;
+static int32_t wasi_fd_fdstat_set_flags(wasm_exec_env_t exec_env, int32_t fd,
+                                        int32_t flags) {
+    (void)exec_env;
+    (void)fd;
+    (void)flags;
     return __WASI_ERRNO_SUCCESS;
 }
 
 /* WASI unstable maps whence values 0/1/2 to CUR/END/SET (legacy ABI). */
-static int32_t wasi_unstable_fd_seek(wasm_exec_env_t exec_env,
-                                     int32_t fd, int64_t offset,
-                                     int32_t wasi_whence, int32_t result_app) {
+static int32_t wasi_unstable_fd_seek(wasm_exec_env_t exec_env, int32_t fd,
+                                     int64_t offset, int32_t wasi_whence,
+                                     int32_t result_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -314,10 +315,17 @@ static int32_t wasi_unstable_fd_seek(wasm_exec_env_t exec_env,
 
     int whence;
     switch (wasi_whence) {
-    case 0: whence = VFS_SEEK_CUR; break;
-    case 1: whence = VFS_SEEK_END; break;
-    case 2: whence = VFS_SEEK_SET; break;
-    default: return __WASI_ERRNO_INVAL;
+    case 0:
+        whence = VFS_SEEK_CUR;
+        break;
+    case 1:
+        whence = VFS_SEEK_END;
+        break;
+    case 2:
+        whence = VFS_SEEK_SET;
+        break;
+    default:
+        return __WASI_ERRNO_INVAL;
     }
 
     long pos;
@@ -329,9 +337,9 @@ static int32_t wasi_unstable_fd_seek(wasm_exec_env_t exec_env,
 }
 
 /* WASI snapshot_preview1 maps whence 0/1/2 to SET/CUR/END. */
-static int32_t wasi_preview1_fd_seek(wasm_exec_env_t exec_env,
-                                     int32_t fd, int64_t offset,
-                                     int32_t wasi_whence, int32_t result_app) {
+static int32_t wasi_preview1_fd_seek(wasm_exec_env_t exec_env, int32_t fd,
+                                     int64_t offset, int32_t wasi_whence,
+                                     int32_t result_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -343,10 +351,17 @@ static int32_t wasi_preview1_fd_seek(wasm_exec_env_t exec_env,
 
     int whence;
     switch (wasi_whence) {
-    case 0: whence = VFS_SEEK_SET; break;
-    case 1: whence = VFS_SEEK_CUR; break;
-    case 2: whence = VFS_SEEK_END; break;
-    default: return __WASI_ERRNO_INVAL;
+    case 0:
+        whence = VFS_SEEK_SET;
+        break;
+    case 1:
+        whence = VFS_SEEK_CUR;
+        break;
+    case 2:
+        whence = VFS_SEEK_END;
+        break;
+    default:
+        return __WASI_ERRNO_INVAL;
     }
 
     long pos;
@@ -359,9 +374,9 @@ static int32_t wasi_preview1_fd_seek(wasm_exec_env_t exec_env,
 
 static void write_filestat(uint8_t *buf, const vfs_stat_t *statbuf) {
     memset(buf, 0, 64);
-    *(uint64_t *)(buf +  0) = statbuf->dev;
-    *(uint64_t *)(buf +  8) = statbuf->ino;
-    *(uint8_t  *)(buf + 16) = statbuf->filetype;
+    *(uint64_t *)(buf + 0) = statbuf->dev;
+    *(uint64_t *)(buf + 8) = statbuf->ino;
+    *(uint8_t *)(buf + 16) = statbuf->filetype;
     *(uint64_t *)(buf + 24) = statbuf->nlink;
     *(uint64_t *)(buf + 32) = statbuf->size;
     *(uint64_t *)(buf + 40) = statbuf->atim;
@@ -369,8 +384,8 @@ static void write_filestat(uint8_t *buf, const vfs_stat_t *statbuf) {
     *(uint64_t *)(buf + 56) = statbuf->ctim;
 }
 
-static int32_t wasi_fd_filestat_get(wasm_exec_env_t exec_env,
-                                    int32_t fd, int32_t buf_app) {
+static int32_t wasi_fd_filestat_get(wasm_exec_env_t exec_env, int32_t fd,
+                                    int32_t buf_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -388,10 +403,9 @@ static int32_t wasi_fd_filestat_get(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_path_filestat_get(wasm_exec_env_t exec_env,
-                                      int32_t fd, int32_t flags,
-                                      int32_t path_app, int32_t path_len,
-                                      int32_t buf_app) {
+static int32_t wasi_path_filestat_get(wasm_exec_env_t exec_env, int32_t fd,
+                                      int32_t flags, int32_t path_app,
+                                      int32_t path_len, int32_t buf_app) {
     (void)flags;
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
@@ -413,8 +427,8 @@ static int32_t wasi_path_filestat_get(wasm_exec_env_t exec_env,
     host_path[path_len] = '\0';
 
     const char *stat_path = (path_len == 0) ? "." : host_path;
-    int vfd = VfsOpenAt(ctx->vfsCtx, fd, stat_path,
-                        VFS_O_RDONLY | VFS_O_DIRECTORY);
+    int vfd =
+        VfsOpenAt(ctx->vfsCtx, fd, stat_path, VFS_O_RDONLY | VFS_O_DIRECTORY);
     if (vfd < 0)
         vfd = VfsOpenAt(ctx->vfsCtx, fd, stat_path, VFS_O_RDONLY);
     if (vfd < 0)
@@ -430,15 +444,14 @@ static int32_t wasi_path_filestat_get(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_path_open(wasm_exec_env_t exec_env,
-                              int32_t dirfd, int32_t dirflags,
-                              int32_t path_app, int32_t path_len,
-                              int32_t oflags,
+static int32_t wasi_path_open(wasm_exec_env_t exec_env, int32_t dirfd,
+                              int32_t dirflags, int32_t path_app,
+                              int32_t path_len, int32_t oflags,
                               int64_t fs_rights_base,
-                              int64_t fs_rights_inheriting,
-                              int32_t fs_flags,
+                              int64_t fs_rights_inheriting, int32_t fs_flags,
                               int32_t fd_app) {
-    (void)dirflags; (void)fs_rights_inheriting;
+    (void)dirflags;
+    (void)fs_rights_inheriting;
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -486,9 +499,8 @@ static int32_t wasi_path_open(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_path_unlink_file(wasm_exec_env_t exec_env,
-                                     int32_t fd, int32_t path_app,
-                                     int32_t path_len) {
+static int32_t wasi_path_unlink_file(wasm_exec_env_t exec_env, int32_t fd,
+                                     int32_t path_app, int32_t path_len) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -511,17 +523,16 @@ static int32_t wasi_path_unlink_file(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_path_rename(wasm_exec_env_t exec_env,
-                                int32_t old_fd,
+static int32_t wasi_path_rename(wasm_exec_env_t exec_env, int32_t old_fd,
                                 int32_t old_path_app, int32_t old_path_len,
-                                int32_t new_fd,
-                                int32_t new_path_app, int32_t new_path_len) {
+                                int32_t new_fd, int32_t new_path_app,
+                                int32_t new_path_len) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
 
-    if (old_path_len < 0 || old_path_len >= 512 ||
-        new_path_len < 0 || new_path_len >= 512)
+    if (old_path_len < 0 || old_path_len >= 512 || new_path_len < 0 ||
+        new_path_len >= 512)
         return __WASI_ERRNO_INVAL;
 
     char *op = vaddr(exec_env, old_path_app, (uint32_t)old_path_len);
@@ -544,9 +555,8 @@ static int32_t wasi_path_rename(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_path_create_directory(wasm_exec_env_t exec_env,
-                                          int32_t fd, int32_t path_app,
-                                          int32_t path_len) {
+static int32_t wasi_path_create_directory(wasm_exec_env_t exec_env, int32_t fd,
+                                          int32_t path_app, int32_t path_len) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -569,9 +579,9 @@ static int32_t wasi_path_create_directory(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_fd_read(wasm_exec_env_t exec_env,
-                            int32_t fd, int32_t iovs_app,
-                            int32_t iovs_len, int32_t nread_app) {
+static int32_t wasi_fd_read(wasm_exec_env_t exec_env, int32_t fd,
+                            int32_t iovs_app, int32_t iovs_len,
+                            int32_t nread_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -608,9 +618,9 @@ static int32_t wasi_fd_read(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_fd_write(wasm_exec_env_t exec_env,
-                             int32_t fd, int32_t iovs_app,
-                             int32_t iovs_len, int32_t nwritten_app) {
+static int32_t wasi_fd_write(wasm_exec_env_t exec_env, int32_t fd,
+                             int32_t iovs_app, int32_t iovs_len,
+                             int32_t nwritten_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -648,9 +658,8 @@ static int32_t wasi_fd_write(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_fd_readdir(wasm_exec_env_t exec_env,
-                               int32_t fd, int32_t buf_app,
-                               int32_t buf_len, int64_t cookie,
+static int32_t wasi_fd_readdir(wasm_exec_env_t exec_env, int32_t fd,
+                               int32_t buf_app, int32_t buf_len, int64_t cookie,
                                int32_t bufused_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
@@ -682,12 +691,13 @@ static int32_t wasi_fd_close(wasm_exec_env_t exec_env, int32_t fd) {
 }
 
 static int32_t wasi_fd_datasync(wasm_exec_env_t exec_env, int32_t fd) {
-    (void)exec_env; (void)fd;
+    (void)exec_env;
+    (void)fd;
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_random_get(wasm_exec_env_t exec_env,
-                               int32_t buf_app, int32_t buf_len) {
+static int32_t wasi_random_get(wasm_exec_env_t exec_env, int32_t buf_app,
+                               int32_t buf_len) {
     uint8_t *buf = vaddr(exec_env, buf_app, (uint32_t)buf_len);
     if (!buf)
         return __WASI_ERRNO_FAULT;
@@ -703,8 +713,8 @@ static int32_t wasi_random_get(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_clock_res_get(wasm_exec_env_t exec_env,
-                                  int32_t wasi_clk_id, int32_t resolution_app) {
+static int32_t wasi_clock_res_get(wasm_exec_env_t exec_env, int32_t wasi_clk_id,
+                                  int32_t resolution_app) {
     __wasi_timestamp_t *resolution =
         vaddr(exec_env, resolution_app, sizeof(__wasi_timestamp_t));
     if (!resolution)
@@ -737,15 +747,14 @@ static int32_t wasi_clock_time_get(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_poll_oneoff(wasm_exec_env_t exec_env,
-                                int32_t in_app, int32_t out_app,
-                                int32_t nsubscriptions, int32_t nevents_app) {
+static int32_t wasi_poll_oneoff(wasm_exec_env_t exec_env, int32_t in_app,
+                                int32_t out_app, int32_t nsubscriptions,
+                                int32_t nevents_app) {
     const __wasi_subscription_t *in =
         vaddr(exec_env, in_app,
               (uint32_t)nsubscriptions * sizeof(__wasi_subscription_t));
-    uint8_t *out =
-        vaddr(exec_env, out_app,
-              (uint32_t)nsubscriptions * sizeof(__wasi_event_t));
+    uint8_t *out = vaddr(exec_env, out_app,
+                         (uint32_t)nsubscriptions * sizeof(__wasi_event_t));
     __wasi_size_t *nevents =
         vaddr(exec_env, nevents_app, sizeof(__wasi_size_t));
     if (!in || !out || !nevents)
@@ -773,7 +782,7 @@ static int32_t wasi_poll_oneoff(wasm_exec_env_t exec_env,
     memset(out, 0, sizeof(__wasi_event_t));
     *(uint64_t *)(out + 0) = in->userdata;
     *(uint16_t *)(out + 8) = __WASI_ERRNO_SUCCESS;
-    *(uint8_t  *)(out + 10) = __WASI_EVENTTYPE_CLOCK;
+    *(uint8_t *)(out + 10) = __WASI_EVENTTYPE_CLOCK;
     *nevents = 1;
     return __WASI_ERRNO_SUCCESS;
 }
@@ -786,8 +795,8 @@ static void wasi_proc_exit(wasm_exec_env_t exec_env, int32_t code) {
     wasm_runtime_set_exception(inst, "proc_exit");
 }
 
-static int32_t wasi_sock_accept(wasm_exec_env_t exec_env,
-                                int32_t fd, int32_t flags, int32_t fd_new_app) {
+static int32_t wasi_sock_accept(wasm_exec_env_t exec_env, int32_t fd,
+                                int32_t flags, int32_t fd_new_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -805,10 +814,10 @@ static int32_t wasi_sock_accept(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_sock_recv(wasm_exec_env_t exec_env,
-                              int32_t fd, int32_t ri_data_app,
-                              int32_t ri_data_len, int32_t ri_flags,
-                              int32_t size_app, int32_t ro_flags_app) {
+static int32_t wasi_sock_recv(wasm_exec_env_t exec_env, int32_t fd,
+                              int32_t ri_data_app, int32_t ri_data_len,
+                              int32_t ri_flags, int32_t size_app,
+                              int32_t ro_flags_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -816,9 +825,8 @@ static int32_t wasi_sock_recv(wasm_exec_env_t exec_env,
     if (ri_data_len < 0)
         return __WASI_ERRNO_INVAL;
 
-    wasi_iovec_t *iovs =
-        vaddr(exec_env, ri_data_app,
-              (uint32_t)ri_data_len * sizeof(wasi_iovec_t));
+    wasi_iovec_t *iovs = vaddr(exec_env, ri_data_app,
+                               (uint32_t)ri_data_len * sizeof(wasi_iovec_t));
     __wasi_size_t *size = vaddr(exec_env, size_app, sizeof(__wasi_size_t));
     __wasi_roflags_t *ro_flags =
         vaddr(exec_env, ro_flags_app, sizeof(__wasi_roflags_t));
@@ -851,10 +859,9 @@ static int32_t wasi_sock_recv(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_sock_send(wasm_exec_env_t exec_env,
-                              int32_t fd, int32_t si_data_app,
-                              int32_t si_data_len, int32_t si_flags,
-                              int32_t size_app) {
+static int32_t wasi_sock_send(wasm_exec_env_t exec_env, int32_t fd,
+                              int32_t si_data_app, int32_t si_data_len,
+                              int32_t si_flags, int32_t size_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -862,9 +869,8 @@ static int32_t wasi_sock_send(wasm_exec_env_t exec_env,
     if (si_data_len < 0)
         return __WASI_ERRNO_INVAL;
 
-    wasi_iovec_t *iovs =
-        vaddr(exec_env, si_data_app,
-              (uint32_t)si_data_len * sizeof(wasi_iovec_t));
+    wasi_iovec_t *iovs = vaddr(exec_env, si_data_app,
+                               (uint32_t)si_data_len * sizeof(wasi_iovec_t));
     __wasi_size_t *size = vaddr(exec_env, size_app, sizeof(__wasi_size_t));
     if (!size)
         return __WASI_ERRNO_FAULT;
@@ -893,8 +899,8 @@ static int32_t wasi_sock_send(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-static int32_t wasi_sock_shutdown(wasm_exec_env_t exec_env,
-                                  int32_t fd, int32_t how) {
+static int32_t wasi_sock_shutdown(wasm_exec_env_t exec_env, int32_t fd,
+                                  int32_t how) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
@@ -910,48 +916,48 @@ static int32_t wasi_sock_shutdown(wasm_exec_env_t exec_env,
 /* fd_seek differs between unstable (CUR/END/SET) and preview1 (SET/CUR/END).
  * All other symbols are identical between the two namespaces. */
 #define SHARED_NATIVES                                                         \
-    { "args_get",            wasi_args_get,            "(ii)i",    NULL },     \
-    { "args_sizes_get",      wasi_args_sizes_get,      "(ii)i",    NULL },     \
-    { "environ_get",         wasi_environ_get,         "(ii)i",    NULL },     \
-    { "environ_sizes_get",   wasi_environ_sizes_get,   "(ii)i",    NULL },     \
-    { "fd_prestat_get",      wasi_fd_prestat_get,      "(ii)i",    NULL },     \
-    { "fd_prestat_dir_name", wasi_fd_prestat_dir_name, "(iii)i",   NULL },     \
-    { "fd_fdstat_get",       wasi_fd_fdstat_get,       "(ii)i",    NULL },     \
-    { "fd_fdstat_set_flags", wasi_fd_fdstat_set_flags, "(ii)i",    NULL },     \
-    { "fd_filestat_get",     wasi_fd_filestat_get,     "(ii)i",    NULL },     \
-    { "path_filestat_get",   wasi_path_filestat_get,   "(iiiii)i", NULL },     \
-    { "path_open",           wasi_path_open,           "(iiiiiIIii)i", NULL }, \
-    { "path_unlink_file",    wasi_path_unlink_file,    "(iii)i",   NULL },     \
-    { "path_rename",         wasi_path_rename,         "(iiiiii)i", NULL },    \
-    { "path_create_directory", wasi_path_create_directory, "(iii)i", NULL },   \
-    { "fd_read",             wasi_fd_read,             "(iiii)i",  NULL },     \
-    { "fd_write",            wasi_fd_write,            "(iiii)i",  NULL },     \
-    { "fd_readdir",          wasi_fd_readdir,          "(iiiIi)i", NULL },     \
-    { "fd_close",            wasi_fd_close,            "(i)i",     NULL },     \
-    { "fd_datasync",         wasi_fd_datasync,         "(i)i",     NULL },     \
-    { "random_get",          wasi_random_get,          "(ii)i",    NULL },     \
-    { "clock_res_get",       wasi_clock_res_get,       "(ii)i",    NULL },     \
-    { "clock_time_get",      wasi_clock_time_get,      "(iIi)i",   NULL },     \
-    { "poll_oneoff",         wasi_poll_oneoff,         "(iiii)i",  NULL },     \
-    { "proc_exit",           wasi_proc_exit,           "(i)",      NULL },     \
-    { "sock_accept",         wasi_sock_accept,         "(iii)i",   NULL },     \
-    { "sock_recv",           wasi_sock_recv,           "(iiiiii)i", NULL },    \
-    { "sock_send",           wasi_sock_send,           "(iiiii)i", NULL },     \
-    { "sock_shutdown",       wasi_sock_shutdown,       "(ii)i",    NULL }
+    {"args_get", wasi_args_get, "(ii)i", NULL},                                \
+        {"args_sizes_get", wasi_args_sizes_get, "(ii)i", NULL},                \
+        {"environ_get", wasi_environ_get, "(ii)i", NULL},                      \
+        {"environ_sizes_get", wasi_environ_sizes_get, "(ii)i", NULL},          \
+        {"fd_prestat_get", wasi_fd_prestat_get, "(ii)i", NULL},                \
+        {"fd_prestat_dir_name", wasi_fd_prestat_dir_name, "(iii)i", NULL},     \
+        {"fd_fdstat_get", wasi_fd_fdstat_get, "(ii)i", NULL},                  \
+        {"fd_fdstat_set_flags", wasi_fd_fdstat_set_flags, "(ii)i", NULL},      \
+        {"fd_filestat_get", wasi_fd_filestat_get, "(ii)i", NULL},              \
+        {"path_filestat_get", wasi_path_filestat_get, "(iiiii)i", NULL},       \
+        {"path_open", wasi_path_open, "(iiiiiIIii)i", NULL},                   \
+        {"path_unlink_file", wasi_path_unlink_file, "(iii)i", NULL},           \
+        {"path_rename", wasi_path_rename, "(iiiiii)i", NULL},                  \
+        {"path_create_directory", wasi_path_create_directory, "(iii)i", NULL}, \
+        {"fd_read", wasi_fd_read, "(iiii)i", NULL},                            \
+        {"fd_write", wasi_fd_write, "(iiii)i", NULL},                          \
+        {"fd_readdir", wasi_fd_readdir, "(iiiIi)i", NULL},                     \
+        {"fd_close", wasi_fd_close, "(i)i", NULL},                             \
+        {"fd_datasync", wasi_fd_datasync, "(i)i", NULL},                       \
+        {"random_get", wasi_random_get, "(ii)i", NULL},                        \
+        {"clock_res_get", wasi_clock_res_get, "(ii)i", NULL},                  \
+        {"clock_time_get", wasi_clock_time_get, "(iIi)i", NULL},               \
+        {"poll_oneoff", wasi_poll_oneoff, "(iiii)i", NULL},                    \
+        {"proc_exit", wasi_proc_exit, "(i)", NULL},                            \
+        {"sock_accept", wasi_sock_accept, "(iii)i", NULL},                     \
+        {"sock_recv", wasi_sock_recv, "(iiiiii)i", NULL},                      \
+        {"sock_send", wasi_sock_send, "(iiiii)i", NULL}, {                     \
+        "sock_shutdown", wasi_sock_shutdown, "(ii)i", NULL                     \
+    }
 
 static NativeSymbol wasi_unstable_natives[] = {
-    { "fd_seek", wasi_unstable_fd_seek, "(iIii)i", NULL },
+    {"fd_seek", wasi_unstable_fd_seek, "(iIii)i", NULL},
     SHARED_NATIVES,
 };
 
 static NativeSymbol wasi_preview1_natives[] = {
-    { "fd_seek", wasi_preview1_fd_seek, "(iIii)i", NULL },
+    {"fd_seek", wasi_preview1_fd_seek, "(iIii)i", NULL},
     SHARED_NATIVES,
 };
 
 wasi_ctx_t *InitWasiContext(void) {
-    wasi_ctx_t *ctx =
-        (wasi_ctx_t *)WantedMalloc(sizeof(wasi_ctx_t));
+    wasi_ctx_t *ctx = (wasi_ctx_t *)WantedMalloc(sizeof(wasi_ctx_t));
     if (!ctx)
         return ctx;
     memset(ctx, 0, sizeof(*ctx));
@@ -962,11 +968,14 @@ wasi_ctx_t *InitWasiContext(void) {
      * dense for the resolve_preopen scan. The root preopen at fd=3 is lazy:
      * the first prestat_get triggers VfsOpen("/") which will succeed once the
      * wapp setup has called VfsAttachTarfs. */
-    static const struct { const char *path; int fd; } seed[] = {
-        {"<stdin>",  0},
+    static const struct {
+        const char *path;
+        int fd;
+    } seed[] = {
+        {"<stdin>", 0},
         {"<stdout>", 1},
         {"<stderr>", 2},
-        {"/",       -1},
+        {"/", -1},
     };
     for (size_t i = 0; i < sizeof(seed) / sizeof(seed[0]); i++) {
         wasi_preopen_t *p = &ctx->preopens[ctx->preopens_cnt++];
@@ -1026,9 +1035,9 @@ int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, const char *hostPath,
 }
 
 void RegisterWASINatives(void) {
-    wasm_runtime_register_natives(
-        "wasi_unstable", wasi_unstable_natives,
-        sizeof(wasi_unstable_natives) / sizeof(wasi_unstable_natives[0]));
+    wasm_runtime_register_natives("wasi_unstable", wasi_unstable_natives,
+                                  sizeof(wasi_unstable_natives) /
+                                      sizeof(wasi_unstable_natives[0]));
     wasm_runtime_register_natives(
         "wasi_snapshot_preview1", wasi_preview1_natives,
         sizeof(wasi_preview1_natives) / sizeof(wasi_preview1_natives[0]));

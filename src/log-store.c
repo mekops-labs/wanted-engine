@@ -16,21 +16,21 @@
 #include <wanted-api.h>
 #include <wanted_malloc.h>
 
-#define LOG_CAP   2048           /* bytes retained per wapp (most recent) */
+#define LOG_CAP 2048 /* bytes retained per wapp (most recent) */
 #define LOG_SLOTS MAX_WAPPS
 
 typedef struct {
-    char     name[WAPP_MAX_NAME_LEN];
-    char     buf[LOG_CAP];
-    size_t   start; /* index of the oldest byte */
-    size_t   len;   /* bytes stored, <= LOG_CAP */
-    uint64_t tick;  /* last-access counter, for LRU eviction */
-    bool     used;
+    char name[WAPP_MAX_NAME_LEN];
+    char buf[LOG_CAP];
+    size_t start;  /* index of the oldest byte */
+    size_t len;    /* bytes stored, <= LOG_CAP */
+    uint64_t tick; /* last-access counter, for LRU eviction */
+    bool used;
 } log_slot_t;
 
 struct log_store_t {
-    log_slot_t        slots[LOG_SLOTS];
-    uint64_t          clock; /* monotonic; stamped on each slot access */
+    log_slot_t slots[LOG_SLOTS];
+    uint64_t clock; /* monotonic; stamped on each slot access */
     platform_mutex_t *lock;
 };
 

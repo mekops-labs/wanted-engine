@@ -18,10 +18,10 @@
 #define DUMMY_REG_MAX_ENTRIES 8
 
 typedef struct {
-    int      used;
-    char     name[WAPP_MAX_NAME_LEN];
-    char     version[WAPP_MAX_VERSION_LEN];
-    size_t   size;
+    int used;
+    char name[WAPP_MAX_NAME_LEN];
+    char version[WAPP_MAX_VERSION_LEN];
+    size_t size;
 } dummy_reg_entry_t;
 
 static dummy_reg_entry_t g_registry[DUMMY_REG_MAX_ENTRIES];
@@ -45,9 +45,7 @@ static int reg_alloc(void) {
 
 /* ── Test control ───────────────────────────────────────────────────────── */
 
-void DummyRegistryReset(void) {
-    memset(g_registry, 0, sizeof(g_registry));
-}
+void DummyRegistryReset(void) { memset(g_registry, 0, sizeof(g_registry)); }
 
 int DummyRegistrySeed(const reg_entry_t *entries, size_t count) {
     if (!entries)

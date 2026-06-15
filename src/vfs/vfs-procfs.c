@@ -124,8 +124,8 @@ int ProcFs_Stat(vfs_ctx_t c, void *handle, vfs_stat_t *stat) {
     if (!h)
         return -EBADF;
     memset(stat, 0, sizeof(*stat));
-    stat->filetype = h->is_root ? VFS_FILETYPE_DIRECTORY
-                                : VFS_FILETYPE_REGULAR_FILE;
+    stat->filetype =
+        h->is_root ? VFS_FILETYPE_DIRECTORY : VFS_FILETYPE_REGULAR_FILE;
     return 0;
 }
 
@@ -135,7 +135,8 @@ int ProcFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
     if (!h || !h->is_root)
         return -EBADF;
 
-    /* Build entry list on stack, omitting privileged entries when not allowed. */
+    /* Build entry list on stack, omitting privileged entries when not allowed.
+     */
     vfs_dir_entry_t entries[VFS_PROCFS_MAX_ENTRIES];
     size_t count = 0;
     for (uint8_t i = 0; i < c->procfs_cnt; i++) {
