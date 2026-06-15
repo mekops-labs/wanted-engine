@@ -100,6 +100,10 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
     }
 
     if ((host = gethostbyname(hostname)) == NULL) {
+        if (c->socket >= 0) {
+            close(c->socket);
+            c->socket = -1;
+        }
         return -EINVAL;
     }
 
@@ -110,18 +114,31 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
     memcpy(&addr.sin_addr.s_addr, host->h_addr, sizeof(addr.sin_addr.s_addr));
 
     if (connect(c->socket, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        return -errno;
+        int err = errno;
+        if (c->socket >= 0) {
+            close(c->socket);
+            c->socket = -1;
+        }
+        return -err;
     }
 
 #if SECURE_SOCKETS
     /* Initialize secure connection */
     if (c->secure) {
         if ((c->sslCtx = TLSInitCtx()) == NULL) {
+            if (c->socket >= 0) {
+                close(c->socket);
+                c->socket = -1;
+            }
             return -ENOMEM;
         }
 
         if ((c->ssl = TLSOpenConnection(c->sslCtx, c->socket)) == NULL) {
             TLSFreeCtx(c->sslCtx);
+            if (c->socket >= 0) {
+                close(c->socket);
+                c->socket = -1;
+            }
             return -ECONNREFUSED;
         }
     }
@@ -145,7 +162,10 @@ int PlatformNetClose(struct netCtx *c) {
     }
 #endif
 
-    close(c->socket);
+    if (c->socket >= 0) {
+        close(c->socket);
+        c->socket = -1;
+    }
 
     return 0;
 }
@@ -209,6 +229,7 @@ int PlatformNetAccept(struct netCtx *c) {
     if (c->secure) {
         c->ssl = TLSOpenConnection(c->sslCtx, newFd);
         if (c->ssl == NULL) {
+            close(newFd);
             return -ECONNREFUSED;
         }
         TLSAccept(c->ssl);

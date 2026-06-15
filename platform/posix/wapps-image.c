@@ -41,8 +41,10 @@ int PlatformWappLoad(const char *path, wapp_t *wapp) {
     rewind(f);
 
     img = (uint8_t *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fileno(f), 0);
-    if (img == MAP_FAILED)
+    if (img == MAP_FAILED) {
+        fclose(f);
         FATAL(-errno, "can't map file");
+    }
 
     wapp->layers[0] = img;
     wapp->layer_lens[0] = filesize;
