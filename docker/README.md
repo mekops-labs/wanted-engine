@@ -12,7 +12,7 @@ Just run it without parameters. Your `$PWD` needs to be set in the root director
 One of the easiest way to build the image for multiple platfroms is to use `buildx` with `binfmt-qemu-static` and `qemu-user-static` installed.
 
 ```sh
-docker buildx build --platform linux/amd64,linux/arm64 -t registry.gitlab.com/wanted-project/wanted-engine/build:latest --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t registry.gitlab.com/mekops/wanted/wanted-engine/build:latest --push .
 ```
 
 Platforms are limited to `amd64` and `arm64` — the bundled wasi-sdk ships host

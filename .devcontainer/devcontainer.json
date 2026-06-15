@@ -3,7 +3,7 @@
 {
 	"name": "wanted",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "registry.gitlab.com/wanted-project/wanted-engine/build:latest",
+	"image": "registry.gitlab.com/mekops/wanted/wanted-engine/build:latest",
 	"customizations": {
 		"vscode": {
 			"extensions": [
