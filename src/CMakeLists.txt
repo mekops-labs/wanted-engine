@@ -53,6 +53,7 @@ set_property(CACHE WANTED_PLATFORM PROPERTY STRINGS linux nuttx)
 set(WAMR_ROOT_DIR ${CMAKE_SOURCE_DIR}/vendor/wamr)
 set(WAMR_BUILD_PLATFORM "${WANTED_PLATFORM}")
 set(WAMR_BUILD_INTERP 1)
+set(WAMR_BUILD_FAST_INTERP 0)  # classic interpreter: smaller per-module footprint than fast-interp, which matters on MCU-class targets
 set(WAMR_BUILD_AOT 0)
 set(WAMR_BUILD_LIBC_WASI 0)
 set(WAMR_BUILD_LIBC_BUILTIN 1)
