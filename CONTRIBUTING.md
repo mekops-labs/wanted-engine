@@ -6,8 +6,8 @@ getting a change merged.
 ## Getting the code
 
 ```bash
-git clone --recursive https://github.com/mekops-labs/wanted.git
-cd wanted/wanted-engine
+git clone --recursive https://gitlab.com/mekops/wanted/wanted-engine.git
+cd wanted-engine
 ```
 
 If you cloned without `--recursive`, run `git submodule update --init --recursive`.

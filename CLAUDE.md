@@ -204,7 +204,7 @@ Defined in `src/include/wanted-api.h`:
 
 ## CI/CD
 
-GitLab CI (`.gitlab-ci.yml`) runs two compilers (gcc, clang) and a coverage build. The build image is `registry.gitlab.com/wanted-project/wanted-engine/build`. Test reports are JUnit XML; coverage is Cobertura XML.
+GitLab CI (`.gitlab-ci.yml`) runs two compilers (gcc, clang) and a coverage build. The build image is `registry.gitlab.com/mekops/wanted/wanted-engine/build`. Test reports are JUnit XML; coverage is Cobertura XML.
 
 ## Git Conventions
 

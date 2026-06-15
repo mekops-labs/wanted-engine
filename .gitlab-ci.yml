@@ -13,7 +13,7 @@ variables:
   CCACHE_MAXSIZE: "500M"
 
 image:
-  name: registry.gitlab.com/wanted-project/wanted-engine/build
+  name: registry.gitlab.com/mekops/wanted/wanted-engine/build
   entrypoint: [""]
 
 stages:

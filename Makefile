@@ -10,7 +10,7 @@
 #   make build BUILD_DIR=build-dbg
 
 RUNNER    ?= podman
-IMAGE     ?= registry.gitlab.com/wanted-project/wanted-engine/build
+IMAGE     ?= registry.gitlab.com/mekops/wanted/wanted-engine/build
 BUILD_DIR ?= build
 WSH_TAR   := ./wasm/supervisor/wsh/supervisor.tar
 
