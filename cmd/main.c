@@ -31,7 +31,9 @@ int main(int argc, char *argv[]) {
         sz = ftell(fp);
         rewind(fp);
 
-        cfg = (char *)malloc(sz);
+        /* One extra byte for the NUL terminator: the config is consumed as a
+         * C string (strlen below), so the buffer must be terminated. */
+        cfg = (char *)malloc(sz + 1);
         if (!cfg) {
             perror(argv[0]);
             ret = -errno;
@@ -46,6 +48,7 @@ int main(int argc, char *argv[]) {
             fclose(fp);
             return -1;
         }
+        cfg[sz] = '\0';
 
         fclose(fp);
     } else {
