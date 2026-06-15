@@ -28,7 +28,7 @@
  *       state     (r)      state token, e.g. "running"
  *       image     (r)      registry image for instance
  *       version   (r)      version, e.g. "1.0.0-0"
- *       id        (r)      engine wapp id 
+ *       id        (r)      engine wapp id
  *       exit_code (r)      plain-text WASI exit code
  *       config    (w)      JSON start config
  *       log       (r)      ring-buffered wapp log
