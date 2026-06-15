@@ -2,7 +2,7 @@
 # Build and test the WANTED engine on the NuttX simulator.
 #
 #
-# Usage: test/nuttx-sim.sh {deps|build|selftest|all}
+# Usage: test/nuttx-sim.sh {deps|build|kernel|selftest|syscontrol|clean|all}
 #
 # nuttx + nuttx-apps are the mekops forks (wanted + devices changes), pinned as
 # shallow git submodules under third_party/. Env overrides (defaults keep
@@ -11,6 +11,9 @@
 #   NUTTX_DIR   NuttX RTOS submodule   (default: $ENGINE_DIR/third_party/nuttx)
 #   APPS_DIR    nuttx-apps submodule   (default: $ENGINE_DIR/third_party/nuttx-apps)
 #   SIMROOT     sim launch dir / hostfs root for /data (default: $ENGINE_DIR/build-nuttx/simroot)
+#   NUTTX_SKIP_BUILD=1  run-only: skip deps + kernel build, just stage + run
+#                       against a prebuilt $NUTTX_DIR/nuttx (split-CI run jobs)
+#   NUTTX_CLEAN=1       force a full distclean + reconfigure before building
 set -euo pipefail
 
 ENGINE_DIR=${ENGINE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -32,12 +35,9 @@ SUPERVISOR_TAR=$ENGINE_DIR/wasm/supervisor/$SUPERVISOR_VARIANT/supervisor.tar
 deps() {
     # The NuttX + apps forks are excluded from CI's default recursive submodule
     # fetch (only this job needs them, and they are large). Shallow-init them
-    # here when absent; a no-op on a tree that already has them checked out, so
-    # a local checkout's pinned commit is left as-is.
-    if [ ! -f "$NUTTX_DIR/Makefile" ] || [ ! -f "$APPS_DIR/Makefile" ]; then
-        git -C "$ENGINE_DIR" submodule update --init --depth 1 \
-            third_party/nuttx third_party/nuttx-apps
-    fi
+    # here; a no-op on a tree that is already at the correct pinned commit.
+    git -C "$ENGINE_DIR" submodule update --init --recursive --depth 1 \
+        third_party/nuttx third_party/nuttx-apps
 
     local appdir="$APPS_DIR/system/wanted"
     ( cd "$appdir"
@@ -45,32 +45,67 @@ deps() {
       ln -sfn "$rel"             engine
       ln -sfn "$rel/vendor/wamr" wamr )
 
+    # Keep the engine/wamr symlinks out of the apps submodule's status. Tolerate
+    # a restored-from-cache tree whose submodule git dir is absent — the symlinks
+    # above are what the build needs; this exclude is only cosmetic.
     local gd
-    gd=$(git -C "$APPS_DIR" rev-parse --absolute-git-dir)
-    for ex in '/system/wanted/engine' '/system/wanted/wamr'; do
-        grep -qxF "$ex" "$gd/info/exclude" 2>/dev/null || \
-            echo "$ex" >> "$gd/info/exclude"
-    done
+    gd=$(git -C "$APPS_DIR" rev-parse --absolute-git-dir 2>/dev/null) || gd=""
+    if [ -n "$gd" ]; then
+        for ex in '/system/wanted/engine' '/system/wanted/wamr'; do
+            grep -qxF "$ex" "$gd/info/exclude" 2>/dev/null || \
+                echo "$ex" >> "$gd/info/exclude"
+        done
+    fi
     echo "linked engine sources into $appdir"
 }
 
-# Configure + build the sim:wanted board config (the native defconfig in the
-# nuttx fork: SYSTEM_WANTED + hostfs, wanted_sim_main as the init task, and
-# BOARDCTL_POWEROFF so the sim exits cleanly when the engine loop returns), and
-# stage the supervisor image + config into the hostfs root (/data).
-build() {
+# Stage the supervisor image + engine config into the sim's hostfs root (/data).
+# Variant-specific (selftest vs wsh) and cheap, so every phase stages its own.
+stage_hostfs() {
     [ -f "$SUPERVISOR_TAR" ] || \
         { echo "missing $SUPERVISOR_TAR (run 'make supervisor')" >&2; exit 1; }
     mkdir -p "$SIMROOT/wanted"
     cp "$SUPERVISOR_TAR" "$SIMROOT/wanted/supervisor.tar"
     cp "$ENGINE_DIR/test/nuttx-sim-config.json" "$SIMROOT/smoke.json"
+}
 
+# Configure + build the sim:wanted board config (the native defconfig in the
+# nuttx fork: SYSTEM_WANTED + hostfs, wanted_sim_main as the init task, and
+# BOARDCTL_POWEROFF so the sim exits cleanly when the engine loop returns).
+#
+build_kernel() {
+    # Run-only mode (split CI: a `build` job built the kernel and passed the
+    # binary as an artifact; the selftest/syscontrol jobs only stage + run).
+    # Assert the prebuilt kernel is present and skip configure/make entirely.
+    if [ "${NUTTX_SKIP_BUILD:-0}" = 1 ]; then
+        [ -f "$NUTTX_DIR/nuttx" ] || {
+            echo "NUTTX_SKIP_BUILD=1 but no prebuilt kernel at $NUTTX_DIR/nuttx" >&2
+            exit 1
+        }
+        return 0
+    fi
     local apps_rel
     apps_rel=$(realpath --relative-to="$NUTTX_DIR" "$APPS_DIR")
     cd "$NUTTX_DIR"
-    make distclean >/dev/null 2>&1 || true
-    ./tools/configure.sh -a "$apps_rel" sim:wanted >/dev/null
+    if [ "${NUTTX_CLEAN:-0}" = 1 ] || [ ! -f .config ]; then
+        make distclean >/dev/null 2>&1 || true
+        ./tools/configure.sh -a "$apps_rel" sim:wanted >/dev/null
+    fi
     make -j"$(nproc)"
+}
+
+# Stage the current variant's hostfs and (re)build the kernel.
+build() {
+    stage_hostfs
+    build_kernel
+}
+
+# Build just the kernel (no hostfs staging). Used by the split-CI build-nuttx
+# job, which produces the kernel binary as an artifact for the run jobs and has
+# no supervisor image to stage.
+kernel() {
+    deps
+    build_kernel
 }
 
 # Package a test wapp into the sim's hostfs registry, which the engine resolves
@@ -217,9 +252,11 @@ for cmd in "${@:-all}"; do
     case "$cmd" in
         deps)       deps ;;
         build)      build ;;
-        selftest)   deps; selftest ;;
-        syscontrol) deps; syscontrol ;;
+        kernel)     kernel ;;
+        selftest)   [ "${NUTTX_SKIP_BUILD:-0}" = 1 ] || deps; selftest ;;
+        syscontrol) [ "${NUTTX_SKIP_BUILD:-0}" = 1 ] || deps; syscontrol ;;
+        clean)      make -C "$NUTTX_DIR" distclean >/dev/null 2>&1 || true ;;
         all)        deps; selftest; syscontrol ;;
-        *) echo "usage: $0 [deps|build|selftest|syscontrol|all ...]" >&2; exit 2 ;;
+        *) echo "usage: $0 [deps|build|kernel|selftest|syscontrol|clean|all ...]" >&2; exit 2 ;;
     esac
 done

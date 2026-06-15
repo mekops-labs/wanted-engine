@@ -141,7 +141,7 @@ typedef struct vfs_driver_t {
 
 typedef struct vfs_ctx_t *vfs_ctx_t;
 
-vfs_ctx_t VfsInit();
+vfs_ctx_t VfsInit(void);
 void VfsDestroy(vfs_ctx_t *c);
 void VfsSetPrivileged(vfs_ctx_t c, bool privileged);
 int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver);

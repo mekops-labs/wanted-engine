@@ -711,7 +711,7 @@ void WantedWappTerminate(wapp_data_t *ctx) {
     wasm_runtime_terminate(ctx->wamr->instance);
 }
 
-wapp_t *WantedGetCurrentSupervisor() {
+wapp_t *WantedGetCurrentSupervisor(void) {
     /* TODO: in the future we need to update the image if downloaded new version
      */
     /* now we're using only factory version */

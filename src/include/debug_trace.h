@@ -2,7 +2,7 @@
 
 #pragma once
 
-#if DEBUG
+#if defined(DEBUG) && DEBUG
 #include <stdarg.h>
 #include <stdio.h>
 #include <unistd.h>

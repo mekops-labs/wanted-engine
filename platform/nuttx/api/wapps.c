@@ -155,49 +155,6 @@ void *WA_thread(void *ptr) {
     pthread_exit(NULL);
 }
 
-int PlatformWappLoad(const char *path, wapp_t *wapp) {
-    long filesize;
-    FILE *f;
-    uint8_t *img;
-
-    if (NULL == wapp) {
-        return -EINVAL;
-    }
-
-    DEBUG_TRACE("Opening: %s\n", path);
-
-    f = fopen(path, "rb");
-
-    if (NULL == f) {
-        FATAL(-errno, "can't open wapp: %s", path);
-    }
-
-    fseek(f, 0L, SEEK_END);
-    filesize = ftell(f);
-    rewind(f);
-
-    img = (uint8_t *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fileno(f), 0);
-    if (img == MAP_FAILED)
-        FATAL(-errno, "can't map file");
-
-    wapp->layers[0] = img;
-    wapp->layer_lens[0] = filesize;
-    wapp->layer_cnt = 1;
-
-    fclose(f);
-    return 0;
-}
-
-int PlatformWappUnload(const wapp_t *wapp) {
-    if (NULL == wapp) {
-        return -EINVAL;
-    }
-
-    if (munmap(wapp->layers[0], wapp->layer_lens[0]) < 0)
-        FATAL(-errno, "can't unmap file");
-    return 0;
-}
-
 /* Init task's scheduling priority, captured on the first wapp start (which runs
  * in that task). Wapps run at this base; the supervisor one step above it. */
 static int basePriority = -1;
@@ -394,7 +351,7 @@ void PlatformRequestReboot(void) {
     pthread_mutex_unlock(&state_mtx);
 }
 
-void PlatformWappLoop() {
+void PlatformWappLoop(void) {
     uint8_t supervisorOk;
 
     for (;;) {
