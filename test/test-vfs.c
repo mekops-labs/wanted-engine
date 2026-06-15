@@ -123,6 +123,42 @@ TEST(vfs_prefix_router, NetStatDoesNotOpenSocket) {
     VfsClose(vfs, base);
 }
 
+/* A deep driver mount (e.g. a config-map at "/etc/config") makes "/etc" a
+ * synthetic intermediate directory: it has no backing driver but must stat and
+ * list as a directory, since root readdir surfaces it as an entry. Regression
+ * for the NuttX `ls /` failure where lstat("/etc") returned -ENOENT. */
+TEST(vfs_prefix_router, SyntheticMountDirStatsAndLists) {
+    vfs_driver_t *cfg = VfsNullInit(NULL, NULL);
+    TEST_ASSERT_EQUAL_INT(0, VfsMountDriver(vfs, "/etc/config", cfg));
+
+    /* Opening the synthetic parent yields a directory fd. */
+    int dfd = VfsOpen(vfs, "/etc", VFS_O_RDONLY | VFS_O_DIRECTORY);
+    TEST_ASSERT_TRUE(dfd >= ROOT_FD);
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_MOUNTDIR, vfs->fds[dfd].type);
+
+    /* Stat (via an existing fd as base) resolves it as a directory. */
+    vfs_stat_t st;
+    memset(&st, 0, sizeof(st));
+    TEST_ASSERT_EQUAL_INT(0, VfsStatAt(vfs, dfd, "/etc", &st));
+    TEST_ASSERT_EQUAL_INT(VFS_FILETYPE_DIRECTORY, st.filetype);
+
+    /* The leaf child reports the bound driver's real filetype (the null driver
+     * is a character device), not a synthetic directory. */
+    uint8_t buf[256];
+    uint64_t cookie = 0;
+    size_t used = 0;
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(vfs, dfd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_TRUE(used > sizeof(vfs_dirent_t));
+    vfs_dirent_t *de = (vfs_dirent_t *)buf;
+    TEST_ASSERT_EQUAL_INT(VFS_FILETYPE_CHARACTER_DEVICE, de->d_type);
+    TEST_ASSERT_EQUAL_UINT32(strlen("config"), de->d_namlen);
+    TEST_ASSERT_EQUAL_INT(0, memcmp(buf + sizeof(*de), "config", 6));
+
+    TEST_ASSERT_EQUAL_INT(0, VfsClose(vfs, dfd));
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_NONE, vfs->fds[dfd].type);
+}
+
 TEST(vfs_prefix_router, NonRoutedPathReturnsEnoent) {
     /* Without a tarfs context attached, root-relative paths have no sink. */
     int fd = VfsOpen(vfs, "/", 0);
@@ -153,6 +189,7 @@ TEST_GROUP_RUNNER(vfs_prefix_router) {
     RUN_TEST_CASE(vfs_prefix_router, DevPathTakesTypedFdSlot);
     RUN_TEST_CASE(vfs_prefix_router, NetPathTakesTypedFdSlot);
     RUN_TEST_CASE(vfs_prefix_router, NetStatDoesNotOpenSocket);
+    RUN_TEST_CASE(vfs_prefix_router, SyntheticMountDirStatsAndLists);
     RUN_TEST_CASE(vfs_prefix_router, NonRoutedPathReturnsEnoent);
     RUN_TEST_CASE(vfs_prefix_router, MissingDevSuffixReturnsEnoent);
     RUN_TEST_CASE(vfs_prefix_router, DevFsExactMatchOnly);
