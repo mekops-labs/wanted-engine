@@ -140,11 +140,11 @@ A wapp's effective capabilities are exactly what its launch config grants: the c
 
 ## Building a wapp
 
-Compile and package in one place with a multi-stage `Containerfile`. The builder stage is the `wanted-wasm-sdk` image, which carries the wasm toolchains (C/C++ via wasi-sdk, plus Zig, TinyGo, and Rust); the final stage is the wapp's read-only rootfs.
+Compile and package in one place with a multi-stage `Containerfile`. The builder stage is the published wapp SDK image `registry.gitlab.com/mekops/wanted/wanted-engine/wapp-sdk:latest`, which carries the wasm toolchains (C/C++ via wasi-sdk, plus Zig, TinyGo, and Rust); the final stage is the wapp's read-only rootfs.
 
 ```dockerfile
 # Containerfile
-FROM wanted-wasm-sdk AS build
+FROM registry.gitlab.com/mekops/wanted/wanted-engine/wapp-sdk:latest AS build
 WORKDIR /src
 COPY hello.c Makefile ./
 RUN make NAME=hello                         # -> hello.wasm
