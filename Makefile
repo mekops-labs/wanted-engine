@@ -14,6 +14,14 @@ IMAGE     ?= registry.gitlab.com/wanted-project/wanted-engine/build
 BUILD_DIR ?= build
 WSH_TAR   := ./wasm/supervisor/wsh/supervisor.tar
 
+# `make just <recipe> [args...]` forwards to the in-container Justfile (lint,
+# static-analysis, and security recipes). The trailing words are the recipe and
+# its arguments; stub them as no-op goals so make does not treat them as targets.
+ifeq (just,$(firstword $(MAKECMDGOALS)))
+JUST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+$(eval $(JUST_ARGS):;@:)
+endif
+
 # Run a shell command inside the build container with the repo at /src.
 RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c
 
@@ -27,7 +35,7 @@ RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c
 
 .PHONY: all supervisor wapps build wsh test smoke-engine shell clean help \
         nuttx-deps nuttx-build nuttx-selftest nuttx-shell wsh-shell selftest \
-        docs-sync
+        docs-sync just
 
 all: build test ## build the engine and run the test suite
 
@@ -71,6 +79,9 @@ nuttx-selftest: supervisor ## run the in-WASM selftest suite (TAP) on the NuttX 
 nuttx-shell: nuttx-build ## build the wsh sim and drop into the interactive wsh prompt
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" -w /src/build-nuttx/simroot \
 	    --entrypoint=/bin/sh $(IMAGE) -c '/src/third_party/nuttx/nuttx'
+
+just: ## run a Justfile recipe in the build container, e.g. make just lint-format
+	$(RUN) 'cd /src && just $(JUST_ARGS)'
 
 shell: ## open an interactive shell in the build container
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" --entrypoint="" $(IMAGE) bash
