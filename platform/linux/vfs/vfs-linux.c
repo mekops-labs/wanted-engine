@@ -4,9 +4,11 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/openat2.h>
 #include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <config-linux.h>
@@ -146,6 +148,25 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     return fd;
 }
 
+/* openat() that refuses to resolve outside the preopen directory.
+ * RESOLVE_BENEATH rejects absolute paths, escaping ".." and — the case the
+ * read-only flag cannot close — a symlink inside the host directory that points
+ * outside it. Resolution is confined to the subtree under `dirfd`.
+ *
+ * openat2() (Linux >= 5.6) is required, with no plain-openat() fallback: on a
+ * kernel that lacks it the syscall returns ENOSYS and the open fails loudly,
+ * rather than silently resolving without the escape guard. Confinement is not
+ * optional — a sandbox we cannot enforce must deny, not degrade. */
+static int OpenAtBeneath(int dirfd, const char *path, int flags, int mode) {
+    struct open_how how;
+    memset(&how, 0, sizeof(how));
+    how.flags = (uint64_t)(unsigned int)flags;
+    how.mode = (flags & O_CREAT) ? (uint64_t)(unsigned int)mode : 0;
+    how.resolve = RESOLVE_BENEATH;
+
+    return (int)syscall(SYS_openat2, dirfd, path, &how, sizeof(how));
+}
+
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
     if (d->readonly && VFS_O_IS_WRITE(flags))
@@ -159,7 +180,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
     DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, path);
 
     int mode = 0644;
-    int ret = openat(fd, path, fl, mode);
+    int ret = OpenAtBeneath(fd, path, fl, mode);
     if (ret < 0)
         return -errno;
 
