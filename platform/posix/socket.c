@@ -213,7 +213,6 @@ int PlatformNetSend(struct netCtx *c, const void *buf, size_t nbyte,
     return ret;
 }
 
-/* TODO: totally untested, broken */
 int PlatformNetAccept(struct netCtx *c) {
     int newFd;
 
