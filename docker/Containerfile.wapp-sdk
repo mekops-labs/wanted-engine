@@ -21,15 +21,15 @@
 # Base is Debian (glibc): the official wasi-sdk, TinyGo and Go
 # release tarballs are dynamically linked against glibc.
 #
-# Build (single arch):  podman build -f Containerfile.wasm-sdk -t wanted-wasm-sdk .
+# Build (single arch):  podman build -f Containerfile.wapp-sdk -t wanted-wapp-sdk .
 # Build (multi arch):   podman build --platform linux/amd64,linux/arm64 \
-#                         -f Containerfile.wasm-sdk -t wanted-wasm-sdk .
-# Run:   podman run --rm -it -v "$PWD:/src" --userns=keep-id wanted-wasm-sdk
+#                         -f Containerfile.wapp-sdk -t wanted-wapp-sdk .
+# Run:   podman run --rm -it -v "$PWD:/src" --userns=keep-id wanted-wapp-sdk
 
 FROM docker.io/library/debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL org.opencontainers.image.title="wanted-wasm-sdk"
+LABEL org.opencontainers.image.title="wanted-wapp-sdk"
 LABEL org.opencontainers.image.description="Multi-language WebAssembly SDK for building Wanted wapps (C/C++, Zig, TinyGo, Rust)."
 LABEL version="0.1.0"
 
@@ -174,7 +174,7 @@ RUN set -eux; \
 # distro default and would drop the /opt toolchain dirs set via ENV. Re-add
 # them for login shells so interactive `podman run -it ... bash -l` works.
 RUN printf 'export PATH=/opt/wasi-sdk/bin:/opt/rust/cargo/bin:/opt/go/bin:$PATH\n' \
-        > /etc/profile.d/wasm-sdk.sh
+        > /etc/profile.d/wapp-sdk.sh
 
 # Unprivileged build user. UID/GID are remapped by `--userns=keep-id` (podman)
 # or `-u $(id -u)` at run time; in a multi-stage `FROM` builder, RUN steps run
