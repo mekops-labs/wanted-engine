@@ -33,10 +33,15 @@ namespace — TarFS (`/`), `/dev`, `/proc`, `/net`, and any configured preopens.
 Available only when the supervisor is granted the `wanted` driver (it is, by
 default). These are how the supervisor manages other wapps.
 
+A wapp is launched in three steps — reserve the name, configure it, then start it:
+
 | Command | Args | Description |
 |---|---|---|
-| `start` | `<name>` | Create-and-launch a wapp by name (`start <name>` → `/dev/wanted/ctl`). |
+| `create` | `<name>` | Reserve a wapp instance namespace (`create <name>` → `/dev/wanted/ctl`). Required before `set_config` and `start`; the per-wapp nodes exist only after it. |
+| `set_config` | `<name> <json…>` | Buffer a wapp's JSON launch config at `wapps/<name>/config`. The line splits on whitespace, so keep the JSON compact (no spaces). |
+| `start` | `<name>` | Launch a configured wapp — the bare verb `start` → `/dev/wanted/wapps/<name>/ctl`. A reservation with no config is rejected. |
 | `stop` | `<name>` | Stop a running wapp (`stop` → `/dev/wanted/wapps/<name>/ctl`). |
+| `delete` | `<name>` | Release a wapp slot so its namespace leaves `wapps/` (`delete <name>` → `/dev/wanted/ctl`). A running wapp is rejected — stop it first. |
 | `status` | `[name]` | With a name, print that wapp's `state`/`version`/`id`; without one, list every wapp under `/dev/wanted/wapps` with its state. |
 
 ### Session / system control
@@ -56,6 +61,9 @@ without that grant cannot reach them.
 
 ### 0.5.0
 
+- Added `create`, `set_config`, and `delete` for the create-based wapp lifecycle:
+  reserve a name, buffer its JSON launch config, `start`, and release the slot
+  with `delete`. `start`/`stop` carry the bare verb to the per-wapp `ctl` node.
 - Added `poweroff` and `reboot` commands: drain child wapps, then request engine
   shutdown / restart via `/dev/wanted/ctl`.
 - `exit` (and EOF) now returns to a respawned shell instead of ending the engine;

@@ -73,10 +73,21 @@ List the running wapps. The supervisor is itself a wapp, so it appears in the li
 supervisor      running
 ```
 
-Start `hello` by name. `wsh start` writes `start hello` to the root control node `/dev/wanted/ctl`, which resolves the name in the registry, loads the image, and launches the wapp as its own thread. Check its state — it is running:
+Launching a wapp is three deliberate steps — reserve the instance name, give it a JSON launch config, then issue the launch verb:
 
 ```
+> create hello
+> set_config hello {"console":{"in":{"name":"null"},"out":{"name":"log"},"err":{"name":"log"}}}
 > start hello
+```
+
+- **`create hello`** reserves the instance namespace `/dev/wanted/wapps/hello/`. Its `config`, `ctl`, and read nodes exist only after this, and its `state` reads `created`.
+- **`set_config hello <json>`** buffers the launch config at `wapps/hello/config`, moving the instance to `not_started`. The config above gives the wapp a null stdin and routes its stdout/stderr to the per-wapp **log** console. A wapp's capabilities are exactly what this config grants — consoles, drivers, mounts, sockets, args, and envs (see the [Control Plane Reference](control-plane-reference.md)). Keep the JSON free of spaces: `wsh` splits a line on whitespace, so a compact object stays one token.
+- **`start hello`** writes the bare verb `start` to `wapps/hello/ctl`. The engine resolves the image (no `image` in the config, so the instance name `hello` → `hello:0.0.1-1.wapp`), loads it, and runs the wapp as its own thread. A `start` on a reservation with no config is rejected — the `set_config` must come first.
+
+Check its state — it is running:
+
+```
 > status hello
 hello:
   state    running
@@ -84,7 +95,7 @@ hello:
   id       1
 ```
 
-The `hello` sample (launched with no `ROLE` set) writes an alive marker, lives for two seconds, then exits. A moment later its state is `exited`. By default a wapp's stdout and stderr are captured to a per-wapp **log console**, readable at its `log` node:
+The `hello` sample (launched with no `ROLE` set) writes an alive marker, lives for two seconds, then exits. A moment later its state is `exited`. Read its captured output from the `log` node the config wired up:
 
 ```
 > status hello
@@ -97,13 +108,13 @@ hello-wapp: alive
 hello-wapp: exit
 ```
 
-A wapp that runs indefinitely is stopped explicitly — `wsh stop` writes `stop` to that wapp's own control node `/dev/wanted/wapps/<name>/ctl`:
+A wapp that runs indefinitely is stopped explicitly — `stop` writes `stop` to that wapp's own control node `/dev/wanted/wapps/<name>/ctl`:
 
 ```
 > stop hello
 ```
 
-To override a wapp's console — share the engine's terminal, discard output, or point a slot elsewhere — write a launch config to its `config` node before `start`. The console schema and every control-plane node are documented in the [Control Plane Reference](control-plane-reference.md).
+Once a wapp has reached a terminal state, `delete hello` releases the name so it leaves `wapps/`. Richer launch configs — drivers, mounts, sockets, args, and environment variables — go in the same `set_config` JSON; the full console schema and every control-plane node are documented in the [Control Plane Reference](control-plane-reference.md).
 
 ## Next steps
 
