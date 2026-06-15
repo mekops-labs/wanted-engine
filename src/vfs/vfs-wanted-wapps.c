@@ -25,13 +25,13 @@
  *   wapps/                 ReadDir → one entry per known (running) wapp
  *     <name>/              synthetic dir; ReadDir → the control files below
  *       ctl       (w)      line verb: "start [<image>]" | "stop"
- * (identity=path) state     (r)      plain-text token:
- * not_started|starting|running|... image     (r)      plain-text registry image
- * the instance runs version   (r)      plain-text version, e.g. "1.0.0-0" id
- * (r)      plain-text engine wapp id exit_code (r)      plain-text WASI exit
- * code (authoritative when exited) config    (w)      JSON start config: {
- * console, drivers[], preopens, args[], envs[] } log       (r) ring-buffered
- * stdout/stderr captured by the log driver
+ *       state     (r)      state token, e.g. "running"
+ *       image     (r)      registry image for instance
+ *       version   (r)      version, e.g. "1.0.0-0"
+ *       id        (r)      engine wapp id 
+ *       exit_code (r)      plain-text WASI exit code
+ *       config    (w)      JSON start config
+ *       log       (r)      ring-buffered wapp log
  *
  * Every open allocates its own slot in the fd table below; read EOF is latched
  * per-fd, so concurrent readers (the supervisor reopens on every tick) keep
