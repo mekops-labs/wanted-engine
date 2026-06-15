@@ -73,11 +73,6 @@ stage_hostfs() {
 # nuttx fork: SYSTEM_WANTED + hostfs, wanted_sim_main as the init task, and
 # BOARDCTL_POWEROFF so the sim exits cleanly when the engine loop returns).
 #
-# The supervisor variant is staged into hostfs and loaded at runtime, so the
-# kernel binary is identical across phases: configure once (on a fresh or
-# `clean`ed tree) and let make rebuild incrementally on later calls. This builds
-# the kernel a single time per `all` run and makes repeated local phase runs
-# near-instant. Set NUTTX_CLEAN=1 to force a full reconfigure.
 build_kernel() {
     # Run-only mode (split CI: a `build` job built the kernel and passed the
     # binary as an artifact; the selftest/syscontrol jobs only stage + run).
