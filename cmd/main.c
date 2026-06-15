@@ -34,12 +34,16 @@ int main(int argc, char *argv[]) {
         cfg = (char *)malloc(sz);
         if (!cfg) {
             perror(argv[0]);
-            return -errno;
+            ret = -errno;
+            fclose(fp);
+            return ret;
         }
 
         r = fread(cfg, 1, sz, fp);
         if (r != sz) {
             fprintf(stderr, "can't read config file\n");
+            free(cfg);
+            fclose(fp);
             return -1;
         }
 
