@@ -475,8 +475,11 @@ static int indexCmp(const void *a, const void *b) {
     return strcmp(ea->path_ptr, eb->path_ptr);
 }
 
-vfs_tarfs_ctx_t *TarFsInit(const uint8_t *const layers[],
-                           const size_t layer_lens[], uint8_t layer_cnt) {
+/* Callers pass uint8_t *[]; const-qualifying the array elements would break
+ * them under GCC's incompatible-pointer-types. */
+/* cppcheck-suppress constParameter */
+vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
+                           uint8_t layer_cnt) {
     if (layers == NULL || layer_lens == NULL || layer_cnt == 0 ||
         layer_cnt > TARFS_MAX_LAYERS) {
         DEBUG_TRACE("tarfs: invalid args (cnt=%u)", layer_cnt);
