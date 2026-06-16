@@ -170,6 +170,8 @@ selftest() {
     # launch config. The supervisor binds the image via config `image`.
     stage_test_wapp duplex:0.0.1-1
     stage_test_wapp volcheck:0.0.1-1
+    stage_test_wapp bigmem:0.0.1-1
+    stage_test_wapp biginit:0.0.1-1
     # hand-crafted malformed images for the loader-robustness check (reuse the
     # valid wasm that stage_test_wapp just built)
     "$ENGINE_DIR/test/stage-malformed.sh" "$SIMROOT/registry" \
