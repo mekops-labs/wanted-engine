@@ -44,8 +44,8 @@ RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c
 .DEFAULT_GOAL := help
 
 .PHONY: all supervisor wapps build wsh test smoke-engine shell clean help \
-        nuttx-deps nuttx-build nuttx-selftest nuttx-shell wsh-shell selftest \
-        docs-sync just
+        nuttx-deps nuttx-build nuttx-selftest nuttx-syscontrol nuttx-shell wsh-shell selftest \
+        docs-sync just sizes memcap
 
 all: build test ## build the engine and run the test suite
 
@@ -83,8 +83,11 @@ nuttx-deps: ## link the engine app package into the checked-out nuttx-apps submo
 nuttx-build: supervisor ## configure + build the NuttX sim (wsh as init over hostfs) [PROFILE=constrained|small|big]
 	$(RUN) 'cd /src && PROFILE=$(PROFILE) ./test/nuttx-sim.sh deps build'
 
-nuttx-selftest: supervisor ## run the in-WASM selftest suite (TAP) on the NuttX sim
-	$(RUN) 'cd /src && ./test/nuttx-sim.sh selftest'
+nuttx-selftest: supervisor ## run the in-WASM selftest suite + system-control checks on the NuttX sim
+	$(RUN) 'cd /src && ./test/nuttx-sim.sh selftest syscontrol'
+
+nuttx-syscontrol: supervisor ## run the system-control (poweroff/reboot/exit) checks on the NuttX sim
+	$(RUN) 'cd /src && ./test/nuttx-sim.sh syscontrol'
 
 nuttx-shell: nuttx-build ## build the wsh sim and drop into the interactive wsh prompt
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" -w /src/build-nuttx/simroot \
@@ -93,12 +96,17 @@ nuttx-shell: nuttx-build ## build the wsh sim and drop into the interactive wsh 
 just: ## run a Justfile recipe in the build container, e.g. make just lint-format
 	$(RUN) 'cd /src && just $(JUST_ARGS)'
 
+sizes: ## report per-wapp + engine memory footprint for each profile (linux + nuttx ABIs)
+	$(RUN) 'cd /src && ./utils/measure-sizes.sh'
+
+memcap: supervisor ## negative test: WASM_MAX_MEMORY_PAGES bounds a wapp's linear-memory growth
+	$(RUN) 'cd /src && ./test/memcap.sh'
+
 shell: ## open an interactive shell in the build container
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" --entrypoint="" $(IMAGE) bash
 
 clean: ## remove every build artifact (Linux + NuttX sim + wasm/wapps + submodule objects)
 	rm -rf $(CURDIR)/$(BUILD_DIR) $(CURDIR)/build-nuttx $(CURDIR)/registry
-	rm -f $(CURDIR)/utils/measure_structs
 	# Only wsh/selftest app.wasm are generated from wapps/ source; sheriff's is a
 	# committed blob, so never delete it.
 	rm -f $(CURDIR)/wasm/*.wasm* $(CURDIR)/wasm/supervisor/*/supervisor.tar \
