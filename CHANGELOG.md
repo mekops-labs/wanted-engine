@@ -1,7 +1,7 @@
 Changelog
 =========
 
-Unreleased
+0.7.1 (2026-06-16)
 ----------
 
 ### Fixes
