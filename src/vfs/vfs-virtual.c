@@ -121,7 +121,8 @@ static int _Destroy(struct vfs_driver_t *d) {
     return 0;
 }
 
-int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft) {
+int VfsFindEntry(const char *path, const vfs_entry_t *files,
+                 const char **pathLeft) {
     struct cwk_segment seg;
     int f = 0;
     bool found = false;
@@ -350,7 +351,7 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed) {
-    vfs_dirent_t dir;
+    vfs_dirent_t dir = {0};
     size_t used = 0;
     int f;
 
@@ -386,8 +387,9 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
             used = bufLen;
             break;
         }
-        memcpy(buf + used, &dir, sizeof(dir));
-        memcpy(buf + sizeof(dir) + used, d->entries[i].name, dir.d_namlen);
+        memcpy((char *)buf + used, &dir, sizeof(dir));
+        memcpy((char *)buf + sizeof(dir) + used, d->entries[i].name,
+               dir.d_namlen);
 
         used += sizeof(dir) + dir.d_namlen;
     }

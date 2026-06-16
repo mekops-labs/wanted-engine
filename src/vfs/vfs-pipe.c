@@ -304,7 +304,7 @@ int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
                        void *buf, size_t bufLen, uint64_t *cookie,
                        size_t *bufUsed) {
     (void)c;
-    pipe_handle_t *h = handle;
+    const pipe_handle_t *h = handle;
     if (!h || !h->is_root)
         return -EBADF;
 

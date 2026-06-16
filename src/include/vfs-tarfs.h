@@ -18,8 +18,8 @@ typedef struct vfs_tarfs_ctx_t vfs_tarfs_ctx_t;
 /* Scan every layer, build the sorted deduplicated path index, and pre-fetch the
  * app.wasm entrypoint pointer for zero-redundant-scan boot.
  * Returns NULL on failure (bad args / OOM). */
-vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
-                           uint8_t layer_cnt);
+vfs_tarfs_ctx_t *TarFsInit(const uint8_t *const layers[],
+                           const size_t layer_lens[], uint8_t layer_cnt);
 
 void TarFsDestroy(vfs_tarfs_ctx_t *ctx);
 
@@ -48,7 +48,8 @@ uint16_t TarFsIndexLen(const vfs_tarfs_ctx_t *ctx);
  * handle; TarFs_ReadDir walks the index forward emitting immediate children
  * and synthesised subdirectories. */
 
-void *TarFs_Open(vfs_tarfs_ctx_t *ctx, const char *path, vfs_oflags_t flags);
+void *TarFs_Open(const vfs_tarfs_ctx_t *ctx, const char *path,
+                 vfs_oflags_t flags);
 int TarFs_Close(vfs_tarfs_ctx_t *ctx, void *handle);
 int TarFs_Read(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t nbyte);
 int TarFs_Stat(vfs_tarfs_ctx_t *ctx, void *handle, vfs_stat_t *stat);

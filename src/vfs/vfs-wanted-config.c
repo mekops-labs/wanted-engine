@@ -40,6 +40,8 @@ const vfs_driver_t WantedConfigDriver = {
 
 static bool cfg_opened = false;
 
+/* Signature fixed by the vfs_driver_t callback table. */
+/* cppcheck-suppress constParameterCallback */
 static int _cfg_Destroy(struct vfs_driver_t *d) {
     cfg_opened = false;
     return 0;

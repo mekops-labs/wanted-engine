@@ -49,14 +49,12 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     struct dirent **namelist;
     struct stat s;
     int n, i = 0;
-    int ret;
     int d;
 
     d = open(REGISTRY_ROOT, O_DIRECTORY | O_RDONLY);
     if (d < 0) {
         if (ENOENT == errno) {
-            ret = mkdir(REGISTRY_ROOT, 0755);
-            if (ret < 0) {
+            if (mkdir(REGISTRY_ROOT, 0755) < 0) {
                 return -errno;
             }
 
@@ -92,8 +90,11 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
             strncpy(registryList[i].name, namelist[i]->d_name, nameLen);
             registryList[i].name[nameLen - 1] = '\0';
 
-            ret = fstatat(d, namelist[i]->d_name, &s, 0);
-            registryList[i].size = s.st_size;
+            if (fstatat(d, namelist[i]->d_name, &s, 0) == 0) {
+                registryList[i].size = s.st_size;
+            } else {
+                registryList[i].size = 0;
+            }
         }
 
         free(namelist[i]);

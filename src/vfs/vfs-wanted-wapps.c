@@ -388,7 +388,7 @@ static size_t RenderRead(wapp_node_t node, const char *name, char *out,
         if (live) {
             s = st.status;
         } else {
-            wapps_pending_t *p = pending_find(&ctx, name);
+            const wapps_pending_t *p = pending_find(&ctx, name);
             s = (p != NULL && !p->configured) ? CREATED : NOT_STARTED;
         }
         return (size_t)snprintf(out, cap, "%s", statusToString(s));
@@ -403,7 +403,8 @@ static size_t RenderRead(wapp_node_t node, const char *name, char *out,
          * a digest). Empty for a not-yet-launched reservation. */
         return (size_t)snprintf(out, cap, "%s", live ? st.version : "");
     case NODE_ID:
-        return (size_t)snprintf(out, cap, "%u", live ? st.id : 0);
+        return (size_t)snprintf(out, cap, "%u",
+                                (unsigned int)(live ? st.id : 0));
     case NODE_EXIT_CODE:
         /* Authoritative only when state==exited; a running/unknown wapp reads
          * the sentinel, and so does a trapped one (which never set a code). */

@@ -310,7 +310,7 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
                     pax_path[1] == '/') {
                     pax_path += 2;
                     pax_path_len -= 2;
-                } else if (pax_path_len >= 1 && pax_path[0] == '/') {
+                } else if (pax_path[0] == '/') {
                     pax_path += 1;
                     pax_path_len -= 1;
                 }
@@ -444,10 +444,9 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
 
         /* Pre-fetch the boot entrypoint from the topmost non-whiteout hit. */
         if (!is_whiteout) {
-            size_t data_off = off + TAR_BLOCK_SIZE;
             if (strcmp(entry_path, "app.wasm") == 0 &&
                 ctx->entrypoint_wasm == NULL) {
-                ctx->entrypoint_wasm = buf + data_off;
+                ctx->entrypoint_wasm = buf + off + TAR_BLOCK_SIZE;
                 ctx->entrypoint_wasm_len = eff_size;
             }
         }
@@ -475,8 +474,8 @@ static int IndexCmp(const void *a, const void *b) {
     return strcmp(ea->path_ptr, eb->path_ptr);
 }
 
-vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
-                           uint8_t layer_cnt) {
+vfs_tarfs_ctx_t *TarFsInit(const uint8_t *const layers[],
+                           const size_t layer_lens[], uint8_t layer_cnt) {
     if (layers == NULL || layer_lens == NULL || layer_cnt == 0 ||
         layer_cnt > TARFS_MAX_LAYERS) {
         DEBUG_TRACE("tarfs: invalid args (cnt=%u)", layer_cnt);
@@ -616,7 +615,8 @@ static tarfs_file_ctx_t *AllocDirHandle(const char *prefix, size_t prefix_len) {
     return h;
 }
 
-void *TarFs_Open(vfs_tarfs_ctx_t *ctx, const char *path, vfs_oflags_t flags) {
+void *TarFs_Open(const vfs_tarfs_ctx_t *ctx, const char *path,
+                 vfs_oflags_t flags) {
     if (!ctx || !path)
         return NULL;
 
@@ -707,7 +707,7 @@ int TarFs_Stat(vfs_tarfs_ctx_t *ctx, void *handle, vfs_stat_t *stat) {
     (void)ctx;
     if (!handle || !stat)
         return -EINVAL;
-    tarfs_file_ctx_t *h = handle;
+    const tarfs_file_ctx_t *h = handle;
     memset(stat, 0, sizeof(*stat));
     if (h->is_dir) {
         stat->filetype = VFS_FILETYPE_DIRECTORY;
@@ -756,7 +756,7 @@ int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
                   uint64_t *cookie, size_t *bufUsed) {
     if (!ctx || !handle || !buf || !cookie || !bufUsed)
         return -EINVAL;
-    tarfs_file_ctx_t *h = handle;
+    const tarfs_file_ctx_t *h = handle;
     if (!h->is_dir)
         return -ENOTDIR;
 

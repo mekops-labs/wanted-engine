@@ -99,8 +99,6 @@ static bool ValidInstallRef(const char *ref) {
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
-    int ret;
-
     if (path == NULL)
         return -EINVAL;
 
@@ -110,7 +108,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     d->writeRef[0] = '\0';
 
     if (path[0] == '/' && path[1] == '\0') {
-        ret = PlatformRegistryRead(d->entries, MAX_REG_ENTRIES);
+        int ret = PlatformRegistryRead(d->entries, MAX_REG_ENTRIES);
         if (ret < 0)
             return ret;
         d->nEntries = ret;
@@ -228,7 +226,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed) {
-    vfs_dirent_t dir;
+    vfs_dirent_t dir = {0};
     size_t used = 0;
 
     if (buf == NULL)
@@ -249,13 +247,13 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
             used = bufLen;
             break;
         }
-        memcpy(buf + used, &dir, sizeof(dir));
+        memcpy((char *)buf + used, &dir, sizeof(dir));
         used += sizeof(dir);
-        memcpy(buf + used, d->entries[i].name, nameLen);
+        memcpy((char *)buf + used, d->entries[i].name, nameLen);
         used += nameLen;
-        memcpy(buf + used, &VERSION_SEPARATOR, 1);
+        memcpy((char *)buf + used, &VERSION_SEPARATOR, 1);
         used += 1;
-        memcpy(buf + used, d->entries[i].version, verLen);
+        memcpy((char *)buf + used, d->entries[i].version, verLen);
         used += verLen;
     }
 

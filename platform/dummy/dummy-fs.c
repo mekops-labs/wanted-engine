@@ -63,7 +63,7 @@ static uint32_t g_prng_state = 0xDEAD1234U;
 
 /* ── Fs helpers ─────────────────────────────────────────────────────────── */
 
-static int node_find(dummy_fs_t *fs, const char *path) {
+static int node_find(const dummy_fs_t *fs, const char *path) {
     for (int i = 0; i < DUMMY_FS_MAX_NODES; i++) {
         if (fs->nodes[i].type != DUMMY_NODE_NONE &&
             strncmp(fs->nodes[i].path, path, DUMMY_FS_PATH_LEN) == 0)
@@ -168,7 +168,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int dir_drv_fd, const char *rel_path,
     if (d->readonly && VFS_O_IS_WRITE(flags))
         return -EROFS;
     dummy_fs_t *fs = d->fs;
-    dummy_fd_slot_t *dfd = fd_get(fs, dir_drv_fd);
+    const dummy_fd_slot_t *dfd = fd_get(fs, dir_drv_fd);
     if (!dfd)
         return -EBADF;
     if (fs->nodes[dfd->node_idx].type != DUMMY_NODE_DIR)
@@ -191,10 +191,10 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
     dummy_fs_t *fs = d->fs;
-    dummy_fd_slot_t *dfd = fd_get(fs, fd);
+    const dummy_fd_slot_t *dfd = fd_get(fs, fd);
     if (!dfd || !s)
         return -EBADF;
-    dummy_node_t *n = &fs->nodes[dfd->node_idx];
+    const dummy_node_t *n = &fs->nodes[dfd->node_idx];
     memset(s, 0, sizeof(*s));
     s->dev = 0x796D6D44U; /* 'Dmmy' */
     s->ino = (uint32_t)dfd->node_idx;
@@ -210,7 +210,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     dummy_fd_slot_t *dfd = fd_get(fs, fd);
     if (!dfd)
         return -EBADF;
-    dummy_node_t *n = &fs->nodes[dfd->node_idx];
+    const dummy_node_t *n = &fs->nodes[dfd->node_idx];
     if (n->type == DUMMY_NODE_DIR)
         return -EISDIR;
     uint32_t avail = (dfd->pos < n->size) ? (n->size - dfd->pos) : 0;
@@ -249,7 +249,7 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
     dummy_fd_slot_t *dfd = fd_get(fs, fd);
     if (!dfd)
         return -EBADF;
-    dummy_node_t *n = &fs->nodes[dfd->node_idx];
+    const dummy_node_t *n = &fs->nodes[dfd->node_idx];
     long new_pos;
     switch (whence) {
     case VFS_SEEK_SET:
@@ -278,10 +278,10 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     if (!buf || !cookie || !bufUsed)
         return -EINVAL;
     dummy_fs_t *fs = d->fs;
-    dummy_fd_slot_t *dfd = fd_get(fs, fd);
+    const dummy_fd_slot_t *dfd = fd_get(fs, fd);
     if (!dfd)
         return -EBADF;
-    dummy_node_t *dir = &fs->nodes[dfd->node_idx];
+    const dummy_node_t *dir = &fs->nodes[dfd->node_idx];
     if (dir->type != DUMMY_NODE_DIR)
         return -ENOTDIR;
 
@@ -324,8 +324,8 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
 
 static int dummy_rename(dummy_fs_t *fs, int old_fd, const char *old_path,
                         int new_fd, const char *new_path) {
-    dummy_fd_slot_t *old_dfd = fd_get(fs, old_fd);
-    dummy_fd_slot_t *new_dfd = fd_get(fs, new_fd);
+    const dummy_fd_slot_t *old_dfd = fd_get(fs, old_fd);
+    const dummy_fd_slot_t *new_dfd = fd_get(fs, new_fd);
     if (!old_dfd || !new_dfd)
         return -EBADF;
 
@@ -356,7 +356,7 @@ static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path) {
     if (d->readonly)
         return -EROFS;
     dummy_fs_t *fs = d->fs;
-    dummy_fd_slot_t *dfd = fd_get(fs, fd);
+    const dummy_fd_slot_t *dfd = fd_get(fs, fd);
     if (!dfd)
         return -EBADF;
 
@@ -436,7 +436,7 @@ int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
 
 int PlatformFsMkdir(int fd, const char *path) {
     dummy_fs_t *fs = &g_dummy_fs;
-    dummy_fd_slot_t *dfd = fd_get(fs, fd);
+    const dummy_fd_slot_t *dfd = fd_get(fs, fd);
     if (!dfd)
         return -EBADF;
     char abs_path[DUMMY_FS_PATH_LEN];

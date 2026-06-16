@@ -92,7 +92,7 @@ int PlatformNetFree(struct netCtx *c) {
 }
 
 int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
-    struct hostent *host;
+    const struct hostent *host;
     struct sockaddr_in addr;
 
     if (NULL == c) {

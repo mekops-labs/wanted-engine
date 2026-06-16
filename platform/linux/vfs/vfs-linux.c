@@ -299,8 +299,8 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                 used = bufLen;
                 break;
             }
-            memcpy(buf + used, &dir, sizeof(dir));
-            memcpy(buf + sizeof(dir) + used, ep->d_name, dir.d_namlen);
+            memcpy((char *)buf + used, &dir, sizeof(dir));
+            memcpy((char *)buf + sizeof(dir) + used, ep->d_name, dir.d_namlen);
 
             used += sizeof(dir) + dir.d_namlen;
         }

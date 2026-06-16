@@ -182,6 +182,10 @@ int PlatformWappStart(wapp_t *wapp) {
             state.threads[slot].status == FAILURE)
             break;
     }
+    if (slot >= MAX_WAPPS) {
+        pthread_mutex_unlock(&state_mtx);
+        return -ENOSPC;
+    }
 
     /* The slot owns the previous occupant's wapp_t for its whole lifetime
      * (StartWapp hands ownership here, not freeing at the call site). Its
@@ -300,7 +304,6 @@ void PlatformRequestReboot(void) {
 }
 
 void PlatformWappLoop(void) {
-    uint8_t supervisorOk;
     int supervisorFailures = 0;
 
     for (;;) {
@@ -328,7 +331,7 @@ void PlatformWappLoop(void) {
             return;
         }
 
-        supervisorOk = 0;
+        uint8_t supervisorOk = 0;
         int supervisorFailed = 0;
         int supervisorErr = 0;
         for (int i = 0; i < MAX_WAPPS; i++) {

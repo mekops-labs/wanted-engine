@@ -75,6 +75,8 @@ int PlatformWappUnload(const wapp_t *wapp) {
     return 0;
 }
 
+/* Signature fixed by the platform.h PlatformWappStart contract. */
+/* cppcheck-suppress constParameterPointer */
 int PlatformWappStart(wapp_t *app) {
     if (!app)
         return -EINVAL;

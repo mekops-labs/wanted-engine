@@ -31,6 +31,8 @@ vfs_driver_t *VfsNullInit(const wapp_t *wapp, const char *opt) {
     return &NullDriver;
 }
 
+/* Signature fixed by the vfs_driver_t callback table. */
+/* cppcheck-suppress constParameterCallback */
 static int _Destroy(struct vfs_driver_t *d) { return 0; }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
@@ -57,6 +59,8 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 
     return 0;
 }
+/* Signature fixed by the vfs_driver_t callback table. */
+/* cppcheck-suppress constParameterCallback */
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     return 0;
 }
