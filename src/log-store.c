@@ -17,7 +17,6 @@
 #include <wanted_malloc.h>
 
 #define LOG_CAP 2048 /* bytes retained per wapp (most recent) */
-#define LOG_SLOTS MAX_WAPPS
 
 typedef struct {
     char name[WAPP_MAX_NAME_LEN];
