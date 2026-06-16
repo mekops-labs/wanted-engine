@@ -189,18 +189,16 @@ This applies to all of `src/`, `platform/`, `cmd/`, and `test/`. Vendor code und
 
 - **Platform boundary is strict.** `src/` must not call OS primitives directly. All platform-specific operations go through `platform/include/` headers.
 - **VFS is the only I/O path.** Wapps interact with the outside world exclusively through VFS. Adding direct syscalls from WASM host functions bypasses isolation and is not allowed.
-- **Fixed resource limits.** MAX_WAPPS=3, WAPP_MAX_NAME_LEN=15, MAX_PATH_LEN=256, WASM_STACK_SIZE=8192, WASM_HEAP_SIZE=8192. Changes require audit of all array-sized structures.
+- **Compile-time resource limits.** Engine-wide limits live in `src/include/wanted-config.h` (`MAX_WAPPS`, `WASM_STACK_SIZE`, `WASM_HEAP_SIZE`, `WASM_MAX_MEMORY_PAGES`, `MAX_PATH_LEN`), each `#ifndef`-guarded and overridable via `-D` or a profile (`make build PROFILE=constrained|small|big`). Driver-private limits stay local to their driver. Changing a limit resizes statically allocated structures — audit every array dimensioned by it. See the [Platform Guide](docs/platform-guide.md) and `make sizes`.
 - **No dynamic allocation in wapp context after init.** Memory budget is constrained on embedded targets.
 
 ## Key Constants and Status Codes
 
-Defined in `src/include/wanted-api.h`:
+Engine-wide resource limits are in `src/include/wanted-config.h` (see Architecture Constraints); other key constants in `src/include/wanted-api.h`:
 
-- Wapp states: `NOT_STARTED`, `STARTING`, `RUNNING`, `EXITED`, `FAILURE`
-- `MAX_WAPPS` = 3
+- Wapp states: `NOT_STARTED`, `CREATED`, `STARTING`, `RUNNING`, `EXITED`, `FAILURE`
+- `MAX_WAPPS` = 3, `WASM_STACK_SIZE` = 8192, `WASM_HEAP_SIZE` = 8192, `WASM_MAX_MEMORY_PAGES` = 1, `MAX_PATH_LEN` = 256 (constrained defaults; per profile)
 - `WAPP_MAX_NAME_LEN` = 15
-- `MAX_PATH_LEN` = 256
-- `WASM_STACK_SIZE` = 8192, `WASM_HEAP_SIZE` = 8192
 
 ## CI/CD
 
