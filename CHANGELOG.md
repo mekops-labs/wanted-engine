@@ -14,6 +14,12 @@ Unreleased
 - Linux RNG: `PlatformRandom` uses seed-consistent `random()` (was unseeded `rand()`).
 - wapp start: reject launch when the slot table is full instead of indexing past it.
 
+### Build
+
+- Re-homed to `gitlab.com/mekops/wanted/wanted-engine` (clone URL, CI/devcontainer image, badges).
+- Renamed the wapp SDK image `wasm-sdk` → `wapp-sdk`.
+- Pinned the WAMR classic interpreter explicitly (`WAMR_BUILD_FAST_INTERP=0`).
+
 0.7.0 (2026-06-15)
 ------------------
 
