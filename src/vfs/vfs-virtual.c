@@ -34,7 +34,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed);
 static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 
-static inline bool CheckFd(vfs_driver_ctx_t d, int fd) {
+static inline bool checkFd(vfs_driver_ctx_t d, int fd) {
     if (fd >= MAX_OPEN)
         return false;
     if (d && d->fildes[fd].drv == NULL)
@@ -43,15 +43,15 @@ static inline bool CheckFd(vfs_driver_ctx_t d, int fd) {
     return true;
 }
 
-static inline bool CheckSameDriver(vfs_driver_ctx_t d, int fd) {
+static inline bool checkSameDriver(vfs_driver_ctx_t d, int fd) {
     return (d->fildes[fd].drv->ctx == d);
 }
 
-static inline bool CheckOpened(vfs_driver_ctx_t d, int fd) {
-    return CheckFd(d, fd) && d->fildes[fd].opened;
+static inline bool checkOpened(vfs_driver_ctx_t d, int fd) {
+    return checkFd(d, fd) && d->fildes[fd].opened;
 }
 
-static int FindFirstClosedFd(vfs_driver_ctx_t d) {
+static int findFirstClosedFd(vfs_driver_ctx_t d) {
     if (!d)
         return -EINVAL;
 
@@ -214,7 +214,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
 
     DEBUG_TRACE("%d: %s (0x%x)", fd, path, flags);
 
-    if (!CheckFd(d, fd)) {
+    if (!checkFd(d, fd)) {
         return -EBADF;
     }
 
@@ -230,7 +230,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
     if (f < 0)
         return f;
 
-    fd = FindFirstClosedFd(d);
+    fd = findFirstClosedFd(d);
     if (fd < 0)
         return fd;
 
@@ -261,11 +261,11 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
     int r;
-    if (!CheckOpened(d, fd)) {
+    if (!checkOpened(d, fd)) {
         return -EBADF;
     }
 
-    if (CheckSameDriver(d, fd)) {
+    if (checkSameDriver(d, fd)) {
         if (fd == 0) {
             return -EBADF;
         }
@@ -279,14 +279,14 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
 }
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
-    if (!CheckOpened(d, fd)) {
+    if (!checkOpened(d, fd)) {
         return -EBADF;
     }
     if (!stat) {
         return -EINVAL;
     }
 
-    if (CheckSameDriver(d, fd)) {
+    if (checkSameDriver(d, fd)) {
         stat->dev = d->fildes[fd].drv->bytesId;
         stat->ino = d->fildes[fd].drv_fd;
         stat->filetype = d->fildes[fd].drv->filetype;
@@ -303,13 +303,13 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 }
 
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
-    if (!CheckOpened(d, fd)) {
+    if (!checkOpened(d, fd)) {
         return -EBADF;
     }
     if (NULL == buf) {
         return -EINVAL;
     }
-    if (CheckSameDriver(d, fd)) {
+    if (checkSameDriver(d, fd)) {
         return -EISDIR;
     }
 
@@ -317,13 +317,13 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
 }
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
-    if (!CheckOpened(d, fd)) {
+    if (!checkOpened(d, fd)) {
         return -EBADF;
     }
     if (NULL == buf) {
         return -EINVAL;
     }
-    if (CheckSameDriver(d, fd)) {
+    if (checkSameDriver(d, fd)) {
         return -EISDIR;
     }
 
@@ -332,7 +332,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
                  long *pos) {
-    if (!CheckOpened(d, fd)) {
+    if (!checkOpened(d, fd)) {
         return -EBADF;
     }
     if (NULL == pos) {
@@ -342,7 +342,7 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
         return -EINVAL;
     }
 
-    if (CheckSameDriver(d, fd)) {
+    if (checkSameDriver(d, fd)) {
         return -EISDIR;
     }
 
@@ -361,13 +361,13 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     if (NULL == buf || NULL == cookie || NULL == bufUsed) {
         return -EINVAL;
     }
-    if (!CheckOpened(d, fd)) {
+    if (!checkOpened(d, fd)) {
         return -EBADF;
     }
 
     f = d->fildes[fd].drv_fd;
 
-    if (!CheckSameDriver(d, fd)) {
+    if (!checkSameDriver(d, fd)) {
         return TRY_DRV(d->fildes[fd].drv, ReadDir, f, buf, bufLen, cookie,
                        bufUsed);
     }

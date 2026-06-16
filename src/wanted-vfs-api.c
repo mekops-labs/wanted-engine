@@ -46,7 +46,7 @@ int WantedProcReadClockQuality(vfs_ctx_t c, void *buf, size_t bufLen) {
     return 1;
 }
 
-const char *statusToString(status_t state) {
+const char *StatusToString(status_t state) {
     switch (state) {
     case NOT_STARTED:
         return "not_started";
@@ -65,7 +65,7 @@ const char *statusToString(status_t state) {
     }
 }
 
-static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out) {
+static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
     json_t m[100];
     char b[len];
 
@@ -113,7 +113,7 @@ static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out) {
 }
 
 int WantedParseConfig(const char *buf, size_t bufLen) {
-    return ParseConfig(buf, bufLen, &currentConfig);
+    return parseConfig(buf, bufLen, &currentConfig);
 }
 
 const wantedConfig_t *WantedGetConfig(void) { return &currentConfig; }
@@ -162,7 +162,7 @@ int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
 /* Table adaptor: a config-named `platform` driver — a console backing or a
  * /dev singleton — is always read-write. The read-only bind mount is bound via
  * WasiCtxAddPreopen (the mounts[] path), not resolved through this table. */
-static vfs_driver_t *PlatformFsInitRW(const wapp_t *wapp, const char *options) {
+static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
     return VfsPlatformFsInit(wapp, options, false);
 }
 
@@ -173,7 +173,7 @@ static const vfs_driver_table_t global_driver_table[] = {
     {"log", VfsLogInit},
     {"9p", Vfs9PInit},
     {"config", VfsConfigInit},
-    {"platform", PlatformFsInitRW},
+    {"platform", platformFsInitRW},
     {"socket", VfsSocketInit},
     {"wanted", VfsWantedInit},
     {NULL, NULL},
@@ -187,7 +187,7 @@ static const vfs_driver_table_t global_driver_table[] = {
  * A malformed path (relative, or an unknown <stdio> token) is rejected and the
  * driver destroyed: a misconfigured launch config fails loudly at install time
  * rather than silently at first open. */
-static int InstallTo(struct vfs_ctx_t *c, const char *path,
+static int installTo(struct vfs_ctx_t *c, const char *path,
                      const vfs_driver_t *drv) {
     if (strncmp(path, "/dev/", 5) == 0)
         return DevFs_Register(c, path + 5, drv);
@@ -201,7 +201,7 @@ static int InstallTo(struct vfs_ctx_t *c, const char *path,
             drv->Destroy((vfs_driver_t *)drv);
         return r;
     }
-    DEBUG_TRACE("InstallTo: unrouted path '%s', dropping driver", path);
+    DEBUG_TRACE("installTo: unrouted path '%s', dropping driver", path);
     if (drv->Destroy)
         drv->Destroy((vfs_driver_t *)drv);
     return -EINVAL;
@@ -231,7 +231,7 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
     }
 
     if (NULL != drv) {
-        ret = InstallTo(c, path, drv);
+        ret = installTo(c, path, drv);
     } else {
         DEBUG_TRACE("can't load %s driver, not found", name);
         return -EINVAL;
@@ -244,7 +244,7 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
  * `arr`. Each entry reads "name", "path", and the section's options field
  * (`optKey`, "options" or "address"). A field a section forbids is still read
  * here so install-time validation can reject it loudly. */
-static void ParseResourceArray(json_t const *params, const char *section,
+static void parseResourceArray(json_t const *params, const char *section,
                                const char *optKey, wapp_driver_t *arr,
                                size_t *cnt) {
     json_t const *a = json_getProperty(params, section);
@@ -273,7 +273,7 @@ static void ParseResourceArray(json_t const *params, const char *section,
  * (WantedParseWappConfigJson), where the object passed in *is* the config.
  * Wapp identity is not read here — for the config node it travels in the
  * path. */
-static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
+static void parseWappParams(json_t const *params, wapp_config_t *cfg) {
     /* image: the registry image this instance runs, as a reference
      * "<name>[:<tag>]". Optional — when omitted the launch path defaults it to
      * the instance name, so a single-instance wapp needs no config change. A
@@ -319,11 +319,11 @@ static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
      *   - sockets[] — connections at "/net/<name>"; transport in "address".
      * Per-section validation (forbidden fields, required path) happens at
      * install time; here we only read the fields each section may carry. */
-    ParseResourceArray(params, "drivers", "options", cfg->drivers,
+    parseResourceArray(params, "drivers", "options", cfg->drivers,
                        &cfg->driversCnt);
-    ParseResourceArray(params, "mounts", "options", cfg->mounts,
+    parseResourceArray(params, "mounts", "options", cfg->mounts,
                        &cfg->mountsCnt);
-    ParseResourceArray(params, "sockets", "address", cfg->sockets,
+    parseResourceArray(params, "sockets", "address", cfg->sockets,
                        &cfg->socketsCnt);
 
     /* args[]: optional command-line arguments, occupying argv[1..]. argv[0] is
@@ -404,7 +404,7 @@ int WantedParseCtrlAction(json_t const *json, char *wappName,
         copyField(wappName, WAPP_MAX_NAME_LEN, json_getValue(name));
     }
 
-    ParseWappParams(params, cfg);
+    parseWappParams(params, cfg);
 
     return 0;
 }
@@ -456,7 +456,7 @@ int WantedParseWappConfigJson(const char *buf, size_t bufLen,
 
     /* The decomposed config node carries the bare launch-config body — the
      * object itself plays the role the legacy `params` block did. */
-    ParseWappParams(json, cfg);
+    parseWappParams(json, cfg);
 
     return 0;
 }

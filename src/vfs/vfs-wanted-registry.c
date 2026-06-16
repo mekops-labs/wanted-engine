@@ -67,7 +67,7 @@ static int _Destroy(struct vfs_driver_t *d) {
 /* One image-reference component (name or tag): non-empty, within `maxlen`
  * (incl. NUL), first char [A-Za-z0-9_], rest [A-Za-z0-9._-] — the OCI tag
  * grammar, applied to both halves of "<name>:<tag>". */
-static bool ValidRefComponent(const char *s, size_t len, size_t maxlen) {
+static bool validRefComponent(const char *s, size_t len, size_t maxlen) {
     if (len == 0 || len >= maxlen)
         return false;
     for (size_t i = 0; i < len; i++) {
@@ -87,14 +87,14 @@ static bool ValidRefComponent(const char *s, size_t len, size_t maxlen) {
 /* An install ref is "<name>" or "<name>:<tag>" with at most one separator; both
  * components must satisfy the tag grammar and their length bounds. This rejects
  * an out-of-grammar ref at install rather than letting it name a file. */
-static bool ValidInstallRef(const char *ref) {
+static bool validInstallRef(const char *ref) {
     const char *colon = strchr(ref, (int)VERSION_SEPARATOR);
     if (colon == NULL)
-        return ValidRefComponent(ref, strlen(ref), WAPP_MAX_NAME_LEN);
+        return validRefComponent(ref, strlen(ref), WAPP_MAX_NAME_LEN);
     if (strchr(colon + 1, (int)VERSION_SEPARATOR) != NULL)
         return false; /* a tag carries no separator */
-    return ValidRefComponent(ref, (size_t)(colon - ref), WAPP_MAX_NAME_LEN) &&
-           ValidRefComponent(colon + 1, strlen(colon + 1),
+    return validRefComponent(ref, (size_t)(colon - ref), WAPP_MAX_NAME_LEN) &&
+           validRefComponent(colon + 1, strlen(colon + 1),
                              WAPP_MAX_VERSION_LEN);
 }
 
@@ -119,7 +119,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
          * identity. The image bytes are written to the root write fd (0). */
         if (path[0] == '\0' || strlen(path) >= REG_REF_MAX)
             return -ENAMETOOLONG;
-        if (!ValidInstallRef(path))
+        if (!validInstallRef(path))
             return -EINVAL;
         strncpy(d->writeRef, path, REG_REF_MAX - 1);
         d->writeRef[REG_REF_MAX - 1] = '\0';
