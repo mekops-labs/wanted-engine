@@ -229,7 +229,8 @@ static void positive_checks(void) {
     tap_ok(read_path("/proc/wanted", buf, sizeof(buf)) > 0 &&
                strstr(buf, "platform:") != NULL &&
                strstr(buf, "version:") != NULL &&
-               strstr(buf, "max_wapps:\t3") != NULL,
+               strstr(buf, "max_wapps:\t3") != NULL &&
+               strstr(buf, "wasm_max_pages:\t1") != NULL,
            "proc: /proc/wanted reports engine identity and limits");
 
     /* Inter-wapp pipe round-trip within our own namespace. */

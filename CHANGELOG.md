@@ -4,6 +4,10 @@ Changelog
 Unreleased
 ----------
 
+### Changed
+
+- `/proc/wanted` now also reports `wasm_max_pages` (the linear-memory page cap) and `log_slots`, alongside the existing identity and ceiling fields.
+
 ### Build
 
 - Centralised the engine-wide resource limits (`MAX_WAPPS`, `WASM_STACK_SIZE`, `WASM_HEAP_SIZE`, `MAX_PATH_LEN`) into `src/include/wanted-config.h`. Each is `#ifndef`-guarded and overridable at build time via `-D<NAME>=...`. Driver-private limits stay local to their driver.
