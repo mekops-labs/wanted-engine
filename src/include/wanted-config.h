@@ -41,16 +41,53 @@
 #define MAX_WAPPS 3
 #endif
 
-/* Per-instance WAMR execution stack, in bytes. Allocated once per running wapp
- * instance, so the worst-case cost is MAX_WAPPS * WASM_STACK_SIZE. */
+/* --- WASM per-instance memory ---------------------------------------------
+ * A running wapp has three engine-controlled memory regions, passed to WAMR at
+ * instantiation (wasm_runtime_instantiate_ex):
+ *
+ *   1. Operand stack  (WASM_STACK_SIZE)      — host memory, OUTSIDE linear mem
+ *   2. App heap       (WASM_HEAP_SIZE)       — host-managed, OUTSIDE linear mem
+ *   3. Linear memory  (WASM_MAX_MEMORY_PAGES)— the wapp's addressable memory
+ *
+ * The stack and app heap sit outside linear memory because they are runtime
+ * constructs, not part of the address space the wasm module can load/store:
+ * the operand stack is the interpreter's own evaluation stack, and the app heap
+ * is a host-side allocator the runtime hands out via
+ * wasm_runtime_module_malloc. The module can only ever read/write its linear
+ * memory — that is the only region whose size it (and the WASI/VFS bridge) can
+ * observe.
+ */
+
+/* Operand (execution) stack, in bytes, per running instance — the classic
+ * interpreter's stack of operands and call frames. Lives in host memory,
+ * outside linear memory, so the wapp cannot address it. Distinct from the
+ * wapp's C "aux stack", which lives inside linear memory and is fixed by the
+ * wapp's own linker (wasm-ld -z stack-size), not by this knob. Worst-case cost
+ * is MAX_WAPPS * WASM_STACK_SIZE. */
 #ifndef WASM_STACK_SIZE
 #define WASM_STACK_SIZE 8192
 #endif
 
-/* Per-instance WAMR application heap, in bytes. Allocated once per running wapp
- * instance, so the worst-case cost is MAX_WAPPS * WASM_HEAP_SIZE. */
+/* App heap, in bytes, per running instance — a runtime-managed heap backing the
+ * host-side wasm_runtime_module_malloc API, allocated outside linear memory.
+ * WAMR disables it automatically when the module exports its own malloc/free,
+ * so a wasi wapp (which mallocs from its libc heap at the top of linear memory)
+ * typically does not use it. Worst-case cost is MAX_WAPPS * WASM_HEAP_SIZE. */
 #ifndef WASM_HEAP_SIZE
 #define WASM_HEAP_SIZE 8192
+#endif
+
+/* Ceiling on a wapp's linear memory, in 64 KiB pages — the memory the wapp
+ * actually addresses (its data, C aux stack, and libc heap). Enforced in two
+ * places: WAMR bounds memory.grow to this at runtime, and the engine refuses to
+ * load any image whose *declared initial* memory exceeds it (WAMR would
+ * otherwise clamp the cap up to the module's initial, letting a large initial
+ * sidestep the runtime bound). 0 = no cap. The constrained default is a single
+ * page. (Caveat: a module that never calls memory.grow is collapsed by WAMR's
+ * shrunk-memory pass to a single fixed page, so its initial reads as one page
+ * and is not caught by the load check.) */
+#ifndef WASM_MAX_MEMORY_PAGES
+#define WASM_MAX_MEMORY_PAGES 1
 #endif
 
 /* VFS path buffer length, in bytes. Sizes every fixed path buffer in a launch
