@@ -22,7 +22,7 @@
 static inline size_t min(size_t a, size_t b) { return (a) > (b) ? (b) : (a); }
 
 /* when return 1, scandir will put this dirent to the list */
-static int ParseExt(const struct dirent *dir) {
+static int parseExt(const struct dirent *dir) {
     if (!dir) {
         return 0;
     }
@@ -40,7 +40,7 @@ static int ParseExt(const struct dirent *dir) {
     return 0;
 }
 
-static int NameLenWithoutExt(const char *name) {
+static int nameLenWithoutExt(const char *name) {
     const char *ext = strrchr(name, '.');
     if ((!ext) || (ext == name)) {
         return 0;
@@ -66,7 +66,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
         return -errno;
     }
 
-    n = scandir(REGISTRY_ROOT, &namelist, ParseExt, alphasort);
+    n = scandir(REGISTRY_ROOT, &namelist, parseExt, alphasort);
     if (n < 0) {
         close(d);
         return -errno;
@@ -75,7 +75,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     for (i = 0; i < n; i++, len--) {
         if (registryList != NULL && len > 0) {
             size_t entryNameLen =
-                min(NameLenWithoutExt(namelist[i]->d_name) + 1,
+                min(nameLenWithoutExt(namelist[i]->d_name) + 1,
                     WAPP_MAX_NAME_LEN + 1 + WAPP_MAX_VERSION_LEN);
             const char *ver =
                 strchr(namelist[i]->d_name, (int)REGISTRY_VERSION_SEPARATOR);

@@ -74,7 +74,7 @@ void WA_threadEnd(void *ptr) {
 }
 
 #ifdef __ANDROID__
-void thread_sigHandler(int sig) {
+static void thread_sigHandler(int sig) {
     int i;
     if (sig != SIGUSR1) {
         return;

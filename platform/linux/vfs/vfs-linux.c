@@ -158,7 +158,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
  * kernel that lacks it the syscall returns ENOSYS and the open fails loudly,
  * rather than silently resolving without the escape guard. Confinement is not
  * optional — a sandbox we cannot enforce must deny, not degrade. */
-static int OpenAtBeneath(int dirfd, const char *path, int flags, int mode) {
+static int openAtBeneath(int dirfd, const char *path, int flags, int mode) {
     struct open_how how;
     memset(&how, 0, sizeof(how));
     how.flags = (uint64_t)(unsigned int)flags;
@@ -181,7 +181,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
     DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, path);
 
     int mode = 0644;
-    int ret = OpenAtBeneath(fd, path, fl, mode);
+    int ret = openAtBeneath(fd, path, fl, mode);
     if (ret < 0)
         return -errno;
 

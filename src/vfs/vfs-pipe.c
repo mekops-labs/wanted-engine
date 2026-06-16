@@ -81,7 +81,7 @@ void PipeStoreFree(pipe_store_t *store) {
 /* ── Ring helpers (caller holds store->lock) ─────────────────────────────────
  */
 
-static named_pipe_t *FindPipe(pipe_store_t *store, const char *name) {
+static named_pipe_t *findPipe(pipe_store_t *store, const char *name) {
     for (int i = 0; i < PIPE_MAX_PIPES; i++) {
         if (store->pipes[i].active &&
             strncmp(store->pipes[i].name, name, MAX_ENTRY_NAME_LEN) == 0)
@@ -90,7 +90,7 @@ static named_pipe_t *FindPipe(pipe_store_t *store, const char *name) {
     return NULL;
 }
 
-static named_pipe_t *AllocPipe(pipe_store_t *store, const char *name) {
+static named_pipe_t *allocPipe(pipe_store_t *store, const char *name) {
     for (int i = 0; i < PIPE_MAX_PIPES; i++) {
         if (!store->pipes[i].active) {
             named_pipe_t *p = &store->pipes[i];
@@ -104,7 +104,7 @@ static named_pipe_t *AllocPipe(pipe_store_t *store, const char *name) {
     return NULL;
 }
 
-static int RingRead(named_pipe_t *p, void *buf, size_t nbyte) {
+static int ringRead(named_pipe_t *p, void *buf, size_t nbyte) {
     size_t n = nbyte < p->data_len ? nbyte : p->data_len;
     size_t first = PIPE_BUF_SIZE - p->rpos;
     if (n <= first) {
@@ -118,7 +118,7 @@ static int RingRead(named_pipe_t *p, void *buf, size_t nbyte) {
     return (int)n;
 }
 
-static int RingWrite(named_pipe_t *p, const void *buf, size_t nbyte) {
+static int ringWrite(named_pipe_t *p, const void *buf, size_t nbyte) {
     size_t space = PIPE_BUF_SIZE - p->data_len;
     size_t n = nbyte < space ? nbyte : space;
     if (n == 0)
@@ -137,7 +137,7 @@ static int RingWrite(named_pipe_t *p, const void *buf, size_t nbyte) {
 }
 
 /* Template used by bridge helpers to forward calls into the typed API. */
-static void BuildTmpDriver(vfs_driver_t *drv, vfs_driver_ctx_t ctx) {
+static void buildTmpDriver(vfs_driver_t *drv, vfs_driver_ctx_t ctx) {
     memset(drv, 0, sizeof(*drv));
     drv->bytesId = 0x65706950;
     drv->filetype = VFS_FILETYPE_DIRECTORY;
@@ -179,9 +179,9 @@ void *PipeDriver_Open(vfs_ctx_t c, const vfs_driver_t *drv, const char *suffix,
     }
 
     PlatformMutexLock(store->lock);
-    named_pipe_t *p = FindPipe(store, suffix);
+    named_pipe_t *p = findPipe(store, suffix);
     if (!p)
-        p = AllocPipe(store, suffix);
+        p = allocPipe(store, suffix);
     if (!p) {
         PlatformMutexUnlock(store->lock);
         WantedFree(h);
@@ -247,7 +247,7 @@ int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
     for (size_t iter = 0;; iter++) {
         PlatformMutexLock(store->lock);
         if (p->data_len > 0) {
-            int n = RingRead(p, buf, nbyte);
+            int n = ringRead(p, buf, nbyte);
             PlatformMutexUnlock(store->lock);
             return n;
         }
@@ -282,7 +282,7 @@ int PipeDriver_Write(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
     pipe_store_t *store = (pipe_store_t *)drv->ctx;
     named_pipe_t *p = h->pipe;
     PlatformMutexLock(store->lock);
-    int n = RingWrite(p, buf, nbyte);
+    int n = ringWrite(p, buf, nbyte);
     PlatformMutexUnlock(store->lock);
     return n;
 }
@@ -342,7 +342,7 @@ typedef struct bridge_state_t {
     void *handles[BRIDGE_MAX_HANDLES];
 } bridge_state_t;
 
-static int AllocHandle(bridge_state_t *s, void *h) {
+static int allocHandle(bridge_state_t *s, void *h) {
     for (int i = 0; i < BRIDGE_MAX_HANDLES; i++) {
         if (!s->handles[i]) {
             s->handles[i] = h;
@@ -352,12 +352,12 @@ static int AllocHandle(bridge_state_t *s, void *h) {
     return -EMFILE;
 }
 
-static void FreeHandle(bridge_state_t *s, int fd) {
+static void freeHandle(bridge_state_t *s, int fd) {
     if (fd >= 0 && fd < BRIDGE_MAX_HANDLES)
         s->handles[fd] = NULL;
 }
 
-static void *GetHandle(bridge_state_t *s, int fd) {
+static void *getHandle(bridge_state_t *s, int fd) {
     if (fd < 0 || fd >= BRIDGE_MAX_HANDLES)
         return NULL;
     return s->handles[fd];
@@ -367,11 +367,11 @@ static int _bOpen(vfs_driver_ctx_t dctx, const char *path, vfs_oflags_t flags) {
     bridge_state_t *s = (bridge_state_t *)dctx;
     int out_err = 0;
     vfs_driver_t tmp;
-    BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
+    buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     void *h = PipeDriver_Open(NULL, &tmp, path, flags, &out_err);
     if (!h)
         return out_err;
-    int fd = AllocHandle(s, h);
+    int fd = allocHandle(s, h);
     if (fd < 0) {
         PipeDriver_Close(NULL, &tmp, h);
         return fd;
@@ -381,55 +381,55 @@ static int _bOpen(vfs_driver_ctx_t dctx, const char *path, vfs_oflags_t flags) {
 
 static int _bClose(vfs_driver_ctx_t dctx, int fd) {
     bridge_state_t *s = (bridge_state_t *)dctx;
-    void *h = GetHandle(s, fd);
+    void *h = getHandle(s, fd);
     if (!h)
         return -EBADF;
     vfs_driver_t tmp;
-    BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
+    buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     int r = PipeDriver_Close(NULL, &tmp, h);
-    FreeHandle(s, fd);
+    freeHandle(s, fd);
     return r;
 }
 
 static int _bRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
     bridge_state_t *s = (bridge_state_t *)dctx;
-    void *h = GetHandle(s, fd);
+    void *h = getHandle(s, fd);
     if (!h)
         return -EBADF;
     vfs_driver_t tmp;
-    BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
+    buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     return PipeDriver_Read(NULL, &tmp, h, buf, nbyte);
 }
 
 static int _bWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
                    size_t nbyte) {
     bridge_state_t *s = (bridge_state_t *)dctx;
-    void *h = GetHandle(s, fd);
+    void *h = getHandle(s, fd);
     if (!h)
         return -EBADF;
     vfs_driver_t tmp;
-    BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
+    buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     return PipeDriver_Write(NULL, &tmp, h, buf, nbyte);
 }
 
 static int _bStat(vfs_driver_ctx_t dctx, int fd, vfs_stat_t *stat) {
     bridge_state_t *s = (bridge_state_t *)dctx;
-    void *h = GetHandle(s, fd);
+    void *h = getHandle(s, fd);
     if (!h)
         return -EBADF;
     vfs_driver_t tmp;
-    BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
+    buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     return PipeDriver_Stat(NULL, &tmp, h, stat);
 }
 
 static int _bReadDir(vfs_driver_ctx_t dctx, int fd, void *buf, size_t bufLen,
                      uint64_t *cookie, size_t *bufUsed) {
     bridge_state_t *s = (bridge_state_t *)dctx;
-    void *h = GetHandle(s, fd);
+    void *h = getHandle(s, fd);
     if (!h)
         return -EBADF;
     vfs_driver_t tmp;
-    BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
+    buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
     return PipeDriver_ReadDir(NULL, &tmp, h, buf, bufLen, cookie, bufUsed);
 }
 
@@ -443,7 +443,7 @@ static int _bDestroy(vfs_driver_t *drv) {
          * its `writers` count would keep readers in other wapps from ever
          * reaching EOF. PipeDriver_Close takes store->lock per handle. */
         vfs_driver_t tmp;
-        BuildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
+        buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
         for (int i = 0; i < BRIDGE_MAX_HANDLES; i++) {
             if (s->handles[i]) {
                 PipeDriver_Close(NULL, &tmp, s->handles[i]);

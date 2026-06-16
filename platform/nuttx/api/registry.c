@@ -23,7 +23,7 @@
 
 static inline size_t min(size_t a, size_t b) { return (a) > (b) ? (b) : (a); }
 
-static bool HasRegistryExt(const char *name) {
+static bool hasRegistryExt(const char *name) {
     const char *ext = strrchr(name, '.');
     if (!ext || ext == name) {
         return false;
@@ -31,7 +31,7 @@ static bool HasRegistryExt(const char *name) {
     return strcmp(ext, REGISTRY_EXT) == 0;
 }
 
-static int NameLenWithoutExt(const char *name) {
+static int nameLenWithoutExt(const char *name) {
     const char *ext = strrchr(name, '.');
     if ((!ext) || (ext == name)) {
         return 0;
@@ -41,8 +41,8 @@ static int NameLenWithoutExt(const char *name) {
 
 /* Split a registry filename "<name>:<version>.wapp" into the entry's name and
  * version fields, mirroring the Linux platform's parse. */
-static void ParseEntry(reg_entry_t *out, const char *dname, size_t size) {
-    size_t entryNameLen = min(NameLenWithoutExt(dname) + 1,
+static void parseEntry(reg_entry_t *out, const char *dname, size_t size) {
+    size_t entryNameLen = min(nameLenWithoutExt(dname) + 1,
                               WAPP_MAX_NAME_LEN + 1 + WAPP_MAX_VERSION_LEN);
     const char *ver = strchr(dname, (int)REGISTRY_VERSION_SEPARATOR);
     size_t nameLen = entryNameLen;
@@ -63,11 +63,11 @@ static void ParseEntry(reg_entry_t *out, const char *dname, size_t size) {
 }
 
 /* Lexicographic comparison: safe (both fields are always null-terminated by
- * ParseEntry), but version ordering is wrong for multi-digit fields —
+ * parseEntry), but version ordering is wrong for multi-digit fields —
  * "1.10.0-1" sorts before "1.9.0-1" because '1' < '9'. Acceptable while all
  * version fields remain single-digit; a numeric comparator is needed otherwise.
  */
-static int CompareEntries(const void *a, const void *b) {
+static int compareEntries(const void *a, const void *b) {
     const reg_entry_t *ea = (const reg_entry_t *)a;
     const reg_entry_t *eb = (const reg_entry_t *)b;
     int c = strcmp(ea->name, eb->name);
@@ -97,7 +97,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     }
 
     while ((de = readdir(dir)) != NULL) {
-        if (!HasRegistryExt(de->d_name)) {
+        if (!hasRegistryExt(de->d_name)) {
             continue;
         }
 
@@ -109,7 +109,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
         }
 
         if (registryList != NULL && filled < len) {
-            ParseEntry(&registryList[filled], de->d_name, (size_t)s.st_size);
+            parseEntry(&registryList[filled], de->d_name, (size_t)s.st_size);
             filled++;
         }
         count++;
@@ -118,7 +118,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     closedir(dir);
 
     if (registryList != NULL) {
-        qsort(registryList, filled, sizeof(reg_entry_t), CompareEntries);
+        qsort(registryList, filled, sizeof(reg_entry_t), compareEntries);
     }
 
     return count;

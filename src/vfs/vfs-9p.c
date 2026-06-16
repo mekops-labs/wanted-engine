@@ -72,7 +72,7 @@ struct vfs_driver_ctx_t {
     char *conf;
 };
 
-static int FindFirstClosedFd(vfs_driver_ctx_t d) {
+static int findFirstClosedFd(vfs_driver_ctx_t d) {
     if (!d)
         return -EINVAL;
 
@@ -474,7 +474,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
         return 0;
     }
 
-    newFd = FindFirstClosedFd(d);
+    newFd = findFirstClosedFd(d);
     if (newFd < 0)
         return newFd;
 
