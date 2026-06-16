@@ -178,7 +178,7 @@ static int ParseVolumeMountOptions(const char *options, char *nameBuf,
  * Returns 0 on success or a negative errno. */
 static int BuildWasiArgs(wasi_ctx_t *wasiCtx, const wapp_t *wapp) {
     uint32_t argc = 1 + (uint32_t)wapp->cfg.argsCnt;
-    const char **argv = WantedMalloc(argc * sizeof(char *));
+    const char **argv = (const char **)WantedMalloc(argc * sizeof(char *));
     if (!argv)
         return -ENOMEM;
     argv[0] = wapp->name;
@@ -188,9 +188,9 @@ static int BuildWasiArgs(wasi_ctx_t *wasiCtx, const wapp_t *wapp) {
     const char **envp = NULL;
     uint32_t envc = (uint32_t)wapp->cfg.envsCnt;
     if (envc > 0) {
-        envp = WantedMalloc(envc * sizeof(char *));
+        envp = (const char **)WantedMalloc(envc * sizeof(char *));
         if (!envp) {
-            WantedFree(argv);
+            WantedFree((void *)argv);
             return -ENOMEM;
         }
         for (size_t i = 0; i < wapp->cfg.envsCnt; i++)
@@ -305,7 +305,8 @@ static int ProcReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
 static vfs_tarfs_ctx_t *WappTarfsInit(const wapp_t *w) {
     if (!w || w->layer_cnt == 0)
         return NULL;
-    return TarFsInit((uint8_t *const *)w->layers, w->layer_lens, w->layer_cnt);
+    return TarFsInit((const uint8_t *const *)w->layers, w->layer_lens,
+                     w->layer_cnt);
 }
 
 int WantedWappRun(wapp_data_t *ctx) {
@@ -551,8 +552,9 @@ int WantedWappRun(wapp_data_t *ctx) {
                 continue;
             }
             rc = WasiCtxAddPreopen(wasiCtx, m->path, src, host_fd, readonly);
-            if (rc < 0)
+            if (rc < 0) {
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
+            }
         } else if (strcmp(m->name, "volume") == 0) {
             /* A `volume` mount is an engine-managed named store. The engine
              * owns the host location and binds it as a WASI preopen at the
@@ -600,8 +602,9 @@ int WantedWappRun(wapp_data_t *ctx) {
             }
             rc = WasiCtxAddPreopen(wasiCtx, m->path, hostPath, host_fd,
                                    readonly);
-            if (rc < 0)
+            if (rc < 0) {
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
+            }
         } else {
             ret += WantedInstallDriver(ctx->vfs, wapp, m->name, m->path,
                                        m->options);
@@ -778,11 +781,11 @@ wapp_t *WantedGetCurrentSupervisor(void) {
     return w;
 }
 
-int WantedStart(const char *json, size_t jsonLen) {
+int WantedStart(const char *cfg, size_t cfgLen) {
     int ret;
     wapp_t *app;
 
-    ret = WantedParseConfig(json, jsonLen);
+    ret = WantedParseConfig(cfg, cfgLen);
     if (ret < 0)
         return ret;
 

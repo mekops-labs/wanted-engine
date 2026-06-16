@@ -135,12 +135,13 @@ static int RememberOwned(vfs_tarfs_ctx_t *ctx, char *s) {
     if (ctx->owned_len == ctx->owned_cap) {
         uint16_t nc =
             ctx->owned_cap ? (uint16_t)(ctx->owned_cap * 2) : OWNED_INIT_CAP;
-        char **next = WantedMalloc((size_t)nc * sizeof(char *));
+        char **next = (char **)WantedMalloc((size_t)nc * sizeof(char *));
         if (!next)
             return -ENOMEM;
         if (ctx->owned) {
-            memcpy(next, ctx->owned, (size_t)ctx->owned_len * sizeof(char *));
-            WantedFree(ctx->owned);
+            memcpy((void *)next, (const void *)ctx->owned,
+                   (size_t)ctx->owned_len * sizeof(char *));
+            WantedFree((void *)ctx->owned);
         }
         ctx->owned = next;
         ctx->owned_cap = nc;
@@ -526,7 +527,7 @@ void TarFsDestroy(vfs_tarfs_ctx_t *ctx) {
     if (ctx->owned) {
         for (uint16_t i = 0; i < ctx->owned_len; i++)
             WantedFree(ctx->owned[i]);
-        WantedFree(ctx->owned);
+        WantedFree((void *)ctx->owned);
     }
     if (ctx->index)
         WantedFree(ctx->index);

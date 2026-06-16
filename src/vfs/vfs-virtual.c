@@ -65,6 +65,7 @@ static int FindFirstClosedFd(vfs_driver_ctx_t d) {
 
 vfs_driver_t *VfsVirtualInit(const wapp_t *wapp, const char *opt) {
     vfs_driver_t *driver;
+    (void)wapp;
     (void)opt;
 
     driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));

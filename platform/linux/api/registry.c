@@ -15,6 +15,10 @@
 #include <platform.h>
 #include <wanted.h>
 
+/* Upper bound on entries scanned when resolving a bare name; matches the
+ * registry capacity the VFS layer exposes. Avoids a variable-length array. */
+#define REGISTRY_MAX_ENTRIES 50
+
 static inline size_t min(size_t a, size_t b) { return (a) > (b) ? (b) : (a); }
 
 /* when return 1, scandir will put this dirent to the list */
@@ -27,10 +31,9 @@ static int ParseExt(const struct dirent *dir) {
         const char *ext = strrchr(dir->d_name, '.');
         if ((!ext) || (ext == dir->d_name)) {
             return 0;
-        } else {
-            if (strcmp(ext, REGISTRY_EXT) == 0) {
-                return 1;
-            }
+        }
+        if (strcmp(ext, REGISTRY_EXT) == 0) {
+            return 1;
         }
     }
 
@@ -100,7 +103,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
         free(namelist[i]);
     }
 
-    free(namelist);
+    free((void *)namelist);
 
     close(d);
 
@@ -117,8 +120,10 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
         int num = PlatformRegistryRead(NULL, 0);
         if (num < 0)
             return num;
+        if (num > REGISTRY_MAX_ENTRIES)
+            num = REGISTRY_MAX_ENTRIES;
 
-        reg_entry_t list[num];
+        reg_entry_t list[REGISTRY_MAX_ENTRIES];
         num = PlatformRegistryRead(list, num);
 
         const reg_entry_t *match = NULL;

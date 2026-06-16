@@ -33,7 +33,7 @@ typedef struct wasi_ctx_t {
 void RegisterWASINatives(void);
 
 wasi_ctx_t *InitWasiContext(void);
-void FreeWasiContext(wasi_ctx_t *);
+void FreeWasiContext(wasi_ctx_t *ctx);
 
 /* Append a preopen at the wapp-visible `path`, backed by an already-opened host
  * directory fd. `hostPath` is the real backing directory (used to label the

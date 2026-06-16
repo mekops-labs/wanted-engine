@@ -14,7 +14,7 @@ int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len) {
     srandom((unsigned int)time(NULL));
 
     for (size_t i = 0; i < buf_len; i++) {
-        buf[i] = rand() % UCHAR_MAX;
+        buf[i] = random() % UCHAR_MAX;
     }
 
     return 0;

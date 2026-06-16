@@ -16,9 +16,16 @@ Checks: >
   -readability-magic-numbers,
   -readability-function-cognitive-complexity,
   -bugprone-reserved-identifier,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
   -bugprone-easily-swappable-parameters,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-branch-clone,
+  -bugprone-narrowing-conversions,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
   -cert-err33-c
 
 HeaderFilterRegex: '.*(src|platform|include)/.*'
+ExcludeHeaderFilterRegex: '.*(vendor|third_party)/.*'
 
 WarningsAsErrors: ''

@@ -47,6 +47,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
                                 bool readonly) {
     const char *root;
     vfs_driver_t *driver;
+    (void)wapp;
 
     if (NULL == options) {
         root = DEFAULT_ROOT;
@@ -205,6 +206,7 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
     int ret, fl;
     struct stat statbuf;
+    (void)d;
 
     fl = fcntl(fd, F_GETFL);
     if (fl < 0)
@@ -232,6 +234,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
 }
 
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
+    (void)d;
     int ret = read(fd, buf, nbyte);
     if (ret < 0)
         return -errno;
@@ -249,6 +252,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
                  long *pos) {
+    (void)d;
     if (pos == NULL)
         return -EINVAL;
 
@@ -275,9 +279,10 @@ static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path) {
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed) {
-    vfs_dirent_t dir;
+    vfs_dirent_t dir = {0};
     size_t used = 0;
     DIR *dp = fdopendir(fd);
+    (void)d;
     struct dirent *ep;
 
     if (dp != NULL) {

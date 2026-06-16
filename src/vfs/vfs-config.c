@@ -88,6 +88,7 @@ static int _Destroy(struct vfs_driver_t *d) {
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
+    (void)path;
     // TODO: fix for esp and linux platforms
     // if (d->opened) return -EBUSY;
     if ((flags & 0x3) != VFS_O_RDONLY)
@@ -100,12 +101,14 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
+    (void)fd;
     d->opened = false;
 
     return 0;
 }
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
+    (void)fd;
     if (stat == NULL)
         return -EINVAL;
 
@@ -122,6 +125,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     return 0;
 }
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
+    (void)fd;
     if (buf == NULL)
         return -EINVAL;
     if (!d->opened)
@@ -138,6 +142,9 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
 }
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
+    (void)fd;
+    (void)buf;
+    (void)nbyte;
     if (!d->opened)
         return -EBADF;
     return -EROFS;
@@ -145,6 +152,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
                  long *pos) {
+    (void)fd;
     DEBUG_TRACE("%d, %ld (%u)", fd, off, whence);
     if (!d->opened)
         return -EBADF;

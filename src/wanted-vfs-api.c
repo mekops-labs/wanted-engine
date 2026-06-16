@@ -18,6 +18,12 @@
 
 static wantedConfig_t currentConfig;
 
+/* Bounded copy of a (possibly NULL) JSON string value into a fixed-size config
+ * field. Truncates rather than overflowing; always NUL-terminates. */
+static void copyField(char *dst, size_t dstsz, const char *src) {
+    snprintf(dst, dstsz, "%s", src ? src : "");
+}
+
 /* Engine clock-quality byte. Defaults to UNCALIBRATED so wapps that consult
  * it before any platform timing subsystem has come up get the safe answer.
  * The byte is single-aligned so reads/writes are naturally atomic on every
@@ -252,9 +258,9 @@ static void ParseResourceArray(json_t const *params, const char *section,
             const char *name = json_getPropertyValue(e, "name");
             const char *path = json_getPropertyValue(e, "path");
             const char *opt = json_getPropertyValue(e, optKey);
-            strcpy(arr[i].name, name ? name : "");
-            strcpy(arr[i].path, path ? path : "");
-            strcpy(arr[i].options, opt ? opt : "");
+            copyField(arr[i].name, sizeof(arr[i].name), name);
+            copyField(arr[i].path, sizeof(arr[i].path), path);
+            copyField(arr[i].options, sizeof(arr[i].options), opt);
             i++;
         }
     }
@@ -283,38 +289,26 @@ static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
     if (console && JSON_OBJ == json_getType(console)) {
         json_t const *in = json_getProperty(console, "in");
         if (in && JSON_OBJ == json_getType(in)) {
-            strcpy(cfg->console[0].name,
-                   NULL == json_getPropertyValue(in, "name")
-                       ? ""
-                       : json_getPropertyValue(in, "name"));
-            strcpy(cfg->console[0].options,
-                   NULL == json_getPropertyValue(in, "options")
-                       ? ""
-                       : json_getPropertyValue(in, "options"));
+            copyField(cfg->console[0].name, sizeof(cfg->console[0].name),
+                      json_getPropertyValue(in, "name"));
+            copyField(cfg->console[0].options, sizeof(cfg->console[0].options),
+                      json_getPropertyValue(in, "options"));
         }
 
         json_t const *out = json_getProperty(console, "out");
         if (out && JSON_OBJ == json_getType(out)) {
-            strcpy(cfg->console[1].name,
-                   NULL == json_getPropertyValue(out, "name")
-                       ? ""
-                       : json_getPropertyValue(out, "name"));
-            strcpy(cfg->console[1].options,
-                   NULL == json_getPropertyValue(out, "options")
-                       ? ""
-                       : json_getPropertyValue(out, "options"));
+            copyField(cfg->console[1].name, sizeof(cfg->console[1].name),
+                      json_getPropertyValue(out, "name"));
+            copyField(cfg->console[1].options, sizeof(cfg->console[1].options),
+                      json_getPropertyValue(out, "options"));
         }
 
         json_t const *err = json_getProperty(console, "err");
         if (err && JSON_OBJ == json_getType(err)) {
-            strcpy(cfg->console[2].name,
-                   NULL == json_getPropertyValue(err, "name")
-                       ? ""
-                       : json_getPropertyValue(err, "name"));
-            strcpy(cfg->console[2].options,
-                   NULL == json_getPropertyValue(err, "options")
-                       ? ""
-                       : json_getPropertyValue(err, "options"));
+            copyField(cfg->console[2].name, sizeof(cfg->console[2].name),
+                      json_getPropertyValue(err, "name"));
+            copyField(cfg->console[2].options, sizeof(cfg->console[2].options),
+                      json_getPropertyValue(err, "options"));
         }
     }
 
@@ -407,7 +401,7 @@ int WantedParseCtrlAction(json_t const *json, char *wappName,
             DEBUG_TRACE(".params.name property not found in json");
             return -EINVAL;
         }
-        strcpy(wappName, json_getValue(name));
+        copyField(wappName, WAPP_MAX_NAME_LEN, json_getValue(name));
     }
 
     ParseWappParams(params, cfg);

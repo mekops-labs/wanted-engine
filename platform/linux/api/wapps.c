@@ -99,6 +99,9 @@ void *WA_thread(void *ptr) {
     wapp_data_t *d = (wapp_data_t *)ptr;
 
 #ifndef __ANDROID__
+    /* Async cancellation is required: a wapp thread may be spinning in
+     * interpreter code with no deferred cancellation point to reach. */
+    /* NOLINTNEXTLINE(cert-pos47-c) */
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 #else
     struct sigaction actions;
