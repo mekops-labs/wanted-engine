@@ -24,7 +24,7 @@ typedef struct devfs_handle_t {
     bool is_root; /* true when opening "/dev" itself as a directory */
 } devfs_handle_t;
 
-static const vfs_driver_t *LookupDrv(vfs_ctx_t c, const char *suffix) {
+static const vfs_driver_t *lookupDrv(vfs_ctx_t c, const char *suffix) {
     if (!c || !suffix || *suffix == '\0')
         return NULL;
     for (uint8_t i = 0; i < c->devfs_cnt; i++) {
@@ -100,7 +100,7 @@ void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
         return NULL;
     }
 
-    const vfs_driver_t *drv = LookupDrv(c, suffix);
+    const vfs_driver_t *drv = lookupDrv(c, suffix);
     const char *sub_path = NULL;
 
     if (!drv) {
@@ -123,9 +123,9 @@ void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
         return NULL;
     }
 
-    const char *open_path =
-        sub_path ? sub_path
-                 : (drv->filetype == VFS_FILETYPE_DIRECTORY ? "/" : "");
+    const char *open_path = sub_path;
+    if (open_path == NULL)
+        open_path = (drv->filetype == VFS_FILETYPE_DIRECTORY) ? "/" : "";
     int drv_fd = TRY_DRV(drv, Open, open_path, flags);
     if (drv_fd < 0) {
         if (out_err)

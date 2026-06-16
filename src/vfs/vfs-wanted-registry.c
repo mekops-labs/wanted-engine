@@ -67,7 +67,7 @@ static int _Destroy(struct vfs_driver_t *d) {
 /* One image-reference component (name or tag): non-empty, within `maxlen`
  * (incl. NUL), first char [A-Za-z0-9_], rest [A-Za-z0-9._-] — the OCI tag
  * grammar, applied to both halves of "<name>:<tag>". */
-static bool ValidRefComponent(const char *s, size_t len, size_t maxlen) {
+static bool validRefComponent(const char *s, size_t len, size_t maxlen) {
     if (len == 0 || len >= maxlen)
         return false;
     for (size_t i = 0; i < len; i++) {
@@ -87,20 +87,18 @@ static bool ValidRefComponent(const char *s, size_t len, size_t maxlen) {
 /* An install ref is "<name>" or "<name>:<tag>" with at most one separator; both
  * components must satisfy the tag grammar and their length bounds. This rejects
  * an out-of-grammar ref at install rather than letting it name a file. */
-static bool ValidInstallRef(const char *ref) {
+static bool validInstallRef(const char *ref) {
     const char *colon = strchr(ref, (int)VERSION_SEPARATOR);
     if (colon == NULL)
-        return ValidRefComponent(ref, strlen(ref), WAPP_MAX_NAME_LEN);
+        return validRefComponent(ref, strlen(ref), WAPP_MAX_NAME_LEN);
     if (strchr(colon + 1, (int)VERSION_SEPARATOR) != NULL)
         return false; /* a tag carries no separator */
-    return ValidRefComponent(ref, (size_t)(colon - ref), WAPP_MAX_NAME_LEN) &&
-           ValidRefComponent(colon + 1, strlen(colon + 1),
+    return validRefComponent(ref, (size_t)(colon - ref), WAPP_MAX_NAME_LEN) &&
+           validRefComponent(colon + 1, strlen(colon + 1),
                              WAPP_MAX_VERSION_LEN);
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
-    int ret;
-
     if (path == NULL)
         return -EINVAL;
 
@@ -110,7 +108,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     d->writeRef[0] = '\0';
 
     if (path[0] == '/' && path[1] == '\0') {
-        ret = PlatformRegistryRead(d->entries, MAX_REG_ENTRIES);
+        int ret = PlatformRegistryRead(d->entries, MAX_REG_ENTRIES);
         if (ret < 0)
             return ret;
         d->nEntries = ret;
@@ -121,7 +119,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
          * identity. The image bytes are written to the root write fd (0). */
         if (path[0] == '\0' || strlen(path) >= REG_REF_MAX)
             return -ENAMETOOLONG;
-        if (!ValidInstallRef(path))
+        if (!validInstallRef(path))
             return -EINVAL;
         strncpy(d->writeRef, path, REG_REF_MAX - 1);
         d->writeRef[REG_REF_MAX - 1] = '\0';
@@ -152,6 +150,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
+    (void)fd;
     d->opened = false;
 
     if (d->startedWriting) {
@@ -228,8 +227,9 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed) {
-    vfs_dirent_t dir;
+    vfs_dirent_t dir = {0};
     size_t used = 0;
+    (void)fd;
 
     if (buf == NULL)
         return -EINVAL;
@@ -249,13 +249,13 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
             used = bufLen;
             break;
         }
-        memcpy(buf + used, &dir, sizeof(dir));
+        memcpy((char *)buf + used, &dir, sizeof(dir));
         used += sizeof(dir);
-        memcpy(buf + used, d->entries[i].name, nameLen);
+        memcpy((char *)buf + used, d->entries[i].name, nameLen);
         used += nameLen;
-        memcpy(buf + used, &VERSION_SEPARATOR, 1);
+        memcpy((char *)buf + used, &VERSION_SEPARATOR, 1);
         used += 1;
-        memcpy(buf + used, d->entries[i].version, verLen);
+        memcpy((char *)buf + used, d->entries[i].version, verLen);
         used += verLen;
     }
 
@@ -267,6 +267,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
 
 static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
     int i;
+    (void)fd;
 
     for (i = 0; i < d->nEntries; i++) {
         const char *ver = strchr(path, (int)VERSION_SEPARATOR);

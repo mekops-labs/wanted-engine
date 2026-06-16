@@ -30,7 +30,7 @@ static inline plat_timestamp_t convert_timespec(const struct timespec *ts) {
         return 0;
     if ((plat_timestamp_t)ts->tv_sec >= UINT64_MAX / 1000000000)
         return UINT64_MAX;
-    return (plat_timestamp_t)ts->tv_sec * 1000000000 + ts->tv_nsec;
+    return ((plat_timestamp_t)ts->tv_sec * 1000000000) + ts->tv_nsec;
 }
 
 static inline struct timespec convert_timestamp(plat_timestamp_t t) {

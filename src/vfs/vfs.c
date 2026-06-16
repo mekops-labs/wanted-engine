@@ -18,7 +18,7 @@
 
 /* Stateless prefix router on top of a single typed-FD table.
  *
- * All opens go through VfsResolvePath before routing, so trailing slashes,
+ * All opens go through vfsResolvePath before routing, so trailing slashes,
  * '.' and '..' are resolved universally via cwk_path_normalize. A mount table
  * in vfs_ctx_t replaces the hardcoded if/else prefix chain; route_open
  * iterates it for the longest matching prefix. Root VfsReadDir emits
@@ -28,7 +28,7 @@
 
 /* ── Path normalisation ──────────────────────────────────────────────────── */
 
-static int VfsResolvePath(vfs_ctx_t c, int parent_fd, const char *path,
+static int vfsResolvePath(vfs_ctx_t c, int parent_fd, const char *path,
                           char *out, size_t out_size) {
     const char *src = path;
     char combined[VFS_FD_PATH_LEN * 2];
@@ -43,6 +43,9 @@ static int VfsResolvePath(vfs_ctx_t c, int parent_fd, const char *path,
         size_t path_len = strlen(path);
         if (base_len + 1 + path_len >= sizeof(combined))
             return -ENAMETOOLONG;
+        /* Concatenation, not a string copy: the separator and the
+         * NUL-terminated path are appended below. */
+        /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
         memcpy(combined, base, base_len);
         if (base_len == 0 || base[base_len - 1] != '/')
             combined[base_len++] = '/';
@@ -66,7 +69,7 @@ static int VfsResolvePath(vfs_ctx_t c, int parent_fd, const char *path,
 
 /* ── Mount table ─────────────────────────────────────────────────────────── */
 
-static int VfsMount(vfs_ctx_t c, const char *prefix, vfs_fd_type_t type,
+static int vfsMount(vfs_ctx_t c, const char *prefix, vfs_fd_type_t type,
                     const vfs_driver_t *drv) {
     if (c->mounts_cnt >= VFS_MAX_MOUNTS)
         return -ENOSPC;
@@ -93,7 +96,7 @@ int VfsMountDriver(vfs_ctx_t c, const char *prefix,
         if (strcmp(c->mounts[i].prefix, prefix) == 0)
             return -EEXIST;
     }
-    return VfsMount(c, prefix, VFS_TYPE_DRIVER, driver);
+    return vfsMount(c, prefix, VFS_TYPE_DRIVER, driver);
 }
 
 /* ── Flat-directory readdir helper ───────────────────────────────────────── */
@@ -124,11 +127,11 @@ int VfsFlatDirReadDir(const vfs_dir_entry_t *entries, size_t count, void *buf,
 
 /* ── Internal helpers ────────────────────────────────────────────────────── */
 
-static inline bool CheckFd(struct vfs_ctx_t *c, int fd) {
+static inline bool checkFd(struct vfs_ctx_t *c, int fd) {
     return c && fd >= 0 && fd < VFS_MAX_FDS && c->fds[fd].type != VFS_TYPE_NONE;
 }
 
-static int FindFirstClosedFd(struct vfs_ctx_t *c) {
+static int findFirstClosedFd(const struct vfs_ctx_t *c) {
     if (!c)
         return -EINVAL;
     for (int i = ROOT_FD; i < VFS_MAX_FDS; i++) {
@@ -145,7 +148,7 @@ static int FindFirstClosedFd(struct vfs_ctx_t *c) {
  * any leading slash; empty = the mount root). No side effects: unlike
  * route_open it never opens the resolved node, so callers that only need the
  * routing decision (e.g. stat) can avoid an open with side effects. */
-static int RouteMatch(vfs_ctx_t c, const char *path, vfs_fd_type_t *type,
+static int routeMatch(vfs_ctx_t c, const char *path, vfs_fd_type_t *type,
                       const vfs_driver_t **mount_drv, const char **suffix) {
     vfs_fd_type_t t = VFS_TYPE_NONE;
     const vfs_driver_t *drv = NULL;
@@ -186,7 +189,7 @@ static int RouteMatch(vfs_ctx_t c, const char *path, vfs_fd_type_t *type,
  * prefix without being a mount itself — e.g. "/etc" when "/etc/config" is
  * mounted. Such a path has no backing driver but must still stat and list as a
  * directory, since it appears as a synthetic entry in the parent's readdir. */
-static bool IsMountAncestor(vfs_ctx_t c, const char *path) {
+static bool isMountAncestor(vfs_ctx_t c, const char *path) {
     size_t len = strlen(path);
     for (uint8_t i = 0; i < c->mounts_cnt; i++) {
         const char *pfx = c->mounts[i].prefix;
@@ -198,8 +201,8 @@ static bool IsMountAncestor(vfs_ctx_t c, const char *path) {
 }
 
 /* Claim a typed-FD slot for a synthetic mount directory at `path`. */
-static int OpenMountDir(vfs_ctx_t c, const char *path) {
-    int fd = FindFirstClosedFd(c);
+static int openMountDir(vfs_ctx_t c, const char *path) {
+    int fd = findFirstClosedFd(c);
     if (fd < 0)
         return fd;
     c->fds[fd].type = VFS_TYPE_MOUNTDIR;
@@ -213,7 +216,7 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     vfs_fd_type_t type;
     const vfs_driver_t *mount_drv;
     const char *suffix;
-    int r = RouteMatch(c, path, &type, &mount_drv, &suffix);
+    int r = routeMatch(c, path, &type, &mount_drv, &suffix);
     if (r < 0)
         return r;
 
@@ -221,14 +224,14 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
      * the mount prefix is the driver-relative path (empty suffix = the mount
      * root). The slot carries (driver, drv_fd) like STREAM/PLATFORM do. */
     if (type == VFS_TYPE_DRIVER) {
-        const char *open_path =
-            (*suffix != '\0')
-                ? suffix
-                : (mount_drv->filetype == VFS_FILETYPE_DIRECTORY ? "/" : "");
+        const char *open_path = suffix;
+        if (*suffix == '\0')
+            open_path =
+                (mount_drv->filetype == VFS_FILETYPE_DIRECTORY) ? "/" : "";
         int drv_fd = TRY_DRV(mount_drv, Open, open_path, flags);
         if (drv_fd < 0)
             return drv_fd;
-        int fd = FindFirstClosedFd(c);
+        int fd = findFirstClosedFd(c);
         if (fd < 0) {
             TRY_DRV(mount_drv, Close, drv_fd);
             return fd;
@@ -255,8 +258,8 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
         bool read_only = (flags & 03) == VFS_O_RDONLY &&
                          !(flags & (VFS_O_CREAT | VFS_O_TRUNC));
         if (c->tarfs == NULL) {
-            if (read_only && IsMountAncestor(c, path))
-                return OpenMountDir(c, path);
+            if (read_only && isMountAncestor(c, path))
+                return openMountDir(c, path);
             return -ENOENT;
         }
         if (!read_only)
@@ -264,8 +267,8 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
         handle = TarFs_Open(c->tarfs, path, flags);
         /* No real TARFS entry, but the path is an ancestor of a mount: surface
          * the synthetic intermediate directory rather than -ENOENT. */
-        if (handle == NULL && IsMountAncestor(c, path))
-            return OpenMountDir(c, path);
+        if (handle == NULL && isMountAncestor(c, path))
+            return openMountDir(c, path);
     } else {
         return -ENOTSUP;
     }
@@ -273,7 +276,7 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
     if (handle == NULL)
         return open_err;
 
-    int fd = FindFirstClosedFd(c);
+    int fd = findFirstClosedFd(c);
     if (fd < 0) {
         if (type == VFS_TYPE_DEV)
             DevFs_Close(c, handle);
@@ -305,15 +308,15 @@ vfs_ctx_t VfsInit(void) {
 
     memset(c, 0, sizeof(*c));
 
-    VfsMount(c, "/", VFS_TYPE_TARFS, NULL);
-    VfsMount(c, "/dev", VFS_TYPE_DEV, NULL);
-    VfsMount(c, "/net", VFS_TYPE_NET, NULL);
-    VfsMount(c, "/proc", VFS_TYPE_PROC, NULL);
+    vfsMount(c, "/", VFS_TYPE_TARFS, NULL);
+    vfsMount(c, "/dev", VFS_TYPE_DEV, NULL);
+    vfsMount(c, "/net", VFS_TYPE_NET, NULL);
+    vfsMount(c, "/proc", VFS_TYPE_PROC, NULL);
 
     return c;
 }
 
-static void DestroyStreamFd(vfs_ctx_t c, unsigned fd) {
+static void destroyStreamFd(vfs_ctx_t c, unsigned fd) {
     if (c->fds[fd].type != VFS_TYPE_STREAM)
         return;
     const vfs_driver_t *drv = c->fds[fd].driver;
@@ -333,7 +336,7 @@ static void DestroyStreamFd(vfs_ctx_t c, unsigned fd) {
  * pointer being shared with another slot of higher precedence. To keep this
  * simple we Destroy the driver only once: walk the table, dedup driver
  * pointers, and Destroy each unique driver after closing all slots. */
-static void DestroyPlatformFds(vfs_ctx_t c) {
+static void destroyPlatformFds(vfs_ctx_t c) {
     /* First pass: close every host fd. */
     for (int i = 0; i < VFS_MAX_FDS; i++) {
         if (c->fds[i].type != VFS_TYPE_PLATFORM)
@@ -366,7 +369,7 @@ static void DestroyPlatformFds(vfs_ctx_t c) {
     }
 }
 
-static void DestroyTypedFds(vfs_ctx_t c) {
+static void destroyTypedFds(vfs_ctx_t c) {
     for (int i = 0; i < VFS_MAX_FDS; i++) {
         switch (c->fds[i].type) {
         case VFS_TYPE_DEV:
@@ -398,12 +401,12 @@ static void DestroyTypedFds(vfs_ctx_t c) {
         c->fds[i].type = VFS_TYPE_NONE;
         c->fds[i].internal_ctx = NULL;
     }
-    DestroyPlatformFds(c);
+    destroyPlatformFds(c);
 }
 
 /* Destroy every driver bound to a VFS_TYPE_DRIVER mount. The mount table owns
- * these drivers; their open fds are already closed by DestroyTypedFds. */
-static void DestroyMountDrivers(vfs_ctx_t c) {
+ * these drivers; their open fds are already closed by destroyTypedFds. */
+static void destroyMountDrivers(vfs_ctx_t c) {
     for (uint8_t i = 0; i < c->mounts_cnt; i++) {
         if (c->mounts[i].type != VFS_TYPE_DRIVER)
             continue;
@@ -417,14 +420,14 @@ static void DestroyMountDrivers(vfs_ctx_t c) {
 void VfsDestroy(vfs_ctx_t *c) {
     if (NULL == c || NULL == *c)
         return;
-    DestroyTypedFds(*c);
-    DestroyMountDrivers(*c);
+    destroyTypedFds(*c);
+    destroyMountDrivers(*c);
     DevFs_Destroy(*c);
     NetFs_Destroy(*c);
     ProcFs_Destroy(*c);
-    DestroyStreamFd(*c, VFS_STDERR);
-    DestroyStreamFd(*c, VFS_STDOUT);
-    DestroyStreamFd(*c, VFS_STDIN);
+    destroyStreamFd(*c, VFS_STDERR);
+    destroyStreamFd(*c, VFS_STDOUT);
+    destroyStreamFd(*c, VFS_STDIN);
     if ((*c)->tarfs)
         TarFsDestroy((*c)->tarfs);
 
@@ -499,7 +502,7 @@ int VfsOpen(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
         return -EINVAL;
 
     char norm[VFS_FD_PATH_LEN];
-    int r = VfsResolvePath(c, -1, path, norm, sizeof(norm));
+    int r = vfsResolvePath(c, -1, path, norm, sizeof(norm));
     if (r < 0)
         return r;
 
@@ -523,7 +526,7 @@ int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags) {
         if (host_fd < 0)
             return host_fd;
 
-        int new_slot = FindFirstClosedFd(c);
+        int new_slot = findFirstClosedFd(c);
         if (new_slot < 0) {
             if (drv->Close)
                 drv->Close(drv->ctx, host_fd);
@@ -549,7 +552,7 @@ int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags) {
     }
 
     char norm[VFS_FD_PATH_LEN];
-    int r = VfsResolvePath(c, fd, path, norm, sizeof(norm));
+    int r = vfsResolvePath(c, fd, path, norm, sizeof(norm));
     if (r < 0)
         return r;
 
@@ -559,7 +562,7 @@ int VfsOpenAt(vfs_ctx_t c, int fd, const char *path, vfs_oflags_t flags) {
 int VfsClose(vfs_ctx_t c, int fd) {
     DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
 
     int r;
@@ -636,7 +639,7 @@ int VfsClose(vfs_ctx_t c, int fd) {
 int VfsStatAt(vfs_ctx_t c, int fd, const char *path, vfs_stat_t *stat) {
     DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
 
     /* A /net node is stat'd by name: opening a socket node has the side effect
@@ -647,11 +650,11 @@ int VfsStatAt(vfs_ctx_t c, int fd, const char *path, vfs_stat_t *stat) {
         (c->fds[fd].type == VFS_TYPE_PLATFORM && path[0] != '/');
     if (!platform_parent) {
         char norm[VFS_FD_PATH_LEN];
-        if (VfsResolvePath(c, fd, path, norm, sizeof(norm)) == 0) {
+        if (vfsResolvePath(c, fd, path, norm, sizeof(norm)) == 0) {
             vfs_fd_type_t type;
             const vfs_driver_t *drv;
             const char *suffix;
-            if (RouteMatch(c, norm, &type, &drv, &suffix) == 0 &&
+            if (routeMatch(c, norm, &type, &drv, &suffix) == 0 &&
                 type == VFS_TYPE_NET)
                 return NetFs_StatPath(c, suffix, stat);
         }
@@ -669,7 +672,7 @@ int VfsStatAt(vfs_ctx_t c, int fd, const char *path, vfs_stat_t *stat) {
 int VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat) {
     DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
 
     switch (c->fds[fd].type) {
@@ -698,7 +701,7 @@ int VfsStat(vfs_ctx_t c, int fd, vfs_stat_t *stat) {
 int VfsStatSet(vfs_ctx_t c, int fd, vfs_stat_t stat) {
     DEBUG_TRACE("%d", fd);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
 
     switch (c->fds[fd].type) {
@@ -717,7 +720,7 @@ int VfsStatSet(vfs_ctx_t c, int fd, vfs_stat_t stat) {
 int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte) {
     DEBUG_TRACE("%d, %zu", fd, nbyte);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
     if (NULL == buf)
         return -EINVAL;
@@ -743,7 +746,7 @@ int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte) {
 int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte) {
     DEBUG_TRACE("%d, %zu", fd, nbyte);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
     if (NULL == buf)
         return -EINVAL;
@@ -767,7 +770,7 @@ int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte) {
 int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
     DEBUG_TRACE("%d, %ld, %d", fd, off, whence);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
     if (NULL == pos)
         return -EINVAL;
@@ -800,7 +803,7 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
  * from and is advanced as entries are consumed; `cookieBit` is OR'd into the
  * stored cursor so callers can multiplex this phase with another (the root fd
  * runs a TarFS phase first). Returns the bytes written into `mbuf`. */
-static size_t MountChildren(vfs_ctx_t c, const char *base, size_t baselen,
+static size_t mountChildren(vfs_ctx_t c, const char *base, size_t baselen,
                             uint8_t *mbuf, size_t mspace, uint64_t *idx,
                             uint64_t cookieBit) {
     size_t mused = 0;
@@ -844,6 +847,8 @@ static size_t MountChildren(vfs_ctx_t c, const char *base, size_t baselen,
         dir.d_type = ftype;
         dir.d_next = cookieBit | (i + 1);
         memcpy(mbuf + mused, &dir, sizeof(dir));
+        /* The name is length-prefixed by dir.d_namlen, not NUL-terminated. */
+        /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
         memcpy(mbuf + mused + sizeof(dir), name, namlen);
         mused += sizeof(dir) + namlen;
     }
@@ -853,7 +858,7 @@ static size_t MountChildren(vfs_ctx_t c, const char *base, size_t baselen,
 
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
                size_t *bufUsed) {
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
     if (NULL == buf || NULL == cookie || NULL == bufUsed)
         return -EINVAL;
@@ -905,7 +910,7 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
         /* Mount-table phase: append after any existing content. Root lists the
          * first component of every non-"/" mount (base "", baselen 0). */
         uint64_t idx = *cookie & ~MOUNT_PHASE_BIT;
-        size_t mused = MountChildren(c, "", 0, (uint8_t *)buf + *bufUsed,
+        size_t mused = mountChildren(c, "", 0, (uint8_t *)buf + *bufUsed,
                                      bufLen - *bufUsed, &idx, MOUNT_PHASE_BIT);
         *cookie = MOUNT_PHASE_BIT | idx;
         *bufUsed += mused;
@@ -916,7 +921,7 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
          * every mount nested beneath this fd's path. */
         const char *base = c->fds[fd].path;
         uint64_t idx = *cookie;
-        *bufUsed = MountChildren(c, base, strlen(base), (uint8_t *)buf, bufLen,
+        *bufUsed = mountChildren(c, base, strlen(base), (uint8_t *)buf, bufLen,
                                  &idx, 0);
         *cookie = idx;
         return 0;
@@ -929,7 +934,7 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
 int VfsUnlink(vfs_ctx_t c, int fd, const char *path) {
     DEBUG_TRACE("%d (%s)", fd, path);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
     if (NULL == path)
         return -EINVAL;
@@ -949,7 +954,7 @@ int VfsUnlink(vfs_ctx_t c, int fd, const char *path) {
 int VfsSockAccept(vfs_ctx_t c, int fd, vfs_oflags_t flags, int *newFd) {
     DEBUG_TRACE("%d (0x%x)", fd, flags);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
 
     if (c->fds[fd].type == VFS_TYPE_NET)
@@ -961,7 +966,7 @@ int VfsSockRecv(vfs_ctx_t c, int fd, void *buf, size_t nbyte,
                 vfs_riflags_t iflags, vfs_roflags_t *oflags) {
     DEBUG_TRACE("%d (0x%x) %zu", fd, iflags, nbyte);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
 
     if (c->fds[fd].type == VFS_TYPE_NET)
@@ -974,7 +979,7 @@ int VfsSockSend(vfs_ctx_t c, int fd, const void *buf, size_t nbyte,
                 vfs_sdflags_t flags) {
     DEBUG_TRACE("%d (0x%x) %zu", fd, flags, nbyte);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
 
     if (c->fds[fd].type == VFS_TYPE_NET)
@@ -985,7 +990,7 @@ int VfsSockSend(vfs_ctx_t c, int fd, const void *buf, size_t nbyte,
 int VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags) {
     DEBUG_TRACE("%d (0x%x)", fd, flags);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
 
     if (c->fds[fd].type == VFS_TYPE_NET)
@@ -998,7 +1003,7 @@ int VfsBindPlatformFd(vfs_ctx_t c, const char *path, const vfs_driver_t *driver,
     if (!c || !path || !driver)
         return -EINVAL;
 
-    int slot = FindFirstClosedFd(c);
+    int slot = findFirstClosedFd(c);
     if (slot < 0)
         return slot;
 
@@ -1020,7 +1025,7 @@ int VfsRename(vfs_ctx_t c, int old_fd, const char *old_path, int new_fd,
               const char *new_path) {
     DEBUG_TRACE("%d, %s -> %d, %s", old_fd, old_path, new_fd, new_path);
 
-    if (!CheckFd(c, old_fd) || !CheckFd(c, new_fd))
+    if (!checkFd(c, old_fd) || !checkFd(c, new_fd))
         return -EBADF;
     if (!old_path || !new_path)
         return -EINVAL;
@@ -1056,7 +1061,7 @@ int VfsRename(vfs_ctx_t c, int old_fd, const char *old_path, int new_fd,
 int VfsMkdir(vfs_ctx_t c, int fd, const char *path) {
     DEBUG_TRACE("%d, %s", fd, path);
 
-    if (!CheckFd(c, fd))
+    if (!checkFd(c, fd))
         return -EBADF;
     if (!path)
         return -EINVAL;

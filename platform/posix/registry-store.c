@@ -16,7 +16,7 @@
 int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
                           size_t nbytes) {
     static FILE *f;
-    static char tempName[] = REGISTRY_ROOT "/_temp";
+    static const char tempName[] = REGISTRY_ROOT "/_temp";
     static char targetRef[PATH_MAX];
     static char targetName[PATH_MAX];
 

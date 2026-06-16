@@ -74,7 +74,7 @@ struct vfs_tarfs_ctx_t {
 };
 
 /* POSIX ustar stores numeric fields as NUL/space-terminated octal ASCII. */
-static uint32_t ParseOctal(const char *s, size_t n) {
+static uint32_t parseOctal(const char *s, size_t n) {
     uint32_t v = 0;
     for (size_t i = 0; i < n && s[i] >= '0' && s[i] <= '7'; i++) {
         v = (v << 3) | (uint32_t)(s[i] - '0');
@@ -82,11 +82,11 @@ static uint32_t ParseOctal(const char *s, size_t n) {
     return v;
 }
 
-static inline size_t AlignUp512(size_t n) {
+static inline size_t alignUp512(size_t n) {
     return (n + (TAR_BLOCK_SIZE - 1)) & ~(size_t)(TAR_BLOCK_SIZE - 1);
 }
 
-static bool IsZeroBlock(const uint8_t *b) {
+static bool isZeroBlock(const uint8_t *b) {
     for (size_t i = 0; i < TAR_BLOCK_SIZE; i++) {
         if (b[i])
             return false;
@@ -98,7 +98,7 @@ static bool IsZeroBlock(const uint8_t *b) {
  * already been sorted — i.e. called with the length from a prior layer, not
  * including entries currently being appended for the layer under construction.
  */
-static bool IndexContains(const tar_index_entry_t *idx, uint16_t n,
+static bool indexContains(const tar_index_entry_t *idx, uint16_t n,
                           const char *path) {
     uint16_t lo = 0, hi = n;
     while (lo < hi) {
@@ -114,7 +114,7 @@ static bool IndexContains(const tar_index_entry_t *idx, uint16_t n,
     return false;
 }
 
-static int GrowIndex(vfs_tarfs_ctx_t *ctx) {
+static int growIndex(vfs_tarfs_ctx_t *ctx) {
     uint16_t new_cap =
         ctx->index_cap ? (uint16_t)(ctx->index_cap * 2) : INDEX_INIT_CAP;
     tar_index_entry_t *next =
@@ -131,16 +131,17 @@ static int GrowIndex(vfs_tarfs_ctx_t *ctx) {
     return 0;
 }
 
-static int RememberOwned(vfs_tarfs_ctx_t *ctx, char *s) {
+static int rememberOwned(vfs_tarfs_ctx_t *ctx, char *s) {
     if (ctx->owned_len == ctx->owned_cap) {
         uint16_t nc =
             ctx->owned_cap ? (uint16_t)(ctx->owned_cap * 2) : OWNED_INIT_CAP;
-        char **next = WantedMalloc((size_t)nc * sizeof(char *));
+        char **next = (char **)WantedMalloc((size_t)nc * sizeof(char *));
         if (!next)
             return -ENOMEM;
         if (ctx->owned) {
-            memcpy(next, ctx->owned, (size_t)ctx->owned_len * sizeof(char *));
-            WantedFree(ctx->owned);
+            memcpy((void *)next, (const void *)ctx->owned,
+                   (size_t)ctx->owned_len * sizeof(char *));
+            WantedFree((void *)ctx->owned);
         }
         ctx->owned = next;
         ctx->owned_cap = nc;
@@ -151,7 +152,7 @@ static int RememberOwned(vfs_tarfs_ctx_t *ctx, char *s) {
 
 /* Copy s[0..len) into the path pool (null-terminated) and return a pointer
  * into the pool. Returns NULL on allocation failure. */
-static const char *InternPath(vfs_tarfs_ctx_t *ctx, const char *s, size_t len) {
+static const char *internPath(vfs_tarfs_ctx_t *ctx, const char *s, size_t len) {
     if (ctx->path_pool_used + len + 1 > ctx->path_pool_cap) {
         size_t new_cap =
             ctx->path_pool_cap ? ctx->path_pool_cap * 2 : PATH_POOL_INIT_CAP;
@@ -174,14 +175,14 @@ static const char *InternPath(vfs_tarfs_ctx_t *ctx, const char *s, size_t len) {
     return dest;
 }
 
-static const char *Basename(const char *path) {
+static const char *pathBasename(const char *path) {
     const char *slash = strrchr(path, '/');
     return slash ? slash + 1 : path;
 }
 
 /* "foo/.wh.bar" -> heap-allocated "foo/bar". Caller owns the result. */
-static char *MakeWhiteoutTarget(const char *path) {
-    const char *base = Basename(path);
+static char *makeWhiteoutTarget(const char *path) {
+    const char *base = pathBasename(path);
     size_t dir_len = (size_t)(base - path);
     size_t tail_len = strlen(base + 4); /* skip ".wh." */
     char *out = WantedMalloc(dir_len + tail_len + 1);
@@ -196,7 +197,7 @@ static char *MakeWhiteoutTarget(const char *path) {
 /* Walk a PAX extended header data block and extract path= and size= overrides.
  * Both out-params are left unchanged if the corresponding key is absent.
  * path_out points into data[] — not null-terminated; caller must intern it. */
-static void ParsePaxData(const uint8_t *data, size_t data_len,
+static void parsePaxData(const uint8_t *data, size_t data_len,
                          const char **path_out, size_t *path_len_out,
                          uint32_t *size_out) {
     size_t pos = 0;
@@ -250,7 +251,7 @@ static void ParsePaxData(const uint8_t *data, size_t data_len,
 
 /* sorted_len: number of entries in ctx->index that are already sorted (i.e.
  * entries from all previously-indexed layers). Used for O(log N) dedup. */
-static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
+static int indexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
                       uint16_t sorted_len) {
     const uint8_t *buf = ctx->layers[layer_idx];
     size_t len = ctx->layer_lens[layer_idx];
@@ -265,7 +266,7 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
         const uint8_t *hdr = buf + off;
 
         /* Two consecutive zero blocks mark end of archive. */
-        if (IsZeroBlock(hdr)) {
+        if (isZeroBlock(hdr)) {
             if (++empty_run >= 2)
                 break;
             off += TAR_BLOCK_SIZE;
@@ -274,10 +275,10 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
         empty_run = 0;
 
         uint32_t size =
-            ParseOctal((const char *)(hdr + TAR_SIZE_OFFSET), TAR_SIZE_LEN);
+            parseOctal((const char *)(hdr + TAR_SIZE_OFFSET), TAR_SIZE_LEN);
 
         /* Guard against crafted entries whose claimed size overflows or exceeds
-         * the layer buffer. AlignUp512 can wrap on 32-bit if size is near
+         * the layer buffer. alignUp512 can wrap on 32-bit if size is near
          * SIZE_MAX, so validate before the arithmetic. */
         if (len - off < TAR_BLOCK_SIZE ||
             (size_t)size > len - off - TAR_BLOCK_SIZE) {
@@ -285,7 +286,7 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
                         off, size, len);
             break;
         }
-        size_t aligned_size = AlignUp512((size_t)size);
+        size_t aligned_size = alignUp512((size_t)size);
         if (aligned_size < (size_t)size) {
             break;
         }
@@ -302,7 +303,7 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
             /* PAX local extended header: parse path= and size= keys. */
             const char *pax_path = NULL;
             size_t pax_path_len = 0;
-            ParsePaxData(buf + off + TAR_BLOCK_SIZE, size, &pax_path,
+            parsePaxData(buf + off + TAR_BLOCK_SIZE, size, &pax_path,
                          &pax_path_len, &override_size);
             if (pax_path && pax_path_len > 0) {
                 /* Normalise leading "./" or "/" before interning. */
@@ -310,12 +311,12 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
                     pax_path[1] == '/') {
                     pax_path += 2;
                     pax_path_len -= 2;
-                } else if (pax_path_len >= 1 && pax_path[0] == '/') {
+                } else if (pax_path[0] == '/') {
                     pax_path += 1;
                     pax_path_len -= 1;
                 }
                 if (pax_path_len > 0) {
-                    const char *p = InternPath(ctx, pax_path, pax_path_len);
+                    const char *p = internPath(ctx, pax_path, pax_path_len);
                     if (!p)
                         return -ENOMEM;
                     override_path = p;
@@ -386,7 +387,7 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
                 concat[prefix_len] = '/';
                 memcpy(concat + prefix_len + 1, name, name_field_len);
                 concat[total] = '\0';
-                const char *p = InternPath(ctx, concat, total);
+                const char *p = internPath(ctx, concat, total);
                 if (!p)
                     return -ENOMEM;
                 eff_path = p;
@@ -411,17 +412,17 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
             continue;
         }
 
-        const char *base = Basename(eff_path);
+        const char *base = pathBasename(eff_path);
         bool is_whiteout = strncmp(base, ".wh.", 4) == 0 && base[4] != '\0';
 
         const char *entry_path;
         uint16_t entry_layer;
 
         if (is_whiteout) {
-            char *target = MakeWhiteoutTarget(eff_path);
+            char *target = makeWhiteoutTarget(eff_path);
             if (!target)
                 return -ENOMEM;
-            int ret = RememberOwned(ctx, target);
+            int ret = rememberOwned(ctx, target);
             if (ret < 0) {
                 WantedFree(target);
                 return ret;
@@ -437,23 +438,22 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
          * Search only the sorted prefix from previous layers. Within-layer
          * duplicates are the TAR writer's problem; well-formed archives don't
          * have them. */
-        if (IndexContains(ctx->index, sorted_len, entry_path)) {
+        if (indexContains(ctx->index, sorted_len, entry_path)) {
             off = next_off;
             continue;
         }
 
         /* Pre-fetch the boot entrypoint from the topmost non-whiteout hit. */
         if (!is_whiteout) {
-            size_t data_off = off + TAR_BLOCK_SIZE;
             if (strcmp(entry_path, "app.wasm") == 0 &&
                 ctx->entrypoint_wasm == NULL) {
-                ctx->entrypoint_wasm = buf + data_off;
+                ctx->entrypoint_wasm = buf + off + TAR_BLOCK_SIZE;
                 ctx->entrypoint_wasm_len = eff_size;
             }
         }
 
         if (ctx->index_len == ctx->index_cap) {
-            int ret = GrowIndex(ctx);
+            int ret = growIndex(ctx);
             if (ret < 0)
                 return ret;
         }
@@ -469,12 +469,15 @@ static int IndexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
     return 0;
 }
 
-static int IndexCmp(const void *a, const void *b) {
+static int indexCmp(const void *a, const void *b) {
     const tar_index_entry_t *ea = a;
     const tar_index_entry_t *eb = b;
     return strcmp(ea->path_ptr, eb->path_ptr);
 }
 
+/* Callers pass uint8_t *[]; const-qualifying the array elements would break
+ * them under GCC's incompatible-pointer-types. */
+/* cppcheck-suppress constParameter */
 vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
                            uint8_t layer_cnt) {
     if (layers == NULL || layer_lens == NULL || layer_cnt == 0 ||
@@ -504,7 +507,7 @@ vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
     for (uint8_t i = 0; i < layer_cnt; i++) {
         /* snapshot of the sorted boundary before this layer's entries land */
         uint16_t sorted_len = ctx->index_len;
-        if (IndexLayer(ctx, i, sorted_len) < 0) {
+        if (indexLayer(ctx, i, sorted_len) < 0) {
             DEBUG_TRACE("tarfs: indexing failed on layer %u", i);
             TarFsDestroy(ctx);
             return NULL;
@@ -512,7 +515,7 @@ vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
         /* Sort the full index so subsequent layers can binary-search it. */
         if (ctx->index_len > 0)
             qsort(ctx->index, ctx->index_len, sizeof(tar_index_entry_t),
-                  IndexCmp);
+                  indexCmp);
     }
 
     DEBUG_TRACE("tarfs: indexed %u entries across %u layers", ctx->index_len,
@@ -527,7 +530,7 @@ void TarFsDestroy(vfs_tarfs_ctx_t *ctx) {
     if (ctx->owned) {
         for (uint16_t i = 0; i < ctx->owned_len; i++)
             WantedFree(ctx->owned[i]);
-        WantedFree(ctx->owned);
+        WantedFree((void *)ctx->owned);
     }
     if (ctx->index)
         WantedFree(ctx->index);
@@ -554,7 +557,7 @@ uint16_t TarFsIndexLen(const vfs_tarfs_ctx_t *ctx) {
  * the only heap allocation per open is the handle plus (for directories) a
  * copy of the prefix string. */
 
-static uint16_t LowerBound(const tar_index_entry_t *idx, uint16_t n,
+static uint16_t lowerBound(const tar_index_entry_t *idx, uint16_t n,
                            const char *key) {
     uint16_t lo = 0, hi = n;
     while (lo < hi) {
@@ -567,25 +570,25 @@ static uint16_t LowerBound(const tar_index_entry_t *idx, uint16_t n,
     return lo;
 }
 
-static const tar_index_entry_t *FindExact(const vfs_tarfs_ctx_t *ctx,
+static const tar_index_entry_t *findExact(const vfs_tarfs_ctx_t *ctx,
                                           const char *path) {
-    uint16_t pos = LowerBound(ctx->index, ctx->index_len, path);
+    uint16_t pos = lowerBound(ctx->index, ctx->index_len, path);
     if (pos < ctx->index_len && strcmp(ctx->index[pos].path_ptr, path) == 0) {
         return &ctx->index[pos];
     }
     return NULL;
 }
 
-static bool DirectoryExists(const vfs_tarfs_ctx_t *ctx, const char *prefix,
+static bool directoryExists(const vfs_tarfs_ctx_t *ctx, const char *prefix,
                             size_t prefix_len) {
     if (prefix_len == 0)
         return ctx->index_len > 0;
-    uint16_t pos = LowerBound(ctx->index, ctx->index_len, prefix);
+    uint16_t pos = lowerBound(ctx->index, ctx->index_len, prefix);
     return pos < ctx->index_len &&
            strncmp(ctx->index[pos].path_ptr, prefix, prefix_len) == 0;
 }
 
-static tarfs_file_ctx_t *AllocFileHandle(const tar_index_entry_t *e) {
+static tarfs_file_ctx_t *allocFileHandle(const tar_index_entry_t *e) {
     tarfs_file_ctx_t *h = WantedMalloc(sizeof(*h));
     if (!h)
         return NULL;
@@ -598,7 +601,7 @@ static tarfs_file_ctx_t *AllocFileHandle(const tar_index_entry_t *e) {
     return h;
 }
 
-static tarfs_file_ctx_t *AllocDirHandle(const char *prefix, size_t prefix_len) {
+static tarfs_file_ctx_t *allocDirHandle(const char *prefix, size_t prefix_len) {
     tarfs_file_ctx_t *h = WantedMalloc(sizeof(*h));
     if (!h)
         return NULL;
@@ -616,7 +619,8 @@ static tarfs_file_ctx_t *AllocDirHandle(const char *prefix, size_t prefix_len) {
     return h;
 }
 
-void *TarFs_Open(vfs_tarfs_ctx_t *ctx, const char *path, vfs_oflags_t flags) {
+void *TarFs_Open(const vfs_tarfs_ctx_t *ctx, const char *path,
+                 vfs_oflags_t flags) {
     if (!ctx || !path)
         return NULL;
 
@@ -645,17 +649,17 @@ void *TarFs_Open(vfs_tarfs_ctx_t *ctx, const char *path, vfs_oflags_t flags) {
 
     if (plen == 0) {
         /* Root directory always exists; empty prefix matches every entry. */
-        return AllocDirHandle("", 0);
+        return allocDirHandle("", 0);
     }
 
     if (!trailing_slash) {
-        const tar_index_entry_t *e = FindExact(ctx, work);
+        const tar_index_entry_t *e = findExact(ctx, work);
         if (e != NULL) {
             if (e->layer_idx == TARFS_WHITEOUT)
                 return NULL;
             if (flags & VFS_O_DIRECTORY)
                 return NULL;
-            return AllocFileHandle(e);
+            return allocFileHandle(e);
         }
     }
 
@@ -665,10 +669,10 @@ void *TarFs_Open(vfs_tarfs_ctx_t *ctx, const char *path, vfs_oflags_t flags) {
     work[plen + 1] = '\0';
     size_t prefix_len = plen + 1;
 
-    if (!DirectoryExists(ctx, work, prefix_len))
+    if (!directoryExists(ctx, work, prefix_len))
         return NULL;
 
-    return AllocDirHandle(work, prefix_len);
+    return allocDirHandle(work, prefix_len);
 }
 
 int TarFs_Close(vfs_tarfs_ctx_t *ctx, void *handle) {
@@ -707,7 +711,7 @@ int TarFs_Stat(vfs_tarfs_ctx_t *ctx, void *handle, vfs_stat_t *stat) {
     (void)ctx;
     if (!handle || !stat)
         return -EINVAL;
-    tarfs_file_ctx_t *h = handle;
+    const tarfs_file_ctx_t *h = handle;
     memset(stat, 0, sizeof(*stat));
     if (h->is_dir) {
         stat->filetype = VFS_FILETYPE_DIRECTORY;
@@ -756,14 +760,14 @@ int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
                   uint64_t *cookie, size_t *bufUsed) {
     if (!ctx || !handle || !buf || !cookie || !bufUsed)
         return -EINVAL;
-    tarfs_file_ctx_t *h = handle;
+    const tarfs_file_ctx_t *h = handle;
     if (!h->is_dir)
         return -ENOTDIR;
 
     size_t used = 0;
     uint16_t i;
     if (*cookie == 0) {
-        i = LowerBound(ctx->index, ctx->index_len, h->dir_prefix);
+        i = lowerBound(ctx->index, ctx->index_len, h->dir_prefix);
     } else {
         /* WASI dircookie is uint64_t. The index is uint16_t-bounded, so any
          * cookie beyond the index length means iteration is complete. */

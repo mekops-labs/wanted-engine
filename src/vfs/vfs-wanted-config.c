@@ -40,12 +40,18 @@ const vfs_driver_t WantedConfigDriver = {
 
 static bool cfg_opened = false;
 
+/* Signature fixed by the vfs_driver_t callback table. */
+/* cppcheck-suppress constParameterCallback */
 static int _cfg_Destroy(struct vfs_driver_t *d) {
+    (void)d;
     cfg_opened = false;
     return 0;
 }
 
 static int _cfg_Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
+    (void)d;
+    (void)path;
+    (void)flags;
     if (cfg_opened)
         return -EBUSY;
     cfg_opened = true;
@@ -53,11 +59,15 @@ static int _cfg_Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 }
 
 static int _cfg_Close(vfs_driver_ctx_t d, int fd) {
+    (void)d;
+    (void)fd;
     cfg_opened = false;
     return 0;
 }
 
 static int _cfg_Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
+    (void)d;
+    (void)fd;
     stat->dev = WantedConfigDriver.bytesId;
     stat->ino = 0;
     stat->filetype = WantedConfigDriver.filetype;
@@ -71,6 +81,8 @@ static int _cfg_Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 }
 
 static int _cfg_Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
+    (void)d;
+    (void)fd;
     if (buf == NULL)
         return -EINVAL;
     if (!cfg_opened)
@@ -92,5 +104,9 @@ static int _cfg_Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
 
 static int _cfg_Write(vfs_driver_ctx_t d, int fd, const void *buf,
                       size_t nbyte) {
+    (void)d;
+    (void)fd;
+    (void)buf;
+    (void)nbyte;
     return -EROFS;
 }

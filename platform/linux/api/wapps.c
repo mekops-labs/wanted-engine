@@ -74,7 +74,7 @@ void WA_threadEnd(void *ptr) {
 }
 
 #ifdef __ANDROID__
-void thread_sigHandler(int sig) {
+static void thread_sigHandler(int sig) {
     int i;
     if (sig != SIGUSR1) {
         return;
@@ -99,6 +99,9 @@ void *WA_thread(void *ptr) {
     wapp_data_t *d = (wapp_data_t *)ptr;
 
 #ifndef __ANDROID__
+    /* Async cancellation is required: a wapp thread may be spinning in
+     * interpreter code with no deferred cancellation point to reach. */
+    /* NOLINTNEXTLINE(cert-pos47-c) */
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 #else
     struct sigaction actions;
@@ -181,6 +184,10 @@ int PlatformWappStart(wapp_t *wapp) {
             state.threads[slot].status == EXITED ||
             state.threads[slot].status == FAILURE)
             break;
+    }
+    if (slot >= MAX_WAPPS) {
+        pthread_mutex_unlock(&state_mtx);
+        return -ENOSPC;
     }
 
     /* The slot owns the previous occupant's wapp_t for its whole lifetime
@@ -300,7 +307,6 @@ void PlatformRequestReboot(void) {
 }
 
 void PlatformWappLoop(void) {
-    uint8_t supervisorOk;
     int supervisorFailures = 0;
 
     for (;;) {
@@ -328,7 +334,7 @@ void PlatformWappLoop(void) {
             return;
         }
 
-        supervisorOk = 0;
+        uint8_t supervisorOk = 0;
         int supervisorFailed = 0;
         int supervisorErr = 0;
         for (int i = 0; i < MAX_WAPPS; i++) {

@@ -40,6 +40,30 @@ A change is ready for review once `make test` and `make smoke` pass.
   namespace, or the public API, update the matching file under `docs/` in
   the same change.
 
+## Naming conventions
+
+Function names encode their visibility and role:
+
+- **`PascalCase`** — public functions exported in a header
+  (`WantedStart`, `TarFsInit`, `LogStoreAppend`).
+- **`Subsystem_Method`** — public functions namespaced to a subsystem or
+  object (`DevFs_Register`, `NetFs_SockSend`, `ProcFs_Open`, `TarFs_Read`).
+  The prefix is the owning type/subsystem; for object-style APIs the first
+  argument is the instance it operates on.
+- **`lowerCase`** — file-local `static` helpers (`ensureConnected`,
+  `copyField`). Prefer camelCase for new helpers; some older code uses
+  `snake_case` (`alloc_fd`, `pending_find`) — don't churn it gratuitously,
+  but new code should be camelCase.
+- **`_Method`** — file-local `static` callbacks implementing the
+  `vfs_driver_t` operation table (`_Open`, `_Read`, `_Stat`, `_ReadDir`).
+  One set per driver `.c`; assigned to the driver's function pointers.
+
+Note: the `_Method` form uses a leading underscore followed by an uppercase
+letter, which C reserves for the implementation (C11 §7.1.3). It is an
+established, deliberate convention here — `cert-dcl37-c` is disabled in
+`.clang-tidy` to accommodate it — but keep these names strictly file-local
+`static`; never expose a `_`-prefixed identifier in a header.
+
 ## License headers
 
 WANTED Engine is licensed under Apache-2.0 (see `LICENSE` and `NOTICE`).

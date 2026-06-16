@@ -15,10 +15,14 @@
 #include <platform.h>
 #include <wanted.h>
 
+/* Upper bound on entries scanned when resolving a bare name; matches the
+ * registry capacity the VFS layer exposes. Avoids a variable-length array. */
+#define REGISTRY_MAX_ENTRIES 50
+
 static inline size_t min(size_t a, size_t b) { return (a) > (b) ? (b) : (a); }
 
 /* when return 1, scandir will put this dirent to the list */
-static int ParseExt(const struct dirent *dir) {
+static int parseExt(const struct dirent *dir) {
     if (!dir) {
         return 0;
     }
@@ -27,17 +31,16 @@ static int ParseExt(const struct dirent *dir) {
         const char *ext = strrchr(dir->d_name, '.');
         if ((!ext) || (ext == dir->d_name)) {
             return 0;
-        } else {
-            if (strcmp(ext, REGISTRY_EXT) == 0) {
-                return 1;
-            }
+        }
+        if (strcmp(ext, REGISTRY_EXT) == 0) {
+            return 1;
         }
     }
 
     return 0;
 }
 
-static int NameLenWithoutExt(const char *name) {
+static int nameLenWithoutExt(const char *name) {
     const char *ext = strrchr(name, '.');
     if ((!ext) || (ext == name)) {
         return 0;
@@ -49,14 +52,12 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     struct dirent **namelist;
     struct stat s;
     int n, i = 0;
-    int ret;
     int d;
 
     d = open(REGISTRY_ROOT, O_DIRECTORY | O_RDONLY);
     if (d < 0) {
         if (ENOENT == errno) {
-            ret = mkdir(REGISTRY_ROOT, 0755);
-            if (ret < 0) {
+            if (mkdir(REGISTRY_ROOT, 0755) < 0) {
                 return -errno;
             }
 
@@ -65,7 +66,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
         return -errno;
     }
 
-    n = scandir(REGISTRY_ROOT, &namelist, ParseExt, alphasort);
+    n = scandir(REGISTRY_ROOT, &namelist, parseExt, alphasort);
     if (n < 0) {
         close(d);
         return -errno;
@@ -74,7 +75,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     for (i = 0; i < n; i++, len--) {
         if (registryList != NULL && len > 0) {
             size_t entryNameLen =
-                min(NameLenWithoutExt(namelist[i]->d_name) + 1,
+                min(nameLenWithoutExt(namelist[i]->d_name) + 1,
                     WAPP_MAX_NAME_LEN + 1 + WAPP_MAX_VERSION_LEN);
             const char *ver =
                 strchr(namelist[i]->d_name, (int)REGISTRY_VERSION_SEPARATOR);
@@ -92,14 +93,17 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
             strncpy(registryList[i].name, namelist[i]->d_name, nameLen);
             registryList[i].name[nameLen - 1] = '\0';
 
-            ret = fstatat(d, namelist[i]->d_name, &s, 0);
-            registryList[i].size = s.st_size;
+            if (fstatat(d, namelist[i]->d_name, &s, 0) == 0) {
+                registryList[i].size = s.st_size;
+            } else {
+                registryList[i].size = 0;
+            }
         }
 
         free(namelist[i]);
     }
 
-    free(namelist);
+    free((void *)namelist);
 
     close(d);
 
@@ -116,8 +120,10 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
         int num = PlatformRegistryRead(NULL, 0);
         if (num < 0)
             return num;
+        if (num > REGISTRY_MAX_ENTRIES)
+            num = REGISTRY_MAX_ENTRIES;
 
-        reg_entry_t list[num];
+        reg_entry_t list[REGISTRY_MAX_ENTRIES];
         num = PlatformRegistryRead(list, num);
 
         const reg_entry_t *match = NULL;

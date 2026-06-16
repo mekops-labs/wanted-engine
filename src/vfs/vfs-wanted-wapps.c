@@ -125,7 +125,7 @@ static const struct {
 /* Parse a path relative to the wapps/ root into (node kind, wapp name).
  * Accepts "", "/", "<name>", "<name>/", "<name>/<leaf>". Returns 0 on success
  * or -ENOENT for an unknown leaf / over-deep path. */
-static int ResolvePath(const char *path, wapp_node_t *node, char *name) {
+static int resolvePath(const char *path, wapp_node_t *node, char *name) {
     struct cwk_segment seg;
 
     name[0] = '\0';
@@ -200,7 +200,7 @@ static wapps_pending_t *pending_slot(struct vfs_driver_ctx_t *d,
 /* Look up a wapp's runtime state by name. Returns true and fills *out if the
  * platform reports a slot for it; false otherwise (caller treats absence as
  * not_started). */
-static bool LookupState(const char *name, wapp_state_t *out) {
+static bool lookupState(const char *name, wapp_state_t *out) {
     wapp_state_t states[MAX_WAPPS];
     int n = PlatformWappGetState(states, MAX_WAPPS);
     for (int i = 0; i < n; i++) {
@@ -218,7 +218,7 @@ static bool LookupState(const char *name, wapp_state_t *out) {
  * (from `start <image>`), else the buffered config's `image` field, else the
  * instance name. The launch config — console, argv[1..] (`args`), the
  * environment (`envs`) — is whatever was buffered at wapps/<name>/config. */
-static int StartWapp(struct vfs_driver_ctx_t *d, const char *name,
+static int startWapp(struct vfs_driver_ctx_t *d, const char *name,
                      const char *image) {
     int ret;
     reg_entry_t e;
@@ -256,8 +256,9 @@ static int StartWapp(struct vfs_driver_ctx_t *d, const char *name,
      * like-named image, while many instances can share one image. The loader
      * resolves the image's registry entry and stamps image identity (image +
      * version) onto the wapp; it never touches wapp->name. */
-    const char *img =
-        haveImage ? image : (wapp->cfg.image[0] ? wapp->cfg.image : name);
+    const char *img = image;
+    if (!haveImage)
+        img = wapp->cfg.image[0] ? wapp->cfg.image : name;
 
     /* An image reference is "<name>[:<tag>]": a bare name resolves to the first
      * matching entry (empty version), a "<name>:<tag>" pins the version
@@ -310,9 +311,9 @@ static int _Destroy(struct vfs_driver_t *d) {
 /* True if the engine knows this wapp name — it is live (a platform slot) or has
  * a `create` reservation. The per-wapp namespace exists only for a known wapp.
  */
-static bool WappKnown(struct vfs_driver_ctx_t *d, const char *name) {
+static bool wappKnown(struct vfs_driver_ctx_t *d, const char *name) {
     wapp_state_t st;
-    return LookupState(name, &st) || pending_find(d, name) != NULL;
+    return lookupState(name, &st) || pending_find(d, name) != NULL;
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
@@ -320,7 +321,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     wapp_node_t node;
     char name[WAPP_MAX_NAME_LEN];
 
-    int ret = ResolvePath(path, &node, name);
+    int ret = resolvePath(path, &node, name);
     if (ret < 0)
         return ret;
 
@@ -329,7 +330,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
      * them for an unknown name returns ENOENT rather than synthesising a
      * default — a name cannot be probed by guessing its path, and config/start
      * are reachable only from a directory that `create` actually made. */
-    if (node != NODE_ROOT && !WappKnown(d, name))
+    if (node != NODE_ROOT && !wappKnown(d, name))
         return -ENOENT;
 
     int fd = alloc_fd();
@@ -373,10 +374,10 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 
 /* Render the plain-text body of a read node into `out` (NUL-terminated within
  * cap). Returns the byte length (excluding NUL). */
-static size_t RenderRead(wapp_node_t node, const char *name, char *out,
+static size_t renderRead(wapp_node_t node, const char *name, char *out,
                          size_t cap) {
     wapp_state_t st;
-    bool live = LookupState(name, &st);
+    bool live = lookupState(name, &st);
 
     switch (node) {
     case NODE_STATE: {
@@ -388,10 +389,10 @@ static size_t RenderRead(wapp_node_t node, const char *name, char *out,
         if (live) {
             s = st.status;
         } else {
-            wapps_pending_t *p = pending_find(&ctx, name);
+            const wapps_pending_t *p = pending_find(&ctx, name);
             s = (p != NULL && !p->configured) ? CREATED : NOT_STARTED;
         }
-        return (size_t)snprintf(out, cap, "%s", statusToString(s));
+        return (size_t)snprintf(out, cap, "%s", StatusToString(s));
     }
     case NODE_IMAGE:
         /* The registry image the instance runs. Known only once the platform
@@ -403,7 +404,8 @@ static size_t RenderRead(wapp_node_t node, const char *name, char *out,
          * a digest). Empty for a not-yet-launched reservation. */
         return (size_t)snprintf(out, cap, "%s", live ? st.version : "");
     case NODE_ID:
-        return (size_t)snprintf(out, cap, "%u", live ? st.id : 0);
+        return (size_t)snprintf(out, cap, "%u",
+                                (unsigned int)(live ? st.id : 0));
     case NODE_EXIT_CODE:
         /* Authoritative only when state==exited; a running/unknown wapp reads
          * the sentinel, and so does a trapped one (which never set a code). */
@@ -439,7 +441,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     }
 
     char line[WAPPS_LINE_MAX];
-    size_t n = RenderRead(node, d->fds[fd].name, line, sizeof(line));
+    size_t n = renderRead(node, d->fds[fd].name, line, sizeof(line));
     if (n >= sizeof(line))
         n = sizeof(line) - 1;
     if (n > nbyte)
@@ -482,7 +484,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
                 img++;
             if (*img != '\0' && strlen(img) >= WAPP_MAX_IMAGE_REF_LEN)
                 return -EINVAL;
-            ret = StartWapp(d, name, img[0] ? img : NULL);
+            ret = startWapp(d, name, img[0] ? img : NULL);
         } else if (strcmp(line, "stop") == 0) {
             ret = PlatformWappStop(name);
         } else {
@@ -513,7 +515,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
 /* Pack a single dirent + name into buf at *used, advancing it. Returns false
  * if it would overflow bufLen (caller stops and reports partial fill). */
-static bool PackDirent(void *buf, size_t bufLen, size_t *used, uint64_t ino,
+static bool packDirent(void *buf, size_t bufLen, size_t *used, uint64_t ino,
                        uint64_t next, vfs_filetype_t type, const char *name,
                        size_t nameLen) {
     vfs_dirent_t dir;
@@ -578,7 +580,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
         uint64_t i = *cookie;
         for (; i < (uint64_t)total; i++) {
             size_t nameLen = strnlen(names[i], WAPP_MAX_NAME_LEN);
-            if (!PackDirent(buf, bufLen, &used, i, i + 1,
+            if (!packDirent(buf, bufLen, &used, i, i + 1,
                             VFS_FILETYPE_DIRECTORY, names[i], nameLen))
                 break;
         }
@@ -590,7 +592,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     if (node == NODE_WAPP) {
         uint64_t i = *cookie;
         for (; i < N_LEAVES; i++) {
-            if (!PackDirent(buf, bufLen, &used, i, i + 1,
+            if (!packDirent(buf, bufLen, &used, i, i + 1,
                             VFS_FILETYPE_CHARACTER_DEVICE, LEAVES[i].name,
                             strlen(LEAVES[i].name)))
                 break;
@@ -732,7 +734,7 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
             return -EINVAL;
 
         wapp_state_t st;
-        bool live = LookupState(dname, &st);
+        bool live = lookupState(dname, &st);
         wapps_pending_t *p = pending_find(&ctx, dname);
         if (!live && p == NULL)
             return -ENOENT;
