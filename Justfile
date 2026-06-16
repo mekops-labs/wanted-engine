@@ -34,7 +34,8 @@ tidy:
 # cppcheck does its own parsing, so it covers every platform without a build.
 cppcheck:
     cppcheck --enable=warning,style,performance,portability \
-        --suppress=missingIncludeSystem --inline-suppr --error-exitcode=1 \
+        --suppress=missingIncludeSystem --suppress=normalCheckLevelMaxBranches \
+        --inline-suppr --error-exitcode=1 \
         -I include -I src/include -I platform/include \
         src platform cmd
 

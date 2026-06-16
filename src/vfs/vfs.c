@@ -128,7 +128,7 @@ static inline bool CheckFd(struct vfs_ctx_t *c, int fd) {
     return c && fd >= 0 && fd < VFS_MAX_FDS && c->fds[fd].type != VFS_TYPE_NONE;
 }
 
-static int FindFirstClosedFd(struct vfs_ctx_t *c) {
+static int FindFirstClosedFd(const struct vfs_ctx_t *c) {
     if (!c)
         return -EINVAL;
     for (int i = ROOT_FD; i < VFS_MAX_FDS; i++) {

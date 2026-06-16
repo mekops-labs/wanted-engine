@@ -117,6 +117,8 @@ static int wrsend(C9aux *a) {
     return 0;
 }
 
+/* Signature fixed by the C9ctx callback table. */
+/* cppcheck-suppress constParameterCallback */
 static uint8_t *ctxbegin(C9ctx *ctx, uint32_t size) {
     uint8_t *b;
     C9aux *a;
@@ -137,6 +139,8 @@ static int ctxend(C9ctx *ctx) {
     return 0;
 }
 
+/* Signature fixed by the C9ctx callback table. */
+/* cppcheck-suppress constParameterCallback */
 static uint8_t *ctxread(C9ctx *ctx, uint32_t size, int *err) {
     uint32_t n;
     int r;
@@ -523,7 +527,7 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
     // close
     DEBUG_TRACE("9p Close: %d", fd);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     if (fd != 0) {
@@ -543,7 +547,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     // stat
     DEBUG_TRACE("9p Stat: %d", fd);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     c9stat(&a->c, &a->tag, fd);
@@ -570,12 +574,12 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     C9aux *a = &d->aux;
     size_t r;
-    uint8_t *b;
+    const uint8_t *b;
 
     // read
     DEBUG_TRACE("9p Read: %d, %zu", fd, nbyte);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     if (d->fildes[fd].type == VFS_FILETYPE_DIRECTORY) {
@@ -607,7 +611,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     // write
     DEBUG_TRACE("9p Write: %d, %zu", fd, nbyte);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     if (d->fildes[fd].type == VFS_FILETYPE_DIRECTORY) {
@@ -632,7 +636,7 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
                  long *pos) {
     DEBUG_TRACE("9p Seek: %d, %ld (%u)", fd, off, whence);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     switch (whence) {
@@ -666,7 +670,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     // read and parse dir entry
     DEBUG_TRACE("9p ReadDir: %d, %zu", fd, bufLen);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     do {
@@ -689,8 +693,8 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                 used = bufLen;
                 break;
             }
-            memcpy(buf + used, &dir, sizeof(dir));
-            memcpy(buf + sizeof(dir) + used, s.name, dir.d_namlen);
+            memcpy((char *)buf + used, &dir, sizeof(dir));
+            memcpy((char *)buf + sizeof(dir) + used, s.name, dir.d_namlen);
 
             used += sizeof(dir) + dir.d_namlen;
         }
@@ -707,7 +711,7 @@ static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
 
     DEBUG_TRACE("9p Unlink: %d, %s", fd, path);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     // TODO: max depth is 3 currently - dirty!

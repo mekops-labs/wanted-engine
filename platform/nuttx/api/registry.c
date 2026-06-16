@@ -79,7 +79,7 @@ static int CompareEntries(const void *a, const void *b) {
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     DIR *dir;
-    struct dirent *de;
+    const struct dirent *de;
     char path[PATH_MAX];
     struct stat s;
     size_t filled = 0;

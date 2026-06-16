@@ -205,7 +205,7 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
                         const char *path, const char *options) {
     int ret = 0;
     int i = 0;
-    vfs_driver_t *drv = NULL;
+    const vfs_driver_t *drv = NULL;
 
     if (c == NULL || w == NULL || name == NULL || path == NULL) {
         return -EINVAL;
@@ -242,11 +242,10 @@ static void ParseResourceArray(json_t const *params, const char *section,
                                const char *optKey, wapp_driver_t *arr,
                                size_t *cnt) {
     json_t const *a = json_getProperty(params, section);
-    json_t const *e;
     size_t i = 0;
 
     if (a && JSON_ARRAY == json_getType(a)) {
-        for (e = json_getChild(a); e && i < MAX_DRIVERS_CNT;
+        for (json_t const *e = json_getChild(a); e && i < MAX_DRIVERS_CNT;
              e = json_getSibling(e)) {
             if (JSON_OBJ != json_getType(e))
                 continue;

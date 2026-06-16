@@ -131,7 +131,7 @@ int ProcFs_Stat(vfs_ctx_t c, void *handle, vfs_stat_t *stat) {
 
 int ProcFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
                    uint64_t *cookie, size_t *bufUsed) {
-    procfs_handle_t *h = handle;
+    const procfs_handle_t *h = handle;
     if (!h || !h->is_root)
         return -EBADF;
 
