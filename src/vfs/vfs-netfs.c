@@ -24,7 +24,7 @@ typedef struct netfs_handle_t {
     bool is_root; /* true when opening "/net" itself as a directory */
 } netfs_handle_t;
 
-static const vfs_driver_t *LookupDrv(vfs_ctx_t c, const char *suffix) {
+static const vfs_driver_t *lookupDrv(vfs_ctx_t c, const char *suffix) {
     if (!c || !suffix || *suffix == '\0')
         return NULL;
     for (uint8_t i = 0; i < c->netfs_cnt; i++) {
@@ -88,7 +88,7 @@ void *NetFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
         return h;
     }
 
-    const vfs_driver_t *drv = LookupDrv(c, suffix);
+    const vfs_driver_t *drv = lookupDrv(c, suffix);
     if (!drv) {
         if (out_err)
             *out_err = -ENOENT;
@@ -171,7 +171,7 @@ int NetFs_StatPath(vfs_ctx_t c, const char *suffix, vfs_stat_t *stat) {
         return 0;
     }
 
-    const vfs_driver_t *drv = LookupDrv(c, suffix);
+    const vfs_driver_t *drv = lookupDrv(c, suffix);
     if (!drv)
         return -ENOENT;
     stat->filetype = drv->filetype;

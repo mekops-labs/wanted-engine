@@ -147,4 +147,5 @@ typedef struct vfs_dir_entry_t {
 int VfsFlatDirReadDir(const vfs_dir_entry_t *entries, size_t count, void *buf,
                       size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
-int VfsFindEntry(const char *path, vfs_entry_t *files, const char **pathLeft);
+int VfsFindEntry(const char *path, const vfs_entry_t *files,
+                 const char **pathLeft);

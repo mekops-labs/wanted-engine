@@ -24,7 +24,7 @@ int WantedRegistryRemove(const reg_entry_t *entry);
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen);
 
-const char *statusToString(status_t state);
+const char *StatusToString(status_t state);
 
 /* Upper bound (including NUL) on a control/config JSON payload the engine
  * copies onto the stack to parse, sizing the fixed parse buffer. The

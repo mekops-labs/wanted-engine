@@ -72,7 +72,7 @@ struct vfs_driver_ctx_t {
     char *conf;
 };
 
-static int FindFirstClosedFd(vfs_driver_ctx_t d) {
+static int findFirstClosedFd(vfs_driver_ctx_t d) {
     if (!d)
         return -EINVAL;
 
@@ -87,13 +87,11 @@ static int FindFirstClosedFd(vfs_driver_ctx_t d) {
 static vfs_filetype_t convert9pFiletype(C9qt t) {
     if (t & C9qtdir) {
         return VFS_FILETYPE_DIRECTORY;
-    } else if (t & C9qtfile) {
-        return VFS_FILETYPE_CHARACTER_DEVICE;
-    } else {
-        return VFS_FILETYPE_REGULAR_FILE;
     }
-
-    return VFS_FILETYPE_UNKNOWN;
+    if (t & C9qtfile) {
+        return VFS_FILETYPE_CHARACTER_DEVICE;
+    }
+    return VFS_FILETYPE_REGULAR_FILE;
 }
 
 static int wrsend(C9aux *a) {
@@ -117,6 +115,8 @@ static int wrsend(C9aux *a) {
     return 0;
 }
 
+/* Signature fixed by the C9ctx callback table. */
+/* cppcheck-suppress constParameterCallback */
 static uint8_t *ctxbegin(C9ctx *ctx, uint32_t size) {
     uint8_t *b;
     C9aux *a;
@@ -137,6 +137,8 @@ static int ctxend(C9ctx *ctx) {
     return 0;
 }
 
+/* Signature fixed by the C9ctx callback table. */
+/* cppcheck-suppress constParameterCallback */
 static uint8_t *ctxread(C9ctx *ctx, uint32_t size, int *err) {
     uint32_t n;
     int r;
@@ -176,7 +178,7 @@ static int dial(char *s) {
     char host[64];
     const char *sep, *hostStart, *colon;
     size_t schemeLen, hostLen;
-    int e, f;
+    int f;
 
     /* Address is a URL "<scheme>://<host>:<port>", matching the socket driver:
      * tcp (stream) or udp (datagram). */
@@ -209,8 +211,7 @@ static int dial(char *s) {
     memcpy(host, hostStart, hostLen);
     host[hostLen] = '\0';
 
-    if ((e = getaddrinfo(host, colon + 1, &hint, &r)) != 0) {
-        // DEBUG_TRACE("%s: %s", gai_strerror(e), s);
+    if (getaddrinfo(host, colon + 1, &hint, &r) != 0) {
         return -1;
     }
     f = -1;
@@ -364,6 +365,7 @@ vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *opt) {
     // 2. connect comm backend
 
     vfs_driver_t *driver;
+    (void)wapp;
 
     driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
     if (NULL == driver) {
@@ -472,7 +474,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
         return 0;
     }
 
-    newFd = FindFirstClosedFd(d);
+    newFd = findFirstClosedFd(d);
     if (newFd < 0)
         return newFd;
 
@@ -513,6 +515,10 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
+    (void)d;
+    (void)fd;
+    (void)path;
+    (void)flags;
     // TODO: OpenAt seems not used in drivers
     DEBUG_TRACE("9p OpenAt: %d, %s", fd, path);
     return 0;
@@ -523,7 +529,7 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
     // close
     DEBUG_TRACE("9p Close: %d", fd);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     if (fd != 0) {
@@ -543,7 +549,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     // stat
     DEBUG_TRACE("9p Stat: %d", fd);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     c9stat(&a->c, &a->tag, fd);
@@ -570,12 +576,12 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     C9aux *a = &d->aux;
     size_t r;
-    uint8_t *b;
+    const uint8_t *b;
 
     // read
     DEBUG_TRACE("9p Read: %d, %zu", fd, nbyte);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     if (d->fildes[fd].type == VFS_FILETYPE_DIRECTORY) {
@@ -607,7 +613,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     // write
     DEBUG_TRACE("9p Write: %d, %zu", fd, nbyte);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     if (d->fildes[fd].type == VFS_FILETYPE_DIRECTORY) {
@@ -632,7 +638,7 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
                  long *pos) {
     DEBUG_TRACE("9p Seek: %d, %ld (%u)", fd, off, whence);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     switch (whence) {
@@ -661,12 +667,12 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     uint32_t sz;
     size_t used = 0;
     uint64_t off = 0;
-    vfs_dirent_t dir;
+    vfs_dirent_t dir = {0};
 
     // read and parse dir entry
     DEBUG_TRACE("9p ReadDir: %d, %zu", fd, bufLen);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     do {
@@ -689,8 +695,8 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                 used = bufLen;
                 break;
             }
-            memcpy(buf + used, &dir, sizeof(dir));
-            memcpy(buf + sizeof(dir) + used, s.name, dir.d_namlen);
+            memcpy((char *)buf + used, &dir, sizeof(dir));
+            memcpy((char *)buf + sizeof(dir) + used, s.name, dir.d_namlen);
 
             used += sizeof(dir) + dir.d_namlen;
         }
@@ -707,7 +713,7 @@ static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
 
     DEBUG_TRACE("9p Unlink: %d, %s", fd, path);
 
-    if (fd > MAX_OPENED_FILES || fd < 0)
+    if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
     // TODO: max depth is 3 currently - dirty!

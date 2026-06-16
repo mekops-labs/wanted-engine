@@ -65,6 +65,8 @@ static __wasi_errno_t errno_to_wasi(int errnum) {
         CASE_RET(ECONNREFUSED, __WASI_ERRNO_CONNREFUSED);
         CASE_RET(ECONNABORTED, __WASI_ERRNO_CONNABORTED);
         CASE_RET(ECONNRESET, __WASI_ERRNO_CONNRESET);
+    default:
+        break;
     }
     return __WASI_ERRNO_INVAL;
 }
@@ -90,7 +92,7 @@ static inline wasi_ctx_t *get_ctx(wasm_exec_env_t e) {
 
 static int32_t wasi_args_get(wasm_exec_env_t exec_env, int32_t argv_app,
                              int32_t argv_buf_app) {
-    wasi_ctx_t *ctx = get_ctx(exec_env);
+    const wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
 
@@ -99,7 +101,7 @@ static int32_t wasi_args_get(wasm_exec_env_t exec_env, int32_t argv_app,
     if (!argv && ctx->argc > 0)
         return __WASI_ERRNO_FAULT;
 
-    char *argv_buf = (char *)vaddr(exec_env, argv_buf_app, 1);
+    const char *argv_buf = (char *)vaddr(exec_env, argv_buf_app, 1);
     /* argv_buf may legitimately be writable with size we don't yet know — full
      * boundary checking happens per-character below via validate_app_addr. */
     if (!argv_buf && ctx->argc > 0)
@@ -122,7 +124,7 @@ static int32_t wasi_args_get(wasm_exec_env_t exec_env, int32_t argv_app,
 
 static int32_t wasi_args_sizes_get(wasm_exec_env_t exec_env, int32_t argc_app,
                                    int32_t argv_buf_size_app) {
-    wasi_ctx_t *ctx = get_ctx(exec_env);
+    const wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
 
@@ -143,7 +145,7 @@ static int32_t wasi_args_sizes_get(wasm_exec_env_t exec_env, int32_t argc_app,
 
 static int32_t wasi_environ_get(wasm_exec_env_t exec_env, int32_t env_app,
                                 int32_t env_buf_app) {
-    wasi_ctx_t *ctx = get_ctx(exec_env);
+    const wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
 
@@ -152,7 +154,7 @@ static int32_t wasi_environ_get(wasm_exec_env_t exec_env, int32_t env_app,
     if (!env && ctx->envc > 0)
         return __WASI_ERRNO_FAULT;
 
-    char *env_buf = (char *)vaddr(exec_env, env_buf_app, 1);
+    const char *env_buf = (char *)vaddr(exec_env, env_buf_app, 1);
     /* env_buf size is unknown here; each entry is bounds-checked per-character
      * below via validate_app_addr (same pattern as wasi_args_get). */
     if (!env_buf && ctx->envc > 0)
@@ -176,7 +178,7 @@ static int32_t wasi_environ_get(wasm_exec_env_t exec_env, int32_t env_app,
 static int32_t wasi_environ_sizes_get(wasm_exec_env_t exec_env,
                                       int32_t env_count_app,
                                       int32_t env_buf_size_app) {
-    wasi_ctx_t *ctx = get_ctx(exec_env);
+    const wasi_ctx_t *ctx = get_ctx(exec_env);
     if (!ctx)
         return __WASI_ERRNO_INVAL;
 
@@ -225,7 +227,7 @@ static int32_t wasi_fd_prestat_dir_name(wasm_exec_env_t exec_env, int32_t fd,
     if (!ctx)
         return __WASI_ERRNO_INVAL;
 
-    wasi_preopen_t *p = resolve_preopen(ctx, fd);
+    const wasi_preopen_t *p = resolve_preopen(ctx, fd);
     if (!p)
         return __WASI_ERRNO_BADF;
 
@@ -250,7 +252,7 @@ static int32_t wasi_fd_prestat_get(wasm_exec_env_t exec_env, int32_t fd,
     if (fd < 3)
         return __WASI_ERRNO_BADF;
 
-    wasi_preopen_t *p = resolve_preopen(ctx, fd);
+    const wasi_preopen_t *p = resolve_preopen(ctx, fd);
     if (!p)
         return __WASI_ERRNO_BADF;
 
@@ -414,7 +416,7 @@ static int32_t wasi_path_filestat_get(wasm_exec_env_t exec_env, int32_t fd,
     if (path_len < 0 || path_len >= 512)
         return __WASI_ERRNO_INVAL;
 
-    char *path = vaddr(exec_env, path_app, (uint32_t)path_len);
+    const char *path = vaddr(exec_env, path_app, (uint32_t)path_len);
     if (!path && path_len > 0)
         return __WASI_ERRNO_FAULT;
     uint8_t *buf = vaddr(exec_env, buf_app, 64);
@@ -459,7 +461,7 @@ static int32_t wasi_path_open(wasm_exec_env_t exec_env, int32_t dirfd,
     if (path_len < 0 || path_len >= 512)
         return __WASI_ERRNO_INVAL;
 
-    char *path = vaddr(exec_env, path_app, (uint32_t)path_len);
+    const char *path = vaddr(exec_env, path_app, (uint32_t)path_len);
     if (!path && path_len > 0)
         return __WASI_ERRNO_FAULT;
     __wasi_fd_t *fd_out = vaddr(exec_env, fd_app, sizeof(__wasi_fd_t));
@@ -508,7 +510,7 @@ static int32_t wasi_path_unlink_file(wasm_exec_env_t exec_env, int32_t fd,
     if (path_len < 0 || path_len >= 512)
         return __WASI_ERRNO_INVAL;
 
-    char *path = vaddr(exec_env, path_app, (uint32_t)path_len);
+    const char *path = vaddr(exec_env, path_app, (uint32_t)path_len);
     if (!path && path_len > 0)
         return __WASI_ERRNO_FAULT;
 
@@ -535,8 +537,8 @@ static int32_t wasi_path_rename(wasm_exec_env_t exec_env, int32_t old_fd,
         new_path_len >= 512)
         return __WASI_ERRNO_INVAL;
 
-    char *op = vaddr(exec_env, old_path_app, (uint32_t)old_path_len);
-    char *np = vaddr(exec_env, new_path_app, (uint32_t)new_path_len);
+    const char *op = vaddr(exec_env, old_path_app, (uint32_t)old_path_len);
+    const char *np = vaddr(exec_env, new_path_app, (uint32_t)new_path_len);
     if ((!op && old_path_len > 0) || (!np && new_path_len > 0))
         return __WASI_ERRNO_FAULT;
 
@@ -564,7 +566,7 @@ static int32_t wasi_path_create_directory(wasm_exec_env_t exec_env, int32_t fd,
     if (path_len < 0 || path_len >= 512)
         return __WASI_ERRNO_INVAL;
 
-    char *p = vaddr(exec_env, path_app, (uint32_t)path_len);
+    const char *p = vaddr(exec_env, path_app, (uint32_t)path_len);
     if (!p && path_len > 0)
         return __WASI_ERRNO_FAULT;
 
@@ -643,7 +645,7 @@ static int32_t wasi_fd_write(wasm_exec_env_t exec_env, int32_t fd,
         uint32_t len = iovs[i].buf_len;
         if (len == 0)
             continue;
-        void *addr = vaddr(exec_env, off, len);
+        const void *addr = vaddr(exec_env, off, len);
         if (!addr)
             return __WASI_ERRNO_FAULT;
 
@@ -884,7 +886,7 @@ static int32_t wasi_sock_send(wasm_exec_env_t exec_env, int32_t fd,
         uint32_t len = iovs[i].buf_len;
         if (len == 0)
             continue;
-        void *addr = vaddr(exec_env, off, len);
+        const void *addr = vaddr(exec_env, off, len);
         if (!addr)
             return __WASI_ERRNO_FAULT;
 

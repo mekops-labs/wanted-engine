@@ -55,7 +55,7 @@ static inline uint64_t convertTimespec(const struct timespec *ts) {
         return 0;
     if ((uint64_t)ts->tv_sec >= UINT64_MAX / 1000000000ULL)
         return UINT64_MAX;
-    return (uint64_t)ts->tv_sec * 1000000000ULL + ts->tv_nsec;
+    return ((uint64_t)ts->tv_sec * 1000000000ULL) + ts->tv_nsec;
 }
 
 #endif /* PLATFORM_VFS_POSIX_H */

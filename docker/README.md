@@ -20,6 +20,19 @@ binaries for those two Linux arches only.
 
 ## Changelog
 
+### 0.6.4
+
+- drop `osv-scanner`: it only flagged dependency manifests in upstream WAMR/NuttX language bindings, tests, and docs tooling the engine never builds, and had no visibility into the vendored C submodules it ships; `trivy` is retained
+
+### 0.6.3
+
+- mark `/src` as a git `safe.directory` so builds work under `RUNNER=docker`
+
+### 0.6.2
+
+- add static-analysis tooling: `cppcheck`, `shellcheck`, and `semgrep` (in a dedicated venv, its deps collide with distro packages); `python3-venv`
+- add `trivy` (image/fs CVE + secret scan) and `osv-scanner` (dependency CVEs) from upstream release artifacts, per build arch
+
 ### 0.6.1
 
 - add `just` for easier command handling and ci/dev unification

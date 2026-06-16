@@ -18,6 +18,12 @@
 
 static wantedConfig_t currentConfig;
 
+/* Bounded copy of a (possibly NULL) JSON string value into a fixed-size config
+ * field. Truncates rather than overflowing; always NUL-terminates. */
+static void copyField(char *dst, size_t dstsz, const char *src) {
+    snprintf(dst, dstsz, "%s", src ? src : "");
+}
+
 /* Engine clock-quality byte. Defaults to UNCALIBRATED so wapps that consult
  * it before any platform timing subsystem has come up get the safe answer.
  * The byte is single-aligned so reads/writes are naturally atomic on every
@@ -40,7 +46,7 @@ int WantedProcReadClockQuality(vfs_ctx_t c, void *buf, size_t bufLen) {
     return 1;
 }
 
-const char *statusToString(status_t state) {
+const char *StatusToString(status_t state) {
     switch (state) {
     case NOT_STARTED:
         return "not_started";
@@ -59,7 +65,7 @@ const char *statusToString(status_t state) {
     }
 }
 
-static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out) {
+static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
     json_t m[100];
     char b[len];
 
@@ -107,7 +113,7 @@ static int ParseConfig(const char *buf, size_t len, wantedConfig_t *out) {
 }
 
 int WantedParseConfig(const char *buf, size_t bufLen) {
-    return ParseConfig(buf, bufLen, &currentConfig);
+    return parseConfig(buf, bufLen, &currentConfig);
 }
 
 const wantedConfig_t *WantedGetConfig(void) { return &currentConfig; }
@@ -156,7 +162,7 @@ int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
 /* Table adaptor: a config-named `platform` driver — a console backing or a
  * /dev singleton — is always read-write. The read-only bind mount is bound via
  * WasiCtxAddPreopen (the mounts[] path), not resolved through this table. */
-static vfs_driver_t *PlatformFsInitRW(const wapp_t *wapp, const char *options) {
+static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
     return VfsPlatformFsInit(wapp, options, false);
 }
 
@@ -167,7 +173,7 @@ static const vfs_driver_table_t global_driver_table[] = {
     {"log", VfsLogInit},
     {"9p", Vfs9PInit},
     {"config", VfsConfigInit},
-    {"platform", PlatformFsInitRW},
+    {"platform", platformFsInitRW},
     {"socket", VfsSocketInit},
     {"wanted", VfsWantedInit},
     {NULL, NULL},
@@ -181,7 +187,7 @@ static const vfs_driver_table_t global_driver_table[] = {
  * A malformed path (relative, or an unknown <stdio> token) is rejected and the
  * driver destroyed: a misconfigured launch config fails loudly at install time
  * rather than silently at first open. */
-static int InstallTo(struct vfs_ctx_t *c, const char *path,
+static int installTo(struct vfs_ctx_t *c, const char *path,
                      const vfs_driver_t *drv) {
     if (strncmp(path, "/dev/", 5) == 0)
         return DevFs_Register(c, path + 5, drv);
@@ -195,7 +201,7 @@ static int InstallTo(struct vfs_ctx_t *c, const char *path,
             drv->Destroy((vfs_driver_t *)drv);
         return r;
     }
-    DEBUG_TRACE("InstallTo: unrouted path '%s', dropping driver", path);
+    DEBUG_TRACE("installTo: unrouted path '%s', dropping driver", path);
     if (drv->Destroy)
         drv->Destroy((vfs_driver_t *)drv);
     return -EINVAL;
@@ -205,7 +211,7 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
                         const char *path, const char *options) {
     int ret = 0;
     int i = 0;
-    vfs_driver_t *drv = NULL;
+    const vfs_driver_t *drv = NULL;
 
     if (c == NULL || w == NULL || name == NULL || path == NULL) {
         return -EINVAL;
@@ -225,7 +231,7 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
     }
 
     if (NULL != drv) {
-        ret = InstallTo(c, path, drv);
+        ret = installTo(c, path, drv);
     } else {
         DEBUG_TRACE("can't load %s driver, not found", name);
         return -EINVAL;
@@ -238,24 +244,23 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
  * `arr`. Each entry reads "name", "path", and the section's options field
  * (`optKey`, "options" or "address"). A field a section forbids is still read
  * here so install-time validation can reject it loudly. */
-static void ParseResourceArray(json_t const *params, const char *section,
+static void parseResourceArray(json_t const *params, const char *section,
                                const char *optKey, wapp_driver_t *arr,
                                size_t *cnt) {
     json_t const *a = json_getProperty(params, section);
-    json_t const *e;
     size_t i = 0;
 
     if (a && JSON_ARRAY == json_getType(a)) {
-        for (e = json_getChild(a); e && i < MAX_DRIVERS_CNT;
+        for (json_t const *e = json_getChild(a); e && i < MAX_DRIVERS_CNT;
              e = json_getSibling(e)) {
             if (JSON_OBJ != json_getType(e))
                 continue;
             const char *name = json_getPropertyValue(e, "name");
             const char *path = json_getPropertyValue(e, "path");
             const char *opt = json_getPropertyValue(e, optKey);
-            strcpy(arr[i].name, name ? name : "");
-            strcpy(arr[i].path, path ? path : "");
-            strcpy(arr[i].options, opt ? opt : "");
+            copyField(arr[i].name, sizeof(arr[i].name), name);
+            copyField(arr[i].path, sizeof(arr[i].path), path);
+            copyField(arr[i].options, sizeof(arr[i].options), opt);
             i++;
         }
     }
@@ -268,7 +273,7 @@ static void ParseResourceArray(json_t const *params, const char *section,
  * (WantedParseWappConfigJson), where the object passed in *is* the config.
  * Wapp identity is not read here — for the config node it travels in the
  * path. */
-static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
+static void parseWappParams(json_t const *params, wapp_config_t *cfg) {
     /* image: the registry image this instance runs, as a reference
      * "<name>[:<tag>]". Optional — when omitted the launch path defaults it to
      * the instance name, so a single-instance wapp needs no config change. A
@@ -284,38 +289,26 @@ static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
     if (console && JSON_OBJ == json_getType(console)) {
         json_t const *in = json_getProperty(console, "in");
         if (in && JSON_OBJ == json_getType(in)) {
-            strcpy(cfg->console[0].name,
-                   NULL == json_getPropertyValue(in, "name")
-                       ? ""
-                       : json_getPropertyValue(in, "name"));
-            strcpy(cfg->console[0].options,
-                   NULL == json_getPropertyValue(in, "options")
-                       ? ""
-                       : json_getPropertyValue(in, "options"));
+            copyField(cfg->console[0].name, sizeof(cfg->console[0].name),
+                      json_getPropertyValue(in, "name"));
+            copyField(cfg->console[0].options, sizeof(cfg->console[0].options),
+                      json_getPropertyValue(in, "options"));
         }
 
         json_t const *out = json_getProperty(console, "out");
         if (out && JSON_OBJ == json_getType(out)) {
-            strcpy(cfg->console[1].name,
-                   NULL == json_getPropertyValue(out, "name")
-                       ? ""
-                       : json_getPropertyValue(out, "name"));
-            strcpy(cfg->console[1].options,
-                   NULL == json_getPropertyValue(out, "options")
-                       ? ""
-                       : json_getPropertyValue(out, "options"));
+            copyField(cfg->console[1].name, sizeof(cfg->console[1].name),
+                      json_getPropertyValue(out, "name"));
+            copyField(cfg->console[1].options, sizeof(cfg->console[1].options),
+                      json_getPropertyValue(out, "options"));
         }
 
         json_t const *err = json_getProperty(console, "err");
         if (err && JSON_OBJ == json_getType(err)) {
-            strcpy(cfg->console[2].name,
-                   NULL == json_getPropertyValue(err, "name")
-                       ? ""
-                       : json_getPropertyValue(err, "name"));
-            strcpy(cfg->console[2].options,
-                   NULL == json_getPropertyValue(err, "options")
-                       ? ""
-                       : json_getPropertyValue(err, "options"));
+            copyField(cfg->console[2].name, sizeof(cfg->console[2].name),
+                      json_getPropertyValue(err, "name"));
+            copyField(cfg->console[2].options, sizeof(cfg->console[2].options),
+                      json_getPropertyValue(err, "options"));
         }
     }
 
@@ -326,11 +319,11 @@ static void ParseWappParams(json_t const *params, wapp_config_t *cfg) {
      *   - sockets[] — connections at "/net/<name>"; transport in "address".
      * Per-section validation (forbidden fields, required path) happens at
      * install time; here we only read the fields each section may carry. */
-    ParseResourceArray(params, "drivers", "options", cfg->drivers,
+    parseResourceArray(params, "drivers", "options", cfg->drivers,
                        &cfg->driversCnt);
-    ParseResourceArray(params, "mounts", "options", cfg->mounts,
+    parseResourceArray(params, "mounts", "options", cfg->mounts,
                        &cfg->mountsCnt);
-    ParseResourceArray(params, "sockets", "address", cfg->sockets,
+    parseResourceArray(params, "sockets", "address", cfg->sockets,
                        &cfg->socketsCnt);
 
     /* args[]: optional command-line arguments, occupying argv[1..]. argv[0] is
@@ -408,10 +401,10 @@ int WantedParseCtrlAction(json_t const *json, char *wappName,
             DEBUG_TRACE(".params.name property not found in json");
             return -EINVAL;
         }
-        strcpy(wappName, json_getValue(name));
+        copyField(wappName, WAPP_MAX_NAME_LEN, json_getValue(name));
     }
 
-    ParseWappParams(params, cfg);
+    parseWappParams(params, cfg);
 
     return 0;
 }
@@ -463,7 +456,7 @@ int WantedParseWappConfigJson(const char *buf, size_t bufLen,
 
     /* The decomposed config node carries the bare launch-config body — the
      * object itself plays the role the legacy `params` block did. */
-    ParseWappParams(json, cfg);
+    parseWappParams(json, cfg);
 
     return 0;
 }

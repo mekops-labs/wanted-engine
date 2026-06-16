@@ -47,6 +47,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
                                 bool readonly) {
     const char *root;
     vfs_driver_t *driver;
+    (void)wapp;
 
     if (NULL == options) {
         root = DEFAULT_ROOT;
@@ -157,7 +158,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
  * kernel that lacks it the syscall returns ENOSYS and the open fails loudly,
  * rather than silently resolving without the escape guard. Confinement is not
  * optional — a sandbox we cannot enforce must deny, not degrade. */
-static int OpenAtBeneath(int dirfd, const char *path, int flags, int mode) {
+static int openAtBeneath(int dirfd, const char *path, int flags, int mode) {
     struct open_how how;
     memset(&how, 0, sizeof(how));
     how.flags = (uint64_t)(unsigned int)flags;
@@ -180,7 +181,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
     DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, path);
 
     int mode = 0644;
-    int ret = OpenAtBeneath(fd, path, fl, mode);
+    int ret = openAtBeneath(fd, path, fl, mode);
     if (ret < 0)
         return -errno;
 
@@ -205,6 +206,7 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
     int ret, fl;
     struct stat statbuf;
+    (void)d;
 
     fl = fcntl(fd, F_GETFL);
     if (fl < 0)
@@ -232,6 +234,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
 }
 
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
+    (void)d;
     int ret = read(fd, buf, nbyte);
     if (ret < 0)
         return -errno;
@@ -249,6 +252,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
                  long *pos) {
+    (void)d;
     if (pos == NULL)
         return -EINVAL;
 
@@ -275,9 +279,10 @@ static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path) {
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed) {
-    vfs_dirent_t dir;
+    vfs_dirent_t dir = {0};
     size_t used = 0;
     DIR *dp = fdopendir(fd);
+    (void)d;
     struct dirent *ep;
 
     if (dp != NULL) {
@@ -299,8 +304,8 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                 used = bufLen;
                 break;
             }
-            memcpy(buf + used, &dir, sizeof(dir));
-            memcpy(buf + sizeof(dir) + used, ep->d_name, dir.d_namlen);
+            memcpy((char *)buf + used, &dir, sizeof(dir));
+            memcpy((char *)buf + sizeof(dir) + used, ep->d_name, dir.d_namlen);
 
             used += sizeof(dir) + dir.d_namlen;
         }

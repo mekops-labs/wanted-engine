@@ -266,9 +266,9 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     uint8_t *out = (uint8_t *)buf;
     size_t used = 0;
     DIR *dp = fdopendir(fd);
-    struct dirent *ep;
 
     if (dp != NULL) {
+        struct dirent *ep;
         if (*cookie != 0) {
             seekdir(dp, (off_t)*cookie);
         }

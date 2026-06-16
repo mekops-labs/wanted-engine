@@ -28,23 +28,43 @@ static vfs_driver_t NullDriver = {
 };
 
 vfs_driver_t *VfsNullInit(const wapp_t *wapp, const char *opt) {
+    (void)wapp;
+    (void)opt;
     return &NullDriver;
 }
 
-static int _Destroy(struct vfs_driver_t *d) { return 0; }
+/* Signature fixed by the vfs_driver_t callback table. */
+/* cppcheck-suppress constParameterCallback */
+static int _Destroy(struct vfs_driver_t *d) {
+    (void)d;
+    return 0;
+}
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
+    (void)d;
+    (void)path;
+    (void)flags;
     return 0;
 }
 
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
+    (void)d;
+    (void)fd;
+    (void)path;
+    (void)flags;
     return 0;
 }
 
-static int _Close(vfs_driver_ctx_t d, int fd) { return 0; }
+static int _Close(vfs_driver_ctx_t d, int fd) {
+    (void)d;
+    (void)fd;
+    return 0;
+}
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
+    (void)d;
+    (void)fd;
     stat->dev = NullDriver.bytesId;
     stat->ino = 0;
     stat->filetype = NullDriver.filetype;
@@ -57,10 +77,19 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 
     return 0;
 }
+/* Signature fixed by the vfs_driver_t callback table. */
+/* cppcheck-suppress constParameterCallback */
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
+    (void)d;
+    (void)fd;
+    (void)buf;
+    (void)nbyte;
     return 0;
 }
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
+    (void)d;
+    (void)fd;
+    (void)buf;
     return nbyte;
 }

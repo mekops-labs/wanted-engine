@@ -58,14 +58,14 @@ struct wamrData_t {
 #define WANTED_VOLUME_SHARED_FMT "%s/shared/%s" /* <root>/shared/<vol> */
 
 /* A console slot with no driver name falls back to its default backing. */
-static const char *ResolveConsole(const char *name, const char *fallback) {
+static const char *resolveConsole(const char *name, const char *fallback) {
     return (name == NULL || name[0] == '\0') ? fallback : name;
 }
 
 /* True when `path` is the reserved namespace `ns` itself or a path beneath it
  * ("/dev", "/dev/x"), without matching unrelated names that merely share the
  * prefix ("/development"). Used to keep mounts[] out of /dev and /net. */
-static bool IsReservedNamespace(const char *path, const char *ns) {
+static bool isReservedNamespace(const char *path, const char *ns) {
     size_t n = strlen(ns);
     return strncmp(path, ns, n) == 0 && (path[n] == '\0' || path[n] == '/');
 }
@@ -77,7 +77,7 @@ static bool IsReservedNamespace(const char *path, const char *ns) {
  * path); `*readonly` receives the access mode. A relative/empty src, an
  * oversized src, or any unrecognised token is rejected with -EINVAL so a
  * malformed mount fails loudly at install. */
-static int ParsePlatformMountOptions(const char *options, char *hostBuf,
+static int parsePlatformMountOptions(const char *options, char *hostBuf,
                                      size_t hostBufLen, bool *readonly) {
     *readonly = false;
     hostBuf[0] = '\0';
@@ -116,7 +116,7 @@ static int ParsePlatformMountOptions(const char *options, char *hostBuf,
  * and not "." or "..". The engine concatenates it into the host path under the
  * wapp's volume directory, so a name with a separator or parent ref could
  * escape that namespace — reject it. */
-static bool IsSafeVolumeName(const char *name) {
+static bool isSafeVolumeName(const char *name) {
     if (name == NULL || name[0] == '\0')
         return false;
     if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
@@ -132,7 +132,7 @@ static bool IsSafeVolumeName(const char *name) {
  * `nameBuf` receives the volume name; `*readonly` the access mode; `*shared`
  * the namespace. An unsafe or oversized name, or any unrecognised token, is
  * rejected with -EINVAL so a malformed mount fails loudly at install. */
-static int ParseVolumeMountOptions(const char *options, char *nameBuf,
+static int parseVolumeMountOptions(const char *options, char *nameBuf,
                                    size_t nameBufLen, bool *readonly,
                                    bool *shared) {
     *readonly = false;
@@ -152,7 +152,7 @@ static int ParseVolumeMountOptions(const char *options, char *nameBuf,
          tok = strtok_r(NULL, ",", &save)) {
         if (strncmp(tok, "name=", 5) == 0) {
             const char *vn = tok + 5;
-            if (!IsSafeVolumeName(vn))
+            if (!isSafeVolumeName(vn))
                 return -EINVAL;
             size_t vlen = strlen(vn);
             if (vlen >= nameBufLen)
@@ -176,9 +176,9 @@ static int ParseVolumeMountOptions(const char *options, char *nameBuf,
  * which outlives the wasi context, so no string copies are made. The pointer
  * arrays themselves are heap allocated here and released by FreeWasiContext.
  * Returns 0 on success or a negative errno. */
-static int BuildWasiArgs(wasi_ctx_t *wasiCtx, const wapp_t *wapp) {
+static int buildWasiArgs(wasi_ctx_t *wasiCtx, const wapp_t *wapp) {
     uint32_t argc = 1 + (uint32_t)wapp->cfg.argsCnt;
-    const char **argv = WantedMalloc(argc * sizeof(char *));
+    const char **argv = (const char **)WantedMalloc(argc * sizeof(char *));
     if (!argv)
         return -ENOMEM;
     argv[0] = wapp->name;
@@ -188,9 +188,9 @@ static int BuildWasiArgs(wasi_ctx_t *wasiCtx, const wapp_t *wapp) {
     const char **envp = NULL;
     uint32_t envc = (uint32_t)wapp->cfg.envsCnt;
     if (envc > 0) {
-        envp = WantedMalloc(envc * sizeof(char *));
+        envp = (const char **)WantedMalloc(envc * sizeof(char *));
         if (!envp) {
-            WantedFree(argv);
+            WantedFree((void *)argv);
             return -ENOMEM;
         }
         for (size_t i = 0; i < wapp->cfg.envsCnt; i++)
@@ -206,7 +206,7 @@ static int BuildWasiArgs(wasi_ctx_t *wasiCtx, const wapp_t *wapp) {
 
 /* WAMR runtime init is global and one-shot. Called lazily from both
  * WantedStart and WantedWappRun so direct callers (tests) work too. */
-static int EnsureWamrInit(void) {
+static int ensureWamrInit(void) {
     static bool initialized = false;
     if (initialized)
         return 0;
@@ -229,7 +229,7 @@ static int EnsureWamrInit(void) {
  * Created lazily on first use, which is the supervisor's thread before any
  * other wapp exists, so the lazy init is race-free. The store lives for the
  * process lifetime (never freed). */
-static pipe_store_t *WantedPipeStore(void) {
+static pipe_store_t *wantedPipeStore(void) {
     static pipe_store_t *store = NULL;
     if (!store)
         store = PipeStoreNew();
@@ -237,7 +237,7 @@ static pipe_store_t *WantedPipeStore(void) {
 }
 
 /* /proc/wapps — plain-text wapp state, one record per wapp. */
-static int ProcReadWapps(vfs_ctx_t c, void *buf, size_t bufLen) {
+static int procReadWapps(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
     wapp_state_t wapps[MAX_WAPPS];
     int n = PlatformWappGetState(wapps, MAX_WAPPS);
@@ -248,7 +248,7 @@ static int ProcReadWapps(vfs_ctx_t c, void *buf, size_t bufLen) {
     size_t left = bufLen;
     for (int i = 0; i < n && left > 0; i++) {
         int w = snprintf(p, left, "name:\t%s\nstate:\t%s\n", wapps[i].name,
-                         statusToString(wapps[i].status));
+                         StatusToString(wapps[i].status));
         if (w < 0 || (size_t)w >= left)
             break;
         p += w;
@@ -262,7 +262,7 @@ static int ProcReadWapps(vfs_ctx_t c, void *buf, size_t bufLen) {
 }
 
 /* /proc/memory — wasm stack size + platform heap via PlatformMemoryStats. */
-static int ProcReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
+static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
     size_t heap_used = 0, heap_total = 0;
     PlatformMemoryStats(&heap_used, &heap_total);
@@ -281,7 +281,7 @@ static int ProcReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
 
 /* /proc/wanted — engine identity and compile-time resource ceilings. One
  * key:\tvalue line per field: human-readable, trivially split on the tab. */
-static int ProcReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
+static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
     int w =
         snprintf((char *)buf, bufLen,
@@ -302,7 +302,7 @@ static int ProcReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
 /* Build a one-shot tarfs ctx over the wapp's layer stack. Caller owns the
  * returned ctx and must TarFsDestroy() it. Returns NULL on bad args / OOM /
  * malformed layer. */
-static vfs_tarfs_ctx_t *WappTarfsInit(const wapp_t *w) {
+static vfs_tarfs_ctx_t *wappTarfsInit(const wapp_t *w) {
     if (!w || w->layer_cnt == 0)
         return NULL;
     return TarFsInit((uint8_t *const *)w->layers, w->layer_lens, w->layer_cnt);
@@ -323,7 +323,7 @@ int WantedWappRun(wapp_data_t *ctx) {
         return -1;
     }
 
-    if (EnsureWamrInit() < 0)
+    if (ensureWamrInit() < 0)
         return -1;
 
     /* WAMR's hardware bound check installs per-thread SIGSEGV trap
@@ -343,7 +343,7 @@ int WantedWappRun(wapp_data_t *ctx) {
      * the prefix router can resolve arbitrary paths into the same layer stack.
      * A wapp image is app.wasm (+ any TarFS payload):
      * identity comes from the registry entry the loader resolved. */
-    tarfs = WappTarfsInit(wapp);
+    tarfs = wappTarfsInit(wapp);
     if (!tarfs) {
         DEBUG_TRACE("Can't initialize tarfs for wapp");
         return -1;
@@ -425,26 +425,26 @@ int WantedWappRun(wapp_data_t *ctx) {
      * stdin/stdout/stderr aliases are registered after the console is installed
      * (below), so they can forward to the wapp's actual stream backing. */
     DevFs_Register(ctx->vfs, "null", VfsNullInit(wapp, NULL));
-    DevFs_Register(ctx->vfs, "pipe", PipeDriverCreate(WantedPipeStore()));
+    DevFs_Register(ctx->vfs, "pipe", PipeDriverCreate(wantedPipeStore()));
 
     /* Propagate system-level privilege flag, then register /proc entries. */
     VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
-    ProcFs_Register(ctx->vfs, "wapps", ProcReadWapps, true);
-    ProcFs_Register(ctx->vfs, "memory", ProcReadMemory, true);
+    ProcFs_Register(ctx->vfs, "wapps", procReadWapps, true);
+    ProcFs_Register(ctx->vfs, "memory", procReadMemory, true);
     /* clock_quality is unprivileged — any wapp may read it to decide whether
      * to trust the wall clock. */
     ProcFs_Register(ctx->vfs, "clock_quality", WantedProcReadClockQuality,
                     false);
     /* wanted exposes engine identity and resource ceilings; unprivileged so any
      * wapp can introspect the host it runs on. */
-    ProcFs_Register(ctx->vfs, "wanted", ProcReadWanted, false);
+    ProcFs_Register(ctx->vfs, "wanted", procReadWanted, false);
 
     wasiCtx->vfsCtx = ctx->vfs;
 
     /* Pass the launch config's args/envs through as WASI argv/envp. argv[0] is
      * the wapp name; user args occupy argv[1..]. */
-    if (BuildWasiArgs(wasiCtx, wapp) < 0) {
-        DEBUG_TRACE("BuildWasiArgs: can't allocate argv/envp");
+    if (buildWasiArgs(wasiCtx, wapp) < 0) {
+        DEBUG_TRACE("buildWasiArgs: can't allocate argv/envp");
         ret = -1;
         goto _freeVfs;
     }
@@ -453,15 +453,15 @@ int WantedWappRun(wapp_data_t *ctx) {
     /* install console (an unset slot falls back to its default backing) */
     ret = WantedInstallDriver(
         ctx->vfs, wapp,
-        ResolveConsole(wapp->cfg.console[0].name, DEFAULT_CONSOLE_IN),
+        resolveConsole(wapp->cfg.console[0].name, DEFAULT_CONSOLE_IN),
         "<stdin>", wapp->cfg.console[0].options);
     ret += WantedInstallDriver(
         ctx->vfs, wapp,
-        ResolveConsole(wapp->cfg.console[1].name, DEFAULT_CONSOLE_OUT),
+        resolveConsole(wapp->cfg.console[1].name, DEFAULT_CONSOLE_OUT),
         "<stdout>", wapp->cfg.console[1].options);
     ret += WantedInstallDriver(
         ctx->vfs, wapp,
-        ResolveConsole(wapp->cfg.console[2].name, DEFAULT_CONSOLE_ERR),
+        resolveConsole(wapp->cfg.console[2].name, DEFAULT_CONSOLE_ERR),
         "<stderr>", wapp->cfg.console[2].options);
 
     /* /dev/std{in,out,err} alias the just-installed console streams — opening
@@ -515,9 +515,9 @@ int WantedWappRun(wapp_data_t *ctx) {
      * namespace. */
     for (size_t i = 0; i < wapp->cfg.mountsCnt; i++) {
         const wapp_driver_t *m = &wapp->cfg.mounts[i];
-        if (m->path[0] != '/' || IsReservedNamespace(m->path, "/dev") ||
-            IsReservedNamespace(m->path, "/net") ||
-            IsReservedNamespace(m->path, "/proc")) {
+        if (m->path[0] != '/' || isReservedNamespace(m->path, "/dev") ||
+            isReservedNamespace(m->path, "/net") ||
+            isReservedNamespace(m->path, "/proc")) {
             DEBUG_TRACE("mounts[%zu] '%s': bad path '%s'", i, m->name, m->path);
             ret += -EINVAL;
             continue;
@@ -529,7 +529,7 @@ int WantedWappRun(wapp_data_t *ctx) {
              * options string is a config error and fails the launch. */
             char hostPath[MAX_PATH_LEN];
             bool readonly;
-            int rc = ParsePlatformMountOptions(m->options, hostPath,
+            int rc = parsePlatformMountOptions(m->options, hostPath,
                                                sizeof(hostPath), &readonly);
             if (rc < 0) {
                 DEBUG_TRACE("mounts[%zu] '%s': bad options '%s'", i, m->name,
@@ -551,8 +551,9 @@ int WantedWappRun(wapp_data_t *ctx) {
                 continue;
             }
             rc = WasiCtxAddPreopen(wasiCtx, m->path, src, host_fd, readonly);
-            if (rc < 0)
+            if (rc < 0) {
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
+            }
         } else if (strcmp(m->name, "volume") == 0) {
             /* A `volume` mount is an engine-managed named store. The engine
              * owns the host location and binds it as a WASI preopen at the
@@ -564,7 +565,7 @@ int WantedWappRun(wapp_data_t *ctx) {
              * a cross-wapp store. */
             char volName[MAX_PATH_LEN];
             bool readonly, shared;
-            int rc = ParseVolumeMountOptions(
+            int rc = parseVolumeMountOptions(
                 m->options, volName, sizeof(volName), &readonly, &shared);
             if (rc < 0) {
                 DEBUG_TRACE("mounts[%zu] '%s': bad options '%s'", i, m->name,
@@ -600,8 +601,9 @@ int WantedWappRun(wapp_data_t *ctx) {
             }
             rc = WasiCtxAddPreopen(wasiCtx, m->path, hostPath, host_fd,
                                    readonly);
-            if (rc < 0)
+            if (rc < 0) {
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
+            }
         } else {
             ret += WantedInstallDriver(ctx->vfs, wapp, m->name, m->path,
                                        m->options);
@@ -778,15 +780,15 @@ wapp_t *WantedGetCurrentSupervisor(void) {
     return w;
 }
 
-int WantedStart(const char *json, size_t jsonLen) {
+int WantedStart(const char *cfg, size_t cfgLen) {
     int ret;
     wapp_t *app;
 
-    ret = WantedParseConfig(json, jsonLen);
+    ret = WantedParseConfig(cfg, cfgLen);
     if (ret < 0)
         return ret;
 
-    if (EnsureWamrInit() < 0)
+    if (ensureWamrInit() < 0)
         return -1;
 
     app = WantedGetCurrentSupervisor();
