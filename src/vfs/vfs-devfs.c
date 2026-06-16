@@ -123,9 +123,9 @@ void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
         return NULL;
     }
 
-    const char *open_path =
-        sub_path ? sub_path
-                 : (drv->filetype == VFS_FILETYPE_DIRECTORY ? "/" : "");
+    const char *open_path = sub_path;
+    if (open_path == NULL)
+        open_path = (drv->filetype == VFS_FILETYPE_DIRECTORY) ? "/" : "";
     int drv_fd = TRY_DRV(drv, Open, open_path, flags);
     if (drv_fd < 0) {
         if (out_err)

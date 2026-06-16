@@ -26,10 +26,20 @@ lint-shell:
     find . -name '*.sh' -not -path './vendor/*' -not -path './third_party/*' -not -path './build*/*' -print0 \
         | xargs -0 shellcheck --severity=error
 
-# clang-tidy the compiled first-party sources (needs a build dir with compile_commands.json).
-tidy:
-    clang-tidy -p {{tidy_build_dir}} --warnings-as-errors='*' \
-        $(find src platform/linux cmd -name '*.c')
+# Configure + build the clang build dir clang-tidy reads compile_commands.json
+# from. Idempotent: a no-op when the dir is already built (CI build-clang
+# artifact). Builds so generated headers (e.g. the supervisor config) exist.
+tidy-build:
+    mkdir -p {{tidy_build_dir}}
+    cd {{tidy_build_dir}} && CC=clang cmake -GNinja .. && ninja
+
+# clang-tidy the compiled first-party sources. The file list is taken from the
+# compile DB so conditionally-built sources (e.g. ssocket.c without OpenSSL) are
+# analysed only when actually compiled. --config-file pins the root config so
+# clang-tidy never loads a vendored .clang-tidy from an included header's tree.
+tidy: tidy-build
+    clang-tidy -p {{tidy_build_dir}} --config-file=.clang-tidy --warnings-as-errors='*' \
+        $(python3 -c "import json,os; print('\n'.join(sorted({os.path.relpath(e['file']) for e in json.load(open('{{tidy_build_dir}}/compile_commands.json')) if os.path.relpath(e['file']).startswith(('src/','platform/linux/','cmd/'))})))")
 
 # cppcheck does its own parsing, so it covers every platform without a build.
 cppcheck:

@@ -150,6 +150,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
+    (void)fd;
     d->opened = false;
 
     if (d->startedWriting) {
@@ -228,6 +229,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed) {
     vfs_dirent_t dir = {0};
     size_t used = 0;
+    (void)fd;
 
     if (buf == NULL)
         return -EINVAL;
@@ -265,6 +267,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
 
 static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
     int i;
+    (void)fd;
 
     for (i = 0; i < d->nEntries; i++) {
         const char *ver = strchr(path, (int)VERSION_SEPARATOR);

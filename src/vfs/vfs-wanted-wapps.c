@@ -256,8 +256,9 @@ static int StartWapp(struct vfs_driver_ctx_t *d, const char *name,
      * like-named image, while many instances can share one image. The loader
      * resolves the image's registry entry and stamps image identity (image +
      * version) onto the wapp; it never touches wapp->name. */
-    const char *img =
-        haveImage ? image : (wapp->cfg.image[0] ? wapp->cfg.image : name);
+    const char *img = image;
+    if (!haveImage)
+        img = wapp->cfg.image[0] ? wapp->cfg.image : name;
 
     /* An image reference is "<name>[:<tag>]": a bare name resolves to the first
      * matching entry (empty version), a "<name>:<tag>" pins the version

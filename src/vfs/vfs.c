@@ -43,6 +43,9 @@ static int VfsResolvePath(vfs_ctx_t c, int parent_fd, const char *path,
         size_t path_len = strlen(path);
         if (base_len + 1 + path_len >= sizeof(combined))
             return -ENAMETOOLONG;
+        /* Concatenation, not a string copy: the separator and the
+         * NUL-terminated path are appended below. */
+        /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
         memcpy(combined, base, base_len);
         if (base_len == 0 || base[base_len - 1] != '/')
             combined[base_len++] = '/';
@@ -221,10 +224,10 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
      * the mount prefix is the driver-relative path (empty suffix = the mount
      * root). The slot carries (driver, drv_fd) like STREAM/PLATFORM do. */
     if (type == VFS_TYPE_DRIVER) {
-        const char *open_path =
-            (*suffix != '\0')
-                ? suffix
-                : (mount_drv->filetype == VFS_FILETYPE_DIRECTORY ? "/" : "");
+        const char *open_path = suffix;
+        if (*suffix == '\0')
+            open_path =
+                (mount_drv->filetype == VFS_FILETYPE_DIRECTORY) ? "/" : "";
         int drv_fd = TRY_DRV(mount_drv, Open, open_path, flags);
         if (drv_fd < 0)
             return drv_fd;
@@ -844,6 +847,8 @@ static size_t MountChildren(vfs_ctx_t c, const char *base, size_t baselen,
         dir.d_type = ftype;
         dir.d_next = cookieBit | (i + 1);
         memcpy(mbuf + mused, &dir, sizeof(dir));
+        /* The name is length-prefixed by dir.d_namlen, not NUL-terminated. */
+        /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
         memcpy(mbuf + mused + sizeof(dir), name, namlen);
         mused += sizeof(dir) + namlen;
     }

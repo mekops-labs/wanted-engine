@@ -87,13 +87,11 @@ static int FindFirstClosedFd(vfs_driver_ctx_t d) {
 static vfs_filetype_t convert9pFiletype(C9qt t) {
     if (t & C9qtdir) {
         return VFS_FILETYPE_DIRECTORY;
-    } else if (t & C9qtfile) {
-        return VFS_FILETYPE_CHARACTER_DEVICE;
-    } else {
-        return VFS_FILETYPE_REGULAR_FILE;
     }
-
-    return VFS_FILETYPE_UNKNOWN;
+    if (t & C9qtfile) {
+        return VFS_FILETYPE_CHARACTER_DEVICE;
+    }
+    return VFS_FILETYPE_REGULAR_FILE;
 }
 
 static int wrsend(C9aux *a) {
@@ -180,7 +178,7 @@ static int dial(char *s) {
     char host[64];
     const char *sep, *hostStart, *colon;
     size_t schemeLen, hostLen;
-    int e, f;
+    int f;
 
     /* Address is a URL "<scheme>://<host>:<port>", matching the socket driver:
      * tcp (stream) or udp (datagram). */
@@ -213,8 +211,7 @@ static int dial(char *s) {
     memcpy(host, hostStart, hostLen);
     host[hostLen] = '\0';
 
-    if ((e = getaddrinfo(host, colon + 1, &hint, &r)) != 0) {
-        // DEBUG_TRACE("%s: %s", gai_strerror(e), s);
+    if (getaddrinfo(host, colon + 1, &hint, &r) != 0) {
         return -1;
     }
     f = -1;
@@ -368,6 +365,7 @@ vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *opt) {
     // 2. connect comm backend
 
     vfs_driver_t *driver;
+    (void)wapp;
 
     driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
     if (NULL == driver) {
@@ -517,6 +515,10 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
+    (void)d;
+    (void)fd;
+    (void)path;
+    (void)flags;
     // TODO: OpenAt seems not used in drivers
     DEBUG_TRACE("9p OpenAt: %d, %s", fd, path);
     return 0;
@@ -665,7 +667,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     uint32_t sz;
     size_t used = 0;
     uint64_t off = 0;
-    vfs_dirent_t dir;
+    vfs_dirent_t dir = {0};
 
     // read and parse dir entry
     DEBUG_TRACE("9p ReadDir: %d, %zu", fd, bufLen);

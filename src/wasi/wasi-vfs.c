@@ -65,6 +65,8 @@ static __wasi_errno_t errno_to_wasi(int errnum) {
         CASE_RET(ECONNREFUSED, __WASI_ERRNO_CONNREFUSED);
         CASE_RET(ECONNABORTED, __WASI_ERRNO_CONNABORTED);
         CASE_RET(ECONNRESET, __WASI_ERRNO_CONNRESET);
+    default:
+        break;
     }
     return __WASI_ERRNO_INVAL;
 }

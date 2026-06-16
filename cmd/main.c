@@ -29,7 +29,12 @@ int main(int argc, char *argv[]) {
 
         fseek(fp, 0L, SEEK_END);
         sz = ftell(fp);
-        rewind(fp);
+        fseek(fp, 0L, SEEK_SET);
+        if (sz < 0) {
+            fprintf(stderr, "can't determine config file size\n");
+            fclose(fp);
+            return -EIO;
+        }
 
         /* One extra byte for the NUL terminator: the config is consumed as a
          * C string (strlen below), so the buffer must be terminated. */
@@ -56,6 +61,10 @@ int main(int argc, char *argv[]) {
     }
 
     ret = WantedStart(cfg, strlen(cfg));
+
+    if (argc > 1)
+        free(cfg);
+
     if (ret < 0) {
         errno = -ret;
         perror("config parse error");
@@ -63,10 +72,6 @@ int main(int argc, char *argv[]) {
     }
 
     printf("\nAll wapps ended, done...\n");
-
-    if (argc > 1) {
-        free(cfg);
-    }
 
     return 0;
 }

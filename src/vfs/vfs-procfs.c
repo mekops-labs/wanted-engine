@@ -56,6 +56,7 @@ void ProcFs_Destroy(vfs_ctx_t c) {
 
 void *ProcFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
                   int *out_err) {
+    (void)flags;
     DEBUG_TRACE("/proc/%s (0x%x)", suffix ? suffix : "(null)", flags);
 
     procfs_handle_t *h = WantedMalloc(sizeof(*h));
