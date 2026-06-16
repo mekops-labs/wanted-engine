@@ -47,7 +47,7 @@ A read-only, flat namespace exposing system state. Privileged entries are visibl
 | `/proc/wapps` | r | yes | Per-wapp state — name and status for each running wapp. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`. |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_max_pages`, `log_slots`. |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
@@ -61,6 +61,8 @@ max_wapp_name:	15 B
 max_path:	256 B
 wasm_stack:	8192 B
 wasm_heap:	8192 B
+wasm_max_pages:	1
+log_slots:	3
 ```
 
 `platform` is the build target (`linux`, `nuttx`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
