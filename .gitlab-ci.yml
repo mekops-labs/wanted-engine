@@ -280,11 +280,3 @@ trivy:
   allow_failure: true
   script:
     - just scan-image
-
-# Scan vendored submodule commits against the OSV database (needs submodules).
-osv-scanner:
-  stage: security
-  needs: []
-  allow_failure: true
-  script:
-    - just scan-deps

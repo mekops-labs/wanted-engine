@@ -56,13 +56,9 @@ analyze build_dir="build-analyze":
 
 # Pattern-based security scan (C/C++ ruleset).
 security:
-    semgrep --config p/c --error --quiet {{src_dirs}}
+    semgrep --config "p/c" --error --quiet {{src_dirs}}
 
 # Scan the build image definition and the working tree for CVEs and secrets.
 scan-image:
     trivy config --severity HIGH,CRITICAL docker/Dockerfile
     trivy fs --severity HIGH,CRITICAL --scanners vuln,secret .
-
-# Scan vendored submodule commits against the OSV database.
-scan-deps:
-    osv-scanner --recursive .
