@@ -305,8 +305,7 @@ static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
 static vfs_tarfs_ctx_t *wappTarfsInit(const wapp_t *w) {
     if (!w || w->layer_cnt == 0)
         return NULL;
-    return TarFsInit((const uint8_t *const *)w->layers, w->layer_lens,
-                     w->layer_cnt);
+    return TarFsInit((uint8_t *const *)w->layers, w->layer_lens, w->layer_cnt);
 }
 
 int WantedWappRun(wapp_data_t *ctx) {

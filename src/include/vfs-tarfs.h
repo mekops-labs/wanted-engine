@@ -18,8 +18,8 @@ typedef struct vfs_tarfs_ctx_t vfs_tarfs_ctx_t;
 /* Scan every layer, build the sorted deduplicated path index, and pre-fetch the
  * app.wasm entrypoint pointer for zero-redundant-scan boot.
  * Returns NULL on failure (bad args / OOM). */
-vfs_tarfs_ctx_t *TarFsInit(const uint8_t *const layers[],
-                           const size_t layer_lens[], uint8_t layer_cnt);
+vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
+                           uint8_t layer_cnt);
 
 void TarFsDestroy(vfs_tarfs_ctx_t *ctx);
 
