@@ -14,6 +14,16 @@ IMAGE     ?= registry.gitlab.com/mekops/wanted/wanted-engine/build
 BUILD_DIR ?= build
 WSH_TAR   := ./wasm/supervisor/wsh/supervisor.tar
 
+# Optional resource-limit profile (cmake/profiles/<name>.cmake): constrained,
+# small, or big. Unset builds with the wanted-config.h header defaults (the
+# constrained envelope). Drives `build`, `wsh`, and `nuttx-build`; for the cmake
+# targets it selects an initial-cache fragment, for NuttX it is forwarded to the
+# engine app build as -D overrides (see test/nuttx-sim.sh).
+PROFILE ?=
+ifneq ($(PROFILE),)
+PROFILE_CMAKE_ARG := -C /src/cmake/profiles/$(PROFILE).cmake
+endif
+
 # `make just <recipe> [args...]` forwards to the in-container Justfile (lint,
 # static-analysis, and security recipes). The trailing words are the recipe and
 # its arguments; stub them as no-op goals so make does not treat them as targets.
@@ -45,11 +55,11 @@ supervisor: ## compile the supervisor TAR images (wsh from wapps/wsh/ source)
 wapps: ## compile the sample wapp images under wapps/ (excludes the wsh supervisor, built by `supervisor`)
 	$(RUN) 'set -e; for d in /src/wapps/*/; do if [ "$$d" = /src/wapps/wsh/ ]; then continue; fi; if [ -f "$${d}Makefile" ]; then make -C "$$d"; fi; done'
 
-build: supervisor ## build the engine + CLI with the production (sheriff) supervisor
-	$(RUN) 'mkdir -p /src/$(BUILD_DIR) && cd /src/$(BUILD_DIR) && cmake -G Ninja /src && ninja'
+build: supervisor ## build the engine + CLI with the production (sheriff) supervisor [PROFILE=constrained|small|big]
+	$(RUN) 'mkdir -p /src/$(BUILD_DIR) && cd /src/$(BUILD_DIR) && cmake -G Ninja $(PROFILE_CMAKE_ARG) /src && ninja'
 
-wsh: supervisor ## build the engine + CLI with the wsh debug supervisor compiled in
-	$(RUN) 'mkdir -p /src/$(BUILD_DIR) && cd /src/$(BUILD_DIR) && cmake -G Ninja /src -DWANTED_SUPERVISOR_IMAGE_PATH=$(WSH_TAR) && ninja'
+wsh: supervisor ## build the engine + CLI with the wsh debug supervisor compiled in [PROFILE=...]
+	$(RUN) 'mkdir -p /src/$(BUILD_DIR) && cd /src/$(BUILD_DIR) && cmake -G Ninja $(PROFILE_CMAKE_ARG) /src -DWANTED_SUPERVISOR_IMAGE_PATH=$(WSH_TAR) && ninja'
 
 test: ## run the unit + smoke suite via ctest
 	$(RUN) 'cd /src/$(BUILD_DIR) && ctest --output-on-failure'
@@ -70,8 +80,8 @@ wsh-shell: wsh ## build wsh and open the interactive wsh prompt on Linux (wanted
 nuttx-deps: ## link the engine app package into the checked-out nuttx-apps submodule
 	$(RUN) 'cd /src && ./test/nuttx-sim.sh deps'
 
-nuttx-build: supervisor ## configure + build the NuttX sim (wsh as init over hostfs)
-	$(RUN) 'cd /src && ./test/nuttx-sim.sh deps build'
+nuttx-build: supervisor ## configure + build the NuttX sim (wsh as init over hostfs) [PROFILE=constrained|small|big]
+	$(RUN) 'cd /src && PROFILE=$(PROFILE) ./test/nuttx-sim.sh deps build'
 
 nuttx-selftest: supervisor ## run the in-WASM selftest suite (TAP) on the NuttX sim
 	$(RUN) 'cd /src && ./test/nuttx-sim.sh selftest'

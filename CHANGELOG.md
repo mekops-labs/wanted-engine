@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Build
+
+- Centralised the engine-wide resource limits (`MAX_WAPPS`, `WASM_STACK_SIZE`, `WASM_HEAP_SIZE`, `MAX_PATH_LEN`) into `src/include/wanted-config.h`. Each is `#ifndef`-guarded and overridable at build time via `-D<NAME>=...`. Driver-private limits stay local to their driver.
+- Added resource-limit profiles under `cmake/profiles/` — `constrained` (header defaults, ~512 KB-RAM targets like ESP32), `small` (routers), `big` (Linux/cloud). Select with `make build PROFILE=<name>` / `make nuttx-build PROFILE=<name>`, or `cmake -C cmake/profiles/<name>.cmake` directly.
+
 0.7.1 (2026-06-16)
 ----------
 
