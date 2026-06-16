@@ -44,7 +44,8 @@ set(WANTED_STRICT_WARNINGS -Werror=strict-prototypes -Werror=undef)
 # per-target mismatch would desync statically sized structures, since MAX_WAPPS
 # dimensions arrays in both the engine and platform libraries. Driver-private
 # limits are not here — they live in their driver and are not profile-tunable.
-foreach(_limit MAX_WAPPS WASM_STACK_SIZE WASM_HEAP_SIZE MAX_PATH_LEN)
+foreach(_limit MAX_WAPPS WASM_STACK_SIZE WASM_HEAP_SIZE WASM_MAX_MEMORY_PAGES
+               MAX_PATH_LEN)
     if(DEFINED ${_limit})
         add_compile_definitions(${_limit}=${${_limit}})
         message("-- Resource limit override: ${_limit}=${${_limit}}")
