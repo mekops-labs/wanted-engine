@@ -97,6 +97,25 @@
 #define MAX_PATH_LEN 256
 #endif
 
+/* Per-section launch-config resource slots — the array length of each of a
+ * launch config's drivers[], mounts[] and sockets[] sections. A wapp_config_t
+ * embeds three such arrays of wapp_driver_t, and the engine keeps MAX_WAPPS
+ * pending configs plus the supervisor config, so this is multiplied many times
+ * into the static footprint. The constrained default covers the handful a
+ * single wapp realistically declares; larger targets opt up via a profile. */
+#ifndef MAX_DRIVERS_CNT
+#define MAX_DRIVERS_CNT 6
+#endif
+
+/* Driver options blob, in bytes — the per-entry wapp_driver_t.options string
+ * (e.g. a mount's "src=..." or a socket's transport address). Replicated across
+ * every driver/mount/socket slot, so with MAX_DRIVERS_CNT it is a dominant term
+ * in the static footprint. The constrained default holds a typical options
+ * string with headroom; larger targets opt up via a profile. */
+#ifndef MAX_OPTIONS_SIZE
+#define MAX_OPTIONS_SIZE 128
+#endif
+
 /* Per-wapp log ring slots. Derived from MAX_WAPPS — one log ring per wapp slot;
  * the log store has no capacity of its own. Kept explicit here so the coupling
  * is visible rather than buried in the log store. */

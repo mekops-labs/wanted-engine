@@ -34,7 +34,7 @@ ENGINE_DIR=${ENGINE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
 SRC="$ENGINE_DIR/utils/measure_structs.c"
 INC="-I$ENGINE_DIR/include -I$ENGINE_DIR/src/include -I$ENGINE_DIR/src/vfs \
      -I$ENGINE_DIR/vendor/cwalk/include -I$ENGINE_DIR/vendor/wamr/core/iwasm/include"
-PROFILES=(constrained small big)
+PROFILES=(tiny constrained small big)
 
 # Freestanding 32-bit build needs only size_t from <stdlib.h>; stub it.
 STUB=$(mktemp -d)
