@@ -4,6 +4,11 @@ Changelog
 Unreleased
 ----------
 
+### Added
+
+- `gpio` device driver: a wapp granted `{ "name": "gpio" }` in its launch config's `drivers[]` gets `/dev/gpio`, a text level node — `write "1"/"0"` drives the pin high/low and `read` returns `"0\n"/"1\n"`. The engine performs the GPIO ioctl (`GPIOC_WRITE`/`GPIOC_READ`); the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via the driver options) and an in-memory level on Linux.
+- `blink` sample wapp: toggles `/dev/gpio` in a 1 Hz loop.
+
 ### Changed
 
 - `/proc/wanted` now reports `wasm_max_pages`, `log_slots`, `wasm_worker_stack` (the effective per-wapp worker thread stack), `max_drivers`, and `max_options`.
