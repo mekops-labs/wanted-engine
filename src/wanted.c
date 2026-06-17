@@ -283,24 +283,24 @@ static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
  * key:\tvalue line per field: human-readable, trivially split on the tab. */
 static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
-    int w = snprintf((char *)buf, bufLen,
-                     "platform:\t%s\n"
-                     "version:\t%s\n"
-                     "max_wapps:\t%d\n"
-                     "max_wapp_name:\t%d B\n"
-                     "max_path:\t%d B\n"
-                     "wasm_stack:\t%d B\n"
-                     "wasm_heap:\t%d B\n"
-                     "wasm_worker_stack:\t%zu B\n"
-                     "wasm_max_pages:\t%d\n"
-                     "max_drivers:\t%d\n"
-                     "max_options:\t%d B\n"
-                     "log_slots:\t%d\n",
-                     PlatformName(), WANTED_VERSION, MAX_WAPPS,
-                     WAPP_MAX_NAME_LEN, MAX_PATH_LEN, WASM_STACK_SIZE,
-                     WASM_HEAP_SIZE, PlatformWorkerStackSize(),
-                     WASM_MAX_MEMORY_PAGES, MAX_DRIVERS_CNT, MAX_OPTIONS_SIZE,
-                     LOG_SLOTS);
+    int w =
+        snprintf((char *)buf, bufLen,
+                 "platform:\t%s\n"
+                 "version:\t%s\n"
+                 "max_wapps:\t%d\n"
+                 "max_wapp_name:\t%d B\n"
+                 "max_path:\t%d B\n"
+                 "wasm_stack:\t%d B\n"
+                 "wasm_heap:\t%d B\n"
+                 "wasm_worker_stack:\t%zu B\n"
+                 "wasm_max_pages:\t%d\n"
+                 "max_drivers:\t%d\n"
+                 "max_options:\t%d B\n"
+                 "log_slots:\t%d\n",
+                 PlatformName(), WANTED_VERSION, MAX_WAPPS, WAPP_MAX_NAME_LEN,
+                 MAX_PATH_LEN, WASM_STACK_SIZE, WASM_HEAP_SIZE,
+                 PlatformWorkerStackSize(), WASM_MAX_MEMORY_PAGES,
+                 MAX_DRIVERS_CNT, MAX_OPTIONS_SIZE, LOG_SLOTS);
     if (w < 0)
         return -EIO;
     return w < (int)bufLen ? w : (int)bufLen;
