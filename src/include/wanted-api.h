@@ -7,14 +7,12 @@
 #include <stdint.h>
 #include <vfs-tarfs.h>
 #include <vfs.h>
+#include <wanted-config.h>
 #include <wanted.h>
 
-// TODO: make configurable
-#define MAX_WAPPS 3
 #define WAPP_MAX_NAME_LEN 15
 #define WAPP_MAX_VERSION_LEN 15
 #define MAX_DRIVER_NAME 15
-#define MAX_PATH_LEN 256
 #define MAX_OPTIONS_SIZE 1024
 #define MAX_DRIVERS_CNT 10
 

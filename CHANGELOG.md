@@ -1,6 +1,20 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Changed
+
+- `/proc/wanted` now reports `wasm_max_pages` and `log_slots`.
+
+### Build
+
+- Centralized engine-wide resource limits into `src/include/wanted-config.h` (overridable via cmake profiles and `-D` in nuttx).
+- Added resource-limit profiles (`constrained`, `small`, `big`) under `cmake/profiles/`.
+- Added `WASM_MAX_MEMORY_PAGES` to cap per-wapp linear memory (`make memcap` and some new selftests added for testing)
+- Added `make sizes` to report memory footprint and struct sizes for each profile.
+
 0.7.1 (2026-06-16)
 ----------
 
