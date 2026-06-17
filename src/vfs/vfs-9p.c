@@ -540,12 +540,13 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
     (void)d;
     (void)flags;
+    (void)fd;
+    (void)path;
     /*
      * The VFS core dispatches OpenAt only to PLATFORM-type parent fds; a 9P
      * mount resolves relative paths through the router, which calls Open. This
      * slot is therefore never reached — reject rather than fake success.
      */
-    DEBUG_TRACE("9p OpenAt: %d, %s", fd, path);
     return -ENOTSUP;
 }
 
