@@ -24,7 +24,10 @@
 
 #define STR(...) #__VA_ARGS__
 
-static char *defCfg = STR({"system" : {}});
+/* The supervisor is the trusted control-plane agent, so the default boot config
+ * runs it privileged (enables the privileged /proc entries, e.g. /proc/memory).
+ * Launched wapps are configured separately and do not inherit this. */
+static char *defCfg = STR({"system" : {"privileged" : true}});
 
 int wanted_main(int argc, FAR char *argv[]) {
     int ret;
