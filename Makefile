@@ -14,11 +14,7 @@ IMAGE     ?= registry.gitlab.com/mekops/wanted/wanted-engine/build
 BUILD_DIR ?= build
 WSH_TAR   := ./wasm/supervisor/wsh/supervisor.tar
 
-# Optional resource-limit profile (cmake/profiles/<name>.cmake): constrained,
-# small, or big. Unset builds with the wanted-config.h header defaults (the
-# constrained envelope). Drives `build`, `wsh`, and `nuttx-build`; for the cmake
-# targets it selects an initial-cache fragment, for NuttX it is forwarded to the
-# engine app build as -D overrides (see test/nuttx-sim.sh).
+# Optional resource-limit profile (cmake/profiles/<name>.cmake).
 PROFILE ?=
 ifneq ($(PROFILE),)
 PROFILE_CMAKE_ARG := -C /src/cmake/profiles/$(PROFILE).cmake

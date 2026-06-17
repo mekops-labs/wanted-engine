@@ -38,12 +38,7 @@ set(WANTED_STRICT_WARNINGS -Werror=strict-prototypes -Werror=undef)
 # Engine resource-limit overrides (see src/include/wanted-config.h). Each limit
 # defaults to the conservative "constrained" value baked into that header;
 # defining the matching CMake variable — on the command line (-DMAX_WAPPS=16) or
-# via a profile in cmake/profiles/ — forwards it as a compile definition that
-# wins over the header's #ifndef default. Applied with add_compile_definitions
-# so every target (engine, platform, CLI, tests) compiles with the same value; a
-# per-target mismatch would desync statically sized structures, since MAX_WAPPS
-# dimensions arrays in both the engine and platform libraries. Driver-private
-# limits are not here — they live in their driver and are not profile-tunable.
+# via a profile in cmake/profiles/.
 foreach(_limit MAX_WAPPS WASM_STACK_SIZE WASM_HEAP_SIZE WASM_MAX_MEMORY_PAGES
                MAX_PATH_LEN)
     if(DEFINED ${_limit})
