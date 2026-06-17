@@ -39,10 +39,24 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed);
 static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 
+/*
+ * Negotiated 9P transport message size (the Tversion msize). Bounds the read
+ * and write buffers; the size[4] length prefix is counted within it.
+ */
 #define MSIZE 8192u
-#define ERROR 0x1
-#define ATTACHED 0x2
-#define DISCONNECTED 0x4
+
+/*
+ * Bytes of an Rread message body that precede the payload: type[1] + tag[2] +
+ * count[4]. The read data begins at this offset within rBuf.
+ */
+#define RREAD_HDR_LEN 7u
+
+/* Connection state, held as a bitmask in C9aux.flags. */
+enum conn_state {
+    ERROR = 0x1,        /* last response was an Rerror */
+    ATTACHED = 0x2,     /* session established (Rattach received) */
+    DISCONNECTED = 0x4, /* transport torn down */
+};
 
 /* Per-mount open-file table: each 9P mount reserves this many fd slots. */
 #define MAX_OPENED_FILES 10
@@ -598,7 +612,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     }
 
     r = a->rCnt;
-    b = &a->rBuf[7];
+    b = &a->rBuf[RREAD_HDR_LEN];
 
     memcpy(buf, b, r);
 
@@ -676,13 +690,13 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
         return -EBADF;
 
     do {
-        c9read(&a->c, &a->tag, fd, off, MSIZE - 7);
+        c9read(&a->c, &a->tag, fd, off, MSIZE - RREAD_HDR_LEN);
         wrsend(a);
         proc(a);
         if (a->rCnt < 7)
             break;
         off += a->rCnt;
-        b = &a->rBuf[7];
+        b = &a->rBuf[RREAD_HDR_LEN];
         sz = a->rCnt;
 
         while (sz > 0 && c9parsedir(&a->c, &s, &b, &sz) == 0) {
