@@ -15,9 +15,12 @@
  * CONFIG_INIT_ENTRYPOINT=wanted_esp32_main; the NSH built-in entry stays
  * wanted_main. */
 
+#include <dirent.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <sys/boardctl.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "boot-romfs.h" /* generated: boot_romfs_img[], boot_romfs_img_len */
@@ -35,6 +38,52 @@
 #define REGISTRY_VOLUME "/data"
 
 int wanted_main(int argc, char *argv[]);
+
+#define SEED_DIR ROMFS_MOUNTPT "/registry" /* /rom/registry (bundled factory wapps) */
+#define REGISTRY_DIR "registry"            /* relative to REGISTRY_VOLUME (chdir'd) */
+#define SEED_COPY_BUF 1024
+
+/* Copy one factory image from the read-only boot ROMFS into the writable
+ * registry. Best-effort: a failure just means that image is not installed. */
+static void seed_copy(const char *src, const char *dst) {
+    int in = open(src, O_RDONLY);
+    if (in < 0)
+        return;
+    int out = open(dst, O_WRONLY | O_CREAT | O_EXCL, 0644);
+    if (out < 0) {
+        close(in);
+        return;
+    }
+    char buf[SEED_COPY_BUF];
+    ssize_t n;
+    while ((n = read(in, buf, sizeof(buf))) > 0) {
+        if (write(out, buf, (size_t)n) != n)
+            break;
+    }
+    close(in);
+    close(out);
+}
+
+/* First-boot factory seed: copy any /rom/registry/*.wapp the firmware bundles
+ * into the writable flash registry, skipping ones already installed (O_EXCL).
+ * Lets a freshly-flashed board start its bundled wapps with no network; on
+ * later boots the persisted copies win and nothing is re-seeded. */
+static void seed_registry(void) {
+    DIR *d = opendir(SEED_DIR);
+    if (!d)
+        return; /* no factory bundle */
+    mkdir(REGISTRY_DIR, 0755);
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        if (e->d_name[0] == '.')
+            continue;
+        char src[256], dst[256];
+        snprintf(src, sizeof(src), "%s/%s", SEED_DIR, e->d_name);
+        snprintf(dst, sizeof(dst), "%s/%s", REGISTRY_DIR, e->d_name);
+        seed_copy(src, dst);
+    }
+    closedir(d);
+}
 
 int wanted_esp32_main(int argc, char *argv[]) {
     struct boardioc_romdisk_s desc = {
@@ -54,6 +103,8 @@ int wanted_esp32_main(int argc, char *argv[]) {
     /* Persist the registry on the flash LittleFS the board mounted at /data. */
     if (chdir(REGISTRY_VOLUME) < 0)
         perror("chdir " REGISTRY_VOLUME);
+    else
+        seed_registry();
 
     int rc = wanted_main(argc, argv);
 

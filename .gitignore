@@ -20,3 +20,4 @@ wapps/*/*.o
 /build-nuttx/
 utils/measure_structs
 platform/nuttx/app/boot-romfs.h
+wasm/registry-seed/
