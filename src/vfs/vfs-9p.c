@@ -392,10 +392,6 @@ static int proc(C9aux *a) {
 }
 
 vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *opt) {
-    // Todo:
-    // 1. Create context and buffers
-    // 2. connect comm backend
-
     vfs_driver_t *driver;
     (void)wapp;
 
