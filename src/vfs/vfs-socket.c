@@ -17,7 +17,8 @@
 
 static const char id[] = {'S', 'o', 'c', 'k'};
 
-/* TODO: support many connections */
+/* One connection per driver instance: the context holds a single transport's
+ * state, so a re-open replaces any prior connection. */
 struct vfs_driver_ctx_t {
     uint8_t type;
     const char addr[MAX_ADDR_LEN];
@@ -259,8 +260,12 @@ static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
         return -EINVAL;
     }
 
-    // TODO: missing some stuff here
-
+    /*
+     * The accepted connection is returned as a bare fd, but the driver tracks
+     * a single netCtx, so subsequent I/O ops still target the listening
+     * context rather than the accepted socket. Backing each accepted fd with
+     * its own context is required to make them independently readable.
+     */
     ret = PlatformNetAccept(c->netCtx);
 
     if (ret >= 0)

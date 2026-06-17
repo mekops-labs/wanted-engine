@@ -782,9 +782,8 @@ void WantedWappTerminate(wapp_data_t *ctx) {
 }
 
 wapp_t *WantedGetCurrentSupervisor(void) {
-    /* TODO: in the future we need to update the image if downloaded new version
-     */
-    /* now we're using only factory version */
+    /* The supervisor always runs the factory image; a newer downloaded
+     * version is not adopted. */
 
     int ret = 0;
     static wapp_t *w = NULL;
