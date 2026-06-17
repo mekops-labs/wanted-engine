@@ -51,7 +51,7 @@ supervisor: ## compile the supervisor TAR images (wsh from wapps/wsh/ source)
 wapps: ## compile the sample wapp images under wapps/ (excludes the wsh supervisor, built by `supervisor`)
 	$(RUN) 'set -e; for d in /src/wapps/*/; do if [ "$$d" = /src/wapps/wsh/ ]; then continue; fi; if [ -f "$${d}Makefile" ]; then make -C "$$d"; fi; done'
 
-build: supervisor ## build the engine + CLI with the production (sheriff) supervisor [PROFILE=constrained|small|big]
+build: supervisor ## build the engine + CLI with the production (sheriff) supervisor [PROFILE=tiny|constrained|small|big]
 	$(RUN) 'mkdir -p /src/$(BUILD_DIR) && cd /src/$(BUILD_DIR) && cmake -G Ninja $(PROFILE_CMAKE_ARG) /src && ninja'
 
 wsh: supervisor ## build the engine + CLI with the wsh debug supervisor compiled in [PROFILE=...]
@@ -76,7 +76,7 @@ wsh-shell: wsh ## build wsh and open the interactive wsh prompt on Linux (wanted
 nuttx-deps: ## link the engine app package into the checked-out nuttx-apps submodule
 	$(RUN) 'cd /src && ./test/nuttx-sim.sh deps'
 
-nuttx-build: supervisor ## configure + build the NuttX sim (wsh as init over hostfs) [PROFILE=constrained|small|big]
+nuttx-build: supervisor ## configure + build the NuttX sim (wsh as init over hostfs) [PROFILE=tiny|constrained|small|big]
 	$(RUN) 'cd /src && PROFILE=$(PROFILE) ./test/nuttx-sim.sh deps build'
 
 nuttx-selftest: supervisor ## run the in-WASM selftest suite + system-control checks on the NuttX sim
