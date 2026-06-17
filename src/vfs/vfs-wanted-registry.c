@@ -15,7 +15,7 @@
 
 #define ID {'W', 'r', 'e', 'g'}
 
-// TODO: make configurable
+/* Registry capacity: the most image entries a single mount tracks. */
 #define MAX_REG_ENTRIES 50
 static const char VERSION_SEPARATOR = ':';
 
