@@ -14,7 +14,7 @@
  * Write/Stat/ReadDir/Unlink each do a round trip against a live peer, so they
  * cannot be unit-tested without a loopback 9P server. This group covers only
  * the deterministic paths that return before any socket I/O: the fd-range
- * guards, the pure _Seek math, the _OpenAt stub, driver init, and teardown.
+ * guards, the pure _Seek math, the _OpenAt reject, driver init, and teardown.
  * The MAX_OPENED_FILES cap is 10, so fd 11 / -1 are out of range; fd 10 is NOT
  * (it is not > 10) and would reach the socket, so it is avoided here.
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -51,8 +51,9 @@ TEST(vfs_9p_driver, Init_PopulatesVtable) {
     TEST_ASSERT_NOT_NULL(drv->Destroy);
 }
 
-TEST(vfs_9p_driver, OpenAt_IsStubReturningZero) {
-    TEST_ASSERT_EQUAL_INT(0, drv->OpenAt(drv->ctx, 0, "anything", VFS_O_RDWR));
+TEST(vfs_9p_driver, OpenAt_RejectsUnsupported) {
+    TEST_ASSERT_EQUAL_INT(-ENOTSUP,
+                          drv->OpenAt(drv->ctx, 0, "anything", VFS_O_RDWR));
 }
 
 TEST(vfs_9p_driver, Seek_Set) {
@@ -133,7 +134,7 @@ TEST(vfs_9p_driver, Unlink_BadFd_ReturnsEbadf) {
 
 TEST_GROUP_RUNNER(vfs_9p_driver) {
     RUN_TEST_CASE(vfs_9p_driver, Init_PopulatesVtable);
-    RUN_TEST_CASE(vfs_9p_driver, OpenAt_IsStubReturningZero);
+    RUN_TEST_CASE(vfs_9p_driver, OpenAt_RejectsUnsupported);
     RUN_TEST_CASE(vfs_9p_driver, Seek_Set);
     RUN_TEST_CASE(vfs_9p_driver, Seek_Cur_Accumulates);
     RUN_TEST_CASE(vfs_9p_driver, Seek_End_LeavesOffsetUnchanged);
