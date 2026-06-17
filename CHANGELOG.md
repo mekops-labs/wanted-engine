@@ -6,14 +6,14 @@ Unreleased
 
 ### Changed
 
-- `/proc/wanted` now also reports `wasm_max_pages` (the linear-memory page cap) and `log_slots`, alongside the existing identity and ceiling fields.
+- `/proc/wanted` now reports `wasm_max_pages` and `log_slots`.
 
 ### Build
 
-- Centralised the engine-wide resource limits (`MAX_WAPPS`, `WASM_STACK_SIZE`, `WASM_HEAP_SIZE`, `MAX_PATH_LEN`) into `src/include/wanted-config.h`. Each is `#ifndef`-guarded and overridable at build time via `-D<NAME>=...`. Driver-private limits stay local to their driver.
-- Added `WASM_MAX_MEMORY_PAGES`: per-wapp linear-memory cap, in 64 KiB pages (`0` = no cap). Enforced two ways — WAMR bounds `memory.grow` at runtime (via `wasm_runtime_instantiate_ex`), and the engine refuses to load an image whose declared initial memory exceeds the cap. Profiles set it to 1 (constrained), 16 (small), 0 (big). Covered by the selftest suite (`bigmem`/`biginit` wapps, Linux + NuttX sim) and by `make memcap`, which additionally checks the admit case at a wider cap.
-- Added resource-limit profiles under `cmake/profiles/` — `constrained` (header defaults, ~512 KB-RAM targets like ESP32), `small` (routers), `big` (Linux/cloud). Select with `make build PROFILE=<name>` / `make nuttx-build PROFILE=<name>`, or `cmake -C cmake/profiles/<name>.cmake` directly. Each profile documents its measured per-wapp and worst-case memory footprint.
-- Added `make sizes` (`utils/measure_structs.c` + `utils/measure-sizes.sh`): reports each profile's per-wapp structs, runtime memory, linear-memory ceiling, and worst-case envelope for the host (LP64) and 32-bit embedded (ILP32) ABIs. Struct/limit sizes are measured from the real engine headers; WAMR per-instance overhead is an approximate addend. (`utils/measure_structs.c` also gains its missing SPDX header.)
+- Centralized engine-wide resource limits into `src/include/wanted-config.h` (overridable via cmake profiles and `-D` in nuttx).
+- Added resource-limit profiles (`constrained`, `small`, `big`) under `cmake/profiles/`.
+- Added `WASM_MAX_MEMORY_PAGES` to cap per-wapp linear memory (`make memcap` and some new selftests added for testing)
+- Added `make sizes` to report memory footprint and struct sizes for each profile.
 
 0.7.1 (2026-06-16)
 ----------
