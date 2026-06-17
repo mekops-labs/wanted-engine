@@ -49,6 +49,11 @@ void PlatformMutexFree(platform_mutex_t *m);
 int PlatformWappLoad(const char *name, wapp_t *wapp);
 int PlatformWappUnload(const wapp_t *wapp);
 int PlatformWappStart(wapp_t *wapp);
+/* Effective native C-stack size a worker thread is created with — the
+ * configured WASM_WORKER_STACK_SIZE after the platform's own flooring (e.g.
+ * PTHREAD_STACK_MIN). Reported via /proc/wanted so the value reflects what the
+ * threads actually get, not just the compile-time request. */
+size_t PlatformWorkerStackSize(void);
 int PlatformWappStop(const char *name);
 /* Release a wapp's platform slot by name: free its image + struct and drop the
  * record so the name stops being reported by PlatformWappGetState. Only a

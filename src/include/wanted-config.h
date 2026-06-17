@@ -90,6 +90,18 @@
 #define WASM_MAX_MEMORY_PAGES 1
 #endif
 
+/* Native C stack for a wapp's worker thread, in bytes. This is the host thread
+ * stack the WAMR classic interpreter (recursive) and the engine's WASI/VFS host
+ * calls run on — distinct from the WASM operand stack (WASM_STACK_SIZE, in heap)
+ * and the wapp's in-linear-memory aux stack. On an RTOS the per-thread default
+ * is tiny (NuttX CONFIG_PTHREAD_STACK_DEFAULT is ~2 KB) and overflows the moment
+ * real wasm runs, so the platform sets this explicitly; worst-case cost is
+ * MAX_WAPPS * WASM_WORKER_STACK_SIZE, allocated from the heap (PSRAM when
+ * present). Hosted platforms (Linux) use the OS default and ignore this. */
+#ifndef WASM_WORKER_STACK_SIZE
+#define WASM_WORKER_STACK_SIZE 65536
+#endif
+
 /* VFS path buffer length, in bytes. Sizes every fixed path buffer in a launch
  * config (wapp_driver_t.path) and the supervisor image path; cost is linear in
  * the number of such buffers. Shared across the engine and platform layers. */

@@ -291,11 +291,16 @@ static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
                      "max_path:\t%d B\n"
                      "wasm_stack:\t%d B\n"
                      "wasm_heap:\t%d B\n"
+                     "wasm_worker_stack:\t%zu B\n"
                      "wasm_max_pages:\t%d\n"
+                     "max_drivers:\t%d\n"
+                     "max_options:\t%d B\n"
                      "log_slots:\t%d\n",
                      PlatformName(), WANTED_VERSION, MAX_WAPPS,
                      WAPP_MAX_NAME_LEN, MAX_PATH_LEN, WASM_STACK_SIZE,
-                     WASM_HEAP_SIZE, WASM_MAX_MEMORY_PAGES, LOG_SLOTS);
+                     WASM_HEAP_SIZE, PlatformWorkerStackSize(),
+                     WASM_MAX_MEMORY_PAGES, MAX_DRIVERS_CNT, MAX_OPTIONS_SIZE,
+                     LOG_SLOTS);
     if (w < 0)
         return -EIO;
     return w < (int)bufLen ? w : (int)bufLen;

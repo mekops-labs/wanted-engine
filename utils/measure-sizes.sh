@@ -9,8 +9,9 @@
 #
 # Definitions:
 #   per-wapp footprint = per-wapp structs (wapp_t, slot, vfs/wasi/wamr context,
-#                        log ring) + WASM stack + WASM app heap
-#                        + one linear-memory page + an approximate WAMR overhead.
+#                        log ring) + WASM stack + WASM app heap + worker thread
+#                        native stack + one linear-memory page + approximate WAMR
+#                        overhead.
 #   engine overhead    = fixed boot/config structures (wantedConfig_t).
 #   worst case         = engine overhead + MAX_WAPPS x per-wapp footprint.
 #
@@ -93,7 +94,8 @@ report_abi() { # $1 = abi label, $2 = abi key
         measure "$abi" "$p"
         struct=$(( M[wapp_t] + M[wapp_data_t] + M[vfs_ctx_t] + M[wasi_ctx_t] \
                    + M[wamrData_t] + M[log_slot_t] ))
-        fixed=$(( M[WASM_STACK_SIZE] + M[WASM_HEAP_SIZE] + WAMR_OVERHEAD ))
+        fixed=$(( M[WASM_STACK_SIZE] + M[WASM_HEAP_SIZE] \
+                  + M[WASM_WORKER_STACK_SIZE] + WAMR_OVERHEAD ))
         over=${M[wantedConfig_t]}
         pages=$(profile_cap "$p")
         if [ "$pages" -gt 0 ]; then
@@ -112,7 +114,7 @@ report_abi() { # $1 = abi label, $2 = abi key
 
 echo "WANTED engine memory footprint by profile"
 echo "structs    = exact per-wapp engine slot structures (wapp_t, vfs/wasi/wamr ctx, log ring)"
-echo "wapp-mem   = per-wapp runtime memory: WASM stack + WASM app heap + ~16 KiB WAMR overhead (approx)"
+echo "wapp-mem   = per-wapp runtime memory: WASM stack + WASM app heap + worker native stack + ~16 KiB WAMR overhead (approx)"
 echo "max-linear = WASM_MAX_MEMORY_PAGES x 64 KiB — the per-wapp linear-memory ceiling (unbounded = no cap)"
 echo "per-wapp   = structs + wapp-mem + max-linear;  worst case = engine overhead + MAX_WAPPS x per-wapp"
 echo "Excludes the per-image writable module copy."
