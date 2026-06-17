@@ -53,9 +53,9 @@ static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 
 /* Connection state, held as a bitmask in C9aux.flags. */
 enum conn_state {
-    ERROR = 0x1,        /* last response was an Rerror */
-    ATTACHED = 0x2,     /* session established (Rattach received) */
-    DISCONNECTED = 0x4, /* transport torn down */
+    CONN_ERROR = 0x1,        /* last response was an Rerror */
+    CONN_ATTACHED = 0x2,     /* session established (Rattach received) */
+    CONN_DISCONNECTED = 0x4, /* transport torn down */
 };
 
 /* Per-mount open-file table: each 9P mount reserves this many fd slots. */
@@ -136,7 +136,7 @@ static int wrsend(C9aux *a) {
                 continue;
             if (errno != EPIPE) { /* remote end closed */
                 perror("write");
-                a->flags &= ~ATTACHED;
+                a->flags &= ~CONN_ATTACHED;
                 close(a->f);
             }
             return -1;
@@ -184,7 +184,7 @@ static uint8_t *ctxread(C9ctx *ctx, uint32_t size, int *err) {
                 continue;
             if (errno != EPIPE) { /* remote end closed */
                 perror("read");
-                a->flags &= ~ATTACHED;
+                a->flags &= ~CONN_ATTACHED;
                 close(a->f);
             }
             return NULL;
@@ -274,7 +274,7 @@ static void ctxprocR(C9ctx *ctx, C9r *r) {
 
     case Rattach:
         DEBUG_TRACE("Rattach");
-        a->flags = ATTACHED;
+        a->flags = CONN_ATTACHED;
         // path[0] = channel;
         // path[1] = NULL;
         // c9walk(ctx, &tag, Rootfid, Chatfid, path);
@@ -311,7 +311,7 @@ static void ctxprocR(C9ctx *ctx, C9r *r) {
 
     case Rerror:
         DEBUG_TRACE("Rerror: %s", r->error);
-        a->flags = ERROR;
+        a->flags = CONN_ERROR;
         break;
 
     default:
@@ -442,7 +442,7 @@ static int _Destroy(struct vfs_driver_t *d) {
 
     C9aux *a = &d->ctx->aux;
 
-    if (a->flags & ATTACHED) {
+    if (a->flags & CONN_ATTACHED) {
         c9clunk(&a->c, &a->tag, 0);
         wrsend(a);
 
@@ -471,13 +471,13 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     // version/auth/attach
     DEBUG_TRACE("9p Open: %s", path);
 
-    if (!(a->flags & ATTACHED)) {
+    if (!(a->flags & CONN_ATTACHED)) {
         if (start(d) == NULL) {
             return -EAGAIN;
         }
 
         while (proc(a) == 0 && wrsend(a) == 0) {
-            if (a->flags & ATTACHED)
+            if (a->flags & CONN_ATTACHED)
                 break;
         }
 
@@ -506,8 +506,8 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
         proc(a) != 0)
         return -EIO;
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
@@ -524,8 +524,8 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
         proc(a) != 0)
         return -EIO;
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
@@ -580,8 +580,8 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     if (c9stat(&a->c, &a->tag, fd) != 0 || wrsend(a) != 0 || proc(a) != 0)
         return -EIO;
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
@@ -621,8 +621,8 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     wrsend(a);
     proc(a);
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
@@ -653,8 +653,8 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     wrsend(a);
     proc(a);
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
@@ -758,8 +758,8 @@ static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
     wrsend(a);
     proc(a);
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
@@ -767,8 +767,8 @@ static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
     wrsend(a);
     proc(a);
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
