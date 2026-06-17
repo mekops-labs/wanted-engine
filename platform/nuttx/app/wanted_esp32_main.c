@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <sys/boardctl.h>
 #include <sys/mount.h>
+#include <unistd.h>
 
 #include "boot-romfs.h" /* generated: boot_romfs_img[], boot_romfs_img_len */
 
@@ -25,6 +26,13 @@
 #define ROMFS_SECTSIZE 512
 #define ROMFS_DEVPATH "/dev/ram" /* + minor */
 #define ROMFS_MOUNTPT "/rom"
+
+/* Writable persistent registry storage. The board late-init (esp32_bringup ->
+ * esp32_spiflash_init) mounts a LittleFS over the SPI-flash storage MTD here;
+ * chdir into it so the engine's relative REGISTRY_ROOT ("./registry") persists
+ * on flash across reboots. Installed wapps live here; the supervisor image is
+ * the read-only ROMFS at /rom. */
+#define REGISTRY_VOLUME "/data"
 
 int wanted_main(int argc, char *argv[]);
 
@@ -42,6 +50,10 @@ int wanted_esp32_main(int argc, char *argv[]) {
                      NULL) < 0) {
         perror("mount " ROMFS_MOUNTPT);
     }
+
+    /* Persist the registry on the flash LittleFS the board mounted at /data. */
+    if (chdir(REGISTRY_VOLUME) < 0)
+        perror("chdir " REGISTRY_VOLUME);
 
     int rc = wanted_main(argc, argv);
 
