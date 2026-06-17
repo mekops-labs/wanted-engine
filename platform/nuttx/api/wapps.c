@@ -166,9 +166,10 @@ static int basePriority = -1;
 
 /* Worker thread's native C stack. Set explicitly so every platform sizes it the
  * same way — the WAMR classic interpreter is recursive and the WASI/VFS host
- * calls add frames, and the NuttX per-thread default (CONFIG_PTHREAD_STACK_DEFAULT,
- * ~2 KB) overflows the moment real wasm runs (see WASM_WORKER_STACK_SIZE in
- * wanted-config.h). Floored at PTHREAD_STACK_MIN for safety. */
+ * calls add frames, and the NuttX per-thread default
+ * (CONFIG_PTHREAD_STACK_DEFAULT, ~2 KB) overflows the moment real wasm runs
+ * (see WASM_WORKER_STACK_SIZE in wanted-config.h). Floored at PTHREAD_STACK_MIN
+ * for safety. */
 static size_t worker_stacksize(void) {
     size_t ss = WASM_WORKER_STACK_SIZE;
 #ifdef PTHREAD_STACK_MIN

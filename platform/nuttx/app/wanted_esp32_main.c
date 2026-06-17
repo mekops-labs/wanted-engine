@@ -39,8 +39,9 @@
 
 int wanted_main(int argc, char *argv[]);
 
-#define SEED_DIR ROMFS_MOUNTPT "/registry" /* /rom/registry (bundled factory wapps) */
-#define REGISTRY_DIR "registry"            /* relative to REGISTRY_VOLUME (chdir'd) */
+#define SEED_DIR                                                               \
+    ROMFS_MOUNTPT "/registry"   /* /rom/registry (bundled factory wapps) */
+#define REGISTRY_DIR "registry" /* relative to REGISTRY_VOLUME (chdir'd) */
 #define SEED_COPY_BUF 1024
 
 /* Copy one factory image from the read-only boot ROMFS into the writable
