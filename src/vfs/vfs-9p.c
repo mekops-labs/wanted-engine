@@ -39,10 +39,24 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed);
 static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 
+/*
+ * Negotiated 9P transport message size (the Tversion msize). Bounds the read
+ * and write buffers; the size[4] length prefix is counted within it.
+ */
 #define MSIZE 8192u
-#define ERROR 0x1
-#define ATTACHED 0x2
-#define DISCONNECTED 0x4
+
+/*
+ * Bytes of an Rread message body that precede the payload: type[1] + tag[2] +
+ * count[4]. The read data begins at this offset within rBuf.
+ */
+#define RREAD_HDR_LEN 7u
+
+/* Connection state, held as a bitmask in C9aux.flags. */
+enum conn_state {
+    CONN_ERROR = 0x1,        /* last response was an Rerror */
+    CONN_ATTACHED = 0x2,     /* session established (Rattach received) */
+    CONN_DISCONNECTED = 0x4, /* transport torn down */
+};
 
 /* Per-mount open-file table: each 9P mount reserves this many fd slots. */
 #define MAX_OPENED_FILES 10
@@ -84,6 +98,24 @@ static int findFirstClosedFd(vfs_driver_ctx_t d) {
     return -EMFILE;
 }
 
+/*
+ * Split a '/'-separated path into its components for c9walk. The 9P protocol
+ * caps a single walk at C9maxpathel (16) elements, so out must hold that many
+ * plus the trailing NULL terminator c9walk requires. buf must be a writable
+ * copy of the path (strtok mutates it). Returns the component count, or
+ * -ENAMETOOLONG when the path has more elements than one walk can carry.
+ */
+static int splitPath(char *buf, const char *out[C9maxpathel + 1]) {
+    int n = 0;
+    for (char *tok = strtok(buf, "/"); tok != NULL; tok = strtok(NULL, "/")) {
+        if (n >= C9maxpathel)
+            return -ENAMETOOLONG;
+        out[n++] = tok;
+    }
+    out[n] = NULL;
+    return n;
+}
+
 static vfs_filetype_t convert9pFiletype(C9qt t) {
     if (t & C9qtdir) {
         return VFS_FILETYPE_DIRECTORY;
@@ -104,7 +136,7 @@ static int wrsend(C9aux *a) {
                 continue;
             if (errno != EPIPE) { /* remote end closed */
                 perror("write");
-                a->flags &= ~ATTACHED;
+                a->flags &= ~CONN_ATTACHED;
                 close(a->f);
             }
             return -1;
@@ -152,7 +184,7 @@ static uint8_t *ctxread(C9ctx *ctx, uint32_t size, int *err) {
                 continue;
             if (errno != EPIPE) { /* remote end closed */
                 perror("read");
-                a->flags &= ~ATTACHED;
+                a->flags &= ~CONN_ATTACHED;
                 close(a->f);
             }
             return NULL;
@@ -242,7 +274,7 @@ static void ctxprocR(C9ctx *ctx, C9r *r) {
 
     case Rattach:
         DEBUG_TRACE("Rattach");
-        a->flags = ATTACHED;
+        a->flags = CONN_ATTACHED;
         // path[0] = channel;
         // path[1] = NULL;
         // c9walk(ctx, &tag, Rootfid, Chatfid, path);
@@ -279,7 +311,7 @@ static void ctxprocR(C9ctx *ctx, C9r *r) {
 
     case Rerror:
         DEBUG_TRACE("Rerror: %s", r->error);
-        a->flags = ERROR;
+        a->flags = CONN_ERROR;
         break;
 
     default:
@@ -360,10 +392,6 @@ static int proc(C9aux *a) {
 }
 
 vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *opt) {
-    // Todo:
-    // 1. Create context and buffers
-    // 2. connect comm backend
-
     vfs_driver_t *driver;
     (void)wapp;
 
@@ -414,7 +442,7 @@ static int _Destroy(struct vfs_driver_t *d) {
 
     C9aux *a = &d->ctx->aux;
 
-    if (a->flags & ATTACHED) {
+    if (a->flags & CONN_ATTACHED) {
         c9clunk(&a->c, &a->tag, 0);
         wrsend(a);
 
@@ -431,29 +459,25 @@ static int _Destroy(struct vfs_driver_t *d) {
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     C9aux *a = &d->aux;
 
-    // TODO: max depth is 3 currently - dirty!
-    const char *p[3] = {NULL};
+    const char *p[C9maxpathel + 1] = {NULL};
     char buf[strlen(path) + 1];
     int newFd;
 
-    memcpy(buf, path, strlen(path));
-    buf[strlen(path)] = '\0';
+    memcpy(buf, path, strlen(path) + 1);
 
-    int i = 0;
-    p[i++] = strtok(buf, "/");
-    while ((p[i++] = strtok(NULL, "/")) != NULL) {
-    };
+    if (splitPath(buf, p) < 0)
+        return -ENAMETOOLONG;
 
     // version/auth/attach
     DEBUG_TRACE("9p Open: %s", path);
 
-    if (!(a->flags & ATTACHED)) {
+    if (!(a->flags & CONN_ATTACHED)) {
         if (start(d) == NULL) {
             return -EAGAIN;
         }
 
         while (proc(a) == 0 && wrsend(a) == 0) {
-            if (a->flags & ATTACHED)
+            if (a->flags & CONN_ATTACHED)
                 break;
         }
 
@@ -478,13 +502,12 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     if (newFd < 0)
         return newFd;
 
-    // TODO: error handling
-    c9walk(&a->c, &a->tag, 0, newFd, p);
-    wrsend(a);
-    proc(a);
+    if (c9walk(&a->c, &a->tag, 0, newFd, p) != 0 || wrsend(a) != 0 ||
+        proc(a) != 0)
+        return -EIO;
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
@@ -497,12 +520,12 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
         mode = C9read;
     }
 
-    c9open(&a->c, &a->tag, newFd, mode);
-    wrsend(a);
-    proc(a);
+    if (c9open(&a->c, &a->tag, newFd, mode) != 0 || wrsend(a) != 0 ||
+        proc(a) != 0)
+        return -EIO;
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
@@ -516,12 +539,15 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
     (void)d;
+    (void)flags;
     (void)fd;
     (void)path;
-    (void)flags;
-    // TODO: OpenAt seems not used in drivers
-    DEBUG_TRACE("9p OpenAt: %d, %s", fd, path);
-    return 0;
+    /*
+     * The VFS core dispatches OpenAt only to PLATFORM-type parent fds; a 9P
+     * mount resolves relative paths through the router, which calls Open. This
+     * slot is therefore never reached — reject rather than fake success.
+     */
+    return -ENOTSUP;
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
@@ -552,13 +578,17 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
-    c9stat(&a->c, &a->tag, fd);
-    wrsend(a);
-    proc(a);
+    if (c9stat(&a->c, &a->tag, fd) != 0 || wrsend(a) != 0 || proc(a) != 0)
+        return -EIO;
 
-    // TODO: error handling
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
+        return -EIO;
+    }
 
     s = a->lastStat;
+    if (s == NULL)
+        return -EIO;
 
     stat->dev = *(uint32_t *)(id);
     stat->ino = s->qid.path;
@@ -592,13 +622,13 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     wrsend(a);
     proc(a);
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
     r = a->rCnt;
-    b = &a->rBuf[7];
+    b = &a->rBuf[RREAD_HDR_LEN];
 
     memcpy(buf, b, r);
 
@@ -624,8 +654,8 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     wrsend(a);
     proc(a);
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
@@ -676,13 +706,13 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
         return -EBADF;
 
     do {
-        c9read(&a->c, &a->tag, fd, off, MSIZE - 7);
+        c9read(&a->c, &a->tag, fd, off, MSIZE - RREAD_HDR_LEN);
         wrsend(a);
         proc(a);
         if (a->rCnt < 7)
             break;
         off += a->rCnt;
-        b = &a->rBuf[7];
+        b = &a->rBuf[RREAD_HDR_LEN];
         sz = a->rCnt;
 
         while (sz > 0 && c9parsedir(&a->c, &s, &b, &sz) == 0) {
@@ -716,25 +746,21 @@ static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
     if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
-    // TODO: max depth is 3 currently - dirty!
-    const char *p[3] = {NULL};
+    const char *p[C9maxpathel + 1] = {NULL};
     char buf[strlen(path) + 1];
     int newFd = fd;
 
-    memcpy(buf, path, strlen(path));
-    buf[strlen(path)] = '\0';
+    memcpy(buf, path, strlen(path) + 1);
 
-    int i = 0;
-    p[i++] = strtok(buf, "/");
-    while ((p[i++] = strtok(NULL, "/")) != NULL) {
-    };
+    if (splitPath(buf, p) < 0)
+        return -ENAMETOOLONG;
 
     c9walk(&a->c, &a->tag, 0, newFd, p);
     wrsend(a);
     proc(a);
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 
@@ -742,8 +768,8 @@ static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
     wrsend(a);
     proc(a);
 
-    if (a->flags & ERROR) {
-        a->flags &= ~ERROR;
+    if (a->flags & CONN_ERROR) {
+        a->flags &= ~CONN_ERROR;
         return -EIO;
     }
 

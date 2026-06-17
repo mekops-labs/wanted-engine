@@ -89,8 +89,6 @@ static int _Destroy(struct vfs_driver_t *d) {
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     (void)path;
-    // TODO: fix for esp and linux platforms
-    // if (d->opened) return -EBUSY;
     if ((flags & 0x3) != VFS_O_RDONLY)
         return -EROFS;
 
