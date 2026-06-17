@@ -176,6 +176,7 @@ static const vfs_driver_table_t global_driver_table[] = {
     {"platform", platformFsInitRW},
     {"socket", VfsSocketInit},
     {"wanted", VfsWantedInit},
+    {"gpio", VfsGpioInit},
     {NULL, NULL},
 };
 
