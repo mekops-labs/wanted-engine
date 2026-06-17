@@ -157,8 +157,8 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
 
     bool level;
 #ifdef __NuttX__
-    if (ioctl(d->fds[fd].host_fd, GPIOC_READ, (unsigned long)(uintptr_t)&level) <
-        0)
+    if (ioctl(d->fds[fd].host_fd, GPIOC_READ,
+              (unsigned long)(uintptr_t)&level) < 0)
         return -errno;
 #else
     level = d->level;
