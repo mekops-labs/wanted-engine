@@ -11,6 +11,8 @@ Unreleased
 
 ### Changed
 
+- The NuttX built-in's compiled-in default config now runs the supervisor privileged (`system.privileged: true`), so the privileged `/proc` entries (e.g. `/proc/memory`) are readable by the control-plane supervisor. Launched wapps are configured separately and do not inherit it.
+- The launch-config slot tables (the control-plane `pending` reservations and the parsed engine config) are now allocated on the heap on first use instead of living in static `.bss`. On constrained targets this moves the large per-`wapp_config_t` driver/mount/socket slot tables off limited internal RAM (and onto a heap that may extend into PSRAM); the slot-size limits can be raised without static-RAM pressure.
 - `/proc/wanted` now reports `wasm_max_pages`, `log_slots`, `wasm_worker_stack` (the effective per-wapp worker thread stack), `max_drivers`, and `max_options`.
 - Worker threads are now created with an explicit native C stack (`WASM_WORKER_STACK_SIZE`) on every platform instead of the OS default, so the recursive WAMR interpreter cannot overflow a small RTOS default thread stack (NuttX defaults to ~2 KB).
 
