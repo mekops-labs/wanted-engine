@@ -92,6 +92,53 @@ make nuttx-shell     # boot the sim to an interactive wsh prompt
 
 The planned architecture: wapp images loaded from XIP flash, a LittleFS-backed registry slot table, and mbedTLS for secure sockets. The simulator port is the staging ground — hardware reuses the shared POSIX core and most of the NuttX target layer; the flash registry backend and mbedTLS are the remaining hardware-specific pieces.
 
+## Resource limits and build profiles
+
+The engine's static memory envelope is set at build time. Every engine-wide limit lives in one header, `src/include/wanted-config.h`, each `#ifndef`-guarded so the build system overrides it without editing source:
+
+| Constant | Default | Sizes |
+|---|---|---|
+| `MAX_WAPPS` | 3 | concurrent wapp instances (and, via `LOG_SLOTS`, the per-wapp log rings) |
+| `WASM_STACK_SIZE` | 8192 | per-instance operand (interpreter) stack |
+| `WASM_HEAP_SIZE` | 8192 | per-instance app heap |
+| `WASM_MAX_MEMORY_PAGES` | 1 | per-instance linear-memory ceiling, in 64 KiB pages (`0` = uncapped) |
+| `MAX_PATH_LEN` | 256 | VFS path buffers |
+
+Driver-private limits (e.g. the 9P open-file table, the socket address buffer) stay local to their driver and are not part of this surface.
+
+### A wapp's memory
+
+Three engine-controlled regions are passed to WAMR per instance:
+
+- **Operand stack** (`WASM_STACK_SIZE`) — the interpreter's evaluation stack, in host memory, **outside** linear memory. Distinct from the wapp's C aux stack, which lives inside linear memory and is fixed by the wapp's own linker (`wasm-ld -z stack-size`).
+- **App heap** (`WASM_HEAP_SIZE`) — a host-managed heap for `wasm_runtime_module_malloc`, **outside** linear memory. WAMR disables it when the module exports its own `malloc`/`free`, so a WASI wapp (which allocates from its libc heap at the top of linear memory) usually does not use it.
+- **Linear memory** (`WASM_MAX_MEMORY_PAGES`) — the memory the wapp actually addresses: its data, C aux stack, and libc heap. Enforced two ways: WAMR bounds `memory.grow` to the cap at runtime, and the engine refuses at load any image whose declared *initial* memory exceeds it (otherwise WAMR clamps the cap up to the module's initial, letting a large initial bypass the runtime bound). `0` disables both. (A module containing no `memory.grow` is collapsed by WAMR to a single fixed page - `WAMR_BUILD_SHRUNK_MEMORY` flag is on by default.)
+
+### Profiles
+
+Per-capacity profiles ship as CMake cache fragments under `cmake/profiles/`:
+
+| Profile | Target class | `MAX_WAPPS` | stack / heap | linear cap |
+|---|---|---|---|---|
+| `constrained` | ~512 KB RAM (ESP32/NuttX) | 3 | 8 KiB / 8 KiB | 1 page |
+| `small` | routers (128 MB–1 GB) | 16 | 64 KiB / 256 KiB | 16 pages |
+| `big` | Linux / cloud | 64 | 128 KiB / 1 MiB | uncapped |
+
+Select one — the unset default is the `constrained` header values:
+
+```bash
+make build PROFILE=small         # Linux engine + CLI
+make nuttx-build PROFILE=small   # NuttX sim
+cmake -C cmake/profiles/small.cmake -S . -B build   # direct cmake
+```
+
+On Linux the fragment seeds the CMake cache; for NuttX the same values are forwarded as `-D` overrides into the engine app build. A command-line `-DMAX_WAPPS=…` overrides a profile.
+
+### Measuring the footprint
+
+- `make sizes` reports each profile's per-wapp and worst-case memory for both the host (LP64) and 32-bit embedded (ILP32) ABIs, measured from the real engine structs, but it's just approximate value (e.g. wamr overhead is arbitrary worst case value), it doesn't actually measure the whole runtime overhead on specific hardware, using specifc compiler, just the struct sizes.
+- `make memcap` is a negative test that verifies the `WASM_MAX_MEMORY_PAGES` cap actually bounds a wapp's `memory.grow`.
+
 ## Porting to a new platform
 
 1. Create `platform/<name>/`. If the target is POSIX-like, link `platform/posix/` and implement only the deltas (thread/stop model, memory stats, secure sockets if any, registry-backend glue, entry point); otherwise implement every `Platform*` symbol from `platform.h` yourself, with `platform/dummy/` as the model for a from-scratch port. Either way, no stubs.

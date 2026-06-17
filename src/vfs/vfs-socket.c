@@ -12,7 +12,7 @@
 
 #include <platform.h>
 
-// TODO: make configurable, max address length should be defined
+/* Socket address buffer length, in bytes, per connection context. */
 #define MAX_ADDR_LEN 32
 
 static const char id[] = {'S', 'o', 'c', 'k'};

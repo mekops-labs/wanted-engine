@@ -91,7 +91,27 @@ build_kernel() {
         make distclean >/dev/null 2>&1 || true
         ./tools/configure.sh -a "$apps_rel" sim:wanted >/dev/null
     fi
-    make -j"$(nproc)"
+    # Forward the resource-limit profile (engine cmake/profiles/<name>.cmake) to
+    # the engine app build as -D overrides. The app Makefile appends
+    # WANTED_RESOURCE_DEFINES to its CFLAGS; the engine headers #ifndef-guard
+    # each limit, so these win over the defaults. A profile change only takes
+    # full effect on a clean build (set NUTTX_CLEAN=1) — object files do not
+    # depend on the define values.
+    make -j"$(nproc)" WANTED_RESOURCE_DEFINES="$(profile_defines "${PROFILE:-}")"
+}
+
+# Translate a resource-limit profile name into -D defines for the engine app
+# build. The cmake fragment (cmake/profiles/<name>.cmake) is the single source
+# of truth for the numbers, so the NuttX and Linux builds stay in lockstep; we
+# extract its `set(NAME VALUE ...)` lines here. Empty profile → no overrides
+# (the constrained header defaults).
+profile_defines() {
+    local prof="$1" f
+    [ -n "$prof" ] || return 0
+    f="$ENGINE_DIR/cmake/profiles/$prof.cmake"
+    [ -f "$f" ] || { echo "unknown profile '$prof' (no $f)" >&2; exit 1; }
+    sed -nE 's/^[[:space:]]*set\(([A-Z_]+)[[:space:]]+([0-9]+).*/-D\1=\2/p' "$f" \
+        | tr '\n' ' '
 }
 
 # Stage the current variant's hostfs and (re)build the kernel.
@@ -150,6 +170,8 @@ selftest() {
     # launch config. The supervisor binds the image via config `image`.
     stage_test_wapp duplex:0.0.1-1
     stage_test_wapp volcheck:0.0.1-1
+    stage_test_wapp bigmem:0.0.1-1
+    stage_test_wapp biginit:0.0.1-1
     # hand-crafted malformed images for the loader-robustness check (reuse the
     # valid wasm that stage_test_wapp just built)
     "$ENGINE_DIR/test/stage-malformed.sh" "$SIMROOT/registry" \

@@ -229,7 +229,8 @@ static void positive_checks(void) {
     tap_ok(read_path("/proc/wanted", buf, sizeof(buf)) > 0 &&
                strstr(buf, "platform:") != NULL &&
                strstr(buf, "version:") != NULL &&
-               strstr(buf, "max_wapps:\t3") != NULL,
+               strstr(buf, "max_wapps:\t3") != NULL &&
+               strstr(buf, "wasm_max_pages:\t1") != NULL,
            "proc: /proc/wanted reports engine identity and limits");
 
     /* Inter-wapp pipe round-trip within our own namespace. */
@@ -368,6 +369,35 @@ static void containment_checks(void) {
     tap_ok(read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
                strstr(buf, "running") != NULL,
            "robustness: supervisor still running after the misbehaving wapps");
+}
+
+/* The per-wapp linear-memory cap (WASM_MAX_MEMORY_PAGES; constrained default =
+ * one page) is enforced two ways. bigmem grows past one page: under the cap its
+ * grow is refused, malloc returns NULL, and it logs "bigmem-bounded" (still
+ * exiting cleanly). biginit declares four initial pages: the engine refuses to
+ * load an image whose initial memory already exceeds the cap, so it ends in a
+ * failure state without running. Both assume the constrained default cap; a
+ * build with a wider cap (PROFILE=small/big) would admit them. */
+static void memcap_checks(void) {
+    char path[96], buf[64];
+
+    int bm = launch("bigmem") && wait_dead("bigmem");
+    wapp_node(path, sizeof(path), "bigmem", "log");
+    int bounded = bm && read_path(path, buf, sizeof(buf)) > 0 &&
+                  strstr(buf, "bigmem-bounded") != NULL;
+    tap_ok(bounded, "memcap: bigmem linear-memory growth is bounded at the cap");
+
+    launch("biginit");
+    wapp_node(path, sizeof(path), "biginit", "state");
+    int refused = wait_dead("biginit") &&
+                  read_path(path, buf, sizeof(buf)) > 0 &&
+                  strstr(buf, "failure") != NULL;
+    tap_ok(refused,
+           "memcap: biginit (initial memory over the cap) is refused at load");
+
+    tap_ok(read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
+               strstr(buf, "running") != NULL,
+           "memcap: supervisor still running after the capped wapps");
 }
 
 /* A never-yielding wapp must still be stoppable: WAMR's per-instruction
@@ -1010,6 +1040,7 @@ int main(void) {
         {"multi_reader_pipe_check", multi_reader_pipe_check},
         {"robustness_checks", robustness_checks},
         {"containment_checks", containment_checks},
+        {"memcap_checks", memcap_checks},
         {"cpuhog_check", cpuhog_check},
         {"console_checks", console_checks},
         {"argenv_check", argenv_check},
