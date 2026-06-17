@@ -83,7 +83,11 @@ typedef struct {
 
 static struct vfs_driver_ctx_t {
     wapps_fd_t fds[WAPPS_MAX_OPEN];
-    wapps_pending_t pending[MAX_WAPPS];
+    /* MAX_WAPPS launch-config slots, lazily heap-allocated on first `create`.
+     * wapp_config_t is large (driver/mount/socket slot tables), so this is kept
+     * off static .bss to spare internal RAM on constrained targets; the engine
+     * heap may extend into PSRAM. NULL means no slot has been reserved yet. */
+    wapps_pending_t *pending;
 } ctx;
 
 static int _Destroy(struct vfs_driver_t *d);
@@ -175,6 +179,8 @@ static int alloc_fd(void) {
 
 static wapps_pending_t *pending_find(struct vfs_driver_ctx_t *d,
                                      const char *name) {
+    if (d->pending == NULL)
+        return NULL;
     for (int i = 0; i < MAX_WAPPS; i++) {
         if (d->pending[i].valid &&
             strncmp(d->pending[i].name, name, WAPP_MAX_NAME_LEN) == 0)
@@ -188,6 +194,12 @@ static wapps_pending_t *pending_slot(struct vfs_driver_ctx_t *d,
     wapps_pending_t *p = pending_find(d, name);
     if (p != NULL)
         return p;
+    if (d->pending == NULL) {
+        d->pending = WantedMalloc(MAX_WAPPS * sizeof(wapps_pending_t));
+        if (d->pending == NULL)
+            return NULL;
+        memset(d->pending, 0, MAX_WAPPS * sizeof(wapps_pending_t));
+    }
     for (int i = 0; i < MAX_WAPPS; i++) {
         if (!d->pending[i].valid)
             return &d->pending[i];
@@ -304,7 +316,9 @@ FREE:
 /* ── Driver ops ─────────────────────────────────────────────────────────── */
 
 static int _Destroy(struct vfs_driver_t *d) {
-    memset(d->ctx, 0, sizeof(ctx));
+    struct vfs_driver_ctx_t *c = d->ctx;
+    WantedFree(c->pending); /* lazily reallocated by the next supervisor */
+    memset(c, 0, sizeof(ctx));
     return 0;
 }
 
@@ -559,7 +573,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
             names[total][WAPP_MAX_NAME_LEN - 1] = '\0';
             total++;
         }
-        for (int k = 0; k < MAX_WAPPS; k++) {
+        for (int k = 0; d->pending != NULL && k < MAX_WAPPS; k++) {
             if (!d->pending[k].valid)
                 continue;
             bool dup = false;
