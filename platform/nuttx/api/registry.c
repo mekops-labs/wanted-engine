@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,7 @@
 #include <config-nuttx.h>
 #include <platform.h>
 #include <wanted.h>
+#include <wanted_malloc.h>
 
 static inline size_t min(size_t a, size_t b) { return (a) > (b) ? (b) : (a); }
 
@@ -124,10 +126,117 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     return count;
 }
 
+/* In-RAM image cache.
+ *
+ * On ESP32 an SPI-flash read returns corrupt data (LittleFS reports
+ * LFS_ERR_CORRUPT) while another wapp holds live PSRAM — so the registry image
+ * files cannot be read off flash once a wapp is running. The cache reads every
+ * image into RAM the first time a wapp is started (when only the supervisor is
+ * live, so the flash reads are safe) and serves every later launch from RAM, so
+ * a second concurrent wapp never touches flash. Masters are kept for the device
+ * lifetime; each launch gets its own copy (freed by PlatformWappUnload), so the
+ * cache stays intact while instances come and go.
+ *
+ * Limit: an image installed *after* the first launch, then started while
+ * another wapp runs, still falls back to a flash read (and can fail). Caching
+ * on install is the matching follow-up. */
+typedef struct {
+    char ref[WAPP_MAX_IMAGE_REF_LEN]; /* "<name>:<version>" */
+    uint8_t *data;
+    size_t len;
+} cache_entry_t;
+
+static cache_entry_t imageCache[REGISTRY_MAX_ENTRIES];
+static int imageCacheCount;
+static bool imageCachePreloaded;
+
+static void buildRef(char *out, size_t outLen, const char *name,
+                     const char *version) {
+    snprintf(out, outLen, "%s%c%s", name, REGISTRY_VERSION_SEPARATOR, version);
+}
+
+static cache_entry_t *cacheFind(const char *ref) {
+    for (int i = 0; i < imageCacheCount; i++) {
+        if (strcmp(imageCache[i].ref, ref) == 0)
+            return &imageCache[i];
+    }
+    return NULL;
+}
+
+/* Read one image file into the cache, taking ownership of the loaded buffer.
+ * Returns the new entry, or NULL if the cache is full or the read fails. */
+static cache_entry_t *cacheAdd(const char *ref, const char *targetName) {
+    wapp_t tmp;
+    cache_entry_t *c;
+
+    if (imageCacheCount >= REGISTRY_MAX_ENTRIES)
+        return NULL;
+
+    memset(&tmp, 0, sizeof(tmp));
+    if (PlatformWappLoad(targetName, &tmp) < 0)
+        return NULL;
+
+    c = &imageCache[imageCacheCount];
+    strncpy(c->ref, ref, sizeof(c->ref) - 1);
+    c->ref[sizeof(c->ref) - 1] = '\0';
+    c->data = tmp.layers[0];
+    c->len = tmp.layer_lens[0];
+    imageCacheCount++;
+    return c;
+}
+
+/* Read every registry image into the cache. Called on the first launch, while
+ * only the supervisor is running and flash reads are still safe. */
+static void cachePreload(void) {
+    reg_entry_t *list;
+    char ref[WAPP_MAX_IMAGE_REF_LEN];
+    char targetName[PATH_MAX];
+    int num;
+
+    imageCachePreloaded = true; /* one attempt; a re-entry must not loop */
+
+    /* Heap (not stack): this can run on the init task's small stack, and the
+     * LittleFS read path below is already stack-hungry. */
+    list = (reg_entry_t *)WantedMalloc(sizeof(reg_entry_t) *
+                                       REGISTRY_MAX_ENTRIES);
+    if (list == NULL)
+        return;
+
+    num = PlatformRegistryRead(list, REGISTRY_MAX_ENTRIES);
+    if (num < 0) {
+        WantedFree(list);
+        return;
+    }
+    if ((size_t)num > REGISTRY_MAX_ENTRIES)
+        num = REGISTRY_MAX_ENTRIES;
+
+    for (int i = 0; i < num; i++) {
+        buildRef(ref, sizeof(ref), list[i].name, list[i].version);
+        if (cacheFind(ref) != NULL)
+            continue;
+        snprintf(targetName, sizeof(targetName), "%s/%s%s", REGISTRY_ROOT, ref,
+                 REGISTRY_EXT);
+        cacheAdd(ref, targetName); /* best-effort; skip unreadable images */
+    }
+
+    WantedFree(list);
+}
+
+/* Preload the image cache from the boot shim, before the supervisor (and thus
+ * WAMR/PSRAM) starts — the only moment ESP32 flash reads are reliably safe.
+ * Idempotent; the lazy path in PlatformRegistryWappLoad covers platforms whose
+ * shim does not call this (e.g. the sim). */
+void RegistryCachePreload(void) {
+    if (!imageCachePreloaded)
+        cachePreload();
+}
+
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     char targetName[PATH_MAX];
+    char ref[WAPP_MAX_IMAGE_REF_LEN];
     reg_entry_t resolved;
-    int ret;
+    cache_entry_t *c;
+    uint8_t *copy;
 
     if (!entry->version[0]) {
         reg_entry_t list[REGISTRY_MAX_ENTRIES];
@@ -153,13 +262,29 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
         resolved = *entry;
     }
 
-    snprintf(targetName, sizeof(targetName), "%s/%s%c%s%s", REGISTRY_ROOT,
-             resolved.name, REGISTRY_VERSION_SEPARATOR, resolved.version,
+    buildRef(ref, sizeof(ref), resolved.name, resolved.version);
+    snprintf(targetName, sizeof(targetName), "%s/%s%s", REGISTRY_ROOT, ref,
              REGISTRY_EXT);
 
-    ret = PlatformWappLoad(targetName, w);
-    if (ret < 0)
-        return ret;
+    if (!imageCachePreloaded)
+        cachePreload();
+
+    c = cacheFind(ref);
+    if (c == NULL)
+        c = cacheAdd(ref, targetName); /* not preloaded (e.g. just installed) */
+    if (c == NULL)
+        return -ENOENT;
+
+    /* Hand the launch its own copy of the cached image (RAM-to-RAM, no flash);
+     * the master stays cached for the next launch. */
+    copy = (uint8_t *)WantedMalloc(c->len);
+    if (copy == NULL)
+        return -ENOMEM;
+    memcpy(copy, c->data, c->len);
+
+    w->layers[0] = copy;
+    w->layer_lens[0] = c->len;
+    w->layer_cnt = 1;
 
     /* Image identity is the registry entry — name and version tag. The instance
      * name (w->name) is set by the launch path and left untouched here. */

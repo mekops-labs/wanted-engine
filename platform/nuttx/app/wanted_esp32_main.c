@@ -39,6 +39,12 @@
 
 int wanted_main(int argc, char *argv[]);
 
+/* Read all registry images into RAM now, while no wapp (hence no WAMR/PSRAM
+ * activity) is running. On ESP32 an SPI-flash read returns corrupt data once a
+ * wapp holds live PSRAM, so the engine must not read image files off flash at
+ * launch time; the cache (platform/nuttx/api/registry.c) serves launches. */
+void RegistryCachePreload(void);
+
 #define SEED_DIR                                                               \
     ROMFS_MOUNTPT "/registry"   /* /rom/registry (bundled factory wapps) */
 #define REGISTRY_DIR "registry" /* relative to REGISTRY_VOLUME (chdir'd) */
@@ -106,6 +112,10 @@ int wanted_esp32_main(int argc, char *argv[]) {
         perror("chdir " REGISTRY_VOLUME);
     else
         seed_registry();
+
+    /* Cache every registry image in RAM before the supervisor starts (flash
+     * reads are only safe while no wapp holds PSRAM). */
+    RegistryCachePreload();
 
     int rc = wanted_main(argc, argv);
 
