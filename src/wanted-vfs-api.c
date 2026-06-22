@@ -196,6 +196,7 @@ static const vfs_driver_table_t global_driver_table[] = {
     {"socket", VfsSocketInit},
     {"wanted", VfsWantedInit},
     {"gpio", VfsGpioInit},
+    {"wifi", VfsWifiInit},
     {NULL, NULL},
 };
 
