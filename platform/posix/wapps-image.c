@@ -71,7 +71,7 @@ int PlatformWappLoad(const char *path, wapp_t *wapp) {
         FATAL(-EINVAL, "bad wapp size: %s errno=%d", path, e);
     }
 
-    img = (uint8_t *)WantedMalloc((size_t)st.st_size);
+    img = (uint8_t *)PlatformExtramMalloc((size_t)st.st_size);
     if (NULL == img) {
         close(fd);
         FATAL(-ENOMEM, "can't alloc image (size=%lld)", (long long)st.st_size);
@@ -90,7 +90,7 @@ int PlatformWappLoad(const char *path, wapp_t *wapp) {
              * zero return is an unexpected mid-file EOF. */
             int e = (got < 0) ? (errno ? -errno : (int)got) : -EIO;
             pthread_mutex_unlock(&g_image_bounce_lock);
-            WantedFree(img);
+            PlatformExtramFree(img);
             close(fd);
             FATAL(e, "read failed (%d) at %zu of %lld: %s", e, off,
                   (long long)st.st_size, path);
@@ -113,7 +113,7 @@ int PlatformWappUnload(const wapp_t *wapp) {
         return -EINVAL;
     }
 
-    WantedFree(wapp->layers[0]);
+    PlatformExtramFree(wapp->layers[0]);
     return 0;
 }
 

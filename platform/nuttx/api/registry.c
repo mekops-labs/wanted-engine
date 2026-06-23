@@ -276,8 +276,10 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
         return -ENOENT;
 
     /* Hand the launch its own copy of the cached image (RAM-to-RAM, no flash);
-     * the master stays cached for the next launch. */
-    copy = (uint8_t *)WantedMalloc(c->len);
+     * the master stays cached for the next launch. PSRAM-backed (freed by
+     * PlatformWappUnload) so the per-launch image copy stays out of internal
+     * RAM, which is reserved for task stacks. */
+    copy = (uint8_t *)PlatformExtramMalloc(c->len);
     if (copy == NULL)
         return -ENOMEM;
     memcpy(copy, c->data, c->len);

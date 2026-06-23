@@ -64,6 +64,14 @@ void PlatformWappLoop(void);
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total);
 
+/* External-RAM (PSRAM) allocator for large engine buffers — wapp image cache
+ * and WAMR linear memory — so internal RAM is left for task stacks, which on
+ * the ESP32 can only live in internal RAM. On targets without external RAM
+ * these fall back to the ordinary heap. malloc/realloc/free-compatible. */
+void *PlatformExtramMalloc(size_t size);
+void *PlatformExtramRealloc(void *ptr, size_t size);
+void PlatformExtramFree(void *ptr);
+
 /* Short identifier for the target the engine was built against ("linux",
  * "nuttx", "dummy"). Static storage; the caller must not free it. Exposed at
  * /proc/wanted so a wapp can read which platform hosts it. */
