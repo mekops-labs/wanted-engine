@@ -37,7 +37,17 @@
 #define PSRAM_HI 0x3fc00000u
 
 static struct mm_heap_s *g_extram;
+static uintptr_t g_extram_lo; /* pool bounds, for routing free()/realloc() of a */
+static uintptr_t g_extram_hi; /* pointer to the right heap (see in_extram). */
 static bool g_extram_tried;
+
+/* True when ptr was handed out by the PSRAM pool (vs the ordinary heap). The
+ * pool is one contiguous mm region, so a range check is exact. NULL is treated
+ * as "not ours" so free(NULL)/realloc(NULL,..) take the libc path. */
+static bool in_extram(const void *ptr) {
+    uintptr_t a = (uintptr_t)ptr;
+    return (g_extram != NULL) && (a >= g_extram_lo) && (a < g_extram_hi);
+}
 
 static void extram_init(void) {
     if (g_extram_tried)
@@ -74,6 +84,8 @@ static void extram_init(void) {
     }
 
     g_extram = mm_initialize("wanted-extram", pool, got);
+    g_extram_lo = (uintptr_t)pool;
+    g_extram_hi = (uintptr_t)pool + got;
     DEBUG_TRACE("extram: PSRAM heap @ %p (%u bytes)", pool, (unsigned)got);
 }
 
@@ -84,12 +96,16 @@ void *PlatformExtramMalloc(size_t size) {
 
 void *PlatformExtramRealloc(void *ptr, size_t size) {
     extram_init();
-    return (g_extram != NULL) ? mm_realloc(g_extram, ptr, size)
-                              : realloc(ptr, size);
+    /* Grow a pool pointer (or a fresh alloc, ptr==NULL) in the pool; resize an
+     * ordinary-heap pointer with libc. mm_realloc must never see a foreign
+     * pointer, hence the explicit in_extram gate. */
+    if (g_extram != NULL && (ptr == NULL || in_extram(ptr)))
+        return mm_realloc(g_extram, ptr, size);
+    return realloc(ptr, size);
 }
 
 void PlatformExtramFree(void *ptr) {
-    if (g_extram != NULL)
+    if (in_extram(ptr))
         mm_free(g_extram, ptr);
     else
         free(ptr);
