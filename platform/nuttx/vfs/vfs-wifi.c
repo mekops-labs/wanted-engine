@@ -11,7 +11,8 @@
  *   write "connect <ssid> <pass>" -> associate (WPA2-PSK/CCMP) and run DHCP
  *   write "disconnect"            -> drop the association
  *   read (no pending scan)        -> one status line: "disconnected\n" or
- *                                    "connected <ssid>\n"
+ *                                    "connected <ssid> <ip>\n" (<ip> is the
+ *                                    DHCP lease, or 0.0.0.0 if none)
  *
  * The radio is reached through the NuttX WAPI library on the wlan0 interface.
  * On the host-only scaffolding build the WAPI/NuttX wireless headers are
@@ -28,6 +29,7 @@
 #ifdef __NuttX__
 #include <unistd.h>
 
+#include <arpa/inet.h>
 #include <netutils/netlib.h>
 #include <nuttx/wireless/wireless.h>
 #include <wireless/wapi.h>
@@ -65,6 +67,7 @@ struct vfs_driver_ctx_t {
     char ifname[16];
     enum wifi_state_t state;
     char ssid[WIFI_SSID_MAX];
+    char ip[16]; /* leased IPv4, dotted-quad; "0.0.0.0" when no DHCP lease */
     struct wifi_fd_t fds[WIFI_MAX_FDS];
 };
 
@@ -97,6 +100,13 @@ vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options) {
         (options != NULL && options[0] != '\0') ? options : WIFI_IFNAME;
     strncpy(ctx->ifname, ifname, sizeof(ctx->ifname) - 1);
     ctx->state = WIFI_DISCONNECTED;
+
+    /* Bring the interface up as part of driver setup: scan and connect both need
+     * the WiFi station started (ifup -> esp_wifi_start), else esp_wifi_scan_start
+     * / association return ESP_ERR_WIFI_NOT_STARTED. Idempotent — a no-op once
+     * wlan0 is up. Done here (not per-op) so every wifi operation a granted wapp
+     * makes finds the radio started. */
+    netlib_ifup(ctx->ifname);
 
     driver->bytesId = *(const uint32_t *)(id);
     driver->filetype = VFS_FILETYPE_CHARACTER_DEVICE;
@@ -246,6 +256,15 @@ static int wifi_connect(struct vfs_driver_ctx_t *d, const char *ssid,
     /* Best effort: a failed lease still leaves the link associated. */
     netlib_obtain_ipv4addr(d->ifname);
 
+    /* Read the address back and surface it in the state node: 0.0.0.0 means no
+     * lease (link associated only), anything else is the leased IPv4. */
+    struct in_addr ip;
+    memset(&ip, 0, sizeof(ip));
+    netlib_get_ipv4addr(d->ifname, &ip);
+    strncpy(d->ip, inet_ntoa(ip), sizeof(d->ip) - 1);
+    d->ip[sizeof(d->ip) - 1] = '\0';
+    DEBUG_TRACE("DHCP on %s -> %s", d->ifname, d->ip);
+
     d->state = WIFI_CONNECTED;
     strncpy(d->ssid, ssid, sizeof(d->ssid) - 1);
     d->ssid[sizeof(d->ssid) - 1] = '\0';
@@ -260,6 +279,7 @@ static int wifi_disconnect(struct vfs_driver_ctx_t *d) {
     close(sock);
     d->state = WIFI_DISCONNECTED;
     d->ssid[0] = '\0';
+    d->ip[0] = '\0';
     return 0;
 }
 
@@ -289,10 +309,11 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     if (f->status_done)
         return 0;
 
-    char line[WIFI_SSID_MAX + 16];
+    char line[WIFI_SSID_MAX + 32];
     int n;
     if (d->state == WIFI_CONNECTED)
-        n = snprintf(line, sizeof(line), "connected %s\n", d->ssid);
+        n = snprintf(line, sizeof(line), "connected %s %s\n", d->ssid,
+                     d->ip[0] ? d->ip : "0.0.0.0");
     else
         n = snprintf(line, sizeof(line), "disconnected\n");
     if (n < 0)
