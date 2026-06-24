@@ -11,10 +11,10 @@ REG=$1
 GOOD=$2
 VER=0.0.1-1
 
-# tar the contents of $1 into the registry as <$2>:<ver>.wapp
+# tar the contents of $1 into the registry as <$2>@<ver>.wapp
 pack() {
     tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
-        -C "$1" -cf "$REG/$2:$VER.wapp" $(cd "$1" && ls)
+        -C "$1" -cf "$REG/$2@$VER.wapp" $(cd "$1" && ls)
 }
 
 mkdir -p "$REG"
@@ -29,4 +29,4 @@ s=$(mktemp -d); head -c 64 /dev/urandom >"$s/app.wasm"; pack "$s" badwasm; rm -r
 s=$(mktemp -d); cp "$GOOD" "$s/app.wasm"
 tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
     -C "$s" -cf "$s/full.tar" app.wasm
-head -c 600 "$s/full.tar" >"$REG/truncated:$VER.wapp"; rm -rf "$s"
+head -c 600 "$s/full.tar" >"$REG/truncated@$VER.wapp"; rm -rf "$s"

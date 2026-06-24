@@ -276,7 +276,9 @@ static int startWapp(struct vfs_driver_ctx_t *d, const char *name,
      * matching entry (empty version), a "<name>:<tag>" pins the version
      * exactly. */
     memset(&e, 0, sizeof(e));
-    const char *colon = strchr(img, ':');
+    /* Image ref is "<name>[@<version>]" — '@', not ':', so it maps to a
+     * VFAT-legal registry filename (REGISTRY_VERSION_SEPARATOR). */
+    const char *colon = strchr(img, '@');
     if (colon != NULL) {
         size_t nlen = (size_t)(colon - img);
         if (nlen >= WAPP_MAX_NAME_LEN)

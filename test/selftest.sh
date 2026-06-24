@@ -32,21 +32,23 @@ fi
 
 mkdir -p "$REGISTRY_ROOT"
 
-# Launched test wapps, packaged into the registry as <name>:<version>.wapp. The
+# Launched test wapps, packaged into the registry as <name>@<version>.wapp. The
 # `duplex` image is launched as two instances (reader/writer) by the supervisor
 # via the config `image` field — it is staged once, not aliased.
 TEST_WAPPS="trapper:0.0.1-1 looper:0.0.1-1 stackbomb:0.0.1-1 membomb:0.0.1-1 cpuhog:0.0.1-1 blocker:0.0.1-1 pblock:0.0.1-1 escaper:0.0.1-1 fdhog:0.0.1-1 crasher:0.0.1-1 argenv:0.0.1-1 duplex:0.0.1-1 volcheck:0.0.1-1 bigmem:0.0.1-1 biginit:0.0.1-1"
 
 staged=""
 # stage <name>:<ver>
-# Package wapps/<name> into the registry as <name>:<ver>.wapp. An image is just
-# app.wasm (+ any TarFS payload); identity comes from the registry filename.
+# Package wapps/<name> into the registry as <name>@<ver>.wapp (the registry
+# version separator is '@'; the <name>:<ver> argument here is just this script's
+# token format). An image is just app.wasm (+ any TarFS payload); identity comes
+# from the registry filename.
 stage() {
     local name=${1%%:*} ver=${1#*:}
     make -C "wapps/$name" >/dev/null 2>&1 || { echo "FAIL: build wapps/$name"; exit 1; }
     local s img
     s=$(mktemp -d)
-    img="$REGISTRY_ROOT/$name:$ver.wapp"
+    img="$REGISTRY_ROOT/$name@$ver.wapp"
     cp "wapps/$name/$name.wasm" "$s/app.wasm"
     tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
         -C "$s" -cf "$img" app.wasm
@@ -56,7 +58,7 @@ stage() {
 malformed="noappwasm badwasm truncated"
 cleanup() {
     rm -f $staged
-    for m in $malformed; do rm -f "$REGISTRY_ROOT/$m":*.wapp; done
+    for m in $malformed; do rm -f "$REGISTRY_ROOT/$m"@*.wapp; done
     rm -rf "$VOLUME_ROOT" "$BIND_HOST_DIR" "$BIND_SECRET"
 }
 trap cleanup EXIT
