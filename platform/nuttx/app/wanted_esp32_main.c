@@ -30,12 +30,19 @@
 #define ROMFS_DEVPATH "/dev/ram" /* + minor */
 #define ROMFS_MOUNTPT "/rom"
 
-/* Writable persistent registry storage. The board late-init (esp32_bringup ->
- * esp32_spiflash_init) mounts a LittleFS over the SPI-flash storage MTD here;
- * chdir into it so the engine's relative REGISTRY_ROOT ("./registry") persists
- * on flash across reboots. Installed wapps live here; the supervisor image is
- * the read-only ROMFS at /rom. */
-#define REGISTRY_VOLUME "/data"
+/* Writable persistent registry storage — on an external SD card, FAT. On the
+ * classic ESP32 the registry must NOT live on internal SPI flash: a flash read
+ * disables the flash/PSRAM cache globally and corrupts live PSRAM (the
+ * coexistence bug), which is exactly what blocks the WASM runtime from running
+ * out of PSRAM. An SD card is a separate SPI peripheral whose reads never
+ * disable that cache, so registry reads (preload + launch) cannot corrupt
+ * PSRAM. The board late-init (esp32_bringup -> board_sdmmc_initialize) creates
+ * /dev/mmcsd0 over SPI; this shim mounts the FAT volume and chdir's into it so
+ * the engine's relative REGISTRY_ROOT ("./registry") persists across reboots.
+ * Installed wapps live here; the supervisor image is the read-only ROMFS at
+ * /rom (a cache-window read, coherent with PSRAM). */
+#define SDCARD_DEVPATH "/dev/mmcsd0"
+#define REGISTRY_VOLUME "/sd"
 
 int wanted_main(int argc, char *argv[]);
 
@@ -107,7 +114,13 @@ int wanted_esp32_main(int argc, char *argv[]) {
         perror("mount " ROMFS_MOUNTPT);
     }
 
-    /* Persist the registry on the flash LittleFS the board mounted at /data. */
+    /* Mount the SD card holding the writable registry (FAT over the SPI slot the
+     * board late-init brought up). Reads from here do not disable the flash/PSRAM
+     * cache, so they are safe while the WASM runtime holds live PSRAM. */
+    if (mount(SDCARD_DEVPATH, REGISTRY_VOLUME, "vfat", 0, NULL) < 0)
+        perror("mount " REGISTRY_VOLUME);
+
+    /* Persist the registry on the SD card mounted at /sd. */
     if (chdir(REGISTRY_VOLUME) < 0)
         perror("chdir " REGISTRY_VOLUME);
     else
