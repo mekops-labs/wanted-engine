@@ -132,7 +132,9 @@ kernel() {
 # as ./registry relative to /data (wanted_sim_main chdirs there).
 #
 # stage_test_wapp <name>:<ver>
-# Package wapps/<name> as <name>:<ver>.wapp. An image is just app.wasm (+ any
+# Package wapps/<name> as <name>@<ver>.wapp (the registry version separator is
+# '@'; the <name>:<ver> argument is this script's token format). An image is just
+# app.wasm (+ any
 # TarFS payload); identity comes from the registry filename. The `duplex` image
 # is launched as two instances (reader/writer) by the supervisor via config
 # `image`, so it is staged once, not aliased. Mirrors the Linux `stage` helper
@@ -144,7 +146,7 @@ stage_test_wapp() {
     s=$(mktemp -d)
     cp "$ENGINE_DIR/wapps/$name/$name.wasm" "$s/app.wasm"
     tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
-        -C "$s" -cf "$SIMROOT/registry/$name:$ver.wapp" app.wasm
+        -C "$s" -cf "$SIMROOT/registry/$name@$ver.wapp" app.wasm
     rm -rf "$s"
 }
 
