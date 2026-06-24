@@ -41,7 +41,7 @@ RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(IMAGE) -c
 
 .PHONY: all supervisor wapps build wsh test smoke-engine shell clean help \
         nuttx-deps nuttx-build nuttx-selftest nuttx-syscontrol nuttx-shell wsh-shell selftest \
-        docs-sync just sizes memcap
+        esp32 esp32-flash docs-sync just sizes memcap
 
 all: build test ## build the engine and run the test suite
 
@@ -88,6 +88,32 @@ nuttx-syscontrol: supervisor ## run the system-control (poweroff/reboot/exit) ch
 nuttx-shell: nuttx-build ## build the wsh sim and drop into the interactive wsh prompt
 	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" -w /src/build-nuttx/simroot \
 	    --entrypoint=/bin/sh $(IMAGE) -c '/src/third_party/nuttx/nuttx'
+
+# --- ESP32 firmware (real hardware) ---------------------------------------
+# Cross-build the NuttX firmware for the Waveshare ESP32 One in the xtensa
+# toolchain container (distinct from the sim's $(IMAGE)). The board config is the
+# `wanted` variant of esp32-devkitc in the nuttx fork; the engine app is linked
+# in by `nuttx-sim.sh deps` (shared with the sim). The boot ROMFS bakes the wsh
+# supervisor, so `supervisor` is a prerequisite. Output is
+# third_party/nuttx/nuttx.bin, flashed at 0x1000 (ESP32 Simple Boot).
+ESP32_IMAGE ?= localhost/wanted-esp32
+ESP32_PORT  ?= /dev/ttyUSB0
+ESP32_BAUD  ?= 460800
+# The xtensa image's entrypoint drops to a build user derived from /src's owner,
+# which rootless bind-mount UID remapping defeats; bypass it and build as the
+# container root (mapped back to the invoking host user under rootless podman).
+ESP32_RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(ESP32_IMAGE) -c
+
+esp32: supervisor ## cross-build the ESP32 firmware -> third_party/nuttx/nuttx.bin
+	$(RUN) 'cd /src && ./test/nuttx-sim.sh deps'
+	$(ESP32_RUN) 'cd /src/third_party/nuttx && \
+	    { [ -f .config ] || ./tools/configure.sh -a ../nuttx-apps esp32-devkitc:wanted; } && \
+	    make -j"$$(nproc)"'
+
+esp32-flash: ## flash third_party/nuttx/nuttx.bin to the board [ESP32_PORT=/dev/ttyUSB0]
+	esptool.py -c esp32 -p $(ESP32_PORT) -b $(ESP32_BAUD) --before default_reset \
+	    --after no_reset write_flash -fs detect -fm dio -ff 40m 0x1000 \
+	    third_party/nuttx/nuttx.bin
 
 just: ## run a Justfile recipe in the build container, e.g. make just lint-format
 	$(RUN) 'cd /src && just $(JUST_ARGS)'
