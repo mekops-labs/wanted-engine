@@ -87,7 +87,7 @@ static void seed_registry(void) {
     if (!d)
         return; /* no factory bundle */
     mkdir(REGISTRY_DIR, 0755);
-    struct dirent *e;
+    const struct dirent *e;
     while ((e = readdir(d)) != NULL) {
         if (e->d_name[0] == '.')
             continue;
@@ -114,9 +114,10 @@ int wanted_esp32_main(int argc, char *argv[]) {
         perror("mount " ROMFS_MOUNTPT);
     }
 
-    /* Mount the SD card holding the writable registry (FAT over the SPI slot the
-     * board late-init brought up). Reads from here do not disable the flash/PSRAM
-     * cache, so they are safe while the WASM runtime holds live PSRAM. */
+    /* Mount the SD card holding the writable registry (FAT over the SPI slot
+     * the board late-init brought up). Reads from here do not disable the
+     * flash/PSRAM cache, so they are safe while the WASM runtime holds live
+     * PSRAM. */
     if (mount(SDCARD_DEVPATH, REGISTRY_VOLUME, "vfat", 0, NULL) < 0)
         perror("mount " REGISTRY_VOLUME);
 
