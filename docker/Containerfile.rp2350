@@ -1,0 +1,103 @@
+# WANTED Engine — RP2350 (ARM Cortex-M33) NuttX cross-build image.
+#
+# A dedicated cross-toolchain image for building the engine as a NuttX built-in
+# app for the Raspberry Pi RP2350 (Adafruit Feather RP2350) target and producing
+# the UF2 flashed over the BOOTSEL mass-storage / picotool path. Kept separate
+# from the main build image (docker/Dockerfile) so the cross toolchain does not
+# bloat every lint/build/test job that only needs the host + sim toolchain.
+#
+# Unlike the ESP32 image, the RP2350 toolchain ships entirely in Debian trixie,
+# so there is no upstream tarball download — this image is just the slim base
+# plus apt packages:
+#   - gcc-arm-none-eabi (14.2.rel1) + libnewlib-arm-none-eabi — the ARM
+#     bare-metal cross-compiler for the RP2350's dual Cortex-M33 (armv8-m.main).
+#   - picotool (2.1.1) — the NuttX rp23xx board build runs `picotool uf2 convert`
+#     as a post-link step to emit nuttx.uf2. That is a pure file conversion (no
+#     USB), so it belongs in the build image. On-hardware flashing runs picotool
+#     on the HOST (see the Makefile rp2350-flash target), not in here.
+#   - The NuttX kconfig + kbuild prerequisites (same set as the main image's sim
+#     build) plus cmake/ninja for the engine's CMake-driven pieces.
+#   - ccache, wired as a PATH masquerade for both the host and the arm-none-eabi
+#     compilers so CI build jobs warm-cache across pipelines.
+#
+# The WASM supervisor TAR is NOT built here — it is produced by the main image
+# (which carries the wasi-sdk) as the `supervisor` prerequisite, and baked into
+# the boot ROMFS before this image cross-links it. This image therefore needs no
+# wasi-sdk / clang / analysis tooling.
+#
+# Build (single arch):  podman build -f Containerfile.rp2350 -t wanted-rp2350 .
+# Build (multi arch):   podman build --platform linux/amd64,linux/arm64 \
+#                         -f Containerfile.rp2350 -t wanted-rp2350 .
+
+FROM debian:trixie-slim
+
+LABEL maintainer="mek.xgt@gmail.com"
+LABEL org.opencontainers.image.title="wanted-engine-rp2350-build"
+LABEL org.opencontainers.image.description="RP2350 (ARM Cortex-M33) NuttX cross-build toolchain for the WANTED engine."
+LABEL version="0.1.0"
+
+RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update \
+    && export DEBIAN_FRONTEND=noninteractive \
+    && apt-get install -y --no-install-recommends \
+    # Core build toolchain (host side of the NuttX kbuild + CMake pieces)
+    build-essential \
+    ccache \
+    cmake \
+    ninja-build \
+    # NuttX kconfig + kbuild prerequisites (same set as the sim build)
+    kconfig-frontends \
+    genromfs \
+    gperf \
+    flex \
+    bison \
+    gettext \
+    libelf-dev \
+    # ARM bare-metal cross-compiler for the RP2350 (dual Cortex-M33). newlib
+    # provides the multilib archives + headers the NuttX link step references.
+    gcc-arm-none-eabi \
+    libnewlib-arm-none-eabi \
+    # picotool: NuttX rp23xx post-build `uf2 convert` step (file-only, no USB).
+    picotool \
+    # NuttX occasionally shells out to python3 during the build.
+    python3 \
+    python-is-python3 \
+    # Utilities
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    xxd \
+    xz-utils \
+    # Container plumbing (match the main build image's UID-remap entrypoint)
+    dumb-init \
+    gosu \
+    # kconfig-frontends hard-depends on Qt5 for its `qconf` GUI frontend, which
+    # drags in Mesa + LLVM + Z3 (~220 MB) that a headless cross-build never uses.
+    # NuttX only invokes the CLI tools (kconfig-conf/-mconf/-tweak), which do not
+    # link Qt, so force-remove the GUI chain and the orphaned qconf binary in the
+    # same layer. dpkg state for kconfig-frontends is left with unmet (GUI) deps
+    # by design; the image never apt-installs again at runtime.
+    && dpkg --purge --force-depends \
+       libqt5widgets5t64 libqt5gui5t64 libqt5core5t64 \
+       libglx-mesa0 libgl1 libglx0 libglvnd0 mesa-libgallium libllvm19 libz3-4 \
+    && rm -f /usr/bin/kconfig-qconf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Route every compile through ccache via the masquerade dir on PATH. The package
+# ships gcc/clang/g++ symlinks; add cc/c++ (the NuttX kbuild invokes `cc`) and
+# the arm-none-eabi driver names so the cross-build is cached too. One shared
+# cache serves the host-side kbuild and the ARM compiles alike.
+RUN ln -sf ../../bin/ccache /usr/lib/ccache/cc \
+    && ln -sf ../../bin/ccache /usr/lib/ccache/c++ \
+    && for t in gcc g++ cc c++; do \
+         ln -sf /usr/bin/ccache "/usr/lib/ccache/arm-none-eabi-${t}"; \
+       done
+ENV PATH="/usr/lib/ccache:${PATH}"
+
+RUN printf '[safe]\n\tdirectory = /src\n' > /root/.gitconfig
+
+ADD entry.sh /
+
+WORKDIR /src
+
+ENTRYPOINT [ "/bin/sh", "-C", "/entry.sh" ]
