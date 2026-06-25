@@ -15,9 +15,10 @@
  *                                    DHCP lease, or 0.0.0.0 if none)
  *
  * The radio is reached through the NuttX WAPI library on the wlan0 interface.
- * On the host-only scaffolding build the WAPI/NuttX wireless headers are
- * absent, so the node holds state in memory; the real path compiles only for
- * __NuttX__. */
+ * On builds without the WAPI/wireless stack (the Linux sim, or the host-only
+ * scaffolding build) the WAPI/NuttX wireless headers and symbols are absent, so
+ * the node holds state in memory; the real path compiles only when
+ * CONFIG_WIRELESS_WAPI is set (the ESP32 board). */
 
 #include <errno.h>
 #include <stdbool.h>
@@ -27,6 +28,23 @@
 #include <string.h>
 
 #ifdef __NuttX__
+#include <nuttx/config.h>
+#endif
+
+/* The real radio path needs the NuttX WAPI library (the wapi_ and
+ * wpa_driver_wext_ calls) and netlib (ifup/DHCP). Those exist only on a
+ * wireless-capable config -- the ESP32 board (CONFIG_WIRELESS_WAPI=y) -- not
+ * the Linux sim, which builds NuttX with __NuttX__ defined but no wireless
+ * stack. Gate the hardware path on CONFIG_WIRELESS_WAPI so the sim (and the
+ * host scaffolding build) link against the in-memory stub instead of the
+ * absent wapi/netlib symbols. */
+#if defined(__NuttX__) && defined(CONFIG_WIRELESS_WAPI)
+#define WIFI_HW 1
+#else
+#define WIFI_HW 0
+#endif
+
+#if WIFI_HW
 #include <unistd.h>
 
 #include <arpa/inet.h>
@@ -106,7 +124,9 @@ vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options) {
      * esp_wifi_scan_start / association return ESP_ERR_WIFI_NOT_STARTED.
      * Idempotent — a no-op once wlan0 is up. Done here (not per-op) so every
      * wifi operation a granted wapp makes finds the radio started. */
+#if WIFI_HW
     netlib_ifup(ctx->ifname);
+#endif
 
     driver->bytesId = *(const uint32_t *)(id);
     driver->filetype = VFS_FILETYPE_CHARACTER_DEVICE;
@@ -160,7 +180,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
     return 0;
 }
 
-#ifdef __NuttX__
+#if WIFI_HW
 
 /* Run a blocking scan and return its results as one malloc'd text block of
  * "<ssid> <bssid> <rssi>\n" lines (caller owns it). NULL on failure. */
@@ -282,7 +302,7 @@ static int wifi_disconnect(struct vfs_driver_ctx_t *d) {
     return 0;
 }
 
-#endif /* __NuttX__ */
+#endif /* WIFI_HW */
 
 /* read: drain a pending scan result, else return one status line then EOF. */
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
@@ -344,7 +364,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
     if (strncmp(cmd, "scan", 4) == 0) {
         f->status_done = false;
-#ifdef __NuttX__
+#if WIFI_HW
         WantedFree(f->scan);
         f->scan = scan_collect(d->ifname);
         if (f->scan == NULL)
@@ -376,7 +396,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
         if (*pass == ' ')
             *pass++ = '\0';
         f->status_done = false;
-#ifdef __NuttX__
+#if WIFI_HW
         return wifi_connect(d, ssid, pass) < 0 ? -EIO : (int)nbyte;
 #else
         d->state = WIFI_CONNECTED;
@@ -388,7 +408,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
     if (strncmp(cmd, "disconnect", 10) == 0) {
         f->status_done = false;
-#ifdef __NuttX__
+#if WIFI_HW
         return wifi_disconnect(d) < 0 ? -EIO : (int)nbyte;
 #else
         d->state = WIFI_DISCONNECTED;
