@@ -66,6 +66,7 @@ int PlatformWappLoad(const char *path, wapp_t *wapp) {
     }
 
     if (fstat(fd, &st) < 0 || st.st_size <= 0) {
+        /* cppcheck-suppress unreadVariable */ /* used only by DEBUG_TRACE */
         int e = errno;
         close(fd);
         FATAL(-EINVAL, "bad wapp size: %s errno=%d", path, e);

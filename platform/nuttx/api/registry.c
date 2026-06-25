@@ -197,8 +197,8 @@ static void cachePreload(void) {
 
     /* Heap (not stack): this can run on the init task's small stack, and the
      * LittleFS read path below is already stack-hungry. */
-    list = (reg_entry_t *)WantedMalloc(sizeof(reg_entry_t) *
-                                       REGISTRY_MAX_ENTRIES);
+    list =
+        (reg_entry_t *)WantedMalloc(sizeof(reg_entry_t) * REGISTRY_MAX_ENTRIES);
     if (list == NULL)
         return;
 
@@ -235,7 +235,7 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     char targetName[PATH_MAX];
     char ref[WAPP_MAX_IMAGE_REF_LEN];
     reg_entry_t resolved;
-    cache_entry_t *c;
+    const cache_entry_t *c;
     uint8_t *copy;
 
     if (!entry->version[0]) {
