@@ -37,7 +37,8 @@
 #define PSRAM_HI 0x3fc00000u
 
 static struct mm_heap_s *g_extram;
-static uintptr_t g_extram_lo; /* pool bounds, for routing free()/realloc() of a */
+static uintptr_t
+    g_extram_lo; /* pool bounds, for routing free()/realloc() of a */
 static uintptr_t g_extram_hi; /* pointer to the right heap (see in_extram). */
 static bool g_extram_tried;
 

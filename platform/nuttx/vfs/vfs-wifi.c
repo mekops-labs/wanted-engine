@@ -44,9 +44,9 @@
 static const char id[] = {'W', 'i', 'f', 'i'};
 
 #define WIFI_IFNAME "wlan0"
-#define WIFI_MAX_FDS 2     /* concurrent opens of the node */
-#define WIFI_SSID_MAX 33   /* 32 + NUL */
-#define WIFI_SCAN_TRIES 20 /* poll the scan result this many times... */
+#define WIFI_MAX_FDS 2           /* concurrent opens of the node */
+#define WIFI_SSID_MAX 33         /* 32 + NUL */
+#define WIFI_SCAN_TRIES 20       /* poll the scan result this many times... */
 #define WIFI_SCAN_WAIT_US 500000 /* ...waiting this long between polls */
 #define WIFI_CMD_MAX 128         /* longest accepted command line */
 
@@ -57,8 +57,8 @@ enum wifi_state_t {
 
 struct wifi_fd_t {
     bool used;
-    bool status_done;  /* per-fd EOF latch for a status read */
-    char *scan;        /* heap scan-result text, drained by reads */
+    bool status_done; /* per-fd EOF latch for a status read */
+    char *scan;       /* heap scan-result text, drained by reads */
     size_t scan_len;
     size_t scan_off;
 };
@@ -101,11 +101,11 @@ vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options) {
     strncpy(ctx->ifname, ifname, sizeof(ctx->ifname) - 1);
     ctx->state = WIFI_DISCONNECTED;
 
-    /* Bring the interface up as part of driver setup: scan and connect both need
-     * the WiFi station started (ifup -> esp_wifi_start), else esp_wifi_scan_start
-     * / association return ESP_ERR_WIFI_NOT_STARTED. Idempotent — a no-op once
-     * wlan0 is up. Done here (not per-op) so every wifi operation a granted wapp
-     * makes finds the radio started. */
+    /* Bring the interface up as part of driver setup: scan and connect both
+     * need the WiFi station started (ifup -> esp_wifi_start), else
+     * esp_wifi_scan_start / association return ESP_ERR_WIFI_NOT_STARTED.
+     * Idempotent — a no-op once wlan0 is up. Done here (not per-op) so every
+     * wifi operation a granted wapp makes finds the radio started. */
     netlib_ifup(ctx->ifname);
 
     driver->bytesId = *(const uint32_t *)(id);
@@ -192,12 +192,12 @@ static char *scan_collect(const char *ifname) {
     char line[WIFI_SSID_MAX + 64];
     size_t total = 1; /* trailing NUL */
     for (struct wapi_scan_info_s *ap = list.head.scan; ap; ap = ap->next) {
-        int n = snprintf(line, sizeof(line), "%s %02x:%02x:%02x:%02x:%02x:%02x %d\n",
-                         ap->has_essid ? ap->essid : "",
-                         ap->ap.ether_addr_octet[0], ap->ap.ether_addr_octet[1],
-                         ap->ap.ether_addr_octet[2], ap->ap.ether_addr_octet[3],
-                         ap->ap.ether_addr_octet[4], ap->ap.ether_addr_octet[5],
-                         ap->has_rssi ? ap->rssi : 0);
+        int n = snprintf(
+            line, sizeof(line), "%s %02x:%02x:%02x:%02x:%02x:%02x %d\n",
+            ap->has_essid ? ap->essid : "", ap->ap.ether_addr_octet[0],
+            ap->ap.ether_addr_octet[1], ap->ap.ether_addr_octet[2],
+            ap->ap.ether_addr_octet[3], ap->ap.ether_addr_octet[4],
+            ap->ap.ether_addr_octet[5], ap->has_rssi ? ap->rssi : 0);
         if (n > 0)
             total += (size_t)n;
     }
@@ -206,13 +206,12 @@ static char *scan_collect(const char *ifname) {
     if (out != NULL) {
         size_t off = 0;
         for (struct wapi_scan_info_s *ap = list.head.scan; ap; ap = ap->next) {
-            int n = snprintf(out + off, total - off,
-                             "%s %02x:%02x:%02x:%02x:%02x:%02x %d\n",
-                             ap->has_essid ? ap->essid : "",
-                             ap->ap.ether_addr_octet[0], ap->ap.ether_addr_octet[1],
-                             ap->ap.ether_addr_octet[2], ap->ap.ether_addr_octet[3],
-                             ap->ap.ether_addr_octet[4], ap->ap.ether_addr_octet[5],
-                             ap->has_rssi ? ap->rssi : 0);
+            int n = snprintf(
+                out + off, total - off, "%s %02x:%02x:%02x:%02x:%02x:%02x %d\n",
+                ap->has_essid ? ap->essid : "", ap->ap.ether_addr_octet[0],
+                ap->ap.ether_addr_octet[1], ap->ap.ether_addr_octet[2],
+                ap->ap.ether_addr_octet[3], ap->ap.ether_addr_octet[4],
+                ap->ap.ether_addr_octet[5], ap->has_rssi ? ap->rssi : 0);
             if (n > 0)
                 off += (size_t)n;
         }
