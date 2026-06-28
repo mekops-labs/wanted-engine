@@ -186,8 +186,7 @@ static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
 }
 
 /* Core driver table — the platform-agnostic drivers, identical on every target
- * (`platform` and `socket` resolve to platform symbols but have a real backing
- * everywhere, so they belong here too). Platform-specific drivers a target may
+ * Platform-specific drivers a target may
  * lack (gpio, wifi, ...) come from PlatformDriverTable() instead. Core names
  * are reserved: WantedInstallDriver searches this table first, so a platform
  * table cannot shadow a security-relevant driver such as `wanted`. */
