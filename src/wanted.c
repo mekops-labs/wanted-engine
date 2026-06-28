@@ -767,6 +767,10 @@ _freeWasmBytes:
     PlatformExtramFree(ctx->wamr->wasm_bytes);
 _freeWamr:
     WantedFree(ctx->wamr);
+    /* The platform slot keeps pointing at this wapp_data_t; null the freed WAMR
+     * handle so a later PlatformWappGetState (which samples per-wapp memory)
+     * never dereferences a dangling instance. */
+    ctx->wamr = NULL;
 _freeTarfs:
     if (tarfs)
         TarFsDestroy(tarfs);
@@ -793,6 +797,7 @@ void WantedWappStop(wapp_data_t *ctx) {
         wasm_runtime_unload(ctx->wamr->module);
         PlatformExtramFree(ctx->wamr->wasm_bytes);
         WantedFree(ctx->wamr);
+        ctx->wamr = NULL;
 
         DEBUG_TRACE("end");
     }
