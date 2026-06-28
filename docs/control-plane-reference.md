@@ -42,7 +42,18 @@ The `wanted` driver is a device singleton: it mounts at its canonical `/dev/want
 | Path | Access | Description |
 |------|--------|-------------|
 | `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `delete <name>` releases a slot — a `create` reservation or a terminal (`exited`/`failure`) wapp — so the name leaves `wapps/` and its nodes return `-ENOENT` again. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). |
-| `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`) synthesized from the registry — no image load. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image. The version is an opaque tag; each ref component must match `[A-Za-z0-9_][A-Za-z0-9._-]*` or the open is rejected. A plain read of the directory itself returns `-EISDIR`. |
+| `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`, plus the declared linear-memory profile — see below) synthesized from the registry, peeking only the image header. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image. The version is an opaque tag; each ref component must match `[A-Za-z0-9_][A-Za-z0-9._-]*` or the open is rejected. A plain read of the directory itself returns `-EISDIR`. |
+
+The registry descriptor reports each image's **declared** linear-memory envelope, parsed from the wasm `(memory)` section without loading the module — a pre-flight check for whether an image fits this build's per-wapp cap (`WASM_MAX_MEMORY_PAGES`):
+
+| Field | Meaning |
+|-------|---------|
+| `init_pages` | Declared initial linear-memory pages (64 KiB/page). This is what the load-time cap check compares against. |
+| `max_pages` | Declared maximum pages, or `null` when the module declares no maximum (grows to the engine ceiling). |
+| `can_grow` | `true` when the module can grow its memory (no declared max, or max > initial). |
+| `over_cap` | Present when the build sets a cap: `true` when `init_pages` already exceeds it, so the image would be **refused at load**. |
+
+The memory fields are the declared envelope, not a runtime prediction; they are omitted when the image header cannot be read or declares no memory of its own (e.g. an imported memory).
 | `/dev/wanted/config` | r | Supervisor bootstrap meta-config. |
 
 The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, and `reboot`; any other token returns `-EINVAL`. The root ctl does **not** launch wapps — `start` and `stop` exist only per-wapp (`wapps/<name>/ctl`). `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.

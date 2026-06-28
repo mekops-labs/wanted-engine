@@ -11,6 +11,7 @@ Unreleased
 - `/proc/wapps/<name>/` per-wapp observability namespace: a read-only directory tree with `state`, `image`, `version`, `id`, `exit_code`, and `memory`. `/proc/wapps` is now a directory enumerating the running wapps. `memory` reports per-wapp WASM linear-memory accounting (`linear_cur`/`linear_max` bytes, `pages_cur`/`pages_max`). The namespace is reachable without the `/dev/wanted` control mount, so an observability wapp can read it without control authority.
 - `log` mount type: a read-only directory driver over the per-wapp log store, bound via `mounts[]` at an operator-chosen path. `<path>/<name>` reads wapp `<name>`'s captured stdout/stderr and the mount enumerates wapps with a live log slot; an optional `name=<wapp>` option scopes the view to one wapp. Grantable independently of `/dev/wanted`.
 - `observer` sample wapp: enumerates `/proc/wapps`, tails logs through a `log` mount, and confirms the control plane is unreachable without the `wanted` mount.
+- Registry descriptors (`/dev/wanted/reg/<name>:<version>`) now report each image's declared linear-memory profile — `init_pages`, `max_pages` (or `null`), `can_grow`, and `over_cap` when the build caps per-wapp memory — parsed from the image's wasm `(memory)` section without loading the module. A pre-flight check for whether an image fits the cap, instead of "start it and see if it's refused".
 
 ### Changed
 

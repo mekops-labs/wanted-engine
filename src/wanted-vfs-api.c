@@ -11,6 +11,7 @@
 #include <vfs-drivers.h>
 #include <vfs-netfs.h>
 #include <wanted-api.h>
+#include <wanted-config.h>
 #include <wanted-vfs-api.h>
 #include <wanted_malloc.h>
 
@@ -235,18 +236,81 @@ int WantedWasmMemoryProfile(const uint8_t *buf, size_t len, uint32_t *init,
     return -ENOENT; /* no memory section (e.g. an imported memory) */
 }
 
+/* Leading bytes of an image to peek for the wasm memory section. The section
+ * precedes the (bulky) code section, so a small window reaches it for real
+ * wapps; a too-short window just yields no memory metadata. */
+#define REG_IMAGE_PEEK 8192
+#define TAR_BLOCK 512
+
+/* Append the image's declared linear-memory profile to the descriptor JSON at
+ * *n (which currently ends just before the closing brace). Best effort: on any
+ * failure the descriptor is left unchanged, so the fields are simply absent. */
+static void appendMemoryProfile(const reg_entry_t *entry, char *buf, int *n,
+                                size_t bufLen) {
+    uint8_t *peek = WantedMalloc(REG_IMAGE_PEEK);
+    if (peek == NULL)
+        return;
+
+    int got = PlatformRegistryReadImage(entry, peek, REG_IMAGE_PEEK);
+    /* The .wapp is a ustar archive whose first member is app.wasm; its content
+     * begins at the 512-byte block boundary after the header. */
+    if (got > TAR_BLOCK && memcmp(peek, "app.wasm", sizeof("app.wasm")) == 0) {
+        uint32_t init = 0, max = 0;
+        bool has_max = false;
+        if (WantedWasmMemoryProfile(peek + TAR_BLOCK, (size_t)got - TAR_BLOCK,
+                                    &init, &has_max, &max) == 0) {
+            bool can_grow = !has_max || max > init;
+            int w = snprintf(buf + *n, bufLen - (size_t)*n,
+                             ",\"init_pages\":%u,\"can_grow\":%s",
+                             (unsigned)init, can_grow ? "true" : "false");
+            if (w > 0 && *n + w < (int)bufLen)
+                *n += w;
+
+            if (has_max)
+                w = snprintf(buf + *n, bufLen - (size_t)*n, ",\"max_pages\":%u",
+                             (unsigned)max);
+            else
+                w = snprintf(buf + *n, bufLen - (size_t)*n,
+                             ",\"max_pages\":null");
+            if (w > 0 && *n + w < (int)bufLen)
+                *n += w;
+
+#if WASM_MAX_MEMORY_PAGES > 0
+            /* The build caps per-wapp linear memory; flag an image whose
+             * declared initial memory already exceeds the cap — it would be
+             * refused at load. */
+            w = snprintf(buf + *n, bufLen - (size_t)*n, ",\"over_cap\":%s",
+                         init > WASM_MAX_MEMORY_PAGES ? "true" : "false");
+            if (w > 0 && *n + w < (int)bufLen)
+                *n += w;
+#endif
+        }
+    }
+
+    WantedFree(peek);
+}
+
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen) {
     if (entry == NULL || buf == NULL)
         return -EINVAL;
 
     /* Inspecting a registry entry returns a small descriptor synthesized from
-     * the entry itself (name/version/size). */
+     * the entry (name/version/size), plus the image's declared linear-memory
+     * profile when it can be read from the image header. */
     int n = snprintf((char *)buf, bufLen,
-                     "{\"name\":\"%s\",\"version\":\"%s\",\"size\":%zu}",
+                     "{\"name\":\"%s\",\"version\":\"%s\",\"size\":%zu",
                      entry->name, entry->version, entry->size);
     if (n < 0)
         return -EIO;
+    if (n >= (int)bufLen)
+        return (int)bufLen;
+
+    appendMemoryProfile(entry, (char *)buf, &n, bufLen);
+
+    int w = snprintf((char *)buf + n, bufLen - (size_t)n, "}");
+    if (w > 0 && n + w < (int)bufLen)
+        n += w;
     return n < (int)bufLen ? n : (int)bufLen;
 }
 
