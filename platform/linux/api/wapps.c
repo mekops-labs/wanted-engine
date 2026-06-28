@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <errno.h>
+#include <limits.h>
 #include <pthread.h>
 #include <sched.h>
 #include <stdio.h>
@@ -130,6 +131,22 @@ void *WA_thread(void *ptr) {
  * in that task). Wapps run at this base; the supervisor one step above it. */
 static int basePriority = -1;
 
+/* Worker thread's native C stack. Set explicitly (not the 8 MB glibc default)
+ * so every platform sizes it the same way — the WAMR classic interpreter is
+ * recursive and the WASI/VFS host calls add frames (see WASM_WORKER_STACK_SIZE
+ * in wanted-config.h). Floored at PTHREAD_STACK_MIN so a tight profile cannot
+ * drop below what the C library accepts. */
+static size_t worker_stacksize(void) {
+    size_t ss = WASM_WORKER_STACK_SIZE;
+#ifdef PTHREAD_STACK_MIN
+    if (ss < (size_t)PTHREAD_STACK_MIN)
+        ss = (size_t)PTHREAD_STACK_MIN;
+#endif
+    return ss;
+}
+
+size_t PlatformWorkerStackSize(void) { return worker_stacksize(); }
+
 /* Start a worker thread for a wapp. The supervisor runs one scheduling step
  * above the wapps it manages so it can always preempt and terminate a runaway
  * (e.g. a never-yielding wapp). Priorities are set explicitly rather than
@@ -154,16 +171,19 @@ static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
         sp.sched_priority = hi;
 
     pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, worker_stacksize());
     pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
     pthread_attr_setschedpolicy(&attr, SCHED_RR);
     pthread_attr_setschedparam(&attr, &sp);
     rc = pthread_create(t, &attr, WA_thread, (void *)data);
+    if (rc != 0) {
+        /* No privilege for real-time scheduling: keep the explicit stack size
+         * but inherit the parent's scheduling. */
+        pthread_attr_setinheritsched(&attr, PTHREAD_INHERIT_SCHED);
+        rc = pthread_create(t, &attr, WA_thread, (void *)data);
+    }
     pthread_attr_destroy(&attr);
-    if (rc == 0)
-        return 0;
-
-    /* No privilege for real-time scheduling: use default scheduling. */
-    return pthread_create(t, NULL, WA_thread, (void *)data);
+    return rc;
 }
 
 int PlatformWappStart(wapp_t *wapp) {

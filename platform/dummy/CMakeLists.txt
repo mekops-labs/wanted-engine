@@ -1,6 +1,9 @@
 set(sources
     dummy.c
     dummy-fs.c
+    dummy-gpio.c
+    dummy-wifi.c
+    dummy-extram.c
     dummy-registry.c
     dummy-wapps.c
     dummy-net.c

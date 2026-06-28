@@ -12,7 +12,8 @@
 	url = https://github.com/mek-x/c9.git
 [submodule "vendor/wamr"]
 	path = vendor/wamr
-	url = https://github.com/bytecodealliance/wasm-micro-runtime
+	url = https://github.com/mekops-labs/wasm-micro-runtime
+	branch = esp32_port
 [submodule "third_party/nuttx-apps"]
 	path = third_party/nuttx-apps
 	url = https://github.com/mekops-labs/nuttx-apps.git

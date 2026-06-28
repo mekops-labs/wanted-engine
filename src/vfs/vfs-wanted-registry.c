@@ -17,7 +17,9 @@
 
 /* Registry capacity: the most image entries a single mount tracks. */
 #define MAX_REG_ENTRIES 50
-static const char VERSION_SEPARATOR = ':';
+/* '@' (not ':') so an install ref maps to a VFAT-legal on-disk filename — see
+ * REGISTRY_VERSION_SEPARATOR in platform-config.h. */
+static const char VERSION_SEPARATOR = '@';
 
 /* Longest install ref "<name>:<version>" (+NUL) the driver buffers between an
  * install open and its finalizing close. */

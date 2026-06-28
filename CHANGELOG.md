@@ -4,14 +4,25 @@ Changelog
 Unreleased
 ----------
 
+### Added
+
+- `gpio` device driver: a wapp granted `{ "name": "gpio" }` in its launch config's `drivers[]` gets `/dev/gpio`, a text level node — `write "1"/"0"` drives the pin high/low and `read` returns `"0\n"/"1\n"`. The engine performs the GPIO ioctl (`GPIOC_WRITE`/`GPIOC_READ`); the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via the driver options) and an in-memory level on Linux.
+- `blink` sample wapp: toggles `/dev/gpio` in a 1 Hz loop.
+
 ### Changed
 
-- `/proc/wanted` now reports `wasm_max_pages` and `log_slots`.
+- The NuttX built-in's compiled-in default config now runs the supervisor privileged (`system.privileged: true`), so the privileged `/proc` entries (e.g. `/proc/memory`) are readable by the control-plane supervisor. Launched wapps are configured separately and do not inherit it.
+- The launch-config slot tables (the control-plane `pending` reservations and the parsed engine config) are now allocated on the heap on first use instead of living in static `.bss`. On constrained targets this moves the large per-`wapp_config_t` driver/mount/socket slot tables off limited internal RAM (and onto a heap that may extend into PSRAM); the slot-size limits can be raised without static-RAM pressure.
+- `/proc/wanted` now reports `wasm_max_pages`, `log_slots`, `wasm_worker_stack` (the effective per-wapp worker thread stack), `max_drivers`, and `max_options`.
+- Worker threads are now created with an explicit native C stack (`WASM_WORKER_STACK_SIZE`) on every platform instead of the OS default, so the recursive WAMR interpreter cannot overflow a small RTOS default thread stack (NuttX defaults to ~2 KB).
 
 ### Build
 
 - Centralized engine-wide resource limits into `src/include/wanted-config.h` (overridable via cmake profiles and `-D` in nuttx).
-- Added resource-limit profiles (`constrained`, `small`, `big`) under `cmake/profiles/`.
+- Added resource-limit profiles (`tiny`, `constrained`, `small`, `big`) under `cmake/profiles/`.
+- Made `MAX_DRIVERS_CNT` and `MAX_OPTIONS_SIZE` profile-tunable footprint knobs (moved to `wanted-config.h`); the constrained default shrinks the launch-config slot table so the engine's static `.bss` fits an ESP32's internal DRAM.
+- Added the `tiny` profile for boards with no external PSRAM (e.g. ESP32-WROOM): the smallest limits, sized so both static `.bss` and the runtime WASM allocations fit internal RAM with no heap relocation.
+- Added `WASM_WORKER_STACK_SIZE` as a profile-tunable knob; `make sizes` now includes the worker stack in the per-wapp footprint.
 - Added `WASM_MAX_MEMORY_PAGES` to cap per-wapp linear memory (`make memcap` and some new selftests added for testing)
 - Added `make sizes` to report memory footprint and struct sizes for each profile.
 

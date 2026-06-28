@@ -206,6 +206,18 @@ static int buildWasiArgs(wasi_ctx_t *wasiCtx, const wapp_t *wapp) {
 
 /* WAMR runtime init is global and one-shot. Called lazily from both
  * WantedStart and WantedWappRun so direct callers (tests) work too. */
+/* WAMR custom-allocator hooks routing every runtime + linear-memory allocation
+ * to external RAM (PSRAM on the ESP32), keeping internal RAM for task stacks.
+ * The signature varies with WASM_MEM_ALLOC_WITH_USAGE, which the NuttX build
+ * enables so linear memory goes through the allocator rather than os_mmap. */
+static void *wamrMalloc(unsigned int size) {
+    return PlatformExtramMalloc(size);
+}
+static void *wamrRealloc(void *ptr, unsigned int size) {
+    return PlatformExtramRealloc(ptr, size);
+}
+static void wamrFree(void *ptr) { PlatformExtramFree(ptr); }
+
 static int ensureWamrInit(void) {
     static bool initialized = false;
     if (initialized)
@@ -213,7 +225,14 @@ static int ensureWamrInit(void) {
 
     RuntimeInitArgs init_args;
     memset(&init_args, 0, sizeof(init_args));
-    init_args.mem_alloc_type = Alloc_With_System_Allocator;
+    /* Allocate WAMR's runtime + linear memory from external RAM (PSRAM on the
+     * ESP32) so internal RAM is left for worker task stacks, which can only
+     * live in internal RAM. On targets without external RAM these resolve to
+     * the ordinary heap, so behaviour is unchanged. */
+    init_args.mem_alloc_type = Alloc_With_Allocator;
+    init_args.mem_alloc_option.allocator.malloc_func = (void *)wamrMalloc;
+    init_args.mem_alloc_option.allocator.realloc_func = (void *)wamrRealloc;
+    init_args.mem_alloc_option.allocator.free_func = (void *)wamrFree;
     if (!wasm_runtime_full_init(&init_args)) {
         DEBUG_TRACE("wasm_runtime_full_init failed");
         return -1;
@@ -283,19 +302,24 @@ static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
  * key:\tvalue line per field: human-readable, trivially split on the tab. */
 static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
-    int w = snprintf((char *)buf, bufLen,
-                     "platform:\t%s\n"
-                     "version:\t%s\n"
-                     "max_wapps:\t%d\n"
-                     "max_wapp_name:\t%d B\n"
-                     "max_path:\t%d B\n"
-                     "wasm_stack:\t%d B\n"
-                     "wasm_heap:\t%d B\n"
-                     "wasm_max_pages:\t%d\n"
-                     "log_slots:\t%d\n",
-                     PlatformName(), WANTED_VERSION, MAX_WAPPS,
-                     WAPP_MAX_NAME_LEN, MAX_PATH_LEN, WASM_STACK_SIZE,
-                     WASM_HEAP_SIZE, WASM_MAX_MEMORY_PAGES, LOG_SLOTS);
+    int w =
+        snprintf((char *)buf, bufLen,
+                 "platform:\t%s\n"
+                 "version:\t%s\n"
+                 "max_wapps:\t%d\n"
+                 "max_wapp_name:\t%d B\n"
+                 "max_path:\t%d B\n"
+                 "wasm_stack:\t%d B\n"
+                 "wasm_heap:\t%d B\n"
+                 "wasm_worker_stack:\t%zu B\n"
+                 "wasm_max_pages:\t%d\n"
+                 "max_drivers:\t%d\n"
+                 "max_options:\t%d B\n"
+                 "log_slots:\t%d\n",
+                 PlatformName(), WANTED_VERSION, MAX_WAPPS, WAPP_MAX_NAME_LEN,
+                 MAX_PATH_LEN, WASM_STACK_SIZE, WASM_HEAP_SIZE,
+                 PlatformWorkerStackSize(), WASM_MAX_MEMORY_PAGES,
+                 MAX_DRIVERS_CNT, MAX_OPTIONS_SIZE, LOG_SLOTS);
     if (w < 0)
         return -EIO;
     return w < (int)bufLen ? w : (int)bufLen;
@@ -404,7 +428,7 @@ int WantedWappRun(wapp_data_t *ctx) {
      * holds references into it for the module's lifetime. TarFS-mapped layer
      * memory is shared with other consumers and unsafe to mutate, so copy
      * to a heap buffer freed after wasm_runtime_unload. */
-    ctx->wamr->wasm_bytes = WantedMalloc(wasmLen);
+    ctx->wamr->wasm_bytes = PlatformExtramMalloc(wasmLen);
     if (!ctx->wamr->wasm_bytes) {
         DEBUG_TRACE("Can't allocate writable wasm buffer");
         ret = -1;
@@ -725,7 +749,7 @@ _deinstantiate:
 _unloadModule:
     wasm_runtime_unload(ctx->wamr->module);
 _freeWasmBytes:
-    WantedFree(ctx->wamr->wasm_bytes);
+    PlatformExtramFree(ctx->wamr->wasm_bytes);
 _freeWamr:
     WantedFree(ctx->wamr);
 _freeTarfs:
@@ -752,7 +776,7 @@ void WantedWappStop(wapp_data_t *ctx) {
         wasm_runtime_destroy_exec_env(ctx->wamr->exec_env);
         wasm_runtime_deinstantiate(ctx->wamr->instance);
         wasm_runtime_unload(ctx->wamr->module);
-        WantedFree(ctx->wamr->wasm_bytes);
+        PlatformExtramFree(ctx->wamr->wasm_bytes);
         WantedFree(ctx->wamr);
 
         DEBUG_TRACE("end");

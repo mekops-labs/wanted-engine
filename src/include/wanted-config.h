@@ -90,11 +90,43 @@
 #define WASM_MAX_MEMORY_PAGES 1
 #endif
 
+/* Native C stack for a wapp's worker thread, in bytes. This is the host thread
+ * stack the WAMR classic interpreter (recursive) and the engine's WASI/VFS host
+ * calls run on — distinct from the WASM operand stack (WASM_STACK_SIZE, in
+ * heap) and the wapp's in-linear-memory aux stack. On an RTOS the per-thread
+ * default is tiny (NuttX CONFIG_PTHREAD_STACK_DEFAULT is ~2 KB) and overflows
+ * the moment real wasm runs, so the platform sets this explicitly; worst-case
+ * cost is MAX_WAPPS * WASM_WORKER_STACK_SIZE, allocated from the heap (PSRAM
+ * when present). Hosted platforms (Linux) use the OS default and ignore this.
+ */
+#ifndef WASM_WORKER_STACK_SIZE
+#define WASM_WORKER_STACK_SIZE 65536
+#endif
+
 /* VFS path buffer length, in bytes. Sizes every fixed path buffer in a launch
  * config (wapp_driver_t.path) and the supervisor image path; cost is linear in
  * the number of such buffers. Shared across the engine and platform layers. */
 #ifndef MAX_PATH_LEN
 #define MAX_PATH_LEN 256
+#endif
+
+/* Per-section launch-config resource slots — the array length of each of a
+ * launch config's drivers[], mounts[] and sockets[] sections. A wapp_config_t
+ * embeds three such arrays of wapp_driver_t, and the engine keeps MAX_WAPPS
+ * pending configs plus the supervisor config, so this is multiplied many times
+ * into the static footprint. The constrained default covers the handful a
+ * single wapp realistically declares; larger targets opt up via a profile. */
+#ifndef MAX_DRIVERS_CNT
+#define MAX_DRIVERS_CNT 6
+#endif
+
+/* Driver options blob, in bytes — the per-entry wapp_driver_t.options string
+ * (e.g. a mount's "src=..." or a socket's transport address). Replicated across
+ * every driver/mount/socket slot, so with MAX_DRIVERS_CNT it is a dominant term
+ * in the static footprint. The constrained default holds a typical options
+ * string with headroom; larger targets opt up via a profile. */
+#ifndef MAX_OPTIONS_SIZE
+#define MAX_OPTIONS_SIZE 128
 #endif
 
 /* Per-wapp log ring slots. Derived from MAX_WAPPS — one log ring per wapp slot;

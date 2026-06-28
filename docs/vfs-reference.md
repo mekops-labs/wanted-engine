@@ -47,7 +47,7 @@ A read-only, flat namespace exposing system state. Privileged entries are visibl
 | `/proc/wapps` | r | yes | Per-wapp state — name and status for each running wapp. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_max_pages`, `log_slots`. |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`. |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
@@ -61,9 +61,17 @@ max_wapp_name:	15 B
 max_path:	256 B
 wasm_stack:	8192 B
 wasm_heap:	8192 B
+wasm_worker_stack:	65536 B
 wasm_max_pages:	1
+max_drivers:	6
+max_options:	128 B
 log_slots:	3
 ```
+
+`wasm_worker_stack` is the effective per-wapp worker thread native C stack (the
+configured `WASM_WORKER_STACK_SIZE` after the platform's `PTHREAD_STACK_MIN`
+floor); `max_drivers` / `max_options` size each launch-config drivers/mounts/sockets
+section and the per-entry options blob.
 
 `platform` is the build target (`linux`, `nuttx`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
 
@@ -89,6 +97,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 |--------|---------|------|---------|
 | `wanted` | `drivers[]` | `/dev/wanted` | The control-plane namespace; privileged supervisors only. Fully specified in the [Control Plane Reference](control-plane-reference.md). |
 | `null` | `drivers[]` | `/dev/null` | Bit bucket. |
+| `gpio` | `drivers[]` | `/dev/gpio` | A GPIO pin as a text level node — `write "1"/"0"` drives it high/low, `read` returns `"0\n"/"1\n"`. The engine does the GPIO ioctl; the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via `options`), an in-memory level on Linux. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
 | `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
 | `config` | `mounts[]` | chosen `path` (e.g. `/etc/config`) | Read-only config-file injection, reachable outside `/dev`. |
