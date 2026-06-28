@@ -107,9 +107,9 @@ TEST(vfs_wanted_wapps, ReadDirWapp_ListsControlFiles) {
     TEST_ASSERT_TRUE(HasBytes(buf, used, "ctl", 3));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "state", 5));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "config", 6));
-    TEST_ASSERT_TRUE(HasBytes(buf, used, "log", 3));
-    /* The pure-observability nodes moved to /proc/wapps. */
+    /* Observability reads moved to /proc/wapps; logs are a mountable driver. */
     TEST_ASSERT_FALSE(HasBytes(buf, used, "version", 7));
+    TEST_ASSERT_FALSE(HasBytes(buf, used, "log", 3));
 }
 
 TEST(vfs_wanted_wapps, Stat_RootIsDir_LeafIsCharDevice) {

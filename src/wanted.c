@@ -58,8 +58,8 @@ void WantedWappMemStats(const struct wamrData_t *wamr, wapp_state_t *out) {
  * three of a wapp's standard fds must be wired or it fails to launch, so an
  * empty slot resolves to a default rather than to nothing: stdin to `null` (no
  * input source by default), stdout/stderr to `log` (captured to the per-wapp
- * ring buffer and readable at /dev/wanted/wapps/<name>/log, so a wapp's output
- * is never silently lost). A slot set explicitly overrides its default. */
+ * ring buffer and readable through a `log` mount, so a wapp's output is never
+ * silently lost). A slot set explicitly overrides its default. */
 #define DEFAULT_CONSOLE_IN "null"
 #define DEFAULT_CONSOLE_OUT "log"
 #define DEFAULT_CONSOLE_ERR "log"
@@ -697,6 +697,26 @@ int WantedWappRun(wapp_data_t *ctx) {
                                    readonly);
             if (rc < 0) {
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
+            }
+        } else if (strcmp(m->name, "log") == 0) {
+            /* A `log` mount is the read-only directory view over the per-wapp
+             * LogStore, bound at the wapp-visible m->path. `options` may carry
+             * `name=<wapp>` to scope the view to a single wapp; absent, it
+             * exposes every wapp's log. Distinct from the console `log` driver
+             * (the write/capture side selected via console:{}). */
+            vfs_driver_t *drv = VfsLogMountInit(wapp, m->options);
+            if (drv == NULL) {
+                DEBUG_TRACE("mounts[%zu] '%s': can't create log mount", i,
+                            m->name);
+                ret += -EINVAL;
+                continue;
+            }
+            int rc = VfsMountDriver(ctx->vfs, m->path, drv);
+            if (rc < 0) {
+                DEBUG_TRACE("VfsMountDriver(%s) failed: %d", m->path, rc);
+                if (drv->Destroy)
+                    drv->Destroy(drv);
+                ret += rc;
             }
         } else {
             ret += WantedInstallDriver(ctx->vfs, wapp, m->name, m->path,
