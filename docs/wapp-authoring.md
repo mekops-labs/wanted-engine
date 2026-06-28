@@ -39,7 +39,7 @@ hello:0.0.1-1.wapp           # the TAR (registry filename: <name>:<version>-<pac
 
 ## Image identity
 
-A wapp image has **no embedded metadata** — its identity is the registry filename. Installing the TAR as `registry/<name>:<version>-<package>.wapp` is what gives the image its name and version; the loader reads both back from the registry entry, and `/proc/wapps` / the `version` control node report them. A missing or unreadable `app.wasm` rejects the image at load.
+A wapp image has **no embedded metadata** — its identity is the registry filename. Installing the TAR as `registry/<name>:<version>-<package>.wapp` is what gives the image its name and version; the loader reads both back from the registry entry, and the `/proc/wapps/<name>/` status nodes (`image`, `version`, …) report them. A missing or unreadable `app.wasm` rejects the image at load.
 
 **Instance identity is separate from image identity.** A running wapp is an *instance*, created by `create <instance>` on the control plane; the *image* it runs is named by the instance's launch config (`"image": "<name>"`, defaulting to the instance name) or by an explicit `start <image>`. One image can therefore run as N independent instances — the engine reports each under its instance name and records the image it runs on the per-instance `image` node. See [Control Plane Reference](control-plane-reference.md).
 

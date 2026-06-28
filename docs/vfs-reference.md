@@ -40,11 +40,17 @@ close(fd);                                    /* signals EOF to the reader */
 
 ## `/proc/` — process namespace
 
-A read-only, flat namespace exposing system state. Privileged entries are visible only when the engine config sets `system.privileged: true`; otherwise they are hidden from both reads and directory enumeration.
+A read-only namespace exposing system state. Privileged entries are visible only when the engine config sets `system.privileged: true`; otherwise they are hidden from both reads and directory enumeration.
 
 | Path | Access | Privileged | Content |
 |------|--------|:----------:|---------|
-| `/proc/wapps` | r | yes | Per-wapp state — name and status for each running wapp. |
+| `/proc/wapps` | r (dir) | yes | A directory: one subdirectory per running wapp (`readdir` enumerates them). Each `/proc/wapps/<name>/` exposes the read-only status leaves below. |
+| `/proc/wapps/<name>/state` | r | yes | Lifecycle token (`running`, `exited`, `failure`, …) for a running/terminal instance. |
+| `/proc/wapps/<name>/image` | r | yes | The registry image the instance runs. |
+| `/proc/wapps/<name>/version` | r | yes | The image's version tag (opaque string). |
+| `/proc/wapps/<name>/id` | r | yes | Engine-assigned wapp id (decimal). |
+| `/proc/wapps/<name>/exit_code` | r | yes | WASI exit code (authoritative when `state == exited`; else the sentinel `-1`). |
+| `/proc/wapps/<name>/memory` | r | yes | Per-wapp WASM linear-memory accounting: `linear_cur` / `linear_max` (bytes) and `pages_cur` / `pages_max`. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
 | `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, and `drivers` (the drivers available on this build). |
@@ -106,8 +112,9 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
 | `config` | `mounts[]` | chosen `path` (e.g. `/etc/config`) | Read-only config-file injection, reachable outside `/dev`. |
 | `9p` | `mounts[]` | chosen `path` | 9P2000 client for an external FS plugin. |
+| `log` | `mounts[]` | chosen `path` | Read-only directory view of per-wapp captured logs. `<path>/<name>` reads wapp `<name>`'s ring-buffered output; the mount enumerates wapps with a live log slot. A `name=<wapp>` option scopes it to one wapp (default: all). Grantable independently of `/dev/wanted`. |
 | `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
-| `log` | console slot | — | Console capture; output readable at `/dev/wanted/wapps/<name>/log`. |
+| `log` | console slot | — | Console capture: routes a wapp's stdout/stderr into its per-wapp log slot (read back via a `log` mount). |
 
 ### `socket` — the `/net/` network namespace
 
