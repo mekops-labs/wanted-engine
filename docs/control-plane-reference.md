@@ -179,7 +179,7 @@ A wapp that needs a console, drivers, mounts, or sockets has its config written 
 | Field | Type | Notes |
 |-------|------|-------|
 | `image` | string | **Optional** registry image this instance runs, as a reference `<name>[:<tag>]` — a bare name resolves to the first match, a pinned tag (`duplex:stable`) resolves exactly. When omitted it defaults to the instance name, so a single-instance wapp needs no `image`. Set it to run several instances off one image, or override it per launch with `start <image>`. |
-| `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. **Optional**: an unset slot defaults — `in` to `null`, `out`/`err` to `log` — so a wapp launches without an explicit console and its output is captured to the `log` node. Override a slot with `log` (capture), `null` (discard), or `platform` (redirect to the engine's native stdio, fds 0/1/2). The `platform` *name* backs stdio here; in `mounts[]` it is instead a host directory. |
+| `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. **Optional**: an unset slot defaults — `in` to `null`, `out`/`err` to `log` — so a wapp launches without an explicit console and its output is captured to the per-wapp log (read through a `log` mount). Override a slot with `log` (capture), `null` (discard), `pipe` (a live stream a peer reads at `/dev/pipe/<wapp>.<slot>`), or `platform` (redirect to the engine's native stdio, fds 0/1/2). The `platform` *name* backs stdio here; in `mounts[]` it is instead a host directory. |
 | `drivers` | array | Up to 10 device singletons. Each mounts at `/dev/<name>` derived from the name; a `path` is rejected. |
 | `mounts` | array | Up to 10 file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev`, `/proc` and `/net`. The `platform` backend binds a host directory as a native WASI preopen (a bind mount); the `volume` backend binds an engine-managed persistent store (the wapp names only a volume, the engine owns the host path); other backends mount through the VFS router. `options` are backend-specific — see below. |
 | `sockets` | array | Up to 10 named connections. Each is created at `/net/<name>`; the transport is the entry's `address`. A `path` is rejected. |
@@ -190,7 +190,7 @@ Entry shapes per section:
 
 | Section | Keys | Notes |
 |---------|------|-------|
-| `console.*` | `name`, `options` | `name` is one of `null`, `log`, `platform`. |
+| `console.*` | `name`, `options` | `name` is one of `null`, `log`, `pipe`, `platform`. For `pipe`, `options` may pin the pipe name (`name=<pipe>`); otherwise it is `<wapp>.<slot>`. |
 | `drivers[]` | `name`, `options` | `name` is a device driver (e.g. `null`, `wanted`); mounted at `/dev/<name>`. |
 | `mounts[]` | `name`, `path`, `options` | `name` is a file/backend driver (`platform`, `volume`, `config`, `9p`); `path` is required, absolute, and outside `/dev`/`/net`. |
 | `sockets[]` | `name`, `address` | `name` is the `/net` node label; `address` is a URL `<scheme>://<host>:<port>` with scheme `tcp`/`udp`/`tcps`/`udps`. |
