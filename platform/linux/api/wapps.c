@@ -420,7 +420,11 @@ int PlatformWappGetState(wapp_state_t *wapps, size_t appsLen) {
         wapps[r].version[WAPP_MAX_VERSION_LEN - 1] = '\0';
         wapps[r].id = state.threads[i].data.id;
         wapps[r].exit_code = state.threads[i].data.exit_code;
-        WantedWappMemStats(state.threads[i].data.wamr, &wapps[r]);
+        /* Only a running wapp has a live WAMR instance to sample; sampling a
+         * terminated slot would chase a torn-down instance. */
+        WantedWappMemStats(wapps[r].status == RUNNING ? state.threads[i].data.wamr
+                                                      : NULL,
+                           &wapps[r]);
         r++;
     }
 
