@@ -20,6 +20,18 @@
 #include <wanted-api.h>
 #include <wanted_malloc.h>
 
+/* The Linux host has no driver the engine drives directly: gpio/wifi are
+ * hardware capabilities with no host backing, so the platform offers none. A
+ * launch config naming such a driver fails with -ENODEV. A real backing
+ * (sysfs/libgpiod) would add an entry here. */
+static const vfs_driver_table_t linux_driver_table[] = {
+    {NULL, NULL},
+};
+
+const vfs_driver_table_t *PlatformDriverTable(void) {
+    return linux_driver_table;
+}
+
 static const char id[] = {'L', 'i', 'n', 'u'};
 
 static int _Destroy(struct vfs_driver_t *d);
