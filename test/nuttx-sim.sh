@@ -36,7 +36,25 @@ deps() {
     # The NuttX + apps forks are excluded from CI's default recursive submodule
     # fetch (only this job needs them, and they are large). Shallow-init them
     # here; a no-op on a tree that is already at the correct pinned commit.
-    git -C "$ENGINE_DIR" submodule update --init --recursive --depth 1 \
+    #
+    # CI reuses the project workspace across jobs/pipelines, and because these
+    # paths are skipped by the runner's submodule fetch (GIT_SUBMODULE_PATHS in
+    # .gitlab-ci.yml), a worktree dir can survive from a prior run without its
+    # module store. `git submodule update --init` then tries to *clone* into a
+    # non-empty dir and aborts ("destination path ... already exists and is not
+    # an empty directory"). Make init idempotent: keep a pristine checkout (the
+    # warm cache, status prefix ' '), but scrub any inconsistent leftover —
+    # worktree and/or module store — so the clone below starts from clean state.
+    local gitdir sm
+    gitdir=$(git -C "$ENGINE_DIR" rev-parse --absolute-git-dir)
+    for sm in third_party/nuttx third_party/nuttx-apps; do
+        case "$(git -C "$ENGINE_DIR" submodule status -- "$sm" 2>/dev/null)" in
+            " "*) continue ;;   # present at the pinned commit — leave it (cache hit)
+        esac
+        git -C "$ENGINE_DIR" submodule deinit -f -- "$sm" >/dev/null 2>&1 || true
+        rm -rf "${ENGINE_DIR:?}/$sm" "$gitdir/modules/$sm"
+    done
+    git -C "$ENGINE_DIR" submodule update --init --recursive --depth 1 --force \
         third_party/nuttx third_party/nuttx-apps
 
     local appdir="$APPS_DIR/system/wanted"
@@ -231,56 +249,110 @@ syscontrol() {
     SUPERVISOR_TAR=$ENGINE_DIR/wasm/supervisor/wsh/supervisor.tar
     build
 
-    local rc=0 marker="Following commands are available"
+    local rc=0 ok marker="Following commands are available" banner="Wsh v "
+    # Everything below is keyed on deterministic console signals (the wsh banner
+    # and the help listing) and process liveness, polled up to generous caps —
+    # never fixed sleeps. The engine loop only samples its control flags once a
+    # second, so poweroff/reboot take a tick or two to return; a loaded CI runner
+    # stacks scheduling jitter on top. Tight windows here are what produced the
+    # intermittent "did not exit" / "left respawning" false negatives, so the
+    # caps are deliberately loose (the happy path returns as soon as the signal
+    # appears; only a genuine hang waits the cap out).
+    local boot_tenths=600        # 60s for the sim to print the wsh banner
+    local act_tenths=300         # 30s for an exit / respawn to take effect
 
-    # Boot the sim with a console FIFO, run the timed "delay:cmd" steps, and set
-    # SIM_ALIVE (1/0) + SIM_OUT. The sim is killed by PID, never orphaned.
-    SIM_OUT=""; SIM_ALIVE=0
-    drive_sim() {
-        local fifo ep i
+    SIM_OUT=""; SIM_PID=0
+    # Boot the sim with a console FIFO held open (no premature stdin EOF) and
+    # block until wsh prints its banner. Returns non-zero if the sim never
+    # reaches the prompt — an infra/boot failure, kept distinct from a feature
+    # failure so a slow/broken boot is never mistaken for a passing control path.
+    boot_sim() {
+        local fifo _
         SIM_OUT=$(mktemp); fifo=$(mktemp -u); mkfifo "$fifo"
         ( cd "$SIMROOT" && exec "$NUTTX_DIR/nuttx" ) <"$fifo" >"$SIM_OUT" 2>&1 &
-        ep=$!
+        SIM_PID=$!
         exec 9>"$fifo"
-        # Wait for wsh to reach its prompt before driving it. Boot time varies by
-        # runner (a slow one is not ready at a fixed 2s), so poll for the banner
-        # rather than assume a delay — sending a command before stdin is read
-        # would be lost and a quiesce/poweroff would be missed.
-        for i in $(seq 1 200); do
-            grep -q "Wsh v" "$SIM_OUT" 2>/dev/null && break
+        for _ in $(seq 1 "$boot_tenths"); do
+            grep -qF "$banner" "$SIM_OUT" 2>/dev/null && return 0
+            kill -0 "$SIM_PID" 2>/dev/null || return 1   # sim died during boot
             sleep 0.1
         done
-        local spec
-        for spec in "$@"; do sleep "${spec%%:*}"; printf '%s\n' "${spec#*:}" >&9; done
-        # Poll the outcome: poweroff/reboot return from the engine loop (the sim
-        # exits); exit respawns (it stays up). The loop ticks ~1s, so give it a
-        # few seconds to act rather than sampling liveness once.
-        for i in $(seq 1 50); do
-            kill -0 "$ep" 2>/dev/null || break
+        return 1
+    }
+    send()      { printf '%s\n' "$1" >&9; }              # one command line to wsh
+    sim_alive() { kill -0 "$SIM_PID" 2>/dev/null; }
+    stop_sim() {                                         # kill by PID, never orphan
+        exec 9>&- 2>/dev/null || true
+        kill -9 "$SIM_PID" 2>/dev/null || true
+        wait "$SIM_PID" 2>/dev/null || true
+    }
+    # Poll until the sim process exits (0) or the cap elapses (1).
+    wait_exit() {
+        local _
+        for _ in $(seq 1 "$act_tenths"); do sim_alive || return 0; sleep 0.1; done
+        return 1
+    }
+    # Poll until the banner has appeared at least $1 times (0) or the cap/death
+    # ends it (1). A second banner is the deterministic proof of a respawn.
+    wait_banner() {
+        local want=$1 n _
+        for _ in $(seq 1 "$act_tenths"); do
+            n=$(grep -cF "$banner" "$SIM_OUT" 2>/dev/null || true)
+            [ "${n:-0}" -ge "$want" ] && return 0
+            sim_alive || return 1
             sleep 0.1
         done
-        if kill -0 "$ep" 2>/dev/null; then SIM_ALIVE=1; else SIM_ALIVE=0; fi
-        exec 9>&-
-        kill -9 "$ep" 2>/dev/null || true
-        wait "$ep" 2>/dev/null || true
-        rm -f "$fifo"
+        return 1
+    }
+    # Poll until $1 appears in the console (0) or the cap/death ends it (1).
+    wait_marker() {
+        local _
+        for _ in $(seq 1 "$act_tenths"); do
+            grep -qF "$1" "$SIM_OUT" 2>/dev/null && return 0
+            sim_alive || return 1
+            sleep 0.1
+        done
+        return 1
+    }
+    boot_fail() {                                        # loud, distinct diagnostic
+        echo "FAIL - $1: sim did not boot to a wsh prompt (infra/boot failure)"
+        echo "------ last console output ------"; tail -n 25 "$SIM_OUT" 2>/dev/null || true
+        echo "--------------------------------"
+        rc=1
     }
 
-    drive_sim "2:poweroff"
-    if [ "$SIM_ALIVE" -eq 0 ]; then echo "ok   - poweroff exits the sim (no respawn)";
-    else echo "FAIL - poweroff did not exit the sim"; rc=1; fi
-    rm -f "$SIM_OUT"
+    # 1. poweroff -> the engine returns from its loop and the sim exits, no respawn.
+    if boot_sim; then
+        send poweroff
+        if wait_exit; then echo "ok   - poweroff exits the sim (no respawn)";
+        else echo "FAIL - poweroff did not exit the sim"; rc=1; fi
+    else boot_fail "poweroff"; fi
+    stop_sim; rm -f "$SIM_OUT"
 
-    drive_sim "2:exit" "3:help"
-    if [ "$SIM_ALIVE" -eq 1 ] && grep -q "$marker" "$SIM_OUT"; then
-        echo "ok   - exit respawns wsh with a working console"
-    else echo "FAIL - exit did not respawn with a working console"; rc=1; fi
-    rm -f "$SIM_OUT"
+    # 2. exit -> the supervisor exits and is respawned WITH a working console. The
+    #    first wsh only receives 'exit'; 'help' is sent only AFTER the respawned
+    #    wsh's banner appears, so the help listing can come only from the new wsh
+    #    (and can't be swallowed by the exiting one). Marker + liveness => pass.
+    if boot_sim; then
+        send exit
+        ok=0
+        if wait_banner 2; then
+            send help
+            if sim_alive && wait_marker "$marker"; then ok=1; fi
+        fi
+        if [ "$ok" -eq 1 ]; then echo "ok   - exit respawns wsh with a working console";
+        else echo "FAIL - exit did not respawn with a working console"; rc=1; fi
+    else boot_fail "exit"; fi
+    stop_sim; rm -f "$SIM_OUT"
 
-    drive_sim "2:reboot"
-    if [ "$SIM_ALIVE" -eq 0 ]; then echo "ok   - reboot does not respawn (sim resets/exits)";
-    else echo "FAIL - reboot left the sim respawning"; rc=1; fi
-    rm -f "$SIM_OUT"
+    # 3. reboot -> the sim has no in-process re-exec path (a board reset replaces
+    #    the whole image), so reboot ends the run like poweroff: no respawn.
+    if boot_sim; then
+        send reboot
+        if wait_exit; then echo "ok   - reboot does not respawn (sim resets/exits)";
+        else echo "FAIL - reboot left the sim respawning"; rc=1; fi
+    else boot_fail "reboot"; fi
+    stop_sim; rm -f "$SIM_OUT"
 
     if [ "$rc" -eq 0 ]; then echo "PASS: syscontrol on the NuttX sim";
     else echo "FAIL: syscontrol on the NuttX sim"; exit 1; fi

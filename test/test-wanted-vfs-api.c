@@ -2,10 +2,13 @@
 
 #include "unity_fixture.h"
 
+#include <errno.h>
 #include <stdint.h>
 #include <string.h>
 
+#include <vfs.h>
 #include <wanted-vfs-api.h>
+#include <wanted_malloc.h>
 
 /***************************************/
 TEST_GROUP(wanted_vfs_api);
@@ -107,9 +110,42 @@ TEST(wanted_vfs_api, WantedParseWappConfigImagePinnedTag) {
     TEST_ASSERT_EQUAL_STRING("duplex:stable", cfg.image);
 }
 
+/* A launch config naming a driver the platform does not provide fails the
+ * install with -ENODEV. The dummy test platform registers no platform drivers,
+ * so `gpio` is unresolvable here — the engine rejects the launch rather than
+ * silently no-op'ing, and survives. */
+TEST(wanted_vfs_api, InstallUnavailableDriverReturnsEnodev) {
+    vfs_ctx_t c = VfsInit();
+    TEST_ASSERT_NOT_NULL(c);
+
+    wapp_t *w = WantedMalloc(sizeof(wapp_t));
+    TEST_ASSERT_NOT_NULL(w);
+    memset(w, 0, sizeof(*w));
+
+    int ret = WantedInstallDriver(c, w, "gpio", "/dev/gpio", NULL);
+    TEST_ASSERT_EQUAL_INT(-ENODEV, ret);
+
+    WantedFree(w);
+    VfsDestroy(&c);
+}
+
+/* The core drivers are always resolvable; WantedListDrivers reports them so a
+ * supervisor can read available capability off /proc/wanted. */
+TEST(wanted_vfs_api, ListDriversReportsCoreDrivers) {
+    char buf[128];
+    int n = WantedListDrivers(buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN_INT(0, n);
+    TEST_ASSERT_NOT_NULL(strstr(buf, "wanted"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "null"));
+    /* The dummy platform contributes no drivers, so gpio is absent here. */
+    TEST_ASSERT_NULL(strstr(buf, "gpio"));
+}
+
 TEST_GROUP_RUNNER(wanted_vfs_api) {
     RUN_TEST_CASE(wanted_vfs_api, WantedParseCtrlActionTest);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigArgsEnvs);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigImage);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigImagePinnedTag);
+    RUN_TEST_CASE(wanted_vfs_api, InstallUnavailableDriverReturnsEnodev);
+    RUN_TEST_CASE(wanted_vfs_api, ListDriversReportsCoreDrivers);
 }

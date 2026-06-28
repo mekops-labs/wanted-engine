@@ -200,7 +200,9 @@ static int dir_has(const char *dir, const char *name) {
 }
 
 static void positive_checks(void) {
-    char buf[256];
+    /* Large enough for the full /proc/wanted dump, whose `drivers` field pushes
+     * it past 256 B; the node is one-shot, so a short read silently truncates. */
+    char buf[512];
 
     tap_ok(read_path("/app.wasm", buf, sizeof(buf)) > 0,
            "TarFS: /app.wasm is readable");
@@ -232,6 +234,13 @@ static void positive_checks(void) {
                strstr(buf, "max_wapps:\t3") != NULL &&
                strstr(buf, "wasm_max_pages:\t1") != NULL,
            "proc: /proc/wanted reports engine identity and limits");
+
+    /* The drivers field lists the resolvable drivers on this build: the core
+     * names plus the platform's own (the NuttX sim contributes gpio/wifi). */
+    tap_ok(read_path("/proc/wanted", buf, sizeof(buf)) > 0 &&
+               strstr(buf, "drivers:\t") != NULL &&
+               strstr(buf, "wanted") != NULL,
+           "proc: /proc/wanted reports available drivers");
 
     /* Inter-wapp pipe round-trip within our own namespace. */
     write_path("/dev/pipe/selftest", "ping");

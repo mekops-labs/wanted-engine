@@ -6,14 +6,15 @@ Unreleased
 
 ### Added
 
-- `gpio` device driver: a wapp granted `{ "name": "gpio" }` in its launch config's `drivers[]` gets `/dev/gpio`, a text level node — `write "1"/"0"` drives the pin high/low and `read` returns `"0\n"/"1\n"`. The engine performs the GPIO ioctl (`GPIOC_WRITE`/`GPIOC_READ`); the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via the driver options) and an in-memory level on Linux.
+- `gpio` device driver: a wapp granted `{ "name": "gpio" }` in its launch config's `drivers[]` gets `/dev/gpio`, a text level node — `write "1"/"0"` drives the pin high/low and `read` returns `"0\n"/"1\n"`. The engine performs the GPIO ioctl (`GPIOC_WRITE`/`GPIOC_READ`); the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via the driver options). Available only on platforms that implement it (NuttX); a config naming `gpio` on a platform without it (Linux) fails the launch with `-ENODEV`.
 - `blink` sample wapp: toggles `/dev/gpio` in a 1 Hz loop.
 
 ### Changed
 
 - The NuttX built-in's compiled-in default config now runs the supervisor privileged (`system.privileged: true`), so the privileged `/proc` entries (e.g. `/proc/memory`) are readable by the control-plane supervisor. Launched wapps are configured separately and do not inherit it.
 - The launch-config slot tables (the control-plane `pending` reservations and the parsed engine config) are now allocated on the heap on first use instead of living in static `.bss`. On constrained targets this moves the large per-`wapp_config_t` driver/mount/socket slot tables off limited internal RAM (and onto a heap that may extend into PSRAM); the slot-size limits can be raised without static-RAM pressure.
-- `/proc/wanted` now reports `wasm_max_pages`, `log_slots`, `wasm_worker_stack` (the effective per-wapp worker thread stack), `max_drivers`, and `max_options`.
+- Driver resolution is split into a platform-agnostic core table and a per-platform table: each platform registers only the drivers it implements (NuttX: `gpio`, `wifi`; Linux and the test platform: none). A launch config naming a driver the platform does not offer fails with `-ENODEV` instead of resolving to an in-memory no-op. Core driver names (`wanted`, `null`, ...) are reserved and resolved first, so a platform cannot shadow them. Driver name matching is now exact (was a prefix match, so `gpioX` matched `gpio`).
+- `/proc/wanted` now reports `wasm_max_pages`, `log_slots`, `wasm_worker_stack` (the effective per-wapp worker thread stack), `max_drivers`, `max_options`, and `drivers` (the drivers available on this build).
 - Worker threads are now created with an explicit native C stack (`WASM_WORKER_STACK_SIZE`) on every platform instead of the OS default, so the recursive WAMR interpreter cannot overflow a small RTOS default thread stack (NuttX defaults to ~2 KB).
 
 ### Build
