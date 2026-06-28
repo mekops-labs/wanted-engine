@@ -89,7 +89,8 @@ struct vfs_tarfs_ctx_t;
 
 typedef struct vfs_proc_entry_t {
     char name[MAX_ENTRY_NAME_LEN];
-    proc_read_fn_t read_fn;
+    proc_read_fn_t read_fn;        /* flat file reader; NULL for a directory */
+    const proc_dir_ops_t *dir_ops; /* directory ops; NULL for a flat file */
     bool privileged;
 } vfs_proc_entry_t;
 

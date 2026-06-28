@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <tiny-json.h>
+#include <vfs-procfs.h>
 #include <wanted-api.h>
 #include <wanted.h>
 
@@ -32,6 +33,12 @@ int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen);
 
 const char *StatusToString(status_t state);
+
+/* /proc/wapps/<name>/<leaf> — read-only per-wapp observability directory,
+ * registered by the engine as a privileged ProcFS directory entry. Leaves
+ * (state, image, version, id, exit_code) are rendered from
+ * PlatformWappGetState. */
+extern const proc_dir_ops_t WappsProcDirOps;
 
 /* Upper bound (including NUL) on a control/config JSON payload the engine
  * copies onto the stack to parse, sizing the fixed parse buffer. The

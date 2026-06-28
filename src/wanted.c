@@ -255,31 +255,6 @@ static pipe_store_t *wantedPipeStore(void) {
     return store;
 }
 
-/* /proc/wapps — plain-text wapp state, one record per wapp. */
-static int procReadWapps(vfs_ctx_t c, void *buf, size_t bufLen) {
-    (void)c;
-    wapp_state_t wapps[MAX_WAPPS];
-    int n = PlatformWappGetState(wapps, MAX_WAPPS);
-    if (n < 0)
-        return n;
-
-    char *p = (char *)buf;
-    size_t left = bufLen;
-    for (int i = 0; i < n && left > 0; i++) {
-        int w = snprintf(p, left, "name:\t%s\nstate:\t%s\n", wapps[i].name,
-                         StatusToString(wapps[i].status));
-        if (w < 0 || (size_t)w >= left)
-            break;
-        p += w;
-        left -= (size_t)w;
-        if (i + 1 < n && left > 1) {
-            *p++ = '\n';
-            left--;
-        }
-    }
-    return (int)(bufLen - left);
-}
-
 /* /proc/memory — wasm stack size + platform heap via PlatformMemoryStats. */
 static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
@@ -526,7 +501,7 @@ int WantedWappRun(wapp_data_t *ctx) {
 
     /* Propagate system-level privilege flag, then register /proc entries. */
     VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
-    ProcFs_Register(ctx->vfs, "wapps", procReadWapps, true);
+    ProcFs_RegisterDir(ctx->vfs, "wapps", &WappsProcDirOps, true);
     ProcFs_Register(ctx->vfs, "memory", procReadMemory, true);
     /* clock_quality is unprivileged — any wapp may read it to decide whether
      * to trust the wall clock. */
