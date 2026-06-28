@@ -32,6 +32,15 @@ int WantedRegistryRemove(const reg_entry_t *entry);
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen);
 
+/* Parse a wasm module's declared linear-memory limits from the leading `len`
+ * bytes of its `app.wasm`. On success fills *init (initial pages), *has_max,
+ * and *max (declared max pages, valid only when *has_max) and returns 0.
+ * Returns -ENOENT when the bytes hold no memory section (an imported memory, or
+ * the window stopped short of it) and -EINVAL on a bad/truncated header.
+ * Allocation-free; reads only the (memory) section — no module load. */
+int WantedWasmMemoryProfile(const uint8_t *buf, size_t len, uint32_t *init,
+                            bool *has_max, uint32_t *max);
+
 const char *StatusToString(status_t state);
 
 /* /proc/wapps/<name>/<leaf> — read-only per-wapp observability directory,
