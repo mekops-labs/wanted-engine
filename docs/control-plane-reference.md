@@ -32,11 +32,6 @@ The `wanted` driver is a device singleton: it mounts at its canonical `/dev/want
     <name>/                 <name> is the instance name (set by create)
       ctl       (w)         per-wapp verb: "start [<image>]" | "stop"
       state     (r)         lifecycle token
-      image     (r)         registry image the instance runs
-      version   (r)         image version tag (opaque string)
-      id        (r)         engine-assigned wapp id
-      exit_code (r)         WASI exit code (authoritative when state == exited)
-      log       (r)         buffered stdout/stderr (when console: log)
       config    (w)         JSON launch config, consumed by the next start
   reg/                      installed-wapp registry directory
   config                    supervisor bootstrap meta-config
@@ -91,14 +86,11 @@ Command-line arguments (`argv[1..]`) and environment variables travel in the `co
 
 | Node | Access | Content / Verb |
 |------|--------|----------------|
-| `state` | r | Lifecycle token: `created`, `not_started`, `starting`, `running`, `exited`, `failure`. A bare `create` reservation (no config yet) reads `created`; once its `config` is written it reads `not_started`. |
-| `image` | r | The registry image the instance runs, known once it is live (the loader stamps it). A `created`/`not_started` reservation has not bound an image yet and reads empty. |
-| `version` | r | The image's version tag — an opaque string (e.g. `0.0.1-1`, `stable`, a digest), from its registry entry. |
-| `id` | r | Engine-assigned wapp id (decimal). |
-| `exit_code` | r | The wapp's WASI exit code as a decimal integer. **Authoritative only when `state == exited`**; otherwise (running, or a trap that set `state == failure`) it reads the sentinel `-1`. Lets a supervisor distinguish a clean zero exit, a clean non-zero (application-level) exit, and a trap. |
-| `log` | r | Ring-buffered stdout/stderr, present when the wapp was launched with a `log` console. |
+| `state` | r | Lifecycle token: `created`, `not_started`, `starting`, `running`, `exited`, `failure`. A bare `create` reservation (no config yet) reads `created`; once its `config` is written it reads `not_started`. Kept on the control plane because it spans the pre-launch lifecycle the read-only `/proc` view cannot see. |
 | `ctl` | w | `start [<image>]` launches the instance (optional explicit image overrides `config.image`); `stop` terminates it. The instance name comes from the path. |
 | `config` | w | JSON launch config (see below). Buffered and consumed by the next `start` for this name, then cleared. |
+
+The control plane carries **only** lifecycle: the pure-observability reads (`image`, `version`, `id`, `exit_code`, `memory`) live in the read-only [`/proc/wapps/<name>/`](vfs-reference.md) namespace, and a wapp's captured stdout/stderr is read through a mountable [`log`](vfs-reference.md) driver. Both are reachable **without** the `/dev/wanted` control mount, so an observability wapp can watch the fleet without the authority to command it. `state` is mirrored read-only at `/proc/wapps/<name>/state` for running instances.
 
 A read node returns its value once; the next read on the same fd returns `0` (EOF), and the value regenerates on a fresh open. A control write that overflows the fixed line buffer is rejected with `-EMSGSIZE`.
 
@@ -213,7 +205,7 @@ The `wsh` debug supervisor wraps the raw node operations as builtins:
 | `stop <name>` | Write `stop` to `wapps/<name>/ctl`. |
 | `poweroff` / `reboot` | Drain child wapps, then write the verb to the root `ctl`. |
 
-The filesystem builtins (`ls`, `cat`, `write`) operate on any node directly — e.g. `cat /dev/wanted/wapps/app1/log` or `ls /dev/wanted/wapps`.
+The filesystem builtins (`ls`, `cat`, `write`) operate on any node directly — e.g. `cat /proc/wapps/app1/state` or `ls /dev/wanted/wapps`. A wapp's log is read through its `log` mount (e.g. `cat /log/app1`).
 
 ## See also
 
