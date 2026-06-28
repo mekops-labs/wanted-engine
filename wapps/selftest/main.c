@@ -226,6 +226,12 @@ static void positive_checks(void) {
     tap_ok(read_path("/proc/wapps/supervisor/state", buf, sizeof(buf)) > 0 &&
                strstr(buf, "running") != NULL,
            "proc: /proc/wapps/<name>/state reports the supervisor running");
+    /* Per-wapp linear-memory accounting: a running wapp has committed at least
+     * one page, so linear_cur and the page counts are present and non-empty. */
+    tap_ok(read_path("/proc/wapps/supervisor/memory", buf, sizeof(buf)) > 0 &&
+               strstr(buf, "linear_cur:") != NULL &&
+               strstr(buf, "pages_cur:") != NULL,
+           "proc: /proc/wapps/<name>/memory reports linear-memory accounting");
 
     /* /proc/wanted reports engine identity and the compile-time ceilings as
      * key:\tvalue lines. It is unprivileged. The platform string and version

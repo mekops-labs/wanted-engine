@@ -32,6 +32,28 @@ struct wamrData_t {
     uint8_t *wasm_bytes; /* writable copy passed to wasm_runtime_load */
 };
 
+void WantedWappMemStats(const struct wamrData_t *wamr, wapp_state_t *out) {
+    out->mem_pages_cur = 0;
+    out->mem_pages_max = 0;
+    out->mem_bytes_cur = 0;
+    out->mem_bytes_max = 0;
+    if (wamr == NULL || wamr->instance == NULL)
+        return;
+
+    wasm_memory_inst_t mem = wasm_runtime_get_default_memory(wamr->instance);
+    if (mem == NULL)
+        return; /* a module that declares no linear memory */
+
+    uint64_t pages_cur = wasm_memory_get_cur_page_count(mem);
+    uint64_t pages_max = wasm_memory_get_max_page_count(mem);
+    uint64_t bytes_per_page = wasm_memory_get_bytes_per_page(mem);
+
+    out->mem_pages_cur = (uint32_t)pages_cur;
+    out->mem_pages_max = (uint32_t)pages_max;
+    out->mem_bytes_cur = (size_t)(pages_cur * bytes_per_page);
+    out->mem_bytes_max = (size_t)(pages_max * bytes_per_page);
+}
+
 /* Default console backing for a stdio slot the launch config leaves unset. All
  * three of a wapp's standard fds must be wired or it fails to launch, so an
  * empty slot resolves to a default rather than to nothing: stdin to `null` (no

@@ -121,7 +121,21 @@ typedef struct wapp_state_t {
     /* WASI exit code, or WAPP_EXIT_CODE_NONE when the wapp trapped or has not
      * exited. Authoritative only when status == EXITED. */
     int32_t exit_code;
+    /* WASM linear-memory accounting for a running instance, sampled by the
+     * platform from the live WAMR instance (zero for a slot with no
+     * instance). bytes = pages × the module's page size. */
+    uint32_t mem_pages_cur; /* linear-memory pages currently committed */
+    uint32_t mem_pages_max; /* linear-memory page ceiling (per-wapp cap) */
+    size_t mem_bytes_cur;   /* mem_pages_cur in bytes */
+    size_t mem_bytes_max;   /* mem_pages_max in bytes */
 } wapp_state_t;
+
+/* Sample a running WAMR instance's linear-memory accounting into *out's mem_*
+ * fields (zeroed when the slot has no live instance); other fields are left
+ * untouched. The platform owns the wapp slot and its opaque wamrData_t pointer,
+ * but the WAMR runtime types live in the engine core — so the platform calls
+ * this from PlatformWappGetState rather than dereferencing wamrData_t. */
+void WantedWappMemStats(const struct wamrData_t *wamr, wapp_state_t *out);
 
 typedef struct reg_entry_t {
     char name[WAPP_MAX_NAME_LEN];

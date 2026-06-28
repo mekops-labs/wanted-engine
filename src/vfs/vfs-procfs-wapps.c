@@ -23,9 +23,13 @@
 /* Longest leaf token we emit; bounds the per-segment parse buffer. */
 #define WAPP_LEAF_MAX 16
 
+/* Upper bound on a rendered leaf body. The single-value leaves fit easily; the
+ * multi-line `memory` body is the widest. */
+#define WAPP_READ_MAX 128
+
 /* Leaves under /proc/wapps/<name>/. */
-static const char *const LEAVES[] = {"state", "image", "version", "id",
-                                     "exit_code"};
+static const char *const LEAVES[] = {"state",     "image",  "version",
+                                     "id",        "memory", "exit_code"};
 #define N_LEAVES (sizeof(LEAVES) / sizeof(LEAVES[0]))
 
 /* Split a sub-path into its wapp name and leaf. Accepted forms (no leading
@@ -99,6 +103,15 @@ static int renderLeaf(const char *leaf, const wapp_state_t *st, char *out,
         return snprintf(out, cap, "%u", (unsigned int)st->id);
     if (strcmp(leaf, "exit_code") == 0)
         return snprintf(out, cap, "%d", st->exit_code);
+    if (strcmp(leaf, "memory") == 0)
+        return snprintf(out, cap,
+                        "linear_cur:\t%zu B\n"
+                        "linear_max:\t%zu B\n"
+                        "pages_cur:\t%u\n"
+                        "pages_max:\t%u\n",
+                        st->mem_bytes_cur, st->mem_bytes_max,
+                        (unsigned int)st->mem_pages_cur,
+                        (unsigned int)st->mem_pages_max);
     return -ENOENT;
 }
 
@@ -143,7 +156,7 @@ static int wappsRead(vfs_ctx_t c, const char *sub, void *buf, size_t bufLen) {
     if (!findState(name, &st))
         return -ENOENT;
 
-    char line[WAPP_LEAF_MAX + WAPP_MAX_NAME_LEN];
+    char line[WAPP_READ_MAX];
     int n = renderLeaf(leaf, &st, line, sizeof(line));
     if (n < 0)
         return n;
