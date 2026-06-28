@@ -163,6 +163,78 @@ int WantedCloseRegistry(void) {
     return PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
 }
 
+/* Read a uLEB128-encoded u32 at *p (bounded by end), advancing *p. Returns 0,
+ * or -EINVAL on truncation / a >5-byte encoding. */
+static int ulebU32(const uint8_t **p, const uint8_t *end, uint32_t *out) {
+    uint32_t result = 0;
+    int shift = 0;
+    while (*p < end) {
+        uint8_t b = *(*p)++;
+        if (shift < 32)
+            result |= (uint32_t)(b & 0x7f) << shift;
+        if (!(b & 0x80)) {
+            *out = result;
+            return 0;
+        }
+        shift += 7;
+        if (shift >= 35)
+            return -EINVAL; /* more than 5 bytes — not a valid u32 */
+    }
+    return -EINVAL; /* ran off the end mid-encoding */
+}
+
+int WantedWasmMemoryProfile(const uint8_t *buf, size_t len, uint32_t *init,
+                            bool *has_max, uint32_t *max) {
+    static const uint8_t MAGIC[8] = {0x00, 0x61, 0x73, 0x6d,
+                                     0x01, 0x00, 0x00, 0x00};
+    if (buf == NULL || init == NULL || has_max == NULL || max == NULL)
+        return -EINVAL;
+    if (len < sizeof(MAGIC) || memcmp(buf, MAGIC, sizeof(MAGIC)) != 0)
+        return -EINVAL;
+
+    const uint8_t *p = buf + sizeof(MAGIC);
+    const uint8_t *end = buf + len;
+
+    /* Sections are emitted in ascending id order; the memory section is id 5.
+     * Walk section headers (id byte + uLEB length), entering id 5 and skipping
+     * the rest. A section whose declared length runs past the buffer means the
+     * caller's window stopped short of the memory section — report "absent"
+     * (ENOENT) so the descriptor omits the fields rather than guessing. */
+    while (p < end) {
+        uint8_t id = *p++;
+        uint32_t secLen;
+        if (ulebU32(&p, end, &secLen) < 0)
+            return -EINVAL;
+        if (secLen > (uint32_t)(end - p))
+            return id < 5 ? -ENOENT : -EINVAL;
+        const uint8_t *secEnd = p + secLen;
+
+        if (id == 5) {
+            uint32_t count;
+            if (ulebU32(&p, secEnd, &count) < 0)
+                return -EINVAL;
+            if (count == 0)
+                return -ENOENT; /* declared, but no memory */
+            if (p >= secEnd)
+                return -EINVAL;
+            uint8_t flags = *p++;
+            uint32_t mn;
+            if (ulebU32(&p, secEnd, &mn) < 0)
+                return -EINVAL;
+            *init = mn;
+            *has_max = (flags & 0x01) != 0;
+            *max = 0;
+            if (*has_max && ulebU32(&p, secEnd, max) < 0)
+                return -EINVAL;
+            return 0;
+        }
+        if (id > 5)
+            break; /* past where the memory section would be */
+        p = secEnd;
+    }
+    return -ENOENT; /* no memory section (e.g. an imported memory) */
+}
+
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen) {
     if (entry == NULL || buf == NULL)
