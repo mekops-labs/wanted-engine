@@ -75,6 +75,8 @@ int PlatformWappUnload(const wapp_t *wapp) {
     return 0;
 }
 
+size_t PlatformWorkerStackSize(void) { return WASM_WORKER_STACK_SIZE; }
+
 /* Signature fixed by the platform.h PlatformWappStart contract. */
 /* cppcheck-suppress constParameterPointer */
 int PlatformWappStart(wapp_t *app) {

@@ -19,3 +19,5 @@ wapps/*/*.o
 # nuttx-apps trees themselves are the third_party/ submodules.
 /build-nuttx/
 utils/measure_structs
+platform/nuttx/app/boot-romfs.h
+wasm/registry-seed/

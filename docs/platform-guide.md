@@ -120,7 +120,8 @@ Per-capacity profiles ship as CMake cache fragments under `cmake/profiles/`:
 
 | Profile | Target class | `MAX_WAPPS` | stack / heap | linear cap |
 |---|---|---|---|---|
-| `constrained` | ~512 KB RAM (ESP32/NuttX) | 3 | 8 KiB / 8 KiB | 1 page |
+| `tiny` | no-PSRAM (ESP32-WROOM, ~180 KB internal RAM) | 2 | 4 KiB / 4 KiB | 1 page |
+| `constrained` | ~512 KB RAM, PSRAM (ESP32-WROVER/NuttX) | 3 | 8 KiB / 8 KiB | 1 page |
 | `small` | routers (128 MB–1 GB) | 16 | 64 KiB / 256 KiB | 16 pages |
 | `big` | Linux / cloud | 64 | 128 KiB / 1 MiB | uncapped |
 

@@ -18,6 +18,62 @@ docker buildx build --platform linux/amd64,linux/arm64 -t registry.gitlab.com/me
 Platforms are limited to `amd64` and `arm64` — the bundled wasi-sdk ships host
 binaries for those two Linux arches only.
 
+## ESP32 cross-build image (`Containerfile.esp32`)
+
+A separate image for building the engine as a NuttX built-in app for the
+**ESP32 (xtensa LX6)** target and flashing it over serial. It is kept out of the
+main build image because the xtensa toolchain is large (~700 MB unpacked) and
+only the ESP32 jobs need it.
+
+It carries the `xtensa-esp-elf` GCC the NuttX ESP32 port documents
+(`esp-14.2.0_20241119`), `esptool` (the `make` MKIMAGE/flash step), the NuttX
+kconfig/kbuild prerequisites, and cmake/ninja — all routed through ccache.
+
+Build:
+
+```sh
+# single arch
+podman build -f docker/Containerfile.esp32 -t wanted-esp32 docker/
+# multi arch + push
+podman build --platform linux/amd64,linux/arm64 \
+  -f docker/Containerfile.esp32 \
+  -t registry.gitlab.com/mekops/wanted/wanted-engine/esp32-build:latest \
+  --push docker/
+```
+
+Cross-build (no hardware needed):
+
+```sh
+podman run --rm -v "$PWD:/src" wanted-esp32 \
+  bash -c 'cd third_party/nuttx && \
+    ./tools/configure.sh -a ../nuttx-apps esp32-devkitc:nsh && make -j"$(nproc)"'
+```
+
+Flash to an attached board — pass the serial device through. On rootless podman
+also preserve the host's supplementary groups so the container user can open the
+`dialout`-owned device node:
+
+```sh
+podman run --rm -it \
+  --device /dev/ttyUSB0 \
+  --group-add keep-groups \
+  -v "$PWD:/src" wanted-esp32 \
+  bash -c 'cd third_party/nuttx && make flash ESPTOOL_PORT=/dev/ttyUSB0 ESPTOOL_BINDIR=./'
+```
+
+The image uses the same UID-remap entrypoint as the main build image (`entry.sh`
++ `gosu`), so under a GitLab `docker` runner `/src` is owned by the runner UID
+and builds run as that user. For local **rootless podman**, add `--userns=keep-id`
+so the bind-mount owner is your UID (not container root) and the entrypoint can
+create the matching build user.
+
+On an SELinux host (Fedora, RHEL), add `:z` to bind mounts so the container can
+read them (e.g. `-v "$PWD:/src:z"`); without it the toolchain hits "Permission
+denied" on the mounted sources.
+
+Only `amd64` and `arm64` are built — Espressif publishes xtensa-esp-elf for
+those two Linux arches only.
+
 ## Changelog
 
 ### 0.6.4

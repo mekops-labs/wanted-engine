@@ -13,8 +13,8 @@
 #define WAPP_MAX_NAME_LEN 15
 #define WAPP_MAX_VERSION_LEN 15
 #define MAX_DRIVER_NAME 15
-#define MAX_OPTIONS_SIZE 1024
-#define MAX_DRIVERS_CNT 10
+/* MAX_DRIVERS_CNT and MAX_OPTIONS_SIZE are profile-tunable footprint knobs and
+ * live with the other resource limits in wanted-config.h (included above). */
 
 /* An image reference is "<name>:<tag>" — an image name plus an optional version
  * tag. It bounds the config `image` field, which may carry a pinned tag. */

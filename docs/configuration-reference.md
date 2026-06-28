@@ -85,6 +85,7 @@ Entry shapes per section:
 | `name` | Section | Purpose | `options` example |
 |--------|---------|---------|-------------------|
 | `null` | `drivers` | Bit bucket at `/dev/null`. | — |
+| `gpio` | `drivers` | A GPIO pin at `/dev/gpio` as a text level node: `write "1"/"0"` drives it high/low, `read` returns the level. Backed by the host GPIO char device on NuttX; in-memory on Linux. | `/dev/gpio0` |
 | `log` | console slot | Ring-buffer console; output readable at `/dev/wanted/wapps/<name>/log`. | — |
 | `platform` | console slot / `mounts` | As a console slot: the engine's native stdio (fds 0/1/2). In `mounts[]`: a bind mount of a host directory as a native WASI preopen at `path`; `options` set the host source and access mode. | `src=/etc/app,ro` |
 | `volume` | `mounts` | An engine-managed persistent store mounted at `path`. The engine owns the host location, so the wapp names only a volume — no host path. Private per wapp by default; `shared` makes it a cross-wapp store. Portable across hosts. | `name=cache` |

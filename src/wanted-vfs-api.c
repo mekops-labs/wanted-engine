@@ -16,7 +16,11 @@
 
 #include <tiny-json.h>
 
-static wantedConfig_t currentConfig;
+/* The engine's parsed bootstrap config. Heap-allocated on first parse rather
+ * than living in static .bss: wantedConfig_t embeds a wapp_config_t (the
+ * supervisor's launch config, with its driver/mount/socket slot tables), which
+ * is large on constrained targets; the engine heap may extend into PSRAM. */
+static wantedConfig_t *currentConfig = NULL;
 
 /* Bounded copy of a (possibly NULL) JSON string value into a fixed-size config
  * field. Truncates rather than overflowing; always NUL-terminates. */
@@ -113,10 +117,25 @@ static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
 }
 
 int WantedParseConfig(const char *buf, size_t bufLen) {
-    return parseConfig(buf, bufLen, &currentConfig);
+    if (currentConfig == NULL) {
+        currentConfig = WantedMalloc(sizeof(wantedConfig_t));
+        if (currentConfig == NULL)
+            return -ENOMEM;
+    }
+    return parseConfig(buf, bufLen, currentConfig);
 }
 
-const wantedConfig_t *WantedGetConfig(void) { return &currentConfig; }
+/* Always returns a usable config: if nothing has been parsed yet, a zeroed one
+ * is allocated so callers (e.g. the privileged-flag check) never see NULL —
+ * matching the previous always-present static. */
+const wantedConfig_t *WantedGetConfig(void) {
+    if (currentConfig == NULL) {
+        currentConfig = WantedMalloc(sizeof(wantedConfig_t));
+        if (currentConfig != NULL)
+            memset(currentConfig, 0, sizeof(wantedConfig_t));
+    }
+    return currentConfig;
+}
 
 int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
                         size_t bufLen) {
@@ -176,6 +195,8 @@ static const vfs_driver_table_t global_driver_table[] = {
     {"platform", platformFsInitRW},
     {"socket", VfsSocketInit},
     {"wanted", VfsWantedInit},
+    {"gpio", VfsGpioInit},
+    {"wifi", VfsWifiInit},
     {NULL, NULL},
 };
 

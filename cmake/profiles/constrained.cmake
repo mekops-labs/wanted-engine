@@ -8,14 +8,17 @@
 # per-instance WASM stack/heap are kept deliberately tight.
 #
 # Measured footprint (`make sizes`), LP64 / ILP32:
-#   per-wapp structs  51.1 KB /  50.2 KB  (exact engine slot structures)
-#   per-wapp runtime  32.0 KB /  32.0 KB  (WASM stack + heap + ~16 KB WAMR)
+#   per-wapp structs  17.5 KB /  16.6 KB  (exact engine slot structures)
+#   per-wapp runtime  96.0 KB /  96.0 KB  (WASM stack + heap + worker stack + ~16 KB WAMR)
 #   max linear        64.0 KB             (WASM_MAX_MEMORY_PAGES=1 x 64 KiB)
-#   engine overhead   43.1 KB /  43.0 KB  (wantedConfig_t)
-#   worst case       484.3 KB / 481.6 KB  (overhead + MAX_WAPPS x per-wapp)
+#   engine overhead    9.5 KB /   9.5 KB  (wantedConfig_t)
+#   worst case       542.1 KB / 539.3 KB  (overhead + MAX_WAPPS x per-wapp)
 # WAMR overhead is approximate; excludes the per-image writable module copy.
-set(MAX_WAPPS             3    CACHE STRING "Max concurrent wapp instances")
-set(WASM_STACK_SIZE       8192 CACHE STRING "Per-instance WAMR stack (bytes)")
-set(WASM_HEAP_SIZE        8192 CACHE STRING "Per-instance WAMR heap (bytes)")
-set(WASM_MAX_MEMORY_PAGES 1    CACHE STRING "Max WASM linear pages/wapp (64 KiB each; 0 = unbounded)")
-set(MAX_PATH_LEN          256  CACHE STRING "VFS path buffer length (bytes)")
+set(MAX_WAPPS              3    CACHE STRING "Max concurrent wapp instances")
+set(WASM_STACK_SIZE        8192 CACHE STRING "Per-instance WAMR stack (bytes)")
+set(WASM_HEAP_SIZE         8192 CACHE STRING "Per-instance WAMR heap (bytes)")
+set(WASM_WORKER_STACK_SIZE 65536 CACHE STRING "Per-wapp worker thread native C stack (bytes)")
+set(WASM_MAX_MEMORY_PAGES  1    CACHE STRING "Max WASM linear pages/wapp (64 KiB each; 0 = unbounded)")
+set(MAX_PATH_LEN           256  CACHE STRING "VFS path buffer length (bytes)")
+set(MAX_DRIVERS_CNT        6    CACHE STRING "Slots per drivers/mounts/sockets launch-config section")
+set(MAX_OPTIONS_SIZE       128  CACHE STRING "Per-driver options blob (bytes)")

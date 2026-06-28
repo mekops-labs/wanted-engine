@@ -653,11 +653,11 @@ static void crashloop_check(void) {
     "\"console\":{\"in\":{\"name\":\"null\"},"                                 \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"envs\":[\"ROLE=reader\"]}"
-/* writer pins the image by tag ("duplex:0.0.1-1") — exact resolution — while
+/* writer pins the image by tag ("duplex@0.0.1-1") — exact resolution — while
  * reader uses the bare name ("duplex") — first-match. Both run the one image.
- */
+ * The version separator is '@' (VFAT-legal), not ':'. */
 #define WRITER_CFG_BODY                                                        \
-    "{\"image\":\"duplex:0.0.1-1\",\"envs\":[\"ROLE=writer\"]}"
+    "{\"image\":\"duplex@0.0.1-1\",\"envs\":[\"ROLE=writer\"]}"
 static void pipe_duplex_check(void) {
     char buf[128];
 

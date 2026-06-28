@@ -1,0 +1,122 @@
+# WANTED Engine — ESP32 (xtensa) NuttX cross-build image.
+#
+# A dedicated cross-toolchain image for building the engine as a NuttX built-in
+# app for the ESP32 (xtensa LX6) target and flashing it over a serial port. Kept
+# separate from the main build image (docker/Dockerfile) so the ~700 MB xtensa
+# toolchain does not bloat every lint/build/test job that only needs the host +
+# sim toolchain.
+#
+# It carries:
+#   - xtensa-esp-elf GCC 14.2.0 (esp-14.2.0_20241119) — the version NuttX's
+#     ESP32 port documents (Documentation/platforms/xtensa/esp32/index.rst).
+#   - esptool — ELF -> ESP32 image conversion (NuttX `make`'s MKIMAGE step) and
+#     flashing. Pinned to the version the NuttX docs show in their flash output.
+#   - The NuttX kconfig + kbuild prerequisites (same set as the main image's sim
+#     build) plus cmake/ninja for the engine's CMake-driven pieces.
+#   - ccache, wired as a PATH masquerade for both the host and the xtensa
+#     compilers so CI build jobs warm-cache across pipelines.
+#
+# Consumers:
+#   - wanted-engine CI: cross-build the ESP32 NuttX image (nuttx.bin artifact).
+#   - local dev: build + `make flash ESPTOOL_PORT=/dev/ttyUSB0` against attached
+#     hardware (pass the device through: `--device /dev/ttyUSB0`, see README.md).
+#
+# Build (single arch):  podman build -f Containerfile.esp32 -t wanted-esp32 .
+# Build (multi arch):   podman build --platform linux/amd64,linux/arm64 \
+#                         -f Containerfile.esp32 -t wanted-esp32 .
+
+FROM debian:trixie-slim
+
+LABEL maintainer="mek.xgt@gmail.com"
+LABEL org.opencontainers.image.title="wanted-engine-esp32-build"
+LABEL org.opencontainers.image.description="ESP32 (xtensa) NuttX cross-build toolchain for the WANTED engine."
+LABEL version="0.1.0"
+
+RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update \
+    && export DEBIAN_FRONTEND=noninteractive \
+    && apt-get install -y --no-install-recommends \
+    # Core build toolchain (host side of the NuttX kbuild + CMake pieces)
+    build-essential \
+    ccache \
+    cmake \
+    ninja-build \
+    # NuttX kconfig + kbuild prerequisites (same set as the sim build)
+    kconfig-frontends \
+    genromfs \
+    gperf \
+    flex \
+    bison \
+    gettext \
+    libelf-dev \
+    # esptool runs in a venv (Debian is externally-managed)
+    python3 \
+    python3-venv \
+    python-is-python3 \
+    # Utilities
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    xxd \
+    xz-utils \
+    # Container plumbing (match the main build image's UID-remap entrypoint)
+    dumb-init \
+    gosu \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- xtensa-esp-elf GCC (ESP32 cross-compiler) --------------------------------
+# Espressif publishes x86_64 and aarch64 Linux builds only. The tarball extracts
+# to xtensa-esp-elf/ and provides per-SoC driver names (xtensa-esp32-elf-gcc,
+# xtensa-esp-elf-gcc, ...). SHA-256 sums are pinned (no upstream .sha256 /
+# release digest exists; computed from the release artifacts).
+ARG XTENSA_GCC_VER=14.2.0_20241119
+ARG XTENSA_GCC_SHA256_AMD64=e3e6dcf3d275c3c9ab0e4c8a9d93fd10e7efc035d435460576c9d95b4140c676
+ARG XTENSA_GCC_SHA256_ARM64=ac2b311dc0003386425086bfc813bf2aeb3cdf3b117845802df6ebef5f69955f
+ARG TARGETARCH
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+      amd64) host=x86_64-linux-gnu;  sha=$XTENSA_GCC_SHA256_AMD64 ;; \
+      arm64) host=aarch64-linux-gnu; sha=$XTENSA_GCC_SHA256_ARM64 ;; \
+      *) echo "no xtensa-esp-elf build for arch=$arch" >&2; exit 1 ;; \
+    esac; \
+    f="xtensa-esp-elf-${XTENSA_GCC_VER}-${host}.tar.xz"; \
+    curl -fsSL -o /tmp/xtensa.tar.xz \
+        "https://github.com/espressif/crosstool-NG/releases/download/esp-${XTENSA_GCC_VER}/${f}"; \
+    echo "${sha}  /tmp/xtensa.tar.xz" | sha256sum -c -; \
+    tar xJf /tmp/xtensa.tar.xz -C /opt/; \
+    rm -f /tmp/xtensa.tar.xz; \
+    /opt/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc --version
+ENV PATH="/opt/xtensa-esp-elf/bin:${PATH}"
+
+# --- esptool (ELF->image + flashing) ------------------------------------------
+# NuttX's MKIMAGE step and `make flash` shell out to esptool.py; install it into
+# a venv (the base is externally-managed) and expose the entry points on PATH.
+# Pinned to the version the ESP32 port's docs reference (>= 4.8.1).
+ARG ESPTOOL_VER=4.8.1
+RUN python3 -m venv /opt/esptool \
+    && /opt/esptool/bin/pip install --no-cache-dir "esptool==${ESPTOOL_VER}" \
+    && ln -s /opt/esptool/bin/esptool.py /usr/local/bin/esptool.py \
+    && ln -s /opt/esptool/bin/espefuse.py /usr/local/bin/espefuse.py \
+    && ln -s /opt/esptool/bin/espsecure.py /usr/local/bin/espsecure.py \
+    && esptool.py version
+
+# Route every compile through ccache via the masquerade dir on PATH. The package
+# ships gcc/clang/g++ symlinks; add cc/c++ (the NuttX kbuild invokes `cc`) and
+# the xtensa driver names so the cross-build is cached too. One shared cache
+# serves the host-side kbuild and the xtensa compiles alike.
+RUN ln -sf ../../bin/ccache /usr/lib/ccache/cc \
+    && ln -sf ../../bin/ccache /usr/lib/ccache/c++ \
+    && for t in gcc g++ cc c++; do \
+         ln -sf /usr/bin/ccache "/usr/lib/ccache/xtensa-esp32-elf-${t}"; \
+         ln -sf /usr/bin/ccache "/usr/lib/ccache/xtensa-esp-elf-${t}"; \
+       done
+ENV PATH="/usr/lib/ccache:${PATH}"
+
+RUN printf '[safe]\n\tdirectory = /src\n' > /root/.gitconfig
+
+ADD entry.sh /
+
+WORKDIR /src
+
+ENTRYPOINT [ "/bin/sh", "-C", "/entry.sh" ]
