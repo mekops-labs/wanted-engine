@@ -15,6 +15,7 @@ set(vfs-srcs
     "vfs/vfs-netfs.c"
     "vfs/vfs-null.c"
     "vfs/vfs-log.c"
+    "vfs/vfs-logmount.c"
     "vfs/vfs-pipe.c"
     "vfs/vfs-procfs.c"
     "vfs/vfs-procfs-wapps.c"

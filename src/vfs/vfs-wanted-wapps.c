@@ -7,7 +7,6 @@
 #include <string.h>
 
 #include <cwalk.h>
-#include <log-store.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
 
@@ -27,13 +26,13 @@
  *       ctl       (w)      line verb: "start [<image>]" | "stop"
  *       state     (r)      lifecycle token, e.g. "created" | "running"
  *       config    (w)      JSON start config
- *       log       (r)      ring-buffered wapp log
  *
  * The pure-observability reads (image, version, id, exit_code, memory) live in
- * the read-only /proc/wapps/<name>/ namespace, reachable without this control
- * mount; `state` is mirrored there too, but is kept here because the control
- * lifecycle includes pre-launch states (created/not_started) that /proc — which
- * only sees running instances — cannot express.
+ * the read-only /proc/wapps/<name>/ namespace, and a wapp's log is a mountable
+ * read-only directory (the `log` mount type, vfs-logmount.c) — both reachable
+ * without this control mount. `state` is mirrored under /proc too, but is kept
+ * here because the control lifecycle includes pre-launch states (created/
+ * not_started) that /proc — which only sees running instances — cannot express.
  *
  * Every open allocates its own slot in the fd table below; read EOF is latched
  * per-fd, so concurrent readers (the supervisor reopens on every tick) keep
@@ -55,7 +54,6 @@ typedef enum {
     NODE_CTL,    /* wapps/<name>/ctl   */
     NODE_STATE,  /* wapps/<name>/state */
     NODE_CONFIG, /* wapps/<name>/config */
-    NODE_LOG,    /* wapps/<name>/log   */
 } wapp_node_t;
 
 #define WAPPS_MAX_OPEN 8
@@ -118,7 +116,6 @@ static const struct {
     {"ctl", NODE_CTL},
     {"state", NODE_STATE},
     {"config", NODE_CONFIG},
-    {"log", NODE_LOG},
 };
 #define N_LEAVES (sizeof(LEAVES) / sizeof(LEAVES[0]))
 
@@ -427,15 +424,6 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
 
     if (d->fds[fd].read_done)
         return 0; /* EOF, latched per-fd */
-
-    /* The log can be larger than a control line, so read it straight from the
-     * log store into the caller's buffer rather than via the line buffer. */
-    if (node == NODE_LOG) {
-        size_t n =
-            LogStoreRead(LogStore(), d->fds[fd].name, (char *)buf, nbyte);
-        d->fds[fd].read_done = true;
-        return (int)n;
-    }
 
     char line[WAPPS_LINE_MAX];
     size_t n = renderRead(node, d->fds[fd].name, line, sizeof(line));

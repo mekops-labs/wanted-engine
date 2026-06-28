@@ -37,7 +37,12 @@
 #define LAUNCH_CFG                                                             \
     "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}}"
-#define TRAPPER_LOG "/dev/wanted/wapps/" TRAPPER "/log"
+
+/* A launched wapp's captured stdout/stderr is read back through the `log` mount
+ * the supervisor config binds at /log (one read-only node per wapp), not the
+ * /dev/wanted control plane. */
+#define LOG_MOUNT "/log"
+#define TRAPPER_LOG LOG_MOUNT "/" TRAPPER
 #define TRAPPER_MARKER "trapper-was-here"
 
 #define LOOPER "looper"
@@ -56,7 +61,7 @@
  * so the supervisor can read them back from the log and assert passthrough. */
 #define ARGENV "argenv"
 #define ARGENV_CFG "/dev/wanted/wapps/" ARGENV "/config"
-#define ARGENV_LOG "/dev/wanted/wapps/" ARGENV "/log"
+#define ARGENV_LOG LOG_MOUNT "/" ARGENV
 #define ARGENV_EXIT "/proc/wapps/" ARGENV "/exit_code"
 #define ARGENV_CFG_BODY                                                        \
     "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
@@ -69,7 +74,7 @@
  * same instance prove the volume persists across a restart. */
 #define VOLCHECK "volcheck"
 #define VOLCHECK_CFG "/dev/wanted/wapps/" VOLCHECK "/config"
-#define VOLCHECK_LOG "/dev/wanted/wapps/" VOLCHECK "/log"
+#define VOLCHECK_LOG LOG_MOUNT "/" VOLCHECK
 #define VOLCHECK_PAYLOAD "persist-42"
 #define VOLCHECK_CFG_BODY                                                      \
     "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
@@ -86,8 +91,8 @@
 #define VCONS "vcons"
 #define VPROD_CFG "/dev/wanted/wapps/" VPROD "/config"
 #define VCONS_CFG "/dev/wanted/wapps/" VCONS "/config"
-#define VPROD_LOG "/dev/wanted/wapps/" VPROD "/log"
-#define VCONS_LOG "/dev/wanted/wapps/" VCONS "/log"
+#define VPROD_LOG LOG_MOUNT "/" VPROD
+#define VCONS_LOG LOG_MOUNT "/" VCONS
 #define SHARED_CFG_BODY                                                        \
     "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"},"         \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
@@ -103,8 +108,8 @@
 #define ISO_PRIV "isoprv"
 #define ISO_SHARE_CFG "/dev/wanted/wapps/" ISO_SHARE "/config"
 #define ISO_PRIV_CFG "/dev/wanted/wapps/" ISO_PRIV "/config"
-#define ISO_SHARE_LOG "/dev/wanted/wapps/" ISO_SHARE "/log"
-#define ISO_PRIV_LOG "/dev/wanted/wapps/" ISO_PRIV "/log"
+#define ISO_SHARE_LOG LOG_MOUNT "/" ISO_SHARE
+#define ISO_PRIV_LOG LOG_MOUNT "/" ISO_PRIV
 #define ISO_SHARE_CFG_BODY                                                     \
     "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"},"         \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
@@ -123,7 +128,7 @@
  * shared feed, never mutate it. */
 #define VRORO "vroro"
 #define VRORO_CFG "/dev/wanted/wapps/" VRORO "/config"
-#define VRORO_LOG "/dev/wanted/wapps/" VRORO "/log"
+#define VRORO_LOG LOG_MOUNT "/" VRORO
 #define VRORO_CFG_BODY                                                         \
     "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"},"         \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
@@ -340,6 +345,11 @@ static void wapp_node(char *buf, int cap, const char *name, const char *node) {
     snprintf(buf, cap, "/dev/wanted/wapps/%s/%s", name, node);
 }
 
+/* Build the wapp's log path under the `log` mount ("/log/<name>") into buf. */
+static void log_path(char *buf, int cap, const char *name) {
+    snprintf(buf, cap, LOG_MOUNT "/%s", name);
+}
+
 /* Launch an already-configured wapp through its own ctl node — the root ctl
  * does not start wapps (it only creates namespaces and drives power). Returns
  * true on a successful write. */
@@ -401,7 +411,7 @@ static void memcap_checks(void) {
     char path[96], buf[64];
 
     int bm = launch("bigmem") && wait_dead("bigmem");
-    wapp_node(path, sizeof(path), "bigmem", "log");
+    log_path(path, sizeof(path), "bigmem");
     int bounded = bm && read_path(path, buf, sizeof(buf)) > 0 &&
                   strstr(buf, "bigmem-bounded") != NULL;
     tap_ok(bounded, "memcap: bigmem linear-memory growth is bounded at the cap");
@@ -570,7 +580,7 @@ static void edge_checks(void) {
  * succeeded. */
 static void sandbox_check(void) {
     char log[96], buf[128];
-    wapp_node(log, sizeof(log), "escaper", "log");
+    log_path(log, sizeof(log), "escaper");
 
     launch("escaper");
     wait_dead("escaper");
@@ -587,7 +597,7 @@ static void sandbox_check(void) {
  * probe cap is reported as a diagnostic. */
 static void resource_check(void) {
     char log[96], verdict[64], buf[64];
-    wapp_node(log, sizeof(log), "fdhog", "log");
+    log_path(log, sizeof(log), "fdhog");
 
     launch("fdhog");
     int reaped = wait_dead("fdhog");
@@ -666,7 +676,7 @@ static void crashloop_check(void) {
 #define DUPLEX_PAYLOAD "duplex-ok"
 #define READER_CFG "/dev/wanted/wapps/reader/config"
 #define WRITER_CFG "/dev/wanted/wapps/writer/config"
-#define READER_LOG "/dev/wanted/wapps/reader/log"
+#define READER_LOG LOG_MOUNT "/reader"
 #define READER_CFG_BODY                                                        \
     "{\"image\":\"duplex\","                                                   \
     "\"console\":{\"in\":{\"name\":\"null\"},"                                 \
@@ -1008,8 +1018,8 @@ static void volume_readonly_check(void) {
  * image (ROLE=reader) and echo what they read to their log. */
 #define MREAD_A "mreadA"
 #define MREAD_B "mreadB"
-#define MREAD_A_LOG "/dev/wanted/wapps/" MREAD_A "/log"
-#define MREAD_B_LOG "/dev/wanted/wapps/" MREAD_B "/log"
+#define MREAD_A_LOG LOG_MOUNT "/" MREAD_A
+#define MREAD_B_LOG LOG_MOUNT "/" MREAD_B
 #define DUPLEX_CHAN "/dev/pipe/duplex"
 static void multi_reader_pipe_check(void) {
     char buf[128];
