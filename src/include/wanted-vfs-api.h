@@ -36,7 +36,7 @@ const char *StatusToString(status_t state);
 
 /* /proc/wapps/<name>/<leaf> — read-only per-wapp observability directory,
  * registered by the engine as a privileged ProcFS directory entry. Leaves
- * (state, image, version, id, exit_code) are rendered from
+ * (state, image, version, id, memory, exit_code) are rendered from
  * PlatformWappGetState. */
 extern const proc_dir_ops_t WappsProcDirOps;
 
