@@ -185,20 +185,60 @@ static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
     return VfsPlatformFsInit(wapp, options, false);
 }
 
-/* Global driver table — single registry used by WantedInstallDriver to resolve
- * a config driver name into an init callback. */
-static const vfs_driver_table_t global_driver_table[] = {
-    {"null", VfsNullInit},
-    {"log", VfsLogInit},
-    {"9p", Vfs9PInit},
-    {"config", VfsConfigInit},
-    {"platform", platformFsInitRW},
-    {"socket", VfsSocketInit},
-    {"wanted", VfsWantedInit},
-    {"gpio", VfsGpioInit},
-    {"wifi", VfsWifiInit},
-    {NULL, NULL},
+/* Core driver table — the platform-agnostic drivers, identical on every target
+ * (`platform` and `socket` resolve to platform symbols but have a real backing
+ * everywhere, so they belong here too). Platform-specific drivers a target may
+ * lack (gpio, wifi, ...) come from PlatformDriverTable() instead. Core names are
+ * reserved: WantedInstallDriver searches this table first, so a platform table
+ * cannot shadow a security-relevant driver such as `wanted`. */
+static const vfs_driver_table_t core_driver_table[] = {
+    {"null", VfsNullInit},     {"log", VfsLogInit},
+    {"9p", Vfs9PInit},         {"config", VfsConfigInit},
+    {"platform", platformFsInitRW}, {"socket", VfsSocketInit},
+    {"wanted", VfsWantedInit}, {NULL, NULL},
 };
+
+/* Resolve a config driver name to its init callback by exact match, core table
+ * first then the platform table. Returns NULL when no table offers the name —
+ * the driver is not available on this build. */
+static VfsInitFunction_t resolveDriver(const char *name) {
+    for (int i = 0; core_driver_table[i].name != NULL; i++) {
+        if (strcmp(core_driver_table[i].name, name) == 0)
+            return core_driver_table[i].init;
+    }
+
+    const vfs_driver_table_t *pt = PlatformDriverTable();
+    for (int i = 0; pt != NULL && pt[i].name != NULL; i++) {
+        if (strcmp(pt[i].name, name) == 0)
+            return pt[i].init;
+    }
+
+    return NULL;
+}
+
+int WantedListDrivers(char *buf, size_t bufLen) {
+    if (buf == NULL || bufLen == 0)
+        return -EINVAL;
+
+    const vfs_driver_table_t *tables[] = {core_driver_table,
+                                          PlatformDriverTable()};
+    int w = 0;
+
+    for (size_t t = 0; t < sizeof(tables) / sizeof(*tables); t++) {
+        const vfs_driver_table_t *tab = tables[t];
+        for (int i = 0; tab != NULL && tab[i].name != NULL; i++) {
+            int n = snprintf(buf + w, bufLen - (size_t)w, "%s%s",
+                             w > 0 ? " " : "", tab[i].name);
+            if (n < 0)
+                return -EIO;
+            w += n;
+            if ((size_t)w >= bufLen)
+                return (int)bufLen;
+        }
+    }
+
+    return w;
+}
 
 /* Route a resolved driver to its mount target:
  *   /dev/<x>  → DevFs registration table   (device singletons)
@@ -230,35 +270,25 @@ static int installTo(struct vfs_ctx_t *c, const char *path,
 
 int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
                         const char *path, const char *options) {
-    int ret = 0;
-    int i = 0;
     const vfs_driver_t *drv = NULL;
 
     if (c == NULL || w == NULL || name == NULL || path == NULL) {
         return -EINVAL;
     }
 
-    while ((global_driver_table[i].name != NULL) &&
-           (global_driver_table[i].init != NULL)) {
-        if (memcmp(global_driver_table[i].name, name,
-                   strlen(global_driver_table[i].name)) == 0) {
-            drv = global_driver_table[i].init(w, options);
-            if (NULL == drv) {
-                DEBUG_TRACE("can't load %s driver (%d)", name, ret);
-                return -EINVAL;
-            }
-        }
-        i++;
+    VfsInitFunction_t init = resolveDriver(name);
+    if (init == NULL) {
+        DEBUG_TRACE("driver '%s' not available on this platform", name);
+        return -ENODEV;
     }
 
-    if (NULL != drv) {
-        ret = installTo(c, path, drv);
-    } else {
-        DEBUG_TRACE("can't load %s driver, not found", name);
+    drv = init(w, options);
+    if (NULL == drv) {
+        DEBUG_TRACE("can't load %s driver", name);
         return -EINVAL;
     }
 
-    return ret;
+    return installTo(c, path, drv);
 }
 
 /* Parse one launch-config resource section ("drivers"/"mounts"/"sockets") into

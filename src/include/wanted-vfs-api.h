@@ -12,6 +12,13 @@
 int WantedInstallDriver(vfs_ctx_t c, const wapp_t *w, const char *name,
                         const char *path, const char *options);
 
+/* Write the space-separated names of every resolvable driver (core table then
+ * the platform table) into buf, truncated to bufLen. Iterates the same tables
+ * WantedInstallDriver resolves against, so /proc/wanted reports exactly what a
+ * launch config can request on this build. Returns bytes written, or a negative
+ * errno on bad args. */
+int WantedListDrivers(char *buf, size_t bufLen);
+
 int WantedParseConfig(const char *buf, size_t bufLen);
 const wantedConfig_t *WantedGetConfig(void);
 

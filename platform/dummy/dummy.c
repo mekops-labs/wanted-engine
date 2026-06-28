@@ -10,6 +10,17 @@
  * in dummy-wapps.c.
  * Network mock (PlatformNet*) lives in dummy-net.c. */
 
+/* The unit-test platform offers no platform-specific drivers; a test that needs
+ * one registers a deliberate fake here. A config naming an absent driver fails
+ * with -ENODEV. */
+static const vfs_driver_table_t dummy_driver_table[] = {
+    {NULL, NULL},
+};
+
+const vfs_driver_table_t *PlatformDriverTable(void) {
+    return dummy_driver_table;
+}
+
 /* PlatformRegistryWrite streams an image to a host file and renames it under
  * the install ref; host filesystem writes are out of scope for the dummy, so
  * this remains a stub. PlatformRegistryWappLoad chains a WASM load, also out of
