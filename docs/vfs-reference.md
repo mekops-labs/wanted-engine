@@ -115,6 +115,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `log` | `mounts[]` | chosen `path` | Read-only directory view of per-wapp captured logs. `<path>/<name>` reads wapp `<name>`'s ring-buffered output; the mount enumerates wapps with a live log slot. A `name=<wapp>` option scopes it to one wapp (default: all). Grantable independently of `/dev/wanted`. |
 | `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
 | `log` | console slot | — | Console capture: routes a wapp's stdout/stderr into its per-wapp log slot (read back via a `log` mount). |
+| `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` are lossy writers (drop oldest on a full ring); `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
 
 ### `socket` — the `/net/` network namespace
 

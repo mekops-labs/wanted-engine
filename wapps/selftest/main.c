@@ -68,6 +68,18 @@
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"args\":[\"alpha\",\"beta\"],\"envs\":[\"FOO=bar\",\"BAZ=qux\"]}"
 
+/* A `pipe` console streams a wapp's stdout live to a peer. argpipe runs the
+ * argenv image with its stdout backed by a `pipe` console (auto-named
+ * <wapp>.out); the supervisor reads the output back from /dev/pipe/argpipe.out
+ * rather than a log. */
+#define ARGPIPE "argpipe"
+#define ARGPIPE_CFG "/dev/wanted/wapps/" ARGPIPE "/config"
+#define ARGPIPE_PIPE "/dev/pipe/" ARGPIPE ".out"
+#define ARGPIPE_CFG_BODY                                                       \
+    "{\"image\":\"argenv\",\"console\":{\"in\":{\"name\":\"null\"},"           \
+    "\"out\":{\"name\":\"pipe\"},\"err\":{\"name\":\"null\"}},"                \
+    "\"args\":[\"alpha\",\"beta\"]}"
+
 /* volcheck mounts an engine-managed `volume` at /data. On a fresh store it
  * writes a marker and reports "vol-wrote"; on a store that already holds state
  * it reads the marker back and reports "vol-read:<payload>". Two runs of the
@@ -763,6 +775,24 @@ static void observer_check(void) {
            "observe: the observability wapp ran to completion");
 }
 
+/* A `pipe` console is a live stream to a peer, distinct from the buffered `log`
+ * console. Launch argpipe (the argenv image) with stdout backed by a pipe
+ * console, then read its output from /dev/pipe/argpipe.out — proving a wapp's
+ * stdout can be consumed live by another wapp. */
+static void console_pipe_check(void) {
+    char buf[256];
+
+    int started = create_wapp(ARGPIPE) &&
+                  write_path(ARGPIPE_CFG, ARGPIPE_CFG_BODY) >= 0 &&
+                  start_wapp(ARGPIPE);
+    wait_dead(ARGPIPE);
+
+    int got = read_path(ARGPIPE_PIPE, buf, sizeof(buf)) > 0;
+    tap_ok(started && got && strstr(buf, "arg 0=" ARGPIPE) != NULL &&
+               strstr(buf, "arg 1=alpha") != NULL,
+           "console: a pipe console streams a wapp's stdout to a peer reader");
+}
+
 /* The launch-config resource sections, verified in the supervisor's own
  * namespace (wired by selftest-config.json):
  *   - mounts[]:  a `config` map mounts at an arbitrary path OUTSIDE /dev
@@ -1108,6 +1138,7 @@ int main(void) {
         {"console_checks", console_checks},
         {"argenv_check", argenv_check},
         {"observer_check", observer_check},
+        {"console_pipe_check", console_pipe_check},
         {"lifecycle_checks", lifecycle_checks},
         {"blocker_check", blocker_check},
         {"ioblock_check", ioblock_check},

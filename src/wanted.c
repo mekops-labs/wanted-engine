@@ -84,6 +84,60 @@ static const char *resolveConsole(const char *name, const char *fallback) {
     return (name == NULL || name[0] == '\0') ? fallback : name;
 }
 
+static pipe_store_t *wantedPipeStore(void);
+
+/* Per-slot label used to auto-name a `pipe` console's pipe (<wapp>.<slot>). */
+static const char *const CONSOLE_SLOT[] = {"in", "out", "err"};
+
+/* Pull a `name=<pipe>` value out of a console slot's comma-separated options
+ * into `out`; returns true when present. Lets a config pin the console pipe's
+ * name (e.g. for a fixed reader) instead of the derived <wapp>.<slot>. */
+static bool consolePipeName(const char *opt, char *out, size_t cap) {
+    if (opt == NULL)
+        return false;
+    const char *p = opt;
+    while (*p != '\0') {
+        if (strncmp(p, "name=", 5) == 0) {
+            p += 5;
+            size_t n = 0;
+            while (p[n] != '\0' && p[n] != ',' && n < cap - 1)
+                n++;
+            memcpy(out, p, n);
+            out[n] = '\0';
+            return n > 0;
+        }
+        while (*p != '\0' && *p != ',')
+            p++;
+        if (*p == ',')
+            p++;
+    }
+    return false;
+}
+
+/* Install one console slot. A `pipe` backing auto-creates a named pipe
+ * (<wapp>.<slot>, or the options' name=) in the shared store and binds the
+ * stream fd to it — a live, peer-readable console. Every other backing resolves
+ * through the driver table. */
+static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
+                              const char *fallback, const char *path) {
+    const char *name = resolveConsole(wapp->cfg.console[idx].name, fallback);
+    const char *options = wapp->cfg.console[idx].options;
+
+    if (strcmp(name, "pipe") == 0) {
+        char pname[WAPP_MAX_NAME_LEN + 8];
+        if (!consolePipeName(options, pname, sizeof(pname)))
+            snprintf(pname, sizeof(pname), "%s.%s", wapp->name,
+                     CONSOLE_SLOT[idx]);
+        vfs_driver_t *drv = VfsPipeConsoleCreate(wantedPipeStore(), pname,
+                                                 idx == 0, VFS_O_RDONLY);
+        if (drv == NULL)
+            return -ENOMEM;
+        return VfsRegister(ctx->vfs, path, drv);
+    }
+
+    return WantedInstallDriver(ctx->vfs, wapp, name, path, options);
+}
+
 /* True when `path` is the reserved namespace `ns` itself or a path beneath it
  * ("/dev", "/dev/x"), without matching unrelated names that merely share the
  * prefix ("/development"). Used to keep mounts[] out of /dev and /net. */
@@ -545,18 +599,9 @@ int WantedWappRun(wapp_data_t *ctx) {
     wasm_runtime_set_user_data(ctx->wamr->exec_env, wasiCtx);
 
     /* install console (an unset slot falls back to its default backing) */
-    ret = WantedInstallDriver(
-        ctx->vfs, wapp,
-        resolveConsole(wapp->cfg.console[0].name, DEFAULT_CONSOLE_IN),
-        "<stdin>", wapp->cfg.console[0].options);
-    ret += WantedInstallDriver(
-        ctx->vfs, wapp,
-        resolveConsole(wapp->cfg.console[1].name, DEFAULT_CONSOLE_OUT),
-        "<stdout>", wapp->cfg.console[1].options);
-    ret += WantedInstallDriver(
-        ctx->vfs, wapp,
-        resolveConsole(wapp->cfg.console[2].name, DEFAULT_CONSOLE_ERR),
-        "<stderr>", wapp->cfg.console[2].options);
+    ret = installConsoleSlot(ctx, wapp, 0, DEFAULT_CONSOLE_IN, "<stdin>");
+    ret += installConsoleSlot(ctx, wapp, 1, DEFAULT_CONSOLE_OUT, "<stdout>");
+    ret += installConsoleSlot(ctx, wapp, 2, DEFAULT_CONSOLE_ERR, "<stderr>");
 
     /* /dev/std{in,out,err} alias the just-installed console streams — opening
      * the /dev path reaches the same backing as the matching WASI fd (0/1/2).
