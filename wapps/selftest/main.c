@@ -135,6 +135,18 @@
     "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\","                     \
     "\"options\":\"name=roonly,shared,ro\"}]}"
 
+/* observer is the reference observability wapp: granted a `log` mount and the
+ * ambient /proc but NOT the `wanted` control driver, so it can watch the fleet
+ * (read /proc/wapps, tail logs) yet cannot reach the control plane. It reports
+ * each finding to its log, which the supervisor reads back through the mount. */
+#define OBSERVER "observer"
+#define OBSERVER_CFG "/dev/wanted/wapps/" OBSERVER "/config"
+#define OBSERVER_LOG LOG_MOUNT "/" OBSERVER
+#define OBSERVER_CFG_BODY                                                      \
+    "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
+    "\"mounts\":[{\"name\":\"log\",\"path\":\"/log\"}]}"
+
 /* The supervisor's own launch config (selftest-config.json) wires the three
  * launch-config resource sections, so they are verified in our own namespace:
  * a `config` map mounted at an arbitrary path outside /dev, a named socket, and
@@ -729,6 +741,28 @@ static void argenv_check(void) {
            "exit_code: a clean non-zero exit surfaces on the exit_code node");
 }
 
+/* Capability separation: launch the observer wapp with a `log` mount but no
+ * `wanted` control mount, and assert it can observe the fleet (read /proc/wapps,
+ * tail logs through its mount) while every attempt to reach the control plane is
+ * denied — the least-privilege split the read-only namespaces exist for. */
+static void observer_check(void) {
+    char buf[1024];
+
+    int started = create_wapp(OBSERVER) &&
+                  write_path(OBSERVER_CFG, OBSERVER_CFG_BODY) >= 0 &&
+                  start_wapp(OBSERVER);
+    wait_dead(OBSERVER);
+
+    int got = read_path(OBSERVER_LOG, buf, sizeof(buf)) > 0;
+    tap_ok(started && got && strstr(buf, "obs-wapp:supervisor=") != NULL,
+           "observe: a non-control wapp reads the fleet via /proc/wapps");
+    tap_ok(got && strstr(buf, "obs-control:denied") != NULL &&
+               strstr(buf, "obs-control:reachable") == NULL,
+           "observe: the control plane is unreachable without the wanted mount");
+    tap_ok(got && strstr(buf, "obs-done") != NULL,
+           "observe: the observability wapp ran to completion");
+}
+
 /* The launch-config resource sections, verified in the supervisor's own
  * namespace (wired by selftest-config.json):
  *   - mounts[]:  a `config` map mounts at an arbitrary path OUTSIDE /dev
@@ -1073,6 +1107,7 @@ int main(void) {
         {"cpuhog_check", cpuhog_check},
         {"console_checks", console_checks},
         {"argenv_check", argenv_check},
+        {"observer_check", observer_check},
         {"lifecycle_checks", lifecycle_checks},
         {"blocker_check", blocker_check},
         {"ioblock_check", ioblock_check},
