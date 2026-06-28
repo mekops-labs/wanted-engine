@@ -5,8 +5,6 @@ endif()
 
 set(sources
     vfs/vfs-linux.c
-    vfs/vfs-gpio.c
-    vfs/vfs-wifi.c
     api/clock-sleep.c
     api/extram.c
     api/fs-volume.c

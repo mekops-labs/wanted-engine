@@ -322,6 +322,24 @@ static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
                  MAX_DRIVERS_CNT, MAX_OPTIONS_SIZE, LOG_SLOTS);
     if (w < 0)
         return -EIO;
+
+    /* Available drivers: the merged core + platform table a launch config can
+     * request on this build, so a supervisor can discover capability before
+     * configuring a wapp. */
+    if (w < (int)bufLen) {
+        int n = snprintf((char *)buf + w, (size_t)((int)bufLen - w),
+                         "drivers:\t");
+        if (n > 0 && w + n < (int)bufLen) {
+            w += n;
+            int d = WantedListDrivers((char *)buf + w,
+                                      (size_t)((int)bufLen - w));
+            if (d > 0)
+                w += d;
+            if (w < (int)bufLen)
+                w += snprintf((char *)buf + w, (size_t)((int)bufLen - w), "\n");
+        }
+    }
+
     return w < (int)bufLen ? w : (int)bufLen;
 }
 

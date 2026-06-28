@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <vfs.h>
+#include <vfs-drivers.h>
 #include <wanted-api.h>
 
 typedef uint32_t plat_clk_id_t;
@@ -45,6 +46,15 @@ platform_mutex_t *PlatformMutexNew(void);
 void PlatformMutexLock(platform_mutex_t *m);
 void PlatformMutexUnlock(platform_mutex_t *m);
 void PlatformMutexFree(platform_mutex_t *m);
+
+/* This platform's driver table (config name -> VfsInitFunction_t), NULL-
+ * terminated; may return NULL or an empty table. Holds only the drivers this
+ * target actually implements (e.g. gpio/wifi on NuttX) — a platform omits a
+ * driver it cannot honour, so a launch config naming it fails cleanly rather
+ * than resolving to a no-op stub. WantedInstallDriver searches the core table
+ * first, then this one, so a platform cannot shadow a core driver. Ownership
+ * stays with the platform (typically a static const array). */
+const vfs_driver_table_t *PlatformDriverTable(void);
 
 int PlatformWappLoad(const char *name, wapp_t *wapp);
 int PlatformWappUnload(const wapp_t *wapp);
