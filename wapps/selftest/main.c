@@ -218,10 +218,14 @@ static void positive_checks(void) {
         close(fd);
     tap_ok(fd >= 0 && n == 0, "VFS: /dev/null reads as EOF");
 
-    /* /proc/wapps lists the running supervisor. */
-    tap_ok(read_path("/proc/wapps", buf, sizeof(buf)) > 0 &&
-               strstr(buf, "supervisor") != NULL,
-           "proc: /proc/wapps reports the supervisor");
+    /* /proc/wapps is a directory: one subdirectory per running wapp, each with
+     * read-only status leaves. It enumerates the running supervisor, and the
+     * supervisor's state leaf reports it running. */
+    tap_ok(dir_has("/proc/wapps", "supervisor"),
+           "proc: /proc/wapps enumerates the supervisor");
+    tap_ok(read_path("/proc/wapps/supervisor/state", buf, sizeof(buf)) > 0 &&
+               strstr(buf, "running") != NULL,
+           "proc: /proc/wapps/<name>/state reports the supervisor running");
 
     /* /proc/wanted reports engine identity and the compile-time ceilings as
      * key:\tvalue lines. It is unprivileged. The platform string and version
