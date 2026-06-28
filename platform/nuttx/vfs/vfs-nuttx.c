@@ -30,7 +30,8 @@
 #include <wanted-api.h>
 #include <wanted_malloc.h>
 
-/* Drivers backed by NuttX hardware the engine exposes to wapps as text nodes. */
+/* Drivers backed by NuttX hardware the engine exposes to wapps as text nodes.
+ */
 static const vfs_driver_table_t nuttx_driver_table[] = {
     {"gpio", VfsGpioInit},
     {"wifi", VfsWifiInit},
