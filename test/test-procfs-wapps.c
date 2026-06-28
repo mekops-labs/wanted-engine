@@ -3,6 +3,7 @@
 #include "unity_fixture.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "test-utils.h"
@@ -116,6 +117,33 @@ TEST(procfs_wapps, MemoryLeafRendersAccounting) {
     VfsClose(vfs, fd);
 }
 
+TEST(procfs_wapps, ObservabilityLeavesRender) {
+    wapp_state_t s = mkstate("w1");
+    DummyWappStateSeed(&s, 1);
+
+    struct {
+        const char *leaf;
+        const char *want;
+    } cases[] = {
+        {"version", "1.2.3"},
+        {"id", "2"},
+        {"image", "img"},
+        {"exit_code", "-1"},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        char path[64];
+        snprintf(path, sizeof(path), "/proc/wapps/w1/%s", cases[i].leaf);
+        char buf[64] = {0};
+        int fd = VfsOpen(vfs, path, VFS_O_RDONLY);
+        TEST_ASSERT_TRUE(fd >= 0);
+        int n = VfsRead(vfs, fd, buf, sizeof(buf) - 1);
+        TEST_ASSERT_TRUE(n > 0);
+        buf[n] = '\0';
+        TEST_ASSERT_EQUAL_STRING(cases[i].want, buf);
+        VfsClose(vfs, fd);
+    }
+}
+
 TEST(procfs_wapps, UnknownWappReturnsEnoent) {
     TEST_ASSERT_EQUAL_INT(
         -ENOENT, VfsOpen(vfs, "/proc/wapps/ghost/state", VFS_O_RDONLY));
@@ -143,6 +171,7 @@ TEST_GROUP_RUNNER(procfs_wapps) {
     RUN_TEST_CASE(procfs_wapps, WappDirListsLeaves);
     RUN_TEST_CASE(procfs_wapps, StateLeafReportsRunning);
     RUN_TEST_CASE(procfs_wapps, MemoryLeafRendersAccounting);
+    RUN_TEST_CASE(procfs_wapps, ObservabilityLeavesRender);
     RUN_TEST_CASE(procfs_wapps, UnknownWappReturnsEnoent);
     RUN_TEST_CASE(procfs_wapps, UnknownLeafReturnsEnoent);
     RUN_TEST_CASE(procfs_wapps, UnprivilegedCannotOpen);

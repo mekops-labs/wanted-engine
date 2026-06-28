@@ -57,7 +57,7 @@
 #define ARGENV "argenv"
 #define ARGENV_CFG "/dev/wanted/wapps/" ARGENV "/config"
 #define ARGENV_LOG "/dev/wanted/wapps/" ARGENV "/log"
-#define ARGENV_EXIT "/dev/wanted/wapps/" ARGENV "/exit_code"
+#define ARGENV_EXIT "/proc/wapps/" ARGENV "/exit_code"
 #define ARGENV_CFG_BODY                                                        \
     "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \

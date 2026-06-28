@@ -25,13 +25,15 @@
  *   wapps/                 ReadDir → one entry per known (running) wapp
  *     <name>/              synthetic dir; ReadDir → the control files below
  *       ctl       (w)      line verb: "start [<image>]" | "stop"
- *       state     (r)      state token, e.g. "running"
- *       image     (r)      registry image for instance
- *       version   (r)      version, e.g. "1.0.0-0"
- *       id        (r)      engine wapp id
- *       exit_code (r)      plain-text WASI exit code
+ *       state     (r)      lifecycle token, e.g. "created" | "running"
  *       config    (w)      JSON start config
  *       log       (r)      ring-buffered wapp log
+ *
+ * The pure-observability reads (image, version, id, exit_code, memory) live in
+ * the read-only /proc/wapps/<name>/ namespace, reachable without this control
+ * mount; `state` is mirrored there too, but is kept here because the control
+ * lifecycle includes pre-launch states (created/not_started) that /proc — which
+ * only sees running instances — cannot express.
  *
  * Every open allocates its own slot in the fd table below; read EOF is latched
  * per-fd, so concurrent readers (the supervisor reopens on every tick) keep
@@ -48,16 +50,12 @@
 
 typedef enum {
     NODE_NONE = 0,
-    NODE_ROOT,      /* wapps/            */
-    NODE_WAPP,      /* wapps/<name>/     */
-    NODE_CTL,       /* wapps/<name>/ctl     */
-    NODE_STATE,     /* wapps/<name>/state   */
-    NODE_IMAGE,     /* wapps/<name>/image   */
-    NODE_VERSION,   /* wapps/<name>/version */
-    NODE_ID,        /* wapps/<name>/id      */
-    NODE_EXIT_CODE, /* wapps/<name>/exit_code */
-    NODE_CONFIG,    /* wapps/<name>/config  */
-    NODE_LOG,       /* wapps/<name>/log     */
+    NODE_ROOT,   /* wapps/             */
+    NODE_WAPP,   /* wapps/<name>/      */
+    NODE_CTL,    /* wapps/<name>/ctl   */
+    NODE_STATE,  /* wapps/<name>/state */
+    NODE_CONFIG, /* wapps/<name>/config */
+    NODE_LOG,    /* wapps/<name>/log   */
 } wapp_node_t;
 
 #define WAPPS_MAX_OPEN 8
@@ -117,10 +115,10 @@ static const struct {
     const char *name;
     wapp_node_t node;
 } LEAVES[] = {
-    {"ctl", NODE_CTL},       {"state", NODE_STATE},
-    {"image", NODE_IMAGE},   {"version", NODE_VERSION},
-    {"id", NODE_ID},         {"exit_code", NODE_EXIT_CODE},
-    {"config", NODE_CONFIG}, {"log", NODE_LOG},
+    {"ctl", NODE_CTL},
+    {"state", NODE_STATE},
+    {"config", NODE_CONFIG},
+    {"log", NODE_LOG},
 };
 #define N_LEAVES (sizeof(LEAVES) / sizeof(LEAVES[0]))
 
@@ -410,23 +408,6 @@ static size_t renderRead(wapp_node_t node, const char *name, char *out,
         }
         return (size_t)snprintf(out, cap, "%s", StatusToString(s));
     }
-    case NODE_IMAGE:
-        /* The registry image the instance runs. Known only once the platform
-         * has launched it (the loader stamps it); a created/not-started
-         * reservation has not bound an image yet, so it reads empty. */
-        return (size_t)snprintf(out, cap, "%s", live ? st.image : "");
-    case NODE_VERSION:
-        /* The image's version tag — an opaque string (e.g. "1.0.0-1", "stable",
-         * a digest). Empty for a not-yet-launched reservation. */
-        return (size_t)snprintf(out, cap, "%s", live ? st.version : "");
-    case NODE_ID:
-        return (size_t)snprintf(out, cap, "%u",
-                                (unsigned int)(live ? st.id : 0));
-    case NODE_EXIT_CODE:
-        /* Authoritative only when state==exited; a running/unknown wapp reads
-         * the sentinel, and so does a trapped one (which never set a code). */
-        return (size_t)snprintf(out, cap, "%d",
-                                live ? st.exit_code : WAPP_EXIT_CODE_NONE);
     default:
         return 0;
     }

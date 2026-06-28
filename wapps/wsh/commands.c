@@ -22,6 +22,12 @@
 #define WANTED_WAPP_STATE  WANTED_WAPPS "/%s/state"    /* per-wapp state     */
 #define WANTED_WAPP_FIELD  WANTED_WAPPS "/%s/%s"       /* per-wapp read node */
 
+/* Read-only per-wapp observability lives under /proc/wapps, reachable without
+ * the control mount. `state` stays on the control plane (it reports pre-launch
+ * lifecycle); image version/id are read here. */
+#define PROC_WAPPS         "/proc/wapps"
+#define PROC_WAPP_FIELD    PROC_WAPPS "/%s/%s"         /* per-wapp read node */
+
 /*
   Function Declarations for builtin shell commands:
  */
@@ -517,14 +523,24 @@ int wsh_status(char **args)
     char val[64];
 
     if (args[1] != NULL) {
-        static const char *fields[] = { "state", "version", "id" };
+        /* state from the control plane (covers pre-launch lifecycle); the image
+         * version/id are observability reads under /proc/wapps. */
+        static const struct {
+            const char *node;
+            const char *base;
+        } fields[] = {
+            { "state",   WANTED_WAPP_FIELD },
+            { "version", PROC_WAPP_FIELD },
+            { "id",      PROC_WAPP_FIELD },
+        };
         printf("%s:\n", args[1]);
         for (int i = 0; i < 3; i++) {
-            snprintf(path, sizeof(path), WANTED_WAPP_FIELD, args[1], fields[i]);
+            snprintf(path, sizeof(path), fields[i].base, args[1],
+                     fields[i].node);
             if (wanted_read(path, val, sizeof(val)) >= 0)
-                printf("  %-8s %s\n", fields[i], val);
+                printf("  %-8s %s\n", fields[i].node, val);
             else
-                printf("  %-8s <unavailable>\n", fields[i]);
+                printf("  %-8s <unavailable>\n", fields[i].node);
         }
         return 1;
     }
