@@ -106,9 +106,10 @@ TEST(vfs_wanted_wapps, ReadDirWapp_ListsControlFiles) {
         0, drv->ReadDir(drv->ctx, fd, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "ctl", 3));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "state", 5));
-    TEST_ASSERT_TRUE(HasBytes(buf, used, "version", 7));
-    TEST_ASSERT_TRUE(HasBytes(buf, used, "id", 2));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "config", 6));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "log", 3));
+    /* The pure-observability nodes moved to /proc/wapps. */
+    TEST_ASSERT_FALSE(HasBytes(buf, used, "version", 7));
 }
 
 TEST(vfs_wanted_wapps, Stat_RootIsDir_LeafIsCharDevice) {
@@ -147,76 +148,6 @@ TEST(vfs_wanted_wapps, OpenUnknownWapp_ReturnsEnoent) {
     TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("ghost/state"));
     TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("ghost/config"));
     TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("ghost/ctl"));
-}
-
-TEST(vfs_wanted_wapps, ReadVersion_Formatted) {
-    wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 2, 3, 4);
-    DummyWappStateSeed(&seed, 1);
-
-    int fd = OpenLeaf("alpha/version");
-    char buf[32] = {0};
-    drv->Read(drv->ctx, fd, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("1.2.3-4", buf);
-}
-
-/* The version is an opaque tag: a tag like "stable" round-trips through the
- * version node. */
-TEST(vfs_wanted_wapps, ReadVersion_OpaqueTag) {
-    wapp_state_t seed = MakeState("alpha", 1, RUNNING, 0, 0, 0, 0);
-    strncpy(seed.version, "stable", WAPP_MAX_VERSION_LEN - 1);
-    DummyWappStateSeed(&seed, 1);
-
-    int fd = OpenLeaf("alpha/version");
-    char buf[32] = {0};
-    drv->Read(drv->ctx, fd, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("stable", buf);
-}
-
-/* The image node reports the registry image the live instance runs — distinct
- * from its instance name (here "alpha" runs image "duplex"). */
-TEST(vfs_wanted_wapps, ReadImage_FromState) {
-    wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 0, 0, 0);
-    strncpy(seed.image, "duplex", WAPP_MAX_NAME_LEN - 1);
-    DummyWappStateSeed(&seed, 1);
-
-    int fd = OpenLeaf("alpha/image");
-    char buf[32] = {0};
-    drv->Read(drv->ctx, fd, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("duplex", buf);
-}
-
-TEST(vfs_wanted_wapps, ReadId_Decimal) {
-    wapp_state_t seed = MakeState("alpha", 7, RUNNING, 1, 0, 0, 0);
-    DummyWappStateSeed(&seed, 1);
-
-    int fd = OpenLeaf("alpha/id");
-    char buf[32] = {0};
-    drv->Read(drv->ctx, fd, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("7", buf);
-}
-
-TEST(vfs_wanted_wapps, ReadExitCode_Exited) {
-    wapp_state_t seed = MakeState("alpha", 1, EXITED, 1, 0, 0, 0);
-    seed.exit_code = 42;
-    DummyWappStateSeed(&seed, 1);
-
-    int fd = OpenLeaf("alpha/exit_code");
-    char buf[32] = {0};
-    drv->Read(drv->ctx, fd, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("42", buf);
-}
-
-/* exit_code is authoritative only when exited; a running wapp reads the
- * sentinel. (An unknown wapp can't be opened at all — see OpenUnknownWapp.) */
-TEST(vfs_wanted_wapps, ReadExitCode_RunningIsSentinel) {
-    wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 0, 0, 0);
-    seed.exit_code = WAPP_EXIT_CODE_NONE;
-    DummyWappStateSeed(&seed, 1);
-
-    int fd = OpenLeaf("alpha/exit_code");
-    char buf[32] = {0};
-    drv->Read(drv->ctx, fd, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("-1", buf);
 }
 
 TEST(vfs_wanted_wapps, ReadEof_IsPerFd) {
@@ -532,12 +463,6 @@ TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, OpenUnknownLeaf_ReturnsEnoent);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadState_Running);
     RUN_TEST_CASE(vfs_wanted_wapps, OpenUnknownWapp_ReturnsEnoent);
-    RUN_TEST_CASE(vfs_wanted_wapps, ReadVersion_Formatted);
-    RUN_TEST_CASE(vfs_wanted_wapps, ReadVersion_OpaqueTag);
-    RUN_TEST_CASE(vfs_wanted_wapps, ReadImage_FromState);
-    RUN_TEST_CASE(vfs_wanted_wapps, ReadId_Decimal);
-    RUN_TEST_CASE(vfs_wanted_wapps, ReadExitCode_Exited);
-    RUN_TEST_CASE(vfs_wanted_wapps, ReadExitCode_RunningIsSentinel);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadEof_IsPerFd);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadWriteOnlyNode_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, CtlStop_TransitionsState);
