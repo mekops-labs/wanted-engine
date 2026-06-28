@@ -6,8 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <vfs.h>
 #include <vfs-drivers.h>
+#include <vfs.h>
 #include <wanted-api.h>
 
 typedef uint32_t plat_clk_id_t;

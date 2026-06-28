@@ -188,14 +188,18 @@ static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
 /* Core driver table — the platform-agnostic drivers, identical on every target
  * (`platform` and `socket` resolve to platform symbols but have a real backing
  * everywhere, so they belong here too). Platform-specific drivers a target may
- * lack (gpio, wifi, ...) come from PlatformDriverTable() instead. Core names are
- * reserved: WantedInstallDriver searches this table first, so a platform table
- * cannot shadow a security-relevant driver such as `wanted`. */
+ * lack (gpio, wifi, ...) come from PlatformDriverTable() instead. Core names
+ * are reserved: WantedInstallDriver searches this table first, so a platform
+ * table cannot shadow a security-relevant driver such as `wanted`. */
 static const vfs_driver_table_t core_driver_table[] = {
-    {"null", VfsNullInit},     {"log", VfsLogInit},
-    {"9p", Vfs9PInit},         {"config", VfsConfigInit},
-    {"platform", platformFsInitRW}, {"socket", VfsSocketInit},
-    {"wanted", VfsWantedInit}, {NULL, NULL},
+    {"null", VfsNullInit},
+    {"log", VfsLogInit},
+    {"9p", Vfs9PInit},
+    {"config", VfsConfigInit},
+    {"platform", platformFsInitRW},
+    {"socket", VfsSocketInit},
+    {"wanted", VfsWantedInit},
+    {NULL, NULL},
 };
 
 /* Resolve a config driver name to its init callback by exact match, core table
