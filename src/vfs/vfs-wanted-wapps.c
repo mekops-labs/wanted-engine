@@ -27,13 +27,6 @@
  *       state     (r)      lifecycle token, e.g. "created" | "running"
  *       config    (w)      JSON start config
  *
- * The pure-observability reads (image, version, id, exit_code, memory) live in
- * the read-only /proc/wapps/<name>/ namespace, and a wapp's log is a mountable
- * read-only directory (the `log` mount type, vfs-logmount.c) — both reachable
- * without this control mount. `state` is mirrored under /proc too, but is kept
- * here because the control lifecycle includes pre-launch states (created/
- * not_started) that /proc — which only sees running instances — cannot express.
- *
  * Every open allocates its own slot in the fd table below; read EOF is latched
  * per-fd, so concurrent readers (the supervisor reopens on every tick) keep
  * independent cursors.
