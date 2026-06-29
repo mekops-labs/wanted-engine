@@ -303,9 +303,9 @@ int PlatformRegistryReadImage(const reg_entry_t *entry, uint8_t *buf,
         return -EINVAL;
 
     char path[PATH_MAX];
-    int n = snprintf(path, sizeof(path), "%s/%s%c%s%s", REGISTRY_ROOT,
-                     entry->name, REGISTRY_VERSION_SEPARATOR, entry->version,
-                     REGISTRY_EXT);
+    int n =
+        snprintf(path, sizeof(path), "%s/%s%c%s%s", REGISTRY_ROOT, entry->name,
+                 REGISTRY_VERSION_SEPARATOR, entry->version, REGISTRY_EXT);
     if (n < 0 || (size_t)n >= sizeof(path))
         return -ENAMETOOLONG;
 

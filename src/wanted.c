@@ -128,8 +128,8 @@ static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
         if (!consolePipeName(options, pname, sizeof(pname)))
             snprintf(pname, sizeof(pname), "%s.%s", wapp->name,
                      CONSOLE_SLOT[idx]);
-        vfs_driver_t *drv = VfsPipeConsoleCreate(wantedPipeStore(), pname,
-                                                 idx == 0, VFS_O_RDONLY);
+        const vfs_driver_t *drv = VfsPipeConsoleCreate(wantedPipeStore(), pname,
+                                                       idx == 0, VFS_O_RDONLY);
         if (drv == NULL)
             return -ENOMEM;
         return VfsRegister(ctx->vfs, path, drv);
