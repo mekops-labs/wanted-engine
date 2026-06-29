@@ -1,37 +1,35 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.8.0 (2026-06-29)
+------------------
 
 ### Added
 
-- `gpio` device driver: a wapp granted `{ "name": "gpio" }` in its launch config's `drivers[]` gets `/dev/gpio`, a text level node — `write "1"/"0"` drives the pin high/low and `read` returns `"0\n"/"1\n"`. The engine performs the GPIO ioctl (`GPIOC_WRITE`/`GPIOC_READ`); the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via the driver options). Available only on platforms that implement it (NuttX); a config naming `gpio` on a platform without it (Linux) fails the launch with `-ENODEV`.
-- `blink` sample wapp: toggles `/dev/gpio` in a 1 Hz loop.
-- `/proc/wapps/<name>/` per-wapp observability namespace: a read-only directory tree with `state`, `image`, `version`, `id`, `exit_code`, and `memory`. `/proc/wapps` is now a directory enumerating the running wapps. `memory` reports per-wapp WASM linear-memory accounting (`linear_cur`/`linear_max` bytes, `pages_cur`/`pages_max`). The namespace is reachable without the `/dev/wanted` control mount, so an observability wapp can read it without control authority.
-- `log` mount type: a read-only directory driver over the per-wapp log store, bound via `mounts[]` at an operator-chosen path. `<path>/<name>` reads wapp `<name>`'s captured stdout/stderr and the mount enumerates wapps with a live log slot; an optional `name=<wapp>` option scopes the view to one wapp. Grantable independently of `/dev/wanted`.
-- `observer` sample wapp: enumerates `/proc/wapps`, tails logs through a `log` mount, and confirms the control plane is unreachable without the `wanted` mount.
-- `pipe` console backing: a wapp's stdio slot can be backed by a named pipe in the shared store, so a peer wapp reads the stream live at `/dev/pipe/<wapp>.<slot>` (or an `options` `name=`). `out`/`err` are lossy (drop oldest on a full ring, so an unread console never wedges the wapp); `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer.
-- Registry descriptors (`/dev/wanted/reg/<name>:<version>`) now report each image's declared linear-memory profile — `init_pages`, `max_pages` (or `null`), `can_grow`, and `over_cap` when the build caps per-wapp memory — parsed from the image's wasm `(memory)` section without loading the module. A pre-flight check for whether an image fits the cap, instead of "start it and see if it's refused".
+- `gpio` driver: `/dev/gpio`, a text level node — `write "1"/"0"` drives the pin, `read` returns the level. NuttX only (`-ENODEV` elsewhere).
+- `blink` sample wapp: toggles `/dev/gpio` at 1 Hz.
+- `/proc/wapps/<name>/` observability namespace: read-only `state`, `image`, `version`, `id`, `exit_code`, `memory`; reachable without the control mount. `memory` reports per-wapp WASM linear-memory accounting.
+- `log` mount: read-only view of per-wapp captured logs, bound via `mounts[]`; `name=<wapp>` scopes it. Grantable independently of `/dev/wanted`.
+- `observer` sample wapp: enumerates `/proc/wapps`, tails logs, confirms the control plane is unreachable without `wanted`.
+- `pipe` console backing: a stdio slot backed by a named pipe a peer reads at `/dev/pipe/<wapp>.<slot>`; `out`/`err` lossy, `in` reads a peer's writes.
+- Registry descriptors report each image's declared linear-memory profile (`init_pages`, `max_pages`, `can_grow`, `over_cap`), parsed from the wasm `(memory)` section without loading.
 
 ### Changed
 
-- The per-wapp control namespace `/dev/wanted/wapps/<name>/` is reduced to `ctl`, `state`, and `config`. The pure-observability reads (`image`, `version`, `id`, `exit_code`) move to `/proc/wapps/<name>/`, and a wapp's captured log moves from `/dev/wanted/wapps/<name>/log` to the `log` mount. `state` stays on the control plane (it spans the pre-launch `created`/`not_started` lifecycle the `/proc` view cannot express) and is mirrored read-only at `/proc/wapps/<name>/state`.
-- The NuttX built-in's compiled-in default config now runs the supervisor privileged (`system.privileged: true`), so the privileged `/proc` entries (e.g. `/proc/memory`) are readable by the control-plane supervisor. Launched wapps are configured separately and do not inherit it.
-- The launch-config slot tables (the control-plane `pending` reservations and the parsed engine config) are now allocated on the heap on first use instead of living in static `.bss`. On constrained targets this moves the large per-`wapp_config_t` driver/mount/socket slot tables off limited internal RAM (and onto a heap that may extend into PSRAM); the slot-size limits can be raised without static-RAM pressure.
-- Driver resolution is split into a platform-agnostic core table and a per-platform table: each platform registers only the drivers it implements (NuttX: `gpio`, `wifi`; Linux and the test platform: none). A launch config naming a driver the platform does not offer fails with `-ENODEV` instead of resolving to an in-memory no-op. Core driver names (`wanted`, `null`, ...) are reserved and resolved first, so a platform cannot shadow them. Driver name matching is now exact (was a prefix match, so `gpioX` matched `gpio`).
-- `/proc/wanted` now reports `wasm_max_pages`, `log_slots`, `wasm_worker_stack` (the effective per-wapp worker thread stack), `max_drivers`, `max_options`, and `drivers` (the drivers available on this build).
-- Worker threads are now created with an explicit native C stack (`WASM_WORKER_STACK_SIZE`) on every platform instead of the OS default, so the recursive WAMR interpreter cannot overflow a small RTOS default thread stack (NuttX defaults to ~2 KB).
+- Per-wapp control namespace reduced to `ctl`, `state`, `config`; observability reads move to `/proc/wapps/<name>/` and logs to the `log` mount.
+- NuttX built-in default config runs the supervisor privileged (`system.privileged: true`).
+- Launch-config slot tables heap-allocated on first use (was static `.bss`).
+- Driver resolution split into core + per-platform tables; an unimplemented driver fails with `-ENODEV` (was a no-op). Driver name matching is now exact (was prefix).
+- `/proc/wanted` now reports `wasm_max_pages`, `log_slots`, `wasm_worker_stack`, `max_drivers`, `max_options`, `drivers`.
+- Worker threads created with an explicit native C stack (`WASM_WORKER_STACK_SIZE`) on every platform.
 
 ### Build
 
-- Centralized engine-wide resource limits into `src/include/wanted-config.h` (overridable via cmake profiles and `-D` in nuttx).
+- Centralized resource limits into `src/include/wanted-config.h` (cmake/`-D` overridable).
 - Added resource-limit profiles (`tiny`, `constrained`, `small`, `big`) under `cmake/profiles/`.
-- Made `MAX_DRIVERS_CNT` and `MAX_OPTIONS_SIZE` profile-tunable footprint knobs (moved to `wanted-config.h`); the constrained default shrinks the launch-config slot table so the engine's static `.bss` fits an ESP32's internal DRAM.
-- Added the `tiny` profile for boards with no external PSRAM (e.g. ESP32-WROOM): the smallest limits, sized so both static `.bss` and the runtime WASM allocations fit internal RAM with no heap relocation.
-- Added `WASM_WORKER_STACK_SIZE` as a profile-tunable knob; `make sizes` now includes the worker stack in the per-wapp footprint.
-- Added `WASM_MAX_MEMORY_PAGES` to cap per-wapp linear memory (`make memcap` and some new selftests added for testing)
-- Added `make sizes` to report memory footprint and struct sizes for each profile.
+- Made `MAX_DRIVERS_CNT`/`MAX_OPTIONS_SIZE` profile-tunable footprint knobs.
+- Added `WASM_WORKER_STACK_SIZE` and `WASM_MAX_MEMORY_PAGES` knobs.
+- Added `make sizes` (footprint/struct sizes) and `make memcap`.
 
 0.7.1 (2026-06-16)
 ----------
