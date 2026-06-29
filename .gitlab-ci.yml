@@ -45,19 +45,12 @@ stages:
     - wasm/supervisor
     expire_in: 20 minutes
   script:
-    - echo -n "Building version:"
-    - git describe --tags --abbrev=0
-    - mkdir -p "$BUILD_DIR"
-    - cd "$BUILD_DIR"
-    - cmake -GNinja $CMAKE_EXTRA_ARGS ..
-    - ninja
-    - ninja supervisor
+    - just build
 
 .unit_test_job_template: &unit_defs
   stage: test
   script:
-    - cd "$BUILD_DIR"
-    - ctest -j"$(nproc)" --output-junit rspec.xml
+    - just test
   artifacts:
     when: always
     paths:
@@ -78,8 +71,8 @@ build-nuttx:
       - third_party/nuttx/nuttx
     expire_in: 20 minutes
   script:
-    - bash test/nuttx-sim.sh kernel
-  
+    - just nuttx-kernel
+
 build-gcc:
   <<: *build_defs
   variables:
@@ -141,8 +134,7 @@ coverage:
   variables:
     BUILD_DIR: build
   script:
-    - cd "$BUILD_DIR"
-    - ninja coverage
+    - just coverage
   coverage: '/lines: \d+\.\d+/'
   artifacts:
     name: ${CI_JOB_NAME}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHA}
@@ -169,32 +161,9 @@ integration-tests:
   variables:
     BUILD_DIR: build-gcc
   script:
-    - |
-      status=0
-      for s in test/smoke*.sh; do
-        echo "========== $s =========="
-        if bash "$s" "./$BUILD_DIR/cmd/wanted-cli"; then
-          echo "PASS: $s"
-        else
-          echo "FAIL: $s"
-          status=1
-        fi
-      done
-      echo "========== test/selftest.sh =========="
-      if bash test/selftest.sh "./$BUILD_DIR/cmd/wanted-cli"; then
-        echo "PASS: test/selftest.sh"
-      else
-        echo "FAIL: test/selftest.sh"
-        status=1
-      fi
-      echo "========== test/syscontrol.sh =========="
-      if bash test/syscontrol.sh "./$BUILD_DIR/cmd/wanted-cli"; then
-        echo "PASS: test/syscontrol.sh"
-      else
-        echo "FAIL: test/syscontrol.sh"
-        status=1
-      fi
-      exit $status
+    - just smoke-engine
+    - just selftest
+    - just syscontrol
 
 # Boots the sim and runs the in-WASM selftest suite asserts VFS / control
 # plane / sandbox / robustness from inside WASM, identically to Linux. Needs
@@ -207,7 +176,7 @@ nuttx-selftest:
   variables:
     NUTTX_SKIP_BUILD: "1"
   script:
-    - bash test/nuttx-sim.sh selftest
+    - just nuttx-selftest
 
 # the engine-process lifecycle the in-WASM suite cannot observe —
 # poweroff / reboot / exit and that a respawned supervisor keeps a working
@@ -227,7 +196,7 @@ nuttx-syscontrol:
     NUTTX_SKIP_BUILD: "0"
     NUTTX_CLEAN: "1"
   script:
-    - bash test/nuttx-sim.sh syscontrol
+    - just nuttx-syscontrol
 
 # --- lint / static analysis / security -----------------------------------
 
