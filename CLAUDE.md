@@ -10,17 +10,17 @@ Before executing any build or test command, read `README.md`. It is the authorit
 
 ## Build Environment
 
-All builds run inside the standardized build container — do **not** build natively. The root `Makefile` wraps the containerized commands (run `make help` for the full list); the container provides the toolchain (CMake, Ninja, host clang/gcc, and the bundled wasi-sdk for wapps).
+All builds run inside the standardized build container — do **not** build natively. Commands are `just` recipes (in the `Justfile`) that run inside the container; `just --list` shows them all. The root `Makefile` is a thin wrapper that runs the same recipe in the container, so on a bare host `make <recipe>` == `just <recipe>`. Inside the devcontainer or CI, call `just` directly. The container provides the toolchain (CMake, Ninja, host clang/gcc, and the bundled wasi-sdk for wapps).
 
 ```bash
-make build         # supervisor TAR images + engine (sheriff supervisor)
-make wsh           # engine with the wsh debug supervisor
-make test          # unit + smoke suite via ctest
-make smoke         # VFS/control-plane smoke via wsh
-make shell         # interactive shell in the build container
+just build         # supervisor TAR images + engine (sheriff supervisor)
+just wsh           # engine with the wsh debug supervisor
+just test          # unit + smoke suite via ctest
+just smoke-engine  # production supervisor instantiates cleanly
+make shell         # interactive shell in the build container (host wrapper)
 ```
 
-Override the container runtime or image with `RUNNER=docker` / `IMAGE=...`.
+Override the container runtime or image with `RUNNER=docker` / `IMAGE=...` (on the `make` wrapper). The interactive/host targets (`shell`, `wsh-shell`, `nuttx-shell`, `esp32`, `esp32-flash`, `docs-sync`) live in the `Makefile`, not the `Justfile`.
 
 **Run a single test group** (from `make shell` or any container shell):
 
@@ -189,7 +189,7 @@ This applies to all of `src/`, `platform/`, `cmd/`, and `test/`. Vendor code und
 
 - **Platform boundary is strict.** `src/` must not call OS primitives directly. All platform-specific operations go through `platform/include/` headers.
 - **VFS is the only I/O path.** Wapps interact with the outside world exclusively through VFS. Adding direct syscalls from WASM host functions bypasses isolation and is not allowed.
-- **Compile-time resource limits.** Engine-wide limits live in `src/include/wanted-config.h` (`MAX_WAPPS`, `WASM_STACK_SIZE`, `WASM_HEAP_SIZE`, `WASM_MAX_MEMORY_PAGES`, `MAX_PATH_LEN`), each `#ifndef`-guarded and overridable via `-D` or a profile (`make build PROFILE=constrained|small|big`). Driver-private limits stay local to their driver. Changing a limit resizes statically allocated structures — audit every array dimensioned by it. See the [Platform Guide](docs/platform-guide.md) and `make sizes`.
+- **Compile-time resource limits.** Engine-wide limits live in `src/include/wanted-config.h` (`MAX_WAPPS`, `WASM_STACK_SIZE`, `WASM_HEAP_SIZE`, `WASM_MAX_MEMORY_PAGES`, `MAX_PATH_LEN`), each `#ifndef`-guarded and overridable via `-D` or a profile (`PROFILE=constrained|small|big just build`). Driver-private limits stay local to their driver. Changing a limit resizes statically allocated structures — audit every array dimensioned by it. See the [Platform Guide](docs/platform-guide.md) and `just sizes`.
 - **No dynamic allocation in wapp context after init.** Memory budget is constrained on embedded targets.
 
 ## Key Constants and Status Codes
@@ -202,7 +202,7 @@ Engine-wide resource limits are in `src/include/wanted-config.h` (see Architectu
 
 ## CI/CD
 
-GitLab CI (`.gitlab-ci.yml`) runs two compilers (gcc, clang) and a coverage build. The build image is `registry.gitlab.com/mekops/wanted/wanted-engine/build`. Test reports are JUnit XML; coverage is Cobertura XML.
+GitLab CI (`.gitlab-ci.yml`) runs two compilers (gcc, clang) and a coverage build. Every job runs the same `just` recipe you run locally (`just build`, `just test`, `just nuttx-*`, `just lint-*`, etc.), so a green local run reproduces CI. The build image is `registry.gitlab.com/mekops/wanted/wanted-engine/build`. Test reports are JUnit XML; coverage is Cobertura XML.
 
 ## Git Conventions
 

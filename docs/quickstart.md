@@ -11,20 +11,20 @@ This guide takes you from a clean checkout to a running wapp. It uses the `wsh` 
 ## Prerequisites
 
 - A container runtime: **Podman** (default) or **Docker**.
-- **`make`**.
+- **`make`** (the host wrapper) — or nothing extra if you work inside the devcontainer.
 
-Nothing else. The toolchain (CMake, Ninja, the WASI SDK, the WAMR runtime) lives in the build container; the host only invokes `make`, which wraps every command in that container. To use Docker instead of Podman, append `RUNNER=docker` to any `make` command.
+Nothing else. The toolchain (CMake, Ninja, the WASI SDK, the WAMR runtime) lives in the build container. Commands are [`just`](https://just.systems) recipes that run in that container; on a bare host the `make` wrapper runs each one for you (`make build` is `just build` in the image), so the examples below use `just` and `make <recipe>` works identically. Inside the devcontainer or CI, call `just` directly. To use Docker instead of Podman, append `RUNNER=docker` to any `make` command.
 
 ## Build
 
 Compile the sample wapps and the engine with the `wsh` supervisor:
 
 ```bash
-make wapps   # compile the sample wapps under wapps/ (produces wapps/hello/hello.wasm)
-make wsh     # build the engine + CLI with the wsh debug supervisor
+just wapps   # compile the sample wapps under wapps/ (produces wapps/hello/hello.wasm)
+just wsh     # build the engine + CLI with the wsh debug supervisor
 ```
 
-`make wapps` compiles each sample to a `.wasm` binary. `make wsh` builds `build/cmd/wanted-cli` with `wsh` as its boot supervisor.
+`just wapps` compiles each sample to a `.wasm` binary. `just wsh` builds `build/cmd/wanted-cli` with `wsh` as its boot supervisor.
 
 ## Package a wapp into the registry
 
