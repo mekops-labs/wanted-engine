@@ -31,6 +31,15 @@ Changelog
 - Added `WASM_WORKER_STACK_SIZE` and `WASM_MAX_MEMORY_PAGES` knobs.
 - Added `make sizes` (footprint/struct sizes) and `make memcap`.
 
+### ESP32 (NuttX, Xtensa)
+
+- Engine runs on the classic ESP32 (ESP32-WROVER) via the NuttX port — the first hardware bring-up of that port (the esp-idf ESP32 path was removed in 0.5.0). Xtensa cross-build image (`docker/Containerfile.esp32`) and `esp32-build`/flash recipes.
+- Supervisor boots from a firmware-bundled read-only ROMFS with a first-boot factory seed; installed wapps persist on a writable registry.
+- In-RAM image cache preloaded at boot serves wapp launches RAM-to-RAM, so a flash read never corrupts live PSRAM (classic-ESP32 flash/PSRAM cache coexistence bug) — enables concurrent wapps.
+- PSRAM external-RAM heap backs the image cache and WAMR runtime, freeing scarce internal RAM.
+- Writable wapp registry on an SD card (FAT over SPI), whose reads don't disable the flash/PSRAM cache.
+- `wifi` VFS driver + `wifi-connect` sample: `wlan0` scans, WPA2-associates, and reports its DHCP lease over a text node.
+
 0.7.1 (2026-06-16)
 ----------
 
