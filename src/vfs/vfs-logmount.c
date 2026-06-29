@@ -31,7 +31,7 @@
  * mount exposes every wapp's log (the supervisor's broad view).
  * ───────────────────────────────────────────────────────────────────────── */
 
-#define ID {'L', 'm', 'n', 't'}
+#define ID {'L', 'o', 'g', 'd'}
 #define LOGMOUNT_MAX_OPEN 8
 
 typedef struct {
