@@ -64,6 +64,12 @@ stages:
 # NuttX built-in over hostfs. The build image carries the sim prerequisites.
 build-nuttx:
   stage: build
+  # Force a clean clone. This job was seen running against a stale tree left in
+  # the runner's reused build dir (an empty get_sources step — no fetch/checkout
+  # logged), which then runs an outdated Justfile and fails to find the recipe.
+  # A fresh clone guarantees the working tree matches the commit under test.
+  variables:
+    GIT_STRATEGY: clone
   cache:
     - *ccache_cache
   artifacts:
