@@ -25,7 +25,7 @@ Every platform implements the contract in `platform/include/platform.h`. A confo
 
 The invariants every platform must honour: a wapp runs on its own thread; `PlatformWappStop` must interrupt a wapp that is blocked in a host syscall (not merely set a flag and wait); `PlatformWappLoop` blocks until an explicit shutdown/reboot request and respawns a supervisor that exits on its own; memory stats report heap usage; the registry resolves a wapp image by name.
 
-All targets build inside the standardized container — the host only needs a container runtime. `make help` lists the targets; append `RUNNER=docker` to use Docker.
+All recipes build inside the standardized container — the host only needs a container runtime. `just --list` lists them; on a bare host `make <recipe>` runs the same recipe in the container (append `RUNNER=docker` to use Docker).
 
 ## Shared POSIX core
 
@@ -58,8 +58,8 @@ A target layer (`platform/linux/`, `platform/nuttx/`) links those sources and im
 The primary target.
 
 ```bash
-make build        # engine + CLI with the production sheriff supervisor
-make wsh          # engine with the wsh debug supervisor
+just build        # engine + CLI with the production sheriff supervisor
+just wsh          # engine with the wsh debug supervisor
 ```
 
 - **Threads** — pthreads.
@@ -75,16 +75,16 @@ CMake options of note: `WANTED_PLATFORM` (the platform layer), `WANTED_SUPERVISO
 A first-class, CI-gated target: the full engine running as a NuttX application on the host-stack simulator. The `platform/nuttx/` layer is complete — every `Platform*` symbol has a working body, with no remaining stubs.
 
 ```bash
-make nuttx-deps      # init the nuttx + nuttx-apps submodules, link the app package
-make nuttx-build     # configure + build the sim from a clean tree
-make nuttx-selftest  # run the in-WASM selftest suite on the sim
-make nuttx-shell     # boot the sim to an interactive wsh prompt
+just nuttx-deps      # init the nuttx + nuttx-apps submodules, link the app package
+just nuttx-build     # configure + build the sim from a clean tree
+just nuttx-selftest  # run the in-WASM selftest suite on the sim
+make nuttx-shell     # boot the sim to an interactive wsh prompt (host wrapper)
 ```
 
 - **Board config** — `sim:wanted`, a native defconfig in the NuttX fork. The engine runs as the NuttX init task via `wanted_sim_main`, which `chdir`s to `/data` (so `./registry` resolves against the sim's hostfs) and powers the board off cleanly when `wanted_main` returns.
 - **Console** — raw `write(1/2)` for output.
 - **Stop mechanism** — cooperative: `PlatformWappStop` sets the WAMR terminate flag and sends `SIGUSR2` to the worker so a wapp blocked in a host call is interrupted and checks the flag on return. A per-worker `interrupted` flag bridges `clock_nanosleep`'s success-on-signal quirk.
-- **Submodules** — `third_party/nuttx` and `third_party/nuttx-apps` are shallow submodules pinned to the `wanted` branch of the mekops forks; `make nuttx-deps` initialises them (idempotent) and must run once before `nuttx-build`.
+- **Submodules** — `third_party/nuttx` and `third_party/nuttx-apps` are shallow submodules pinned to the `wanted` branch of the mekops forks; `just nuttx-deps` initialises them (idempotent) and must run once before `nuttx-build`.
 
 **Differences from Linux.** No TLS yet. The `sim:wanted` board is built without a network stack (`CONFIG_NET` off), so `socket()` fails and `/net` sockets are unavailable on the sim — socket paths are exercised on Linux only, and the selftest skips its `/net` socket check on the sim. The cooperative stop cannot pre-empt a bare native call that never checks `EINTR`, where Linux's async cancel can.
 
@@ -128,8 +128,8 @@ Per-capacity profiles ship as CMake cache fragments under `cmake/profiles/`:
 Select one — the unset default is the `constrained` header values:
 
 ```bash
-make build PROFILE=small         # Linux engine + CLI
-make nuttx-build PROFILE=small   # NuttX sim
+PROFILE=small just build         # Linux engine + CLI
+PROFILE=small just nuttx-build   # NuttX sim
 cmake -C cmake/profiles/small.cmake -S . -B build   # direct cmake
 ```
 
@@ -137,8 +137,8 @@ On Linux the fragment seeds the CMake cache; for NuttX the same values are forwa
 
 ### Measuring the footprint
 
-- `make sizes` reports each profile's per-wapp and worst-case memory for both the host (LP64) and 32-bit embedded (ILP32) ABIs, measured from the real engine structs, but it's just approximate value (e.g. wamr overhead is arbitrary worst case value), it doesn't actually measure the whole runtime overhead on specific hardware, using specifc compiler, just the struct sizes.
-- `make memcap` is a negative test that verifies the `WASM_MAX_MEMORY_PAGES` cap actually bounds a wapp's `memory.grow`.
+- `just sizes` reports each profile's per-wapp and worst-case memory for both the host (LP64) and 32-bit embedded (ILP32) ABIs, measured from the real engine structs, but it's just approximate value (e.g. wamr overhead is arbitrary worst case value), it doesn't actually measure the whole runtime overhead on specific hardware, using specifc compiler, just the struct sizes.
+- `just memcap` is a negative test that verifies the `WASM_MAX_MEMORY_PAGES` cap actually bounds a wapp's `memory.grow`.
 
 ## Porting to a new platform
 

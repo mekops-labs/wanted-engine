@@ -40,13 +40,13 @@ See [Architecture](docs/architecture.md) for the full conceptual overview.
 
 ## Build and Run
 
-The environment is standardized via Podman/Docker. The root `Makefile` wraps all containerized commands.
+The environment is standardized via Podman/Docker. Commands are [`just`](https://just.systems) recipes that run inside the build container (`just --list` shows them all). On a bare host the root `Makefile` is a thin wrapper that runs the same recipe in the container — `make build` is just `just build` in the image — so either works. Inside the devcontainer or CI, call `just` directly.
 
 ```bash
-make build           # engine + sheriff supervisor
-make wsh             # engine + wsh debug supervisor
-make test            # run unit tests
-make selftest        # run in-WASM functional suite
+just build           # engine + sheriff supervisor
+just wsh             # engine + wsh debug supervisor
+just test            # run unit tests
+just selftest        # run in-WASM functional suite
 ```
 
 See the [Quick Start](docs/quickstart.md) and [Testing Guide](docs/testing-guide.md) for details.
@@ -56,9 +56,9 @@ See the [Quick Start](docs/quickstart.md) and [Testing Guide](docs/testing-guide
 WANTED runs as a first-class NuttX application.
 
 ```bash
-make nuttx-deps      # init submodules
-make nuttx-build     # build the sim
-make nuttx-selftest  # run the suite on the sim
+just nuttx-deps      # init submodules
+just nuttx-build     # build the sim
+just nuttx-selftest  # run the suite on the sim
 ```
 
 See the [Platform Guide](docs/platform-guide.md) for sim usage and the hardware roadmap.

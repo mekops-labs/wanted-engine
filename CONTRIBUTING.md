@@ -14,17 +14,18 @@ If you cloned without `--recursive`, run `git submodule update --init --recursiv
 
 ## Building and testing
 
-All builds run inside the standardized build container — see `README.md`
-for the authoritative build/test/run instructions and `make help` for the
-full target list. The short version:
+All builds run inside the standardized build container via [`just`](https://just.systems)
+recipes — see `README.md` for the authoritative build/test/run instructions and
+`just --list` for the full recipe list. On a bare host, `make <recipe>` runs the
+same recipe in the container. The short version:
 
 ```bash
-make build   # engine + supervisor images
-make test    # unit + smoke suite via ctest
-make smoke   # VFS/control-plane smoke via wsh
+just build         # engine + supervisor images
+just test          # unit + smoke suite via ctest
+just smoke-engine  # production supervisor instantiates cleanly
 ```
 
-A change is ready for review once `make test` and `make smoke` pass.
+A change is ready for review once `just test` and `just smoke-engine` pass.
 
 ## Code style
 
