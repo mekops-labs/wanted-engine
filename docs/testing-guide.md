@@ -10,14 +10,14 @@ The engine has three test tiers, each catching a different class of failure. All
 
 | Suite | Command | Scope |
 |-------|---------|-------|
-| Unit (ctest) | `make test` | C unit tests: VFS, TarFS, WASI, registry, API parsing |
-| In-WASM selftest | `make selftest` / `make nuttx-selftest` | 29 functional + robustness scenarios from inside WASM; TAP |
-| Smoke | `make smoke-engine` | The production sheriff supervisor instantiates cleanly |
+| Unit (ctest) | `just test` | C unit tests: VFS, TarFS, WASI, registry, API parsing |
+| In-WASM selftest | `just selftest` / `just nuttx-selftest` | 29 functional + robustness scenarios from inside WASM; TAP |
+| Smoke | `just smoke-engine` | The production sheriff supervisor instantiates cleanly |
 
 ## Unit suite (ctest)
 
 ```bash
-make test                    # full suite
+just test                    # full suite
 ```
 
 Each `test/test-*.c` file is one group exercising a subsystem directly in C: `test-vfs*` (router, mount table, ops, the per-namespace drivers), `test-tarfs` (layer merge, whiteouts), `test-pipe`, `test-procfs`, `test-platform-clock` / `test-platform-registry`, `test-vfs-wanted-*` (control-plane drivers), `test-api`. Tests are built into one `tests` binary and registered with CTest per group, so you can run one:
@@ -30,7 +30,7 @@ To add a group: drop a `test/test-<thing>.c` using the Unity assertions (see `te
 
 ## Selftest suite
 
-`make selftest` (Linux) and `make nuttx-selftest` (NuttX sim) run an identical suite from **inside WASM**, driven by the `selftest` supervisor variant (`wapps/selftest/`). Because it uses only the WASI and WANTED control-plane ABI, it runs unchanged on both targets — no platform-specific scripting. Results are reported as TAP (_Test Anything Protocol_); the runner asserts a plan line and the absence of `not ok`.
+`just selftest` (Linux) and `just nuttx-selftest` (NuttX sim) run an identical suite from **inside WASM**, driven by the `selftest` supervisor variant (`wapps/selftest/`). Because it uses only the WASI and WANTED control-plane ABI, it runs unchanged on both targets — no platform-specific scripting. Results are reported as TAP (_Test Anything Protocol_); the runner asserts a plan line and the absence of `not ok`.
 
 The suite covers four categories:
 
@@ -43,12 +43,12 @@ The suite covers four categories:
 
 Each scenario is a small purpose-built wapp under `wapps/` that the supervisor launches and then checks via the control plane — a misbehaving wapp must be contained without taking down the engine or its neighbours.
 
-On Linux, `make selftest` also runs `test/syscontrol.sh`, which drives the `wsh` supervisor through poweroff / reboot / exit and asserts the engine-process lifecycle the in-WASM suite cannot observe — including that a respawned supervisor keeps a working console.
+A companion recipe, `just syscontrol` (Linux) / `just nuttx-syscontrol` (sim), runs `test/syscontrol.sh`, which drives the `wsh` supervisor through poweroff / reboot / exit and asserts the engine-process lifecycle the in-WASM suite cannot observe — including that a respawned supervisor keeps a working console.
 
 ## Smoke test
 
 ```bash
-make smoke-engine
+just smoke-engine
 ```
 
 `test/smoke-engine.sh` boots the real production sheriff supervisor and asserts it instantiates cleanly — the regression guard for the out-of-repo supervisor blob. It can fail on a corrupt or missing supervisor image, or a WAMR opcode mismatch between the blob and the bundled runtime.
@@ -61,7 +61,7 @@ To add a scenario:
 2. Make the wapp exercise one behaviour — reach a VFS path, misbehave in one specific way, or talk over a pipe.
 3. Stage it: add `<name>:<version>` to `TEST_WAPPS` in `test/selftest.sh` (and `stage_test_wapp` in `test/nuttx-sim.sh` for the sim). The runner packages each into the registry as `<name>:<version>.wapp`.
 4. Add the supervisor-side check in `wapps/selftest/main.c`: launch the wapp via the control plane and assert the expected `state` / `log` outcome, emitting a TAP line.
-5. Re-run `make selftest`.
+5. Re-run `just selftest`.
 
 The suite is the reference for how to drive the control plane from a wapp; new platform work must keep it green on both Linux and the sim.
 
