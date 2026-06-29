@@ -30,8 +30,8 @@
 typedef struct procfs_handle_t {
     const vfs_proc_entry_t *entry; /* NULL for root directory */
     bool is_root;
-    bool is_dir;    /* directory node (root, or a dir-entry subdir) */
-    bool read_done; /* one-shot EOF latch for file reads */
+    bool is_dir;              /* directory node (root, or a dir-entry subdir) */
+    bool read_done;           /* one-shot EOF latch for file reads */
     char sub[PROCFS_SUB_MAX]; /* sub-path under a directory entry */
 } procfs_handle_t;
 
@@ -251,7 +251,7 @@ int ProcFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
             continue;
         entries[count].name = c->procfs[i].name;
         entries[count].type = c->procfs[i].dir_ops ? VFS_FILETYPE_DIRECTORY
-                                                    : VFS_FILETYPE_REGULAR_FILE;
+                                                   : VFS_FILETYPE_REGULAR_FILE;
         count++;
     }
     return VfsFlatDirReadDir(entries, count, buf, bufLen, cookie, bufUsed);

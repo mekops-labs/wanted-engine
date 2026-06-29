@@ -20,8 +20,8 @@ vfs_driver_t *PipeDriverCreate(pipe_store_t *store);
 
 /* Create a console driver bound to the single named pipe `name` in `store`.
  * `forRead` selects the `in` direction (a reader); otherwise it is a lossy
- * writer for `out`/`err` (drops oldest on a full ring so an unread console never
- * wedges the wapp). `flags` carries open flags (e.g. VFS_O_NONBLOCK). Installed
- * directly as a stream fd via VfsRegister — no Open call. */
+ * writer for `out`/`err` (drops oldest on a full ring so an unread console
+ * never wedges the wapp). `flags` carries open flags (e.g. VFS_O_NONBLOCK).
+ * Installed directly as a stream fd via VfsRegister — no Open call. */
 vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
                                    bool forRead, vfs_oflags_t flags);

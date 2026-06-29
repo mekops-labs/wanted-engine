@@ -28,8 +28,8 @@
 #define WAPP_READ_MAX 128
 
 /* Leaves under /proc/wapps/<name>/. */
-static const char *const LEAVES[] = {"state",     "image",  "version",
-                                     "id",        "memory", "exit_code"};
+static const char *const LEAVES[] = {"state", "image",  "version",
+                                     "id",    "memory", "exit_code"};
 #define N_LEAVES (sizeof(LEAVES) / sizeof(LEAVES[0]))
 
 /* Split a sub-path into its wapp name and leaf. Accepted forms (no leading

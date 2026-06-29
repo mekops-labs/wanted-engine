@@ -460,10 +460,10 @@ static int _bDestroy(vfs_driver_t *drv) {
  *
  * Backs a wapp's console slot (in/out/err) with a named pipe in the shared
  * store, so a peer wapp can read the stream live at /dev/pipe/<name>. Bound to
- * one pipe at creation (no Open — VfsRegister installs it directly as the stream
- * fd). out/err are lossy writers: when the ring is full they drop the oldest
- * bytes and report the whole write consumed, so a console with no reader can
- * never wedge the wapp. in is a reader, mirroring PipeDriver_Read. */
+ * one pipe at creation (no Open — VfsRegister installs it directly as the
+ * stream fd). out/err are lossy writers: when the ring is full they drop the
+ * oldest bytes and report the whole write consumed, so a console with no reader
+ * can never wedge the wapp. in is a reader, mirroring PipeDriver_Read. */
 
 typedef struct {
     pipe_store_t *store;
@@ -554,8 +554,8 @@ static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
             return 0;
         if (nonblock || iter >= PIPE_POLL_MAX_ITERS)
             return -EAGAIN;
-        if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC, PIPE_POLL_INTERVAL_NS,
-                                   0) == -EINTR)
+        if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
+                                   PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
             return -EINTR;
     }
 }

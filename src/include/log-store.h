@@ -32,7 +32,8 @@ size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap);
 /* True if a log slot exists for `name` (the wapp has captured output). */
 bool LogStoreHas(log_store_t *s, const char *name);
 
-/* Copy the names of up to `max` in-use slots into `names` (each NUL-terminated).
- * Returns the count written. Lets a read surface enumerate the wapps with a
- * live log. */
-size_t LogStoreList(log_store_t *s, char names[][WAPP_MAX_NAME_LEN], size_t max);
+/* Copy the names of up to `max` in-use slots into `names` (each
+ * NUL-terminated). Returns the count written. Lets a read surface enumerate the
+ * wapps with a live log. */
+size_t LogStoreList(log_store_t *s, char names[][WAPP_MAX_NAME_LEN],
+                    size_t max);

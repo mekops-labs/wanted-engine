@@ -126,8 +126,7 @@ static int alloc_fd(vfs_driver_ctx_t d) {
 
 /* True when `name` is within this mount's scope and has a live log slot. */
 static bool visible(vfs_driver_ctx_t d, const char *name) {
-    if (d->scope[0] != '\0' &&
-        strncmp(d->scope, name, WAPP_MAX_NAME_LEN) != 0)
+    if (d->scope[0] != '\0' && strncmp(d->scope, name, WAPP_MAX_NAME_LEN) != 0)
         return false;
     return LogStoreHas(LogStore(), name);
 }
