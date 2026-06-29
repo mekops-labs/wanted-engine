@@ -43,6 +43,27 @@ static int reg_alloc(void) {
     return -1;
 }
 
+int PlatformRegistryReadImage(const reg_entry_t *entry, uint8_t *buf,
+                              size_t maxLen) {
+    (void)entry;
+    if (buf == NULL || maxLen == 0)
+        return -EINVAL;
+
+    /* A canned ustar-headed image: the "app.wasm" member name at offset 0 and a
+     * minimal wasm declaring (memory 1 4) at the 512-byte content boundary, so
+     * the descriptor render path is exercisable without real image storage. */
+    static const uint8_t wasm[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00,
+                                   0x00, 0x05, 0x04, 0x01, 0x01, 0x01, 0x04};
+    size_t total = 512 + sizeof(wasm);
+    size_t copy = total < maxLen ? total : maxLen;
+    memset(buf, 0, copy);
+    if (copy >= 8)
+        memcpy(buf, "app.wasm", 8);
+    if (copy > 512)
+        memcpy(buf + 512, wasm, copy - 512);
+    return (int)copy;
+}
+
 /* ── Test control ───────────────────────────────────────────────────────── */
 
 void DummyRegistryReset(void) { memset(g_registry, 0, sizeof(g_registry)); }

@@ -119,3 +119,38 @@ size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap) {
     PlatformMutexUnlock(s->lock);
     return copied;
 }
+
+bool LogStoreHas(log_store_t *s, const char *name) {
+    if (!s || !name)
+        return false;
+
+    PlatformMutexLock(s->lock);
+    bool found = false;
+    for (int i = 0; i < LOG_SLOTS; i++) {
+        if (s->slots[i].used &&
+            strncmp(s->slots[i].name, name, WAPP_MAX_NAME_LEN) == 0) {
+            found = true;
+            break;
+        }
+    }
+    PlatformMutexUnlock(s->lock);
+    return found;
+}
+
+size_t LogStoreList(log_store_t *s, char names[][WAPP_MAX_NAME_LEN],
+                    size_t max) {
+    if (!s || !names || max == 0)
+        return 0;
+
+    PlatformMutexLock(s->lock);
+    size_t n = 0;
+    for (int i = 0; i < LOG_SLOTS && n < max; i++) {
+        if (!s->slots[i].used)
+            continue;
+        strncpy(names[n], s->slots[i].name, WAPP_MAX_NAME_LEN - 1);
+        names[n][WAPP_MAX_NAME_LEN - 1] = '\0';
+        n++;
+    }
+    PlatformMutexUnlock(s->lock);
+    return n;
+}

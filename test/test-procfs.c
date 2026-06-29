@@ -169,21 +169,21 @@ TEST(procfs_read, ReturnsDataOnFirstRead) {
     ProcFs_Close(vfs, h);
 }
 
-TEST(procfs_read, RootHandleReturnsEbadf) {
+TEST(procfs_read, RootHandleReturnsEisdir) {
     int out_err = 0;
     void *h = ProcFs_Open(vfs, NULL, VFS_O_RDONLY, &out_err);
     TEST_ASSERT_NOT_NULL(h);
 
     char buf[8];
     int n = ProcFs_Read(vfs, h, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_INT(-EBADF, n);
+    TEST_ASSERT_EQUAL_INT(-EISDIR, n);
 
     ProcFs_Close(vfs, h);
 }
 
 TEST_GROUP_RUNNER(procfs_read) {
     RUN_TEST_CASE(procfs_read, ReturnsDataOnFirstRead);
-    RUN_TEST_CASE(procfs_read, RootHandleReturnsEbadf);
+    RUN_TEST_CASE(procfs_read, RootHandleReturnsEisdir);
 }
 
 /***************************************/
@@ -416,4 +416,156 @@ TEST_GROUP_RUNNER(procfs_clock_quality) {
     RUN_TEST_CASE(procfs_clock_quality, DefaultIsUncalibrated);
     RUN_TEST_CASE(procfs_clock_quality, ReflectsCalibrationUpdate);
     RUN_TEST_CASE(procfs_clock_quality, RejectsOutOfRangeWrite);
+}
+
+/***************************************/
+TEST_GROUP(procfs_dir);
+/***************************************/
+
+/* A minimal directory entry exercising the generic ProcFS hierarchy: a single
+ * child directory "alpha" holding one leaf "x". */
+static int _DirStat(vfs_ctx_t c, const char *sub, vfs_filetype_t *type) {
+    (void)c;
+    if (strcmp(sub, "") == 0 || strcmp(sub, "alpha") == 0) {
+        *type = VFS_FILETYPE_DIRECTORY;
+        return 0;
+    }
+    if (strcmp(sub, "alpha/x") == 0) {
+        *type = VFS_FILETYPE_REGULAR_FILE;
+        return 0;
+    }
+    return -ENOENT;
+}
+
+static int _DirRead(vfs_ctx_t c, const char *sub, void *buf, size_t bufLen) {
+    (void)c;
+    if (strcmp(sub, "alpha/x") != 0)
+        return -EISDIR;
+    const char data[] = "alpha-x";
+    size_t n = sizeof(data) - 1;
+    if (n > bufLen)
+        n = bufLen;
+    memcpy(buf, data, n);
+    return (int)n;
+}
+
+static int _DirReadDir(vfs_ctx_t c, const char *sub, void *buf, size_t bufLen,
+                       uint64_t *cookie, size_t *bufUsed) {
+    (void)c;
+    vfs_dir_entry_t root[] = {{"alpha", VFS_FILETYPE_DIRECTORY}};
+    vfs_dir_entry_t alpha[] = {{"x", VFS_FILETYPE_REGULAR_FILE}};
+    if (strcmp(sub, "") == 0)
+        return VfsFlatDirReadDir(root, 1, buf, bufLen, cookie, bufUsed);
+    if (strcmp(sub, "alpha") == 0)
+        return VfsFlatDirReadDir(alpha, 1, buf, bufLen, cookie, bufUsed);
+    return -ENOTDIR;
+}
+
+static const proc_dir_ops_t _dirOps = {_DirStat, _DirRead, _DirReadDir};
+
+TEST_SETUP(procfs_dir) {
+    vfs = VfsInit();
+    ProcFs_Register(vfs, "info", _ReadInfo, false);
+    ProcFs_RegisterDir(vfs, "things", &_dirOps, false);
+}
+
+TEST_TEAR_DOWN(procfs_dir) { VfsDestroy(&vfs); }
+
+TEST(procfs_dir, RegisterRejectsIncompleteOps) {
+    TEST_ASSERT_EQUAL_INT(-EINVAL, ProcFs_RegisterDir(vfs, "d", NULL, false));
+    const proc_dir_ops_t partial = {_DirStat, NULL, _DirReadDir};
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          ProcFs_RegisterDir(vfs, "d", &partial, false));
+}
+
+TEST(procfs_dir, DirEntryRootIsDirectory) {
+    int fd = VfsOpen(vfs, "/proc/things", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    vfs_stat_t st;
+    TEST_ASSERT_EQUAL_INT(0, VfsStat(vfs, fd, &st));
+    TEST_ASSERT_EQUAL_UINT8(VFS_FILETYPE_DIRECTORY, st.filetype);
+    VfsClose(vfs, fd);
+}
+
+TEST(procfs_dir, SubdirIsDirectory) {
+    int fd = VfsOpen(vfs, "/proc/things/alpha", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    vfs_stat_t st;
+    TEST_ASSERT_EQUAL_INT(0, VfsStat(vfs, fd, &st));
+    TEST_ASSERT_EQUAL_UINT8(VFS_FILETYPE_DIRECTORY, st.filetype);
+    VfsClose(vfs, fd);
+}
+
+TEST(procfs_dir, LeafOpensAndReads) {
+    int fd = VfsOpen(vfs, "/proc/things/alpha/x", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    char buf[32] = {0};
+    int n = VfsRead(vfs, fd, buf, sizeof(buf));
+    TEST_ASSERT_TRUE(n > 0);
+    TEST_ASSERT_EQUAL_STRING("alpha-x", buf);
+    /* second read EOF */
+    TEST_ASSERT_EQUAL_INT(0, VfsRead(vfs, fd, buf, sizeof(buf)));
+    VfsClose(vfs, fd);
+}
+
+TEST(procfs_dir, UnknownChildReturnsEnoent) {
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpen(vfs, "/proc/things/gamma", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -ENOENT, VfsOpen(vfs, "/proc/things/alpha/z", VFS_O_RDONLY));
+}
+
+TEST(procfs_dir, FlatEntryRejectsSubpath) {
+    /* A flat file entry has no children — a trailing segment is ENOENT. */
+    TEST_ASSERT_EQUAL_INT(-ENOENT, VfsOpen(vfs, "/proc/info/x", VFS_O_RDONLY));
+}
+
+TEST(procfs_dir, RootReadDirListsChildren) {
+    int fd = VfsOpen(vfs, "/proc/things", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    uint8_t buf[128];
+    size_t used = 0;
+    uint64_t cookie = 0;
+    TEST_ASSERT_EQUAL_INT(0,
+                          VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "alpha", 5));
+    VfsClose(vfs, fd);
+}
+
+TEST(procfs_dir, SubdirReadDirListsLeaves) {
+    int fd = VfsOpen(vfs, "/proc/things/alpha", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    uint8_t buf[128];
+    size_t used = 0;
+    uint64_t cookie = 0;
+    TEST_ASSERT_EQUAL_INT(0,
+                          VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "x", 1));
+    VfsClose(vfs, fd);
+}
+
+TEST(procfs_dir, RootListingMarksDirEntry) {
+    /* The /proc root advertises a registered directory entry as a directory. */
+    int fd = VfsOpen(vfs, "/proc", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    uint8_t buf[256];
+    size_t used = 0;
+    uint64_t cookie = 0;
+    TEST_ASSERT_EQUAL_INT(0,
+                          VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "things", 6));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "info", 4));
+    VfsClose(vfs, fd);
+}
+
+TEST_GROUP_RUNNER(procfs_dir) {
+    RUN_TEST_CASE(procfs_dir, RegisterRejectsIncompleteOps);
+    RUN_TEST_CASE(procfs_dir, DirEntryRootIsDirectory);
+    RUN_TEST_CASE(procfs_dir, SubdirIsDirectory);
+    RUN_TEST_CASE(procfs_dir, LeafOpensAndReads);
+    RUN_TEST_CASE(procfs_dir, UnknownChildReturnsEnoent);
+    RUN_TEST_CASE(procfs_dir, FlatEntryRejectsSubpath);
+    RUN_TEST_CASE(procfs_dir, RootReadDirListsChildren);
+    RUN_TEST_CASE(procfs_dir, SubdirReadDirListsLeaves);
+    RUN_TEST_CASE(procfs_dir, RootListingMarksDirEntry);
 }

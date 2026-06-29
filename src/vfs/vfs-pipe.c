@@ -456,6 +456,180 @@ static int _bDestroy(vfs_driver_t *drv) {
     return 0;
 }
 
+/* ── Pipe console driver ─────────────────────────────────────────────────────
+ *
+ * Backs a wapp's console slot (in/out/err) with a named pipe in the shared
+ * store, so a peer wapp can read the stream live at /dev/pipe/<name>. Bound to
+ * one pipe at creation (no Open — VfsRegister installs it directly as the
+ * stream fd). out/err are lossy writers: when the ring is full they drop the
+ * oldest bytes and report the whole write consumed, so a console with no reader
+ * can never wedge the wapp. in is a reader, mirroring PipeDriver_Read. */
+
+typedef struct {
+    pipe_store_t *store;
+    char name[MAX_ENTRY_NAME_LEN];
+    bool forRead;
+    int flags;
+} pipe_console_t;
+
+/* Caller holds store->lock. Drop the oldest buffered bytes as needed so the
+ * most recent `nbyte` (capped to the ring) always fit; never blocks. */
+static int ringWriteLossy(named_pipe_t *p, const void *buf, size_t nbyte) {
+    const uint8_t *src = (const uint8_t *)buf;
+    size_t keep = nbyte;
+    if (keep > PIPE_BUF_SIZE) {
+        src += keep - PIPE_BUF_SIZE;
+        keep = PIPE_BUF_SIZE;
+    }
+    size_t space = PIPE_BUF_SIZE - p->data_len;
+    if (keep > space) {
+        size_t drop = keep - space;
+        p->rpos = (p->rpos + drop) % PIPE_BUF_SIZE;
+        p->data_len -= drop;
+    }
+    (void)ringWrite(p, src, keep);
+    return (int)nbyte; /* lossy: always report the whole write consumed */
+}
+
+static void consoleDetach(pipe_console_t *c) {
+    PlatformMutexLock(c->store->lock);
+    named_pipe_t *p = findPipe(c->store, c->name);
+    if (p) {
+        if (c->forRead) {
+            if (p->readers > 0)
+                p->readers--;
+        } else if (p->writers > 0) {
+            p->writers--;
+        }
+        if (p->writers <= 0 && p->readers <= 0 && p->data_len == 0)
+            p->active = false;
+    }
+    PlatformMutexUnlock(c->store->lock);
+}
+
+static int _pcClose(vfs_driver_ctx_t dctx, int fd) {
+    (void)dctx;
+    (void)fd;
+    return 0; /* detach is done once in Destroy (a console has a single fd) */
+}
+
+static int _pcWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
+                    size_t nbyte) {
+    (void)fd;
+    pipe_console_t *c = (pipe_console_t *)dctx;
+    if (buf == NULL)
+        return -EINVAL;
+    if (c->forRead)
+        return -EBADF; /* the `in` console is read-only */
+
+    PlatformMutexLock(c->store->lock);
+    named_pipe_t *p = findPipe(c->store, c->name);
+    if (!p)
+        p = allocPipe(c->store, c->name);
+    int n = p ? ringWriteLossy(p, buf, nbyte) : -ENOSPC;
+    PlatformMutexUnlock(c->store->lock);
+    return n;
+}
+
+static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
+    (void)fd;
+    pipe_console_t *c = (pipe_console_t *)dctx;
+    if (buf == NULL)
+        return -EINVAL;
+    if (!c->forRead)
+        return 0; /* out/err read as EOF */
+
+    bool nonblock = (c->flags & VFS_O_NONBLOCK) != 0;
+    for (size_t iter = 0;; iter++) {
+        PlatformMutexLock(c->store->lock);
+        named_pipe_t *p = findPipe(c->store, c->name);
+        if (p && p->data_len > 0) {
+            int n = ringRead(p, buf, nbyte);
+            PlatformMutexUnlock(c->store->lock);
+            return n;
+        }
+        bool eof = p && p->writer_seen && p->writers <= 0;
+        PlatformMutexUnlock(c->store->lock);
+        if (eof)
+            return 0;
+        if (nonblock || iter >= PIPE_POLL_MAX_ITERS)
+            return -EAGAIN;
+        if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
+                                   PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
+            return -EINTR;
+    }
+}
+
+static int _pcStat(vfs_driver_ctx_t dctx, int fd, vfs_stat_t *stat) {
+    (void)dctx;
+    (void)fd;
+    if (stat == NULL)
+        return -EINVAL;
+    memset(stat, 0, sizeof(*stat));
+    stat->filetype = VFS_FILETYPE_CHARACTER_DEVICE;
+    return 0;
+}
+
+static int _pcDestroy(vfs_driver_t *drv) {
+    if (drv) {
+        pipe_console_t *c = (pipe_console_t *)drv->ctx;
+        if (c) {
+            consoleDetach(c);
+            WantedFree(c);
+        }
+        WantedFree(drv);
+    }
+    return 0;
+}
+
+vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
+                                   bool forRead, vfs_oflags_t flags) {
+    if (!store || !name || name[0] == '\0')
+        return NULL;
+
+    vfs_driver_t *drv = WantedMalloc(sizeof(*drv));
+    if (!drv)
+        return NULL;
+    pipe_console_t *c = WantedMalloc(sizeof(*c));
+    if (!c) {
+        WantedFree(drv);
+        return NULL;
+    }
+    memset(c, 0, sizeof(*c));
+    c->store = store;
+    strncpy(c->name, name, MAX_ENTRY_NAME_LEN - 1);
+    c->name[MAX_ENTRY_NAME_LEN - 1] = '\0';
+    c->forRead = forRead;
+    c->flags = flags;
+
+    /* Attach now so the pipe exists and is discoverable before the wapp's first
+     * write, and a peer reader sees writer_seen for clean EOF. */
+    PlatformMutexLock(store->lock);
+    named_pipe_t *p = findPipe(store, c->name);
+    if (!p)
+        p = allocPipe(store, c->name);
+    if (p) {
+        if (forRead) {
+            p->readers++;
+        } else {
+            p->writers++;
+            p->writer_seen = true;
+        }
+    }
+    PlatformMutexUnlock(store->lock);
+
+    memset(drv, 0, sizeof(*drv));
+    drv->bytesId = 0x736e6f43; /* 'Cons' LE */
+    drv->filetype = VFS_FILETYPE_CHARACTER_DEVICE;
+    drv->ctx = (vfs_driver_ctx_t)c;
+    drv->Destroy = _pcDestroy;
+    drv->Close = _pcClose;
+    drv->Read = _pcRead;
+    drv->Write = _pcWrite;
+    drv->Stat = _pcStat;
+    return drv;
+}
+
 vfs_driver_t *PipeDriverCreate(pipe_store_t *store) {
     if (!store)
         return NULL;

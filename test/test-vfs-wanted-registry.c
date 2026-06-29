@@ -111,13 +111,17 @@ TEST(vfs_registry_driver, ReadEntry_DescriptorSynthesized) {
     drv->Open(drv->ctx, "/", VFS_O_RDONLY);
 
     /* fd>0 reads a small JSON descriptor synthesized from the registry entry
-     * (name/version/size) — the entry alone, with no image load. */
-    uint8_t buf[128] = {0};
+     * (name/version/size) plus the image's declared linear-memory profile,
+     * parsed from the image header (the dummy serves a canned (memory 1 4)). */
+    uint8_t buf[160] = {0};
     int n = drv->Read(drv->ctx, 1, buf, sizeof(buf));
     TEST_ASSERT_TRUE(n > 0);
     TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "app1", 4));
     TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "1.0.0", 5));
     TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "42", 2));
+    TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "\"init_pages\":1", 14));
+    TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "\"max_pages\":4", 13));
+    TEST_ASSERT_TRUE(HasBytes(buf, (size_t)n, "\"can_grow\":true", 15));
 }
 
 TEST(vfs_registry_driver, Read_NullBuf_ReturnsEinval) {

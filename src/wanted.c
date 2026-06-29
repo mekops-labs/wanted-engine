@@ -32,12 +32,34 @@ struct wamrData_t {
     uint8_t *wasm_bytes; /* writable copy passed to wasm_runtime_load */
 };
 
+void WantedWappMemStats(const struct wamrData_t *wamr, wapp_state_t *out) {
+    out->mem_pages_cur = 0;
+    out->mem_pages_max = 0;
+    out->mem_bytes_cur = 0;
+    out->mem_bytes_max = 0;
+    if (wamr == NULL || wamr->instance == NULL)
+        return;
+
+    wasm_memory_inst_t mem = wasm_runtime_get_default_memory(wamr->instance);
+    if (mem == NULL)
+        return; /* a module that declares no linear memory */
+
+    uint64_t pages_cur = wasm_memory_get_cur_page_count(mem);
+    uint64_t pages_max = wasm_memory_get_max_page_count(mem);
+    uint64_t bytes_per_page = wasm_memory_get_bytes_per_page(mem);
+
+    out->mem_pages_cur = (uint32_t)pages_cur;
+    out->mem_pages_max = (uint32_t)pages_max;
+    out->mem_bytes_cur = (size_t)(pages_cur * bytes_per_page);
+    out->mem_bytes_max = (size_t)(pages_max * bytes_per_page);
+}
+
 /* Default console backing for a stdio slot the launch config leaves unset. All
  * three of a wapp's standard fds must be wired or it fails to launch, so an
  * empty slot resolves to a default rather than to nothing: stdin to `null` (no
  * input source by default), stdout/stderr to `log` (captured to the per-wapp
- * ring buffer and readable at /dev/wanted/wapps/<name>/log, so a wapp's output
- * is never silently lost). A slot set explicitly overrides its default. */
+ * ring buffer and readable through a `log` mount, so a wapp's output is never
+ * silently lost). A slot set explicitly overrides its default. */
 #define DEFAULT_CONSOLE_IN "null"
 #define DEFAULT_CONSOLE_OUT "log"
 #define DEFAULT_CONSOLE_ERR "log"
@@ -60,6 +82,60 @@ struct wamrData_t {
 /* A console slot with no driver name falls back to its default backing. */
 static const char *resolveConsole(const char *name, const char *fallback) {
     return (name == NULL || name[0] == '\0') ? fallback : name;
+}
+
+static pipe_store_t *wantedPipeStore(void);
+
+/* Per-slot label used to auto-name a `pipe` console's pipe (<wapp>.<slot>). */
+static const char *const CONSOLE_SLOT[] = {"in", "out", "err"};
+
+/* Pull a `name=<pipe>` value out of a console slot's comma-separated options
+ * into `out`; returns true when present. Lets a config pin the console pipe's
+ * name (e.g. for a fixed reader) instead of the derived <wapp>.<slot>. */
+static bool consolePipeName(const char *opt, char *out, size_t cap) {
+    if (opt == NULL)
+        return false;
+    const char *p = opt;
+    while (*p != '\0') {
+        if (strncmp(p, "name=", 5) == 0) {
+            p += 5;
+            size_t n = 0;
+            while (p[n] != '\0' && p[n] != ',' && n < cap - 1)
+                n++;
+            memcpy(out, p, n);
+            out[n] = '\0';
+            return n > 0;
+        }
+        while (*p != '\0' && *p != ',')
+            p++;
+        if (*p == ',')
+            p++;
+    }
+    return false;
+}
+
+/* Install one console slot. A `pipe` backing auto-creates a named pipe
+ * (<wapp>.<slot>, or the options' name=) in the shared store and binds the
+ * stream fd to it — a live, peer-readable console. Every other backing resolves
+ * through the driver table. */
+static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
+                              const char *fallback, const char *path) {
+    const char *name = resolveConsole(wapp->cfg.console[idx].name, fallback);
+    const char *options = wapp->cfg.console[idx].options;
+
+    if (strcmp(name, "pipe") == 0) {
+        char pname[WAPP_MAX_NAME_LEN + 8];
+        if (!consolePipeName(options, pname, sizeof(pname)))
+            snprintf(pname, sizeof(pname), "%s.%s", wapp->name,
+                     CONSOLE_SLOT[idx]);
+        const vfs_driver_t *drv = VfsPipeConsoleCreate(wantedPipeStore(), pname,
+                                                       idx == 0, VFS_O_RDONLY);
+        if (drv == NULL)
+            return -ENOMEM;
+        return VfsRegister(ctx->vfs, path, drv);
+    }
+
+    return WantedInstallDriver(ctx->vfs, wapp, name, path, options);
 }
 
 /* True when `path` is the reserved namespace `ns` itself or a path beneath it
@@ -253,31 +329,6 @@ static pipe_store_t *wantedPipeStore(void) {
     if (!store)
         store = PipeStoreNew();
     return store;
-}
-
-/* /proc/wapps — plain-text wapp state, one record per wapp. */
-static int procReadWapps(vfs_ctx_t c, void *buf, size_t bufLen) {
-    (void)c;
-    wapp_state_t wapps[MAX_WAPPS];
-    int n = PlatformWappGetState(wapps, MAX_WAPPS);
-    if (n < 0)
-        return n;
-
-    char *p = (char *)buf;
-    size_t left = bufLen;
-    for (int i = 0; i < n && left > 0; i++) {
-        int w = snprintf(p, left, "name:\t%s\nstate:\t%s\n", wapps[i].name,
-                         StatusToString(wapps[i].status));
-        if (w < 0 || (size_t)w >= left)
-            break;
-        p += w;
-        left -= (size_t)w;
-        if (i + 1 < n && left > 1) {
-            *p++ = '\n';
-            left--;
-        }
-    }
-    return (int)(bufLen - left);
 }
 
 /* /proc/memory — wasm stack size + platform heap via PlatformMemoryStats. */
@@ -526,7 +577,7 @@ int WantedWappRun(wapp_data_t *ctx) {
 
     /* Propagate system-level privilege flag, then register /proc entries. */
     VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
-    ProcFs_Register(ctx->vfs, "wapps", procReadWapps, true);
+    ProcFs_RegisterDir(ctx->vfs, "wapps", &WappsProcDirOps, true);
     ProcFs_Register(ctx->vfs, "memory", procReadMemory, true);
     /* clock_quality is unprivileged — any wapp may read it to decide whether
      * to trust the wall clock. */
@@ -548,18 +599,9 @@ int WantedWappRun(wapp_data_t *ctx) {
     wasm_runtime_set_user_data(ctx->wamr->exec_env, wasiCtx);
 
     /* install console (an unset slot falls back to its default backing) */
-    ret = WantedInstallDriver(
-        ctx->vfs, wapp,
-        resolveConsole(wapp->cfg.console[0].name, DEFAULT_CONSOLE_IN),
-        "<stdin>", wapp->cfg.console[0].options);
-    ret += WantedInstallDriver(
-        ctx->vfs, wapp,
-        resolveConsole(wapp->cfg.console[1].name, DEFAULT_CONSOLE_OUT),
-        "<stdout>", wapp->cfg.console[1].options);
-    ret += WantedInstallDriver(
-        ctx->vfs, wapp,
-        resolveConsole(wapp->cfg.console[2].name, DEFAULT_CONSOLE_ERR),
-        "<stderr>", wapp->cfg.console[2].options);
+    ret = installConsoleSlot(ctx, wapp, 0, DEFAULT_CONSOLE_IN, "<stdin>");
+    ret += installConsoleSlot(ctx, wapp, 1, DEFAULT_CONSOLE_OUT, "<stdout>");
+    ret += installConsoleSlot(ctx, wapp, 2, DEFAULT_CONSOLE_ERR, "<stderr>");
 
     /* /dev/std{in,out,err} alias the just-installed console streams — opening
      * the /dev path reaches the same backing as the matching WASI fd (0/1/2).
@@ -701,6 +743,26 @@ int WantedWappRun(wapp_data_t *ctx) {
             if (rc < 0) {
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
             }
+        } else if (strcmp(m->name, "log") == 0) {
+            /* A `log` mount is the read-only directory view over the per-wapp
+             * LogStore, bound at the wapp-visible m->path. `options` may carry
+             * `name=<wapp>` to scope the view to a single wapp; absent, it
+             * exposes every wapp's log. Distinct from the console `log` driver
+             * (the write/capture side selected via console:{}). */
+            vfs_driver_t *drv = VfsLogMountInit(wapp, m->options);
+            if (drv == NULL) {
+                DEBUG_TRACE("mounts[%zu] '%s': can't create log mount", i,
+                            m->name);
+                ret += -EINVAL;
+                continue;
+            }
+            int rc = VfsMountDriver(ctx->vfs, m->path, drv);
+            if (rc < 0) {
+                DEBUG_TRACE("VfsMountDriver(%s) failed: %d", m->path, rc);
+                if (drv->Destroy)
+                    drv->Destroy(drv);
+                ret += rc;
+            }
         } else {
             ret += WantedInstallDriver(ctx->vfs, wapp, m->name, m->path,
                                        m->options);
@@ -770,6 +832,10 @@ _freeWasmBytes:
     PlatformExtramFree(ctx->wamr->wasm_bytes);
 _freeWamr:
     WantedFree(ctx->wamr);
+    /* The platform slot keeps pointing at this wapp_data_t; null the freed WAMR
+     * handle so a later PlatformWappGetState (which samples per-wapp memory)
+     * never dereferences a dangling instance. */
+    ctx->wamr = NULL;
 _freeTarfs:
     if (tarfs)
         TarFsDestroy(tarfs);
@@ -796,6 +862,7 @@ void WantedWappStop(wapp_data_t *ctx) {
         wasm_runtime_unload(ctx->wamr->module);
         PlatformExtramFree(ctx->wamr->wasm_bytes);
         WantedFree(ctx->wamr);
+        ctx->wamr = NULL;
 
         DEBUG_TRACE("end");
     }

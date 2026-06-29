@@ -37,7 +37,12 @@
 #define LAUNCH_CFG                                                             \
     "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}}"
-#define TRAPPER_LOG "/dev/wanted/wapps/" TRAPPER "/log"
+
+/* A launched wapp's captured stdout/stderr is read back through the `log` mount
+ * the supervisor config binds at /log (one read-only node per wapp), not the
+ * /dev/wanted control plane. */
+#define LOG_MOUNT "/log"
+#define TRAPPER_LOG LOG_MOUNT "/" TRAPPER
 #define TRAPPER_MARKER "trapper-was-here"
 
 #define LOOPER "looper"
@@ -56,12 +61,24 @@
  * so the supervisor can read them back from the log and assert passthrough. */
 #define ARGENV "argenv"
 #define ARGENV_CFG "/dev/wanted/wapps/" ARGENV "/config"
-#define ARGENV_LOG "/dev/wanted/wapps/" ARGENV "/log"
-#define ARGENV_EXIT "/dev/wanted/wapps/" ARGENV "/exit_code"
+#define ARGENV_LOG LOG_MOUNT "/" ARGENV
+#define ARGENV_EXIT "/proc/wapps/" ARGENV "/exit_code"
 #define ARGENV_CFG_BODY                                                        \
     "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"args\":[\"alpha\",\"beta\"],\"envs\":[\"FOO=bar\",\"BAZ=qux\"]}"
+
+/* A `pipe` console streams a wapp's stdout live to a peer. argpipe runs the
+ * argenv image with its stdout backed by a `pipe` console (auto-named
+ * <wapp>.out); the supervisor reads the output back from /dev/pipe/argpipe.out
+ * rather than a log. */
+#define ARGPIPE "argpipe"
+#define ARGPIPE_CFG "/dev/wanted/wapps/" ARGPIPE "/config"
+#define ARGPIPE_PIPE "/dev/pipe/" ARGPIPE ".out"
+#define ARGPIPE_CFG_BODY                                                       \
+    "{\"image\":\"argenv\",\"console\":{\"in\":{\"name\":\"null\"},"           \
+    "\"out\":{\"name\":\"pipe\"},\"err\":{\"name\":\"null\"}},"                \
+    "\"args\":[\"alpha\",\"beta\"]}"
 
 /* volcheck mounts an engine-managed `volume` at /data. On a fresh store it
  * writes a marker and reports "vol-wrote"; on a store that already holds state
@@ -69,7 +86,7 @@
  * same instance prove the volume persists across a restart. */
 #define VOLCHECK "volcheck"
 #define VOLCHECK_CFG "/dev/wanted/wapps/" VOLCHECK "/config"
-#define VOLCHECK_LOG "/dev/wanted/wapps/" VOLCHECK "/log"
+#define VOLCHECK_LOG LOG_MOUNT "/" VOLCHECK
 #define VOLCHECK_PAYLOAD "persist-42"
 #define VOLCHECK_CFG_BODY                                                      \
     "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
@@ -86,8 +103,8 @@
 #define VCONS "vcons"
 #define VPROD_CFG "/dev/wanted/wapps/" VPROD "/config"
 #define VCONS_CFG "/dev/wanted/wapps/" VCONS "/config"
-#define VPROD_LOG "/dev/wanted/wapps/" VPROD "/log"
-#define VCONS_LOG "/dev/wanted/wapps/" VCONS "/log"
+#define VPROD_LOG LOG_MOUNT "/" VPROD
+#define VCONS_LOG LOG_MOUNT "/" VCONS
 #define SHARED_CFG_BODY                                                        \
     "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"},"         \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
@@ -103,8 +120,8 @@
 #define ISO_PRIV "isoprv"
 #define ISO_SHARE_CFG "/dev/wanted/wapps/" ISO_SHARE "/config"
 #define ISO_PRIV_CFG "/dev/wanted/wapps/" ISO_PRIV "/config"
-#define ISO_SHARE_LOG "/dev/wanted/wapps/" ISO_SHARE "/log"
-#define ISO_PRIV_LOG "/dev/wanted/wapps/" ISO_PRIV "/log"
+#define ISO_SHARE_LOG LOG_MOUNT "/" ISO_SHARE
+#define ISO_PRIV_LOG LOG_MOUNT "/" ISO_PRIV
 #define ISO_SHARE_CFG_BODY                                                     \
     "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"},"         \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
@@ -123,12 +140,24 @@
  * shared feed, never mutate it. */
 #define VRORO "vroro"
 #define VRORO_CFG "/dev/wanted/wapps/" VRORO "/config"
-#define VRORO_LOG "/dev/wanted/wapps/" VRORO "/log"
+#define VRORO_LOG LOG_MOUNT "/" VRORO
 #define VRORO_CFG_BODY                                                         \
     "{\"image\":\"volcheck\",\"console\":{\"in\":{\"name\":\"null\"},"         \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\","                     \
     "\"options\":\"name=roonly,shared,ro\"}]}"
+
+/* observer is the reference observability wapp: granted a `log` mount and the
+ * ambient /proc but NOT the `wanted` control driver, so it can watch the fleet
+ * (read /proc/wapps, tail logs) yet cannot reach the control plane. It reports
+ * each finding to its log, which the supervisor reads back through the mount. */
+#define OBSERVER "observer"
+#define OBSERVER_CFG "/dev/wanted/wapps/" OBSERVER "/config"
+#define OBSERVER_LOG LOG_MOUNT "/" OBSERVER
+#define OBSERVER_CFG_BODY                                                      \
+    "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
+    "\"mounts\":[{\"name\":\"log\",\"path\":\"/log\"}]}"
 
 /* The supervisor's own launch config (selftest-config.json) wires the three
  * launch-config resource sections, so they are verified in our own namespace:
@@ -218,10 +247,20 @@ static void positive_checks(void) {
         close(fd);
     tap_ok(fd >= 0 && n == 0, "VFS: /dev/null reads as EOF");
 
-    /* /proc/wapps lists the running supervisor. */
-    tap_ok(read_path("/proc/wapps", buf, sizeof(buf)) > 0 &&
-               strstr(buf, "supervisor") != NULL,
-           "proc: /proc/wapps reports the supervisor");
+    /* /proc/wapps is a directory: one subdirectory per running wapp, each with
+     * read-only status leaves. It enumerates the running supervisor, and the
+     * supervisor's state leaf reports it running. */
+    tap_ok(dir_has("/proc/wapps", "supervisor"),
+           "proc: /proc/wapps enumerates the supervisor");
+    tap_ok(read_path("/proc/wapps/supervisor/state", buf, sizeof(buf)) > 0 &&
+               strstr(buf, "running") != NULL,
+           "proc: /proc/wapps/<name>/state reports the supervisor running");
+    /* Per-wapp linear-memory accounting: a running wapp has committed at least
+     * one page, so linear_cur and the page counts are present and non-empty. */
+    tap_ok(read_path("/proc/wapps/supervisor/memory", buf, sizeof(buf)) > 0 &&
+               strstr(buf, "linear_cur:") != NULL &&
+               strstr(buf, "pages_cur:") != NULL,
+           "proc: /proc/wapps/<name>/memory reports linear-memory accounting");
 
     /* /proc/wanted reports engine identity and the compile-time ceilings as
      * key:\tvalue lines. It is unprivileged. The platform string and version
@@ -330,6 +369,11 @@ static void wapp_node(char *buf, int cap, const char *name, const char *node) {
     snprintf(buf, cap, "/dev/wanted/wapps/%s/%s", name, node);
 }
 
+/* Build the wapp's log path under the `log` mount ("/log/<name>") into buf. */
+static void log_path(char *buf, int cap, const char *name) {
+    snprintf(buf, cap, LOG_MOUNT "/%s", name);
+}
+
 /* Launch an already-configured wapp through its own ctl node — the root ctl
  * does not start wapps (it only creates namespaces and drives power). Returns
  * true on a successful write. */
@@ -391,7 +435,7 @@ static void memcap_checks(void) {
     char path[96], buf[64];
 
     int bm = launch("bigmem") && wait_dead("bigmem");
-    wapp_node(path, sizeof(path), "bigmem", "log");
+    log_path(path, sizeof(path), "bigmem");
     int bounded = bm && read_path(path, buf, sizeof(buf)) > 0 &&
                   strstr(buf, "bigmem-bounded") != NULL;
     tap_ok(bounded, "memcap: bigmem linear-memory growth is bounded at the cap");
@@ -560,7 +604,7 @@ static void edge_checks(void) {
  * succeeded. */
 static void sandbox_check(void) {
     char log[96], buf[128];
-    wapp_node(log, sizeof(log), "escaper", "log");
+    log_path(log, sizeof(log), "escaper");
 
     launch("escaper");
     wait_dead("escaper");
@@ -577,7 +621,7 @@ static void sandbox_check(void) {
  * probe cap is reported as a diagnostic. */
 static void resource_check(void) {
     char log[96], verdict[64], buf[64];
-    wapp_node(log, sizeof(log), "fdhog", "log");
+    log_path(log, sizeof(log), "fdhog");
 
     launch("fdhog");
     int reaped = wait_dead("fdhog");
@@ -656,7 +700,7 @@ static void crashloop_check(void) {
 #define DUPLEX_PAYLOAD "duplex-ok"
 #define READER_CFG "/dev/wanted/wapps/reader/config"
 #define WRITER_CFG "/dev/wanted/wapps/writer/config"
-#define READER_LOG "/dev/wanted/wapps/reader/log"
+#define READER_LOG LOG_MOUNT "/reader"
 #define READER_CFG_BODY                                                        \
     "{\"image\":\"duplex\","                                                   \
     "\"console\":{\"in\":{\"name\":\"null\"},"                                 \
@@ -707,6 +751,46 @@ static void argenv_check(void) {
     int n = read_path(ARGENV_EXIT, buf, sizeof(buf));
     tap_ok(n > 0 && strstr(buf, "7") != NULL,
            "exit_code: a clean non-zero exit surfaces on the exit_code node");
+}
+
+/* Capability separation: launch the observer wapp with a `log` mount but no
+ * `wanted` control mount, and assert it can observe the fleet (read /proc/wapps,
+ * tail logs through its mount) while every attempt to reach the control plane is
+ * denied — the least-privilege split the read-only namespaces exist for. */
+static void observer_check(void) {
+    char buf[1024];
+
+    int started = create_wapp(OBSERVER) &&
+                  write_path(OBSERVER_CFG, OBSERVER_CFG_BODY) >= 0 &&
+                  start_wapp(OBSERVER);
+    wait_dead(OBSERVER);
+
+    int got = read_path(OBSERVER_LOG, buf, sizeof(buf)) > 0;
+    tap_ok(started && got && strstr(buf, "obs-wapp:supervisor=") != NULL,
+           "observe: a non-control wapp reads the fleet via /proc/wapps");
+    tap_ok(got && strstr(buf, "obs-control:denied") != NULL &&
+               strstr(buf, "obs-control:reachable") == NULL,
+           "observe: the control plane is unreachable without the wanted mount");
+    tap_ok(got && strstr(buf, "obs-done") != NULL,
+           "observe: the observability wapp ran to completion");
+}
+
+/* A `pipe` console is a live stream to a peer, distinct from the buffered `log`
+ * console. Launch argpipe (the argenv image) with stdout backed by a pipe
+ * console, then read its output from /dev/pipe/argpipe.out — proving a wapp's
+ * stdout can be consumed live by another wapp. */
+static void console_pipe_check(void) {
+    char buf[256];
+
+    int started = create_wapp(ARGPIPE) &&
+                  write_path(ARGPIPE_CFG, ARGPIPE_CFG_BODY) >= 0 &&
+                  start_wapp(ARGPIPE);
+    wait_dead(ARGPIPE);
+
+    int got = read_path(ARGPIPE_PIPE, buf, sizeof(buf)) > 0;
+    tap_ok(started && got && strstr(buf, "arg 0=" ARGPIPE) != NULL &&
+               strstr(buf, "arg 1=alpha") != NULL,
+           "console: a pipe console streams a wapp's stdout to a peer reader");
 }
 
 /* The launch-config resource sections, verified in the supervisor's own
@@ -998,8 +1082,8 @@ static void volume_readonly_check(void) {
  * image (ROLE=reader) and echo what they read to their log. */
 #define MREAD_A "mreadA"
 #define MREAD_B "mreadB"
-#define MREAD_A_LOG "/dev/wanted/wapps/" MREAD_A "/log"
-#define MREAD_B_LOG "/dev/wanted/wapps/" MREAD_B "/log"
+#define MREAD_A_LOG LOG_MOUNT "/" MREAD_A
+#define MREAD_B_LOG LOG_MOUNT "/" MREAD_B
 #define DUPLEX_CHAN "/dev/pipe/duplex"
 static void multi_reader_pipe_check(void) {
     char buf[128];
@@ -1053,6 +1137,8 @@ int main(void) {
         {"cpuhog_check", cpuhog_check},
         {"console_checks", console_checks},
         {"argenv_check", argenv_check},
+        {"observer_check", observer_check},
+        {"console_pipe_check", console_pipe_check},
         {"lifecycle_checks", lifecycle_checks},
         {"blocker_check", blocker_check},
         {"ioblock_check", ioblock_check},

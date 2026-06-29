@@ -107,6 +107,12 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
                           size_t nbytes);
 int PlatformRegistryRemove(const reg_entry_t *entry);
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);
+/* Read up to maxLen leading bytes of `entry`'s stored image (the .wapp archive)
+ * into buf, without loading/mapping the layers. Returns the byte count, or a
+ * negative errno. Used for a cheap pre-flight peek of the image header (e.g.
+ * the wasm memory section) when rendering a registry descriptor. */
+int PlatformRegistryReadImage(const reg_entry_t *entry, uint8_t *buf,
+                              size_t maxLen);
 
 /* Open a host-side directory that will be exposed to a wapp as a WASI preopen.
  * Read-write mounts create the directory if absent; a read-only mount requires

@@ -35,7 +35,7 @@ mkdir -p "$REGISTRY_ROOT"
 # Launched test wapps, packaged into the registry as <name>@<version>.wapp. The
 # `duplex` image is launched as two instances (reader/writer) by the supervisor
 # via the config `image` field — it is staged once, not aliased.
-TEST_WAPPS="trapper:0.0.1-1 looper:0.0.1-1 stackbomb:0.0.1-1 membomb:0.0.1-1 cpuhog:0.0.1-1 blocker:0.0.1-1 pblock:0.0.1-1 escaper:0.0.1-1 fdhog:0.0.1-1 crasher:0.0.1-1 argenv:0.0.1-1 duplex:0.0.1-1 volcheck:0.0.1-1 bigmem:0.0.1-1 biginit:0.0.1-1"
+TEST_WAPPS="trapper:0.0.1-1 looper:0.0.1-1 stackbomb:0.0.1-1 membomb:0.0.1-1 cpuhog:0.0.1-1 blocker:0.0.1-1 pblock:0.0.1-1 escaper:0.0.1-1 fdhog:0.0.1-1 crasher:0.0.1-1 argenv:0.0.1-1 duplex:0.0.1-1 volcheck:0.0.1-1 bigmem:0.0.1-1 biginit:0.0.1-1 observer:0.0.1-1"
 
 staged=""
 # stage <name>:<ver>
