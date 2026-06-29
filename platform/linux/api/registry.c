@@ -156,3 +156,23 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     w->version[WAPP_MAX_VERSION_LEN - 1] = '\0';
     return 0;
 }
+
+int PlatformRegistryReadImage(const reg_entry_t *entry, uint8_t *buf,
+                              size_t maxLen) {
+    if (entry == NULL || buf == NULL || maxLen == 0)
+        return -EINVAL;
+
+    char path[PATH_MAX];
+    int n =
+        snprintf(path, sizeof(path), "%s/%s%c%s%s", REGISTRY_ROOT, entry->name,
+                 REGISTRY_VERSION_SEPARATOR, entry->version, REGISTRY_EXT);
+    if (n < 0 || (size_t)n >= sizeof(path))
+        return -ENAMETOOLONG;
+
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return -errno;
+    ssize_t r = read(fd, buf, maxLen);
+    close(fd);
+    return r < 0 ? -errno : (int)r;
+}

@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <tiny-json.h>
+#include <vfs-procfs.h>
 #include <wanted-api.h>
 #include <wanted.h>
 
@@ -31,7 +32,22 @@ int WantedRegistryRemove(const reg_entry_t *entry);
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen);
 
+/* Parse a wasm module's declared linear-memory limits from the leading `len`
+ * bytes of its `app.wasm`. On success fills *init (initial pages), *has_max,
+ * and *max (declared max pages, valid only when *has_max) and returns 0.
+ * Returns -ENOENT when the bytes hold no memory section (an imported memory, or
+ * the window stopped short of it) and -EINVAL on a bad/truncated header.
+ * Allocation-free; reads only the (memory) section — no module load. */
+int WantedWasmMemoryProfile(const uint8_t *buf, size_t len, uint32_t *init,
+                            bool *has_max, uint32_t *max);
+
 const char *StatusToString(status_t state);
+
+/* /proc/wapps/<name>/<leaf> — read-only per-wapp observability directory,
+ * registered by the engine as a privileged ProcFS directory entry. Leaves
+ * (state, image, version, id, memory, exit_code) are rendered from
+ * PlatformWappGetState. */
+extern const proc_dir_ops_t WappsProcDirOps;
 
 /* Upper bound (including NUL) on a control/config JSON payload the engine
  * copies onto the stack to parse, sizing the fixed parse buffer. The

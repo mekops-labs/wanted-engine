@@ -32,11 +32,6 @@ The `wanted` driver is a device singleton: it mounts at its canonical `/dev/want
     <name>/                 <name> is the instance name (set by create)
       ctl       (w)         per-wapp verb: "start [<image>]" | "stop"
       state     (r)         lifecycle token
-      image     (r)         registry image the instance runs
-      version   (r)         image version tag (opaque string)
-      id        (r)         engine-assigned wapp id
-      exit_code (r)         WASI exit code (authoritative when state == exited)
-      log       (r)         buffered stdout/stderr (when console: log)
       config    (w)         JSON launch config, consumed by the next start
   reg/                      installed-wapp registry directory
   config                    supervisor bootstrap meta-config
@@ -47,7 +42,18 @@ The `wanted` driver is a device singleton: it mounts at its canonical `/dev/want
 | Path | Access | Description |
 |------|--------|-------------|
 | `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `delete <name>` releases a slot — a `create` reservation or a terminal (`exited`/`failure`) wapp — so the name leaves `wapps/` and its nodes return `-ENOENT` again. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). |
-| `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`) synthesized from the registry — no image load. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image. The version is an opaque tag; each ref component must match `[A-Za-z0-9_][A-Za-z0-9._-]*` or the open is rejected. A plain read of the directory itself returns `-EISDIR`. |
+| `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`, plus the declared linear-memory profile — see below) synthesized from the registry, peeking only the image header. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image. The version is an opaque tag; each ref component must match `[A-Za-z0-9_][A-Za-z0-9._-]*` or the open is rejected. A plain read of the directory itself returns `-EISDIR`. |
+
+The registry descriptor reports each image's **declared** linear-memory envelope, parsed from the wasm `(memory)` section without loading the module — a pre-flight check for whether an image fits this build's per-wapp cap (`WASM_MAX_MEMORY_PAGES`):
+
+| Field | Meaning |
+|-------|---------|
+| `init_pages` | Declared initial linear-memory pages (64 KiB/page). This is what the load-time cap check compares against. |
+| `max_pages` | Declared maximum pages, or `null` when the module declares no maximum (grows to the engine ceiling). |
+| `can_grow` | `true` when the module can grow its memory (no declared max, or max > initial). |
+| `over_cap` | Present when the build sets a cap: `true` when `init_pages` already exceeds it, so the image would be **refused at load**. |
+
+The memory fields are the declared envelope, not a runtime prediction; they are omitted when the image header cannot be read or declares no memory of its own (e.g. an imported memory).
 | `/dev/wanted/config` | r | Supervisor bootstrap meta-config. |
 
 The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, and `reboot`; any other token returns `-EINVAL`. The root ctl does **not** launch wapps — `start` and `stop` exist only per-wapp (`wapps/<name>/ctl`). `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.
@@ -91,14 +97,11 @@ Command-line arguments (`argv[1..]`) and environment variables travel in the `co
 
 | Node | Access | Content / Verb |
 |------|--------|----------------|
-| `state` | r | Lifecycle token: `created`, `not_started`, `starting`, `running`, `exited`, `failure`. A bare `create` reservation (no config yet) reads `created`; once its `config` is written it reads `not_started`. |
-| `image` | r | The registry image the instance runs, known once it is live (the loader stamps it). A `created`/`not_started` reservation has not bound an image yet and reads empty. |
-| `version` | r | The image's version tag — an opaque string (e.g. `0.0.1-1`, `stable`, a digest), from its registry entry. |
-| `id` | r | Engine-assigned wapp id (decimal). |
-| `exit_code` | r | The wapp's WASI exit code as a decimal integer. **Authoritative only when `state == exited`**; otherwise (running, or a trap that set `state == failure`) it reads the sentinel `-1`. Lets a supervisor distinguish a clean zero exit, a clean non-zero (application-level) exit, and a trap. |
-| `log` | r | Ring-buffered stdout/stderr, present when the wapp was launched with a `log` console. |
+| `state` | r | Lifecycle token: `created`, `not_started`, `starting`, `running`, `exited`, `failure`. A bare `create` reservation (no config yet) reads `created`; once its `config` is written it reads `not_started`. Kept on the control plane because it spans the pre-launch lifecycle the read-only `/proc` view cannot see. |
 | `ctl` | w | `start [<image>]` launches the instance (optional explicit image overrides `config.image`); `stop` terminates it. The instance name comes from the path. |
 | `config` | w | JSON launch config (see below). Buffered and consumed by the next `start` for this name, then cleared. |
+
+The control plane carries **only** lifecycle: the pure-observability reads (`image`, `version`, `id`, `exit_code`, `memory`) live in the read-only [`/proc/wapps/<name>/`](vfs-reference.md) namespace, and a wapp's captured stdout/stderr is read through a mountable [`log`](vfs-reference.md) driver. Both are reachable **without** the `/dev/wanted` control mount, so an observability wapp can watch the fleet without the authority to command it. `state` is mirrored read-only at `/proc/wapps/<name>/state` for running instances.
 
 A read node returns its value once; the next read on the same fd returns `0` (EOF), and the value regenerates on a fresh open. A control write that overflows the fixed line buffer is rejected with `-EMSGSIZE`.
 
@@ -176,7 +179,7 @@ A wapp that needs a console, drivers, mounts, or sockets has its config written 
 | Field | Type | Notes |
 |-------|------|-------|
 | `image` | string | **Optional** registry image this instance runs, as a reference `<name>[:<tag>]` — a bare name resolves to the first match, a pinned tag (`duplex:stable`) resolves exactly. When omitted it defaults to the instance name, so a single-instance wapp needs no `image`. Set it to run several instances off one image, or override it per launch with `start <image>`. |
-| `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. **Optional**: an unset slot defaults — `in` to `null`, `out`/`err` to `log` — so a wapp launches without an explicit console and its output is captured to the `log` node. Override a slot with `log` (capture), `null` (discard), or `platform` (redirect to the engine's native stdio, fds 0/1/2). The `platform` *name* backs stdio here; in `mounts[]` it is instead a host directory. |
+| `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. **Optional**: an unset slot defaults — `in` to `null`, `out`/`err` to `log` — so a wapp launches without an explicit console and its output is captured to the per-wapp log (read through a `log` mount). Override a slot with `log` (capture), `null` (discard), `pipe` (a live stream a peer reads at `/dev/pipe/<wapp>.<slot>`), or `platform` (redirect to the engine's native stdio, fds 0/1/2). The `platform` *name* backs stdio here; in `mounts[]` it is instead a host directory. |
 | `drivers` | array | Up to 10 device singletons. Each mounts at `/dev/<name>` derived from the name; a `path` is rejected. |
 | `mounts` | array | Up to 10 file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev`, `/proc` and `/net`. The `platform` backend binds a host directory as a native WASI preopen (a bind mount); the `volume` backend binds an engine-managed persistent store (the wapp names only a volume, the engine owns the host path); other backends mount through the VFS router. `options` are backend-specific — see below. |
 | `sockets` | array | Up to 10 named connections. Each is created at `/net/<name>`; the transport is the entry's `address`. A `path` is rejected. |
@@ -187,7 +190,7 @@ Entry shapes per section:
 
 | Section | Keys | Notes |
 |---------|------|-------|
-| `console.*` | `name`, `options` | `name` is one of `null`, `log`, `platform`. |
+| `console.*` | `name`, `options` | `name` is one of `null`, `log`, `pipe`, `platform`. For `pipe`, `options` may pin the pipe name (`name=<pipe>`); otherwise it is `<wapp>.<slot>`. |
 | `drivers[]` | `name`, `options` | `name` is a device driver (e.g. `null`, `wanted`); mounted at `/dev/<name>`. |
 | `mounts[]` | `name`, `path`, `options` | `name` is a file/backend driver (`platform`, `volume`, `config`, `9p`); `path` is required, absolute, and outside `/dev`/`/net`. |
 | `sockets[]` | `name`, `address` | `name` is the `/net` node label; `address` is a URL `<scheme>://<host>:<port>` with scheme `tcp`/`udp`/`tcps`/`udps`. |
@@ -213,7 +216,7 @@ The `wsh` debug supervisor wraps the raw node operations as builtins:
 | `stop <name>` | Write `stop` to `wapps/<name>/ctl`. |
 | `poweroff` / `reboot` | Drain child wapps, then write the verb to the root `ctl`. |
 
-The filesystem builtins (`ls`, `cat`, `write`) operate on any node directly — e.g. `cat /dev/wanted/wapps/app1/log` or `ls /dev/wanted/wapps`.
+The filesystem builtins (`ls`, `cat`, `write`) operate on any node directly — e.g. `cat /proc/wapps/app1/state` or `ls /dev/wanted/wapps`. A wapp's log is read through its `log` mount (e.g. `cat /log/app1`).
 
 ## See also
 
