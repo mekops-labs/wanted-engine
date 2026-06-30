@@ -32,9 +32,17 @@ default:
 # Build the engine + CLI and run the unit suite.
 all: build test
 
-# Compile the supervisor TAR images (sheriff committed; wsh/selftest from source).
+# Compile the C supervisor TARs: wsh/selftest from wapps/ via wasi-sdk clang.
+# sheriff (Zig, from the wapps/sheriff submodule) is built separately — `sheriff`.
 supervisor:
     make -C wasm/supervisor
+
+# Build the production sheriff supervisor TAR from the wapps/sheriff submodule.
+# Needs zig — run in the wapp-sdk image, with host zig, or override the compiler
+# (ZIG='./scripts/dev zig' uses sheriff's own container). Zig is not in the main
+# build image, so this is intentionally separate from `supervisor`/`build`.
+sheriff:
+    make -C wasm/supervisor sheriff
 
 # Compile the sample wapp images under wapps/ (excludes the wsh supervisor).
 wapps:

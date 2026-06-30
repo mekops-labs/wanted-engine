@@ -24,3 +24,6 @@
 	url = https://github.com/mekops-labs/nuttx.git
 	branch = wanted
 	shallow = true
+[submodule "wapps/sheriff"]
+	path = wapps/sheriff
+	url = ../wapps/sheriff.git

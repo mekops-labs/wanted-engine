@@ -1,26 +1,37 @@
 # Supervisor wapp builder.
 #
-# Each variant subdirectory (sheriff, wsh) provides an `app.wasm`, bundled into
-# a POSIX ustar archive consumed at runtime via PlatformWappLoad — no C header
-# blob generated. A supervisor image is just `app.wasm`.
+# Each variant subdirectory provides an `app.wasm`, bundled into a POSIX ustar
+# archive consumed at runtime via PlatformWappLoad — a supervisor image is just
+# `app.wasm`.
 #
-# `wsh` (the debug shell supervisor) compiles its `app.wasm` from source under
-# `wapps/wsh/`. `sheriff` ships as a prebuilt blob — its source lives in a
-# separate repository.
+#   wsh, selftest  — compiled from C under wapps/ with the wasi-sdk clang that
+#                    ships in the main build image; built by the default `all`.
+#   sheriff        — the production supervisor, a Zig wapp built from the
+#                    wapps/sheriff submodule. Zig is NOT in the main build image,
+#                    so sheriff is a SEPARATE target (the engine build does not
+#                    build it):
+#                        make -C wasm/supervisor sheriff
+#                    ZIG is overridable — build with host zig / the wapp-sdk
+#                    image (default), or via sheriff's own toolchain container:
+#                        make -C wasm/supervisor sheriff ZIG='./scripts/dev zig'
 #
-#   make -C wasm/supervisor                   # rebuilds both variants
-#   make -C wasm/supervisor VARIANT=wsh       # rebuild a single variant
+#   make -C wasm/supervisor                  # wsh + selftest (default)
+#   make -C wasm/supervisor sheriff          # the sheriff supervisor (needs zig)
+#   make -C wasm/supervisor VARIANT=wsh build
 
-VARIANTS ?= sheriff wsh selftest
+# Default build is the C supervisors (wasi-sdk clang, in the main build image).
+# sheriff (Zig, from the submodule) is opt-in so the default build needs no zig.
+VARIANTS     ?= wsh selftest
+ALL_VARIANTS := $(VARIANTS) sheriff
 
 DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: all clean $(VARIANTS)
+.PHONY: all clean $(ALL_VARIANTS)
 
 all: $(VARIANTS)
 
 # Per-variant rules dispatched via sub-make so VARIANT scopes file paths.
-$(VARIANTS):
+$(ALL_VARIANTS):
 	$(MAKE) -f $(DIR)Makefile VARIANT=$@ build
 
 ifdef VARIANT
@@ -56,7 +67,19 @@ $(VARIANT_DIR)/app.wasm: $(wildcard $(SELFTEST_SRC)/*.c) $(wildcard $(SELFTEST_S
 	cp $(SELFTEST_SRC)/selftest.wasm $@
 endif
 
+# sheriff's app.wasm is built from the wapps/sheriff submodule with Zig
+# (build.zig targets wasm32-wasi / ReleaseSmall). ZIG is overridable (see header).
+ifeq ($(VARIANT),sheriff)
+ZIG         ?= zig
+SHERIFF_SRC := $(DIR)../../wapps/sheriff
+$(VARIANT_DIR)/app.wasm: $(wildcard $(SHERIFF_SRC)/src/*.zig) $(SHERIFF_SRC)/build.zig
+	mkdir -p $(VARIANT_DIR)
+	cd $(SHERIFF_SRC) && $(ZIG) build
+	cp $(SHERIFF_SRC)/zig-out/bin/sheriff.wasm $@
+endif
+
 endif
 
 clean:
-	rm -f $(addsuffix /supervisor.tar,$(addprefix $(DIR),$(VARIANTS)))
+	rm -f $(addsuffix /supervisor.tar,$(addprefix $(DIR),$(ALL_VARIANTS))) \
+	      $(DIR)sheriff/app.wasm

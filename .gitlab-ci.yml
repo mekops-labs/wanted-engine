@@ -160,10 +160,33 @@ coverage:
 # poweroff/reboot/exit and that a respawned supervisor keeps a working console.
 # The CLI and supervisor TARs come from build-gcc (`ninja supervisor`). Scripts
 # assume the repo CWD is the project root, which is the CI default.
+# sheriff is a Zig wapp built from the wapps/sheriff submodule; the main build
+# image has no Zig, so build the supervisor TAR in the wapp-sdk image (Zig + make)
+# and hand it to integration-tests. The submodule's relative URL resolves to
+# HTTPS + the job token in CI (SSH locally), so the recursive fetch needs no key.
+build-sheriff:
+  stage: build
+  image:
+    name: registry.gitlab.com/mekops/wanted/wanted-engine/wapp-sdk:latest
+    entrypoint: [""]
+  variables:
+    ZIG_GLOBAL_CACHE_DIR: $CI_PROJECT_DIR/.zig-cache
+  cache:
+    key: zig-sheriff
+    paths:
+      - .zig-cache
+  script:
+    - make -C wasm/supervisor sheriff
+  artifacts:
+    paths:
+      - wasm/supervisor/sheriff
+    expire_in: 20 minutes
+
 integration-tests:
   stage: integration-tests
   needs:
     - build-gcc
+    - build-sheriff
   variables:
     BUILD_DIR: build-gcc
   script:
