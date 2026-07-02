@@ -17,9 +17,11 @@
 
 /* Registry capacity: the most image entries a single mount tracks. */
 #define MAX_REG_ENTRIES 50
-/* '@' (not ':') so an install ref maps to a VFAT-legal on-disk filename — see
- * REGISTRY_VERSION_SEPARATOR in platform-config.h. */
-static const char VERSION_SEPARATOR = '@';
+/* The wapp-visible image-reference separator: an install/lookup ref is
+ * "<name>[:<version>]". The loader maps the resolved name/version onto the
+ * on-disk filename, which uses REGISTRY_VERSION_SEPARATOR ('@',
+ * platform-config.h). */
+static const char VERSION_SEPARATOR = ':';
 
 /* Longest install ref "<name>:<version>" (+NUL) the driver buffers between an
  * install open and its finalizing close. */

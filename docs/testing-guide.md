@@ -59,7 +59,7 @@ To add a scenario:
 
 1. Create `wapps/<name>/` with the wapp source and a `Makefile` (copy `wapps/hello/Makefile`) - just an `app.wasm`.
 2. Make the wapp exercise one behaviour — reach a VFS path, misbehave in one specific way, or talk over a pipe.
-3. Stage it: add `<name>:<version>` to `TEST_WAPPS` in `test/selftest.sh` (and `stage_test_wapp` in `test/nuttx-sim.sh` for the sim). The runner packages each into the registry as `<name>:<version>.wapp`.
+3. Stage it: add `<name>:<version>` to `TEST_WAPPS` in `test/selftest.sh` (and `stage_test_wapp` in `test/nuttx-sim.sh` for the sim). The runner packages each into the registry as `<name>@<version>.wapp`.
 4. Add the supervisor-side check in `wapps/selftest/main.c`: launch the wapp via the control plane and assert the expected `state` / `log` outcome, emitting a TAP line.
 5. Re-run `just selftest`.
 
