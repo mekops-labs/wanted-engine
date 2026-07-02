@@ -1,0 +1,24 @@
+{
+    "system": {
+        "privileged": true
+    },
+    "supervisor": {
+        "imagePath": "./wasm/supervisor/sheriff/supervisor.tar",
+        "params": {
+            "console": {
+                "in":  {"name": "platform"},
+                "out": {"name": "platform"},
+                "err": {"name": "platform"}
+            },
+            "drivers": [
+                {"name": "wanted"}
+            ],
+            "mounts": [
+                {"name": "platform", "path": "/var/lib/sheriff"}
+            ],
+            "sockets": [
+                {"name": "manager", "address": "tcp://localhost:8080"}
+            ]
+        }
+    }
+}
