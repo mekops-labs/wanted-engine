@@ -129,8 +129,10 @@ typedef struct __wasi_subscription_t {
     } u;
 } __wasi_subscription_t;
 
-/* WASI snapshot-preview1 __wasi_event_t binary size is 32 bytes — opaque to us
- * since poll_oneoff currently returns NOSYS. */
+/* WASI snapshot-preview1 __wasi_event_t is 32 bytes. poll_oneoff writes it at
+ * fixed offsets (see wasi_poll_oneoff in wasi-vfs.c) for a clock subscription;
+ * fd_read/fd_write subscriptions return NOSYS. It stays an opaque byte block
+ * here. */
 typedef struct __wasi_event_t {
     uint8_t _pad[32];
 } __wasi_event_t;
