@@ -262,11 +262,11 @@ static int startWapp(struct vfs_driver_ctx_t *d, const char *name,
 
     /* An image reference is "<name>[:<tag>]": a bare name resolves to the first
      * matching entry (empty version), a "<name>:<tag>" pins the version
-     * exactly. */
+     * exactly. The ':' is the wapp-visible ref separator; the loader maps the
+     * resolved name/version onto the on-disk filename
+     * (REGISTRY_VERSION_SEPARATOR). */
     memset(&e, 0, sizeof(e));
-    /* Image ref is "<name>[@<version>]" — '@', not ':', so it maps to a
-     * VFAT-legal registry filename (REGISTRY_VERSION_SEPARATOR). */
-    const char *colon = strchr(img, '@');
+    const char *colon = strchr(img, ':');
     if (colon != NULL) {
         size_t nlen = (size_t)(colon - img);
         if (nlen >= WAPP_MAX_NAME_LEN)
