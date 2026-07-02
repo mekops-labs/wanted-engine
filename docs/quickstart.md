@@ -28,24 +28,24 @@ just wsh     # build the engine + CLI with the wsh debug supervisor
 
 ## Package a wapp into the registry
 
-The engine starts wapps by name from a **registry** — on Linux, the `./registry/` directory scanned for `<name>:<version>.wapp` images. A `.wapp` is an OCI-style ustar TAR holding `app.wasm` (and any optional data files). The compiled samples are not packaged automatically, so package `hello` once:
+The engine starts wapps by name from a **registry** — on Linux, the `./registry/` directory scanned for `<name>@<version>.wapp` images. A `.wapp` is an OCI-style ustar TAR holding `app.wasm` (and any optional data files). The compiled samples are not packaged automatically, so package `hello` once:
 
 ```bash
 mkdir -p registry
 stage=$(mktemp -d)
 cp wapps/hello/hello.wasm "$stage/app.wasm"
 tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
-    -C "$stage" -cf registry/hello:0.0.1-1.wapp app.wasm
+    -C "$stage" -cf registry/hello@0.0.1-1.wapp app.wasm
 rm -rf "$stage"
 ```
 
-The **registry filename is the image's identity**: `hello`, version `0.0.1`, package `1` → `hello:0.0.1-1.wapp`. The engine reads the name and version from the filename. The wasm binary is renamed to `app.wasm` inside the TAR — that is the fixed entrypoint name the loader expects.
+The **registry filename is the image's identity**: `hello`, version `0.0.1`, package `1` → `hello@0.0.1-1.wapp`. The engine reads the name and version from the filename. The wasm binary is renamed to `app.wasm` inside the TAR — that is the fixed entrypoint name the loader expects.
 
 `app.wasm` is the only required member. A wapp image can carry any additional files — config, certificates, static assets, data — and they become visible to the wapp as a read-only filesystem at `/`, served by TarFS. Add such files to the TAR alongside `app.wasm` and they appear at the matching path inside the wapp. (Small runtime knobs, like the `hello` sample's `ROLE`, are better passed as launch-config env vars or args than baked into the image — see [Control Plane Reference](control-plane-reference.md).)
 
 ### Image identity
 
-The image's name and version come entirely from its registry filename `<name>:<version>-<package>.wapp` — for `hello`, that is name `hello`, version `0.0.1`, package `1`. The engine reports them at `/proc/wapps` and the per-instance `version` node. Capabilities are not declared in the image; they are exactly what the launch config grants at start (consoles, drivers, mounts, sockets, the control plane). One image can run as several independent **instances** — see [Control Plane Reference](control-plane-reference.md).
+The image's name and version come entirely from its registry filename `<name>@<version>-<package>.wapp` — for `hello`, that is name `hello`, version `0.0.1`, package `1`. The engine reports them at `/proc/wapps` and the per-instance `version` node. Capabilities are not declared in the image; they are exactly what the launch config grants at start (consoles, drivers, mounts, sockets, the control plane). One image can run as several independent **instances** — see [Control Plane Reference](control-plane-reference.md).
 
 ## Run
 
@@ -83,7 +83,7 @@ Launching a wapp is three deliberate steps — reserve the instance name, give i
 
 - **`create hello`** reserves the instance namespace `/dev/wanted/wapps/hello/`. Its `config`, `ctl`, and read nodes exist only after this, and its `state` reads `created`.
 - **`set_config hello <json>`** buffers the launch config at `wapps/hello/config`, moving the instance to `not_started`. The config above gives the wapp a null stdin and routes its stdout/stderr to the per-wapp **log** console. A wapp's capabilities are exactly what this config grants — consoles, drivers, mounts, sockets, args, and envs (see the [Control Plane Reference](control-plane-reference.md)). Keep the JSON free of spaces: `wsh` splits a line on whitespace, so a compact object stays one token.
-- **`start hello`** writes the bare verb `start` to `wapps/hello/ctl`. The engine resolves the image (no `image` in the config, so the instance name `hello` → `hello:0.0.1-1.wapp`), loads it, and runs the wapp as its own thread. A `start` on a reservation with no config is rejected — the `set_config` must come first.
+- **`start hello`** writes the bare verb `start` to `wapps/hello/ctl`. The engine resolves the image (no `image` in the config, so the instance name `hello` → `hello@0.0.1-1.wapp`), loads it, and runs the wapp as its own thread. A `start` on a reservation with no config is rejected — the `set_config` must come first.
 
 Check its state — it is running:
 
