@@ -64,7 +64,7 @@ just wsh          # engine with the wsh debug supervisor
 
 - **Threads** — pthreads.
 - **Stop mechanism** — `pthread_cancel(ASYNCHRONOUS)` interrupts a blocked syscall immediately, so a wapp stuck in a host call is reaped promptly.
-- **Registry** — a host-filesystem directory (`./registry/`) scanned for `<name>:<version>.wapp` images.
+- **Registry** — a host-filesystem directory (`./registry/`) scanned for `<name>@<version>.wapp` images.
 - **TLS** — OpenSSL-backed secure sockets (`T`/`U` socket options).
 - **Memory stats** — `mallinfo2`.
 

@@ -27,7 +27,7 @@ int main(void) {
 A wapp image is a POSIX **ustar** TAR. The engine's TarFS mounts it read-only as the wapp's root filesystem (`/`), and the loader looks for the entrypoint by exact name at the archive root:
 
 ```
-hello:0.0.1-1.wapp           # the TAR (registry filename: <name>:<version>-<package>.wapp)
+hello@0.0.1-1.wapp           # the TAR (registry filename: <name>@<version>-<package>.wapp)
 ├── app.wasm                 # required — the compiled module (the only mandatory member)
 └── assets/logo.png          # optional — any data files become the read-only rootfs
 ```
@@ -39,7 +39,7 @@ hello:0.0.1-1.wapp           # the TAR (registry filename: <name>:<version>-<pac
 
 ## Image identity
 
-A wapp image has **no embedded metadata** — its identity is the registry filename. Installing the TAR as `registry/<name>:<version>-<package>.wapp` is what gives the image its name and version; the loader reads both back from the registry entry, and the `/proc/wapps/<name>/` status nodes (`image`, `version`, …) report them. A missing or unreadable `app.wasm` rejects the image at load.
+A wapp image has **no embedded metadata** — its identity is the registry filename. Installing the TAR as `registry/<name>@<version>-<package>.wapp` is what gives the image its name and version; the loader reads both back from the registry entry, and the `/proc/wapps/<name>/` status nodes (`image`, `version`, …) report them. A missing or unreadable `app.wasm` rejects the image at load.
 
 **Instance identity is separate from image identity.** A running wapp is an *instance*, created by `create <instance>` on the control plane; the *image* it runs is named by the instance's launch config (`"image": "<name>"`, defaulting to the instance name) or by an explicit `start <image>`. One image can therefore run as N independent instances — the engine reports each under its instance name and records the image it runs on the per-instance `image` node. See [Control Plane Reference](control-plane-reference.md).
 
@@ -161,11 +161,11 @@ Build the image, then export its filesystem as the `.wapp` TAR — the exported 
 ```bash
 podman build -t hello-wapp .
 cid=$(podman create hello-wapp)
-podman export "$cid" > registry/hello:0.0.1-1.wapp   # redirect, not -o: podman rejects ':' in an -o filename
+podman export "$cid" > registry/hello@0.0.1-1.wapp   # OCI-style ustar; the filename is the image identity
 podman rm "$cid"
 ```
 
-Install means placing that TAR in the registry directory under `<name>:<version>-<package>.wapp` — the filename **is** the image's identity (name and version). Launch it through the control plane — `create`, then `set_config`, then `start` from `wsh`; the full run is in the [Quick Start](quickstart.md), and the install/launch verbs are in the [Control Plane Reference](control-plane-reference.md).
+Install means placing that TAR in the registry directory under `<name>@<version>-<package>.wapp` — the filename **is** the image's identity (name and version). Launch it through the control plane — `create`, then `set_config`, then `start` from `wsh`; the full run is in the [Quick Start](quickstart.md), and the install/launch verbs are in the [Control Plane Reference](control-plane-reference.md).
 
 The low-level fallback — no container build — is to tar the single file directly, exactly as the test harness does:
 
@@ -173,7 +173,7 @@ The low-level fallback — no container build — is to tar the single file dire
 make -C wapps/hello                        # produces hello.wasm
 mkdir pkg && cp wapps/hello/hello.wasm pkg/app.wasm
 tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
-    -C pkg -cf registry/hello:0.0.1-1.wapp app.wasm
+    -C pkg -cf registry/hello@0.0.1-1.wapp app.wasm
 ```
 
 ## See also
