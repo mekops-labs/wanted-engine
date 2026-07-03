@@ -333,6 +333,8 @@ static const vfs_driver_table_t core_driver_table[] = {
     {"config", VfsConfigInit},
     {"platform", platformFsInitRW},
     {"socket", VfsSocketInit},
+    {"sha256", VfsSha256Init},
+    {"ed25519", VfsEd25519Init},
     {"wanted", VfsWantedInit},
     {NULL, NULL},
 };

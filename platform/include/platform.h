@@ -37,6 +37,19 @@ int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout,
                            plat_clk_flags_t flags);
 int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len);
 
+/* Ed25519 signature verification sizes (RFC 8032). */
+#define PLATFORM_ED25519_KEY_LEN 32
+#define PLATFORM_ED25519_SIG_LEN 64
+
+/* Verify an Ed25519 signature over `msg` with a raw 32-byte public key.
+ * Returns 0 when the signature is valid, -EBADMSG when it is not, and
+ * -ENOSYS when this platform build carries no Ed25519 backend. Platforms
+ * with a crypto peripheral or library back this with hardware acceleration;
+ * the caller only ever sees the verdict. */
+int PlatformEd25519Verify(const uint8_t pubkey[PLATFORM_ED25519_KEY_LEN],
+                          const uint8_t sig[PLATFORM_ED25519_SIG_LEN],
+                          const uint8_t *msg, size_t msgLen);
+
 /* Opaque cross-platform mutex. src/ must not call native threading directly,
  * so shared state (e.g. the inter-wapp pipe store) guards itself through these.
  * Lock/Unlock/Free tolerate a NULL handle so callers need not special-case an

@@ -107,6 +107,8 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 |--------|---------|------|---------|
 | `wanted` | `drivers[]` | `/dev/wanted` | The control-plane namespace; privileged supervisors only. Fully specified in the [Control Plane Reference](control-plane-reference.md). |
 | `null` | `drivers[]` | `/dev/null` | Bit bucket. |
+| `sha256` | `drivers[]` | `/dev/sha256` | Streaming SHA-256 digest device; see below. |
+| `ed25519` | `drivers[]` | `/dev/ed25519` | Ed25519 signature-verification device; see below. |
 | `gpio` | `drivers[]` | `/dev/gpio` | A GPIO pin as a text level node — `write "1"/"0"` drives it high/low, `read` returns `"0\n"/"1\n"`. The engine does the GPIO ioctl; the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via `options`). NuttX only — naming it on a platform without GPIO (Linux) fails the launch with `-ENODEV`. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
 | `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
@@ -116,6 +118,41 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
 | `log` | console slot | — | Console capture: routes a wapp's stdout/stderr into its per-wapp log slot (read back via a `log` mount). |
 | `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` are lossy writers (drop oldest on a full ring); `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
+
+### `sha256` — streaming digest device
+
+Each open of `/dev/sha256` starts a fresh digest stream: `write` feeds message
+bytes (any chunking), and the first `read` finalizes the digest and returns it
+as 64 lowercase hex characters (partial reads resume where they left off; a
+drained stream reads 0). Once read, the stream is sealed — further writes fail
+with `-EINVAL`; `close` releases it, and a new `open` starts the next digest.
+Two streams may be open concurrently per wapp; a third open fails with
+`-EBUSY`. This lets a wapp verify content digests without carrying SHA-256
+code, its constant table, or block buffers in its own linear memory.
+
+```c
+int fd = open("/dev/sha256", O_RDWR);
+write(fd, data, len);              /* repeat while streaming */
+char hex[64];
+read(fd, hex, sizeof(hex));        /* "ba7816bf..." */
+close(fd);
+```
+
+### `ed25519` — signature-verification device
+
+Each open of `/dev/ed25519` performs one verification. The write stream is
+framed: the first 32 bytes are the raw Ed25519 public key, the next 64 bytes
+the signature, and everything after is the message (streamed in any chunking,
+up to 64 KiB). `read` returns the verdict as a text token — `ok` when the
+signature verifies, `fail` when it does not — and seals the stream. Reading
+before the 96-byte key+signature header is complete fails with `-EINVAL`; one
+verification is in flight at a time per wapp (second open: `-EBUSY`).
+
+The engine holds no keys: the wapp supplies the public key it trusts, so key
+custody stays with the caller and the engine only runs the curve arithmetic —
+through `PlatformEd25519Verify`, which a platform backs with its crypto
+library or hardware. On a build without a backend (e.g. `SECURE_SOCKETS=0`)
+the verdict read fails with `-ENOSYS`.
 
 ### `socket` — the `/net/` network namespace
 
