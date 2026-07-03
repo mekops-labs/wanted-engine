@@ -22,6 +22,8 @@ set(vfs-srcs
     "vfs/vfs-stdio.c"
     "vfs/vfs-tarfs.c"
     "vfs/vfs-socket.c"
+    "vfs/vfs-sha256.c"
+    "vfs/vfs-ed25519.c"
     "vfs/vfs-wanted.c"
     "vfs/vfs-wanted-config.c"
     "vfs/vfs-wanted-wapps.c"
