@@ -27,3 +27,6 @@
 [submodule "wapps/sheriff"]
 	path = wapps/sheriff
 	url = ../wapps/sheriff.git
+[submodule "vendor/uzlib"]
+	path = vendor/uzlib
+	url = https://github.com/pfalcon/uzlib
