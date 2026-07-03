@@ -109,6 +109,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `null` | `drivers[]` | `/dev/null` | Bit bucket. |
 | `sha256` | `drivers[]` | `/dev/sha256` | Streaming SHA-256 digest device; see below. |
 | `ed25519` | `drivers[]` | `/dev/ed25519` | Ed25519 signature-verification device; see below. |
+| `inflate` | `drivers[]` | `/dev/inflate` | Streaming gzip decompression device; see below. |
 | `gpio` | `drivers[]` | `/dev/gpio` | A GPIO pin as a text level node — `write "1"/"0"` drives it high/low, `read` returns `"0\n"/"1\n"`. The engine does the GPIO ioctl; the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via `options`). NuttX only — naming it on a platform without GPIO (Linux) fails the launch with `-ENODEV`. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
 | `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
@@ -153,6 +154,43 @@ custody stays with the caller and the engine only runs the curve arithmetic —
 through `PlatformEd25519Verify`, which a platform backs with its crypto
 library or hardware. On a build without a backend (e.g. `SECURE_SOCKETS=0`)
 the verdict read fails with `-ENOSYS`.
+
+### `inflate` — streaming gzip decompression device
+
+Each open of `/dev/inflate` decompresses one gzip member. The write stream is
+length-prefixed: the first 4 bytes declare the compressed member size (LE u32,
+gzip header and trailer included), then the member bytes follow in any
+chunking. Reads drain the decompressed output as it becomes available; a
+**short write** means the internal output buffer is full — read before writing
+more. Reading mid-member with nothing decoded yet returns `-EAGAIN`; when the
+member is fully decoded and drained, reads return 0. The gzip trailer's CRC32
+and length are validated — malformed or truncated input fails the stream with
+`-EIO` until close. Writing past the declared size fails with `-EFBIG`; one
+member decode is in flight at a time per wapp (second open: `-EBUSY`).
+
+```c
+int fd = open("/dev/inflate", O_RDWR);
+uint8_t pfx[4] = { len & 0xff, (len >> 8) & 0xff,
+                   (len >> 16) & 0xff, (len >> 24) & 0xff };
+write(fd, pfx, 4);
+while (fed < len) {
+    int w = write(fd, gz + fed, len - fed);   /* short write: drain first */
+    if (w > 0) fed += w;
+    while ((r = read(fd, out, sizeof(out))) > 0)
+        consume(out, r);                       /* -EAGAIN: keep feeding */
+}
+while ((r = read(fd, out, sizeof(out))) > 0)
+    consume(out, r);                           /* r == 0: member complete */
+close(fd);
+```
+
+The size prefix is part of the contract because the decoder cannot resume
+after exhausting its *input* mid-symbol (output pauses are fine): declaring
+where the member ends lets the engine decode eagerly with a safe input margin
+and finish deterministically. Callers always know the compressed size (a
+fetched blob's length, a file's size). The 32 KiB DEFLATE history window lives
+in engine memory for the lifetime of the open — the wapp carries neither the
+window nor the inflate code.
 
 ### `socket` — the `/net/` network namespace
 

@@ -8,6 +8,7 @@ Unreleased
 
 - `sha256` driver: `/dev/sha256`, a streaming digest device — writes feed message bytes, reads return the digest as 64 hex characters. Two concurrent streams per wapp.
 - `ed25519` driver: `/dev/ed25519`, a signature-verification device — the wapp writes public key (32 B) + signature (64 B) + message (≤64 KiB) and reads back an `ok`/`fail` verdict. Backed by the new platform seam symbol `PlatformEd25519Verify` (OpenSSL on Linux; reads fail with `-ENOSYS` on a build without a crypto backend).
+- `inflate` driver: `/dev/inflate`, a streaming gzip decompression device — a 4-byte LE size prefix, then the gzip member in any chunking; reads drain the decompressed output, trailer CRC32/length validated. The 32 KiB DEFLATE window lives in engine memory, not the wapp's. Vendors uzlib 2.9.5 (decompressor + checksums only).
 
 0.8.0 (2026-06-29)
 ------------------
