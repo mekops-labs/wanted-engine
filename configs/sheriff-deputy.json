@@ -20,7 +20,8 @@
                 {"name": "platform", "path": "/var/lib/sheriff"}
             ],
             "sockets": [
-                {"name": "manager", "address": "tcp://localhost:8080"}
+                {"name": "manager", "address": "tcp://localhost:8080"},
+                {"name": "registry", "address": "tcp://localhost:5000"}
             ]
         }
     }
