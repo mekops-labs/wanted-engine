@@ -12,6 +12,7 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/posix/socket.c
     ${CMAKE_SOURCE_DIR}/platform/posix/wapps-image.c
     api/wapps.c
+    api/crypto.c
     api/memory.c
     api/registry.c
     api/fs-volume.c

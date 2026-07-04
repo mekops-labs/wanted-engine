@@ -21,6 +21,7 @@ Every platform implements the contract in `platform/include/platform.h`. A confo
 | Clock | `PlatformClockGetRes` / `GetTime` / `NanoSleep` |
 | Memory | `PlatformMemoryStats` |
 | Concurrency | `PlatformMutexNew` / `Lock` / `Unlock` / `Free` |
+| Crypto | `PlatformEd25519Verify` — the one seam symbol allowed to report an absent backend (`-ENOSYS`); the `/dev/ed25519` verdict read surfaces it to the wapp |
 | Power / process | `PlatformSetProcessArgs`, `PlatformRequestShutdown`, `PlatformRequestReboot` |
 
 The invariants every platform must honour: a wapp runs on its own thread; `PlatformWappStop` must interrupt a wapp that is blocked in a host syscall (not merely set a flag and wait); `PlatformWappLoop` blocks until an explicit shutdown/reboot request and respawns a supervisor that exits on its own; memory stats report heap usage; the registry resolves a wapp image by name.
