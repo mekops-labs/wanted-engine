@@ -76,6 +76,10 @@ those two Linux arches only.
 
 ## Changelog
 
+### 0.6.5
+
+- add `libssl-dev`: `platform/linux`'s `find_package(OpenSSL)` needs it to enable `SECURE_SOCKETS` (TLS sockets + the real `/dev/ed25519` `PlatformEd25519Verify` body) — without it both silently fall back to stubs
+
 ### 0.6.4
 
 - drop `osv-scanner`: it only flagged dependency manifests in upstream WAMR/NuttX language bindings, tests, and docs tooling the engine never builds, and had no visibility into the vendored C submodules it ships; `trivy` is retained

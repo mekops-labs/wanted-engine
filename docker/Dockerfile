@@ -1,7 +1,7 @@
 FROM debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.6.4"
+LABEL version="0.6.5"
 
 # Unversioned LLVM packages track the distro default (clang/lld/lldb 19 on
 # trixie). The host engine builds with gcc (build-essential) and this clang;
@@ -32,6 +32,11 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     wabt \
     # Coverage reporting
     gcovr \
+    # OpenSSL dev headers — platform/linux's `find_package(OpenSSL)` enables
+    # SECURE_SOCKETS (TLS sockets + the real `/dev/ed25519` PlatformEd25519Verify
+    # body) only when this is present; without it both silently fall back to
+    # stubs (TLS off, Ed25519 verify -ENOSYS).
+    libssl-dev \
     # Utilities
     ca-certificates \
     curl \
