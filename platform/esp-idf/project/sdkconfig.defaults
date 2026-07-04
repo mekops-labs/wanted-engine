@@ -22,8 +22,20 @@ CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
 # Console over USB-Serial/JTAG (XIAO ESP32-S3).
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 
-# WAMR: classic interpreter + libc-builtin + reference types, matching the host
-# engine build. AOT, fast-interp and libc-wasi stay off.
+# WAMR feature set, matching the NuttX built-in app: classic interpreter,
+# libc-builtin, reference types, bulk memory, and the thread manager. Thread
+# manager is required — the interpreter's terminate check
+# (WASM_SUSPEND_FLAG_TERMINATE) compiles in only with it, so without it
+# wasm_runtime_terminate sets a flag nothing reads and a cooperative wapp stop
+# never ends. AOT, fast interpreter, libc-wasi, WASM lib-pthread and shared
+# memory stay off (their Kconfig defaults are otherwise pulled in).
 CONFIG_WAMR_ENABLE_INTERP=y
+CONFIG_WAMR_INTERP_CLASSIC=y
 CONFIG_WAMR_ENABLE_LIBC_BUILTIN=y
 CONFIG_WAMR_ENABLE_REF_TYPES=y
+CONFIG_WAMR_ENABLE_BULK_MEMORY=y
+CONFIG_WAMR_ENABLE_THREAD_MGR=y
+CONFIG_WAMR_ENABLE_AOT=n
+CONFIG_WAMR_ENABLE_LIBC_WASI=n
+CONFIG_WAMR_ENABLE_LIB_PTHREAD=n
+CONFIG_WAMR_ENABLE_SHARED_MEMORY=n
