@@ -1,0 +1,36 @@
+# WANTED Engine — ESP-IDF (ESP32-S3) build image.
+#
+# A dedicated ESP-IDF build image for the ESP32 family (ESP32-S3 first), kept
+# separate from both the main sim image (docker/Dockerfile) and the NuttX xtensa
+# cross image (docker/Containerfile.esp32). ESP-IDF is a different framework from
+# the NuttX port: it carries the Espressif SPI-flash driver, PSRAM XIP startup,
+# lwIP, esp-tls, and the Kconfig options the coexistence work depends on
+# (CONFIG_SPIRAM_XIP_FROM_PSRAM, CONFIG_SPI_FLASH_AUTO_SUSPEND) — none of which
+# exist in the NuttX toolchain image.
+#
+# Base: the official, pinned Espressif IDF image. It already installs a tested
+# ESP-IDF release plus the xtensa/riscv toolchains and exports the build
+# environment via its entrypoint (sources $IDF_PATH/export.sh), so this image
+# only pins the version and sets the workdir. Building ESP-IDF from scratch on a
+# bare Debian (as Containerfile.esp32 does for the NuttX toolchain) would just
+# re-derive what this base already provides, less reliably.
+#
+# Ownership model: run rootless with `--userns=keep-id` (podman) so build
+# artifacts land owned by the host user — the same guidance docker/README.md
+# already gives for the other images. No gosu UID-remap entrypoint is layered on;
+# the base's env-sourcing entrypoint is preserved.
+#
+# Build:  podman build -f docker/Containerfile.esp-idf -t wanted-esp-idf docker/
+#
+# Firmware is built in-container (idf.py build); flashing/monitoring is done from
+# the host (host esptool talks to /dev/ttyACM0 directly), so no --device or
+# serial-group plumbing is needed inside the container.
+
+FROM docker.io/espressif/idf:release-v5.3
+
+LABEL maintainer="mek.xgt@gmail.com"
+LABEL org.opencontainers.image.title="wanted-engine-esp-idf-build"
+LABEL org.opencontainers.image.description="ESP-IDF (ESP32-S3) build toolchain for the WANTED engine."
+LABEL version="0.1.0"
+
+WORKDIR /src

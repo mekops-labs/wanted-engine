@@ -102,7 +102,7 @@ static int renderLeaf(const char *leaf, const wapp_state_t *st, char *out,
     if (strcmp(leaf, "id") == 0)
         return snprintf(out, cap, "%u", (unsigned int)st->id);
     if (strcmp(leaf, "exit_code") == 0)
-        return snprintf(out, cap, "%d", st->exit_code);
+        return snprintf(out, cap, "%d", (int)st->exit_code);
     if (strcmp(leaf, "memory") == 0)
         return snprintf(out, cap,
                         "linear_cur:\t%zu B\n"
