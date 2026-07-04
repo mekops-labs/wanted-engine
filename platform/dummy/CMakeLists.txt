@@ -1,5 +1,6 @@
 set(sources
     dummy.c
+    dummy-crypto.c
     dummy-fs.c
     dummy-extram.c
     dummy-registry.c

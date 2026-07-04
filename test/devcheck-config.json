@@ -3,7 +3,7 @@
         "privileged": true
     },
     "supervisor": {
-        "imagePath": "./wasm/supervisor/sheriff/supervisor.tar",
+        "imagePath": "./wasm/supervisor/devcheck/supervisor.tar",
         "params": {
             "console": {
                 "in":  {"name": "platform"},
@@ -15,12 +15,6 @@
                 {"name": "sha256"},
                 {"name": "ed25519"},
                 {"name": "inflate"}
-            ],
-            "mounts": [
-                {"name": "platform", "path": "/var/lib/sheriff"}
-            ],
-            "sockets": [
-                {"name": "manager", "address": "tcp://localhost:8080"}
             ]
         }
     }

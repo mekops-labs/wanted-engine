@@ -22,6 +22,9 @@ set(vfs-srcs
     "vfs/vfs-stdio.c"
     "vfs/vfs-tarfs.c"
     "vfs/vfs-socket.c"
+    "vfs/vfs-sha256.c"
+    "vfs/vfs-ed25519.c"
+    "vfs/vfs-inflate.c"
     "vfs/vfs-wanted.c"
     "vfs/vfs-wanted-config.c"
     "vfs/vfs-wanted-wapps.c"
@@ -41,6 +44,13 @@ set(tiny-json-src
 # Add c9
 set(c9-src
     ${CMAKE_SOURCE_DIR}/vendor/c9/c9.c
+)
+
+# Add uzlib (decompressor + checksums only; the compressor stays uncompiled)
+set(uzlib-src
+    ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/tinflate.c
+    ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/crc32.c
+    ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/adler32.c
 )
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
@@ -76,6 +86,7 @@ add_library(${project} STATIC
     ${wasi-src}
     ${tiny-json-src}
     ${c9-src}
+    ${uzlib-src}
 )
 
 target_include_directories(${project}
@@ -84,6 +95,7 @@ target_include_directories(${project}
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/c9
+    PRIVATE ${CMAKE_SOURCE_DIR}/vendor/uzlib/src
     PRIVATE ${WAMR_ROOT_DIR}/core/iwasm/include
     )
 
