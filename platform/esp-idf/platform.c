@@ -11,8 +11,8 @@
 #include <stdint.h>
 
 #include <platform.h>
-#include <vfs.h>
 #include <vfs-drivers.h>
+#include <vfs.h>
 
 static const vfs_driver_table_t esp_driver_table[] = {
     {NULL, NULL},

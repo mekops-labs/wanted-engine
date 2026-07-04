@@ -13,14 +13,14 @@
  * variants are distinguishable from the boot log alone.
  */
 
+#include <inttypes.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
-#include <inttypes.h>
-#include <stdatomic.h>
-#include <pthread.h>
 
-#include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "esp_partition.h"
 #include "esp_pthread.h"
 #include "esp_timer.h"
@@ -28,21 +28,20 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 
-#define TAG                 "m0"
-#define PATTERN_PART_LABEL  "pattern"
+#define TAG "m0"
+#define PATTERN_PART_LABEL "pattern"
 #define PATTERN_PART_SUBTYPE 0x40u
-#define PATTERN_BYTES       (512u * 1024u)   /* multiple of the 4 KiB erase sector */
-#define FLASH_CHUNK         256u             /* divides PATTERN_BYTES evenly */
-#define PSRAM_BYTES         (2u * 1024u * 1024u)
-#define PSRAM_STRIDE        4099u            /* prime > cache line, defeats locality */
-#define PSRAM_CORE          1
-#define RUN_SECONDS         30
-#define PROGRESS_SECONDS    5
+#define PATTERN_BYTES (512u * 1024u) /* multiple of the 4 KiB erase sector */
+#define FLASH_CHUNK 256u             /* divides PATTERN_BYTES evenly */
+#define PSRAM_BYTES (2u * 1024u * 1024u)
+#define PSRAM_STRIDE 4099u /* prime > cache line, defeats locality */
+#define PSRAM_CORE 1
+#define RUN_SECONDS 30
+#define PROGRESS_SECONDS 5
 
 /* Deterministic byte for a given flash offset — hashed so it is not trivially
  * cache-predictable and mismatches are unambiguous. */
-static inline uint8_t pattern_byte(uint32_t off)
-{
+static inline uint8_t pattern_byte(uint32_t off) {
     uint32_t x = off * 2654435761u;
     x ^= x >> 15;
     return (uint8_t)x;
@@ -55,14 +54,13 @@ static atomic_uint_least64_t flash_read_errs;
 static atomic_uint_least64_t flash_mismatch;
 static atomic_uint_least64_t psram_iters;
 static atomic_uint_least64_t psram_mismatch;
-static atomic_bool           stop_flag;
+static atomic_bool stop_flag;
 
 /* Fill the pattern partition once, single-threaded, before the churn starts. */
-static int flash_prepare(void)
-{
-    g_part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
-                                      (esp_partition_subtype_t)PATTERN_PART_SUBTYPE,
-                                      PATTERN_PART_LABEL);
+static int flash_prepare(void) {
+    g_part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, (esp_partition_subtype_t)PATTERN_PART_SUBTYPE,
+        PATTERN_PART_LABEL);
     if (g_part == NULL) {
         ESP_LOGE(TAG, "pattern partition not found");
         return -1;
@@ -95,16 +93,16 @@ static int flash_prepare(void)
     return 0;
 }
 
-static void *psram_thread(void *arg)
-{
+static void *psram_thread(void *arg) {
     (void)arg;
-    uint8_t *p = heap_caps_malloc(PSRAM_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    uint8_t *p =
+        heap_caps_malloc(PSRAM_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (p == NULL) {
         ESP_LOGE(TAG, "PSRAM alloc failed");
         return NULL;
     }
-    ESP_LOGI(TAG, "PSRAM buffer @%p (%u bytes) on core %d",
-             p, (unsigned)PSRAM_BYTES, xPortGetCoreID());
+    ESP_LOGI(TAG, "PSRAM buffer @%p (%u bytes) on core %d", p,
+             (unsigned)PSRAM_BYTES, xPortGetCoreID());
 
     uint32_t seed = 1;
     while (!atomic_load(&stop_flag)) {
@@ -126,8 +124,7 @@ static void *psram_thread(void *arg)
 
 /* Read + verify the whole pattern partition on the calling (PRO) core until the
  * deadline; prints a progress line every PROGRESS_SECONDS. */
-static void flash_loop(void)
-{
+static void flash_loop(void) {
     uint8_t buf[FLASH_CHUNK];
     int64_t t_end = esp_timer_get_time() + (int64_t)RUN_SECONDS * 1000000;
     int64_t t_next = esp_timer_get_time() + (int64_t)PROGRESS_SECONDS * 1000000;
@@ -148,8 +145,10 @@ static void flash_loop(void)
             }
         }
         if (esp_timer_get_time() >= t_next) {
-            ESP_LOGI(TAG, "progress: flash_reads=%" PRIu64 " read_err=%" PRIu64
-                     " mismatch=%" PRIu64 " | psram_iters=%" PRIu64 " psram_mismatch=%" PRIu64,
+            ESP_LOGI(TAG,
+                     "progress: flash_reads=%" PRIu64 " read_err=%" PRIu64
+                     " mismatch=%" PRIu64 " | psram_iters=%" PRIu64
+                     " psram_mismatch=%" PRIu64,
                      atomic_load(&flash_reads), atomic_load(&flash_read_errs),
                      atomic_load(&flash_mismatch), atomic_load(&psram_iters),
                      atomic_load(&psram_mismatch));
@@ -158,8 +157,7 @@ static void flash_loop(void)
     }
 }
 
-void app_main(void)
-{
+void app_main(void) {
     ESP_LOGI(TAG, "=== ESP32-S3 flash/PSRAM coexistence reproducer ===");
 #if CONFIG_SPIRAM_XIP_FROM_PSRAM
     ESP_LOGI(TAG, "config: SPIRAM_XIP_FROM_PSRAM = ON");
@@ -195,20 +193,23 @@ void app_main(void)
         return;
     }
 
-    ESP_LOGI(TAG, "running %d s (flash reader on core %d) ...", RUN_SECONDS, xPortGetCoreID());
+    ESP_LOGI(TAG, "running %d s (flash reader on core %d) ...", RUN_SECONDS,
+             xPortGetCoreID());
     flash_loop();
 
     atomic_store(&stop_flag, true);
     pthread_join(th, NULL);
 
-    uint64_t fr  = atomic_load(&flash_reads);
+    uint64_t fr = atomic_load(&flash_reads);
     uint64_t fre = atomic_load(&flash_read_errs);
-    uint64_t fm  = atomic_load(&flash_mismatch);
-    uint64_t pi  = atomic_load(&psram_iters);
-    uint64_t pm  = atomic_load(&psram_mismatch);
+    uint64_t fm = atomic_load(&flash_mismatch);
+    uint64_t pi = atomic_load(&psram_iters);
+    uint64_t pm = atomic_load(&psram_mismatch);
 
     ESP_LOGI(TAG, "=== RESULT ===");
-    ESP_LOGI(TAG, "flash_reads=%" PRIu64 " read_err=%" PRIu64 " mismatch=%" PRIu64, fr, fre, fm);
+    ESP_LOGI(TAG,
+             "flash_reads=%" PRIu64 " read_err=%" PRIu64 " mismatch=%" PRIu64,
+             fr, fre, fm);
     ESP_LOGI(TAG, "psram_iters=%" PRIu64 " psram_mismatch=%" PRIu64, pi, pm);
     if (fre == 0 && fm == 0 && pm == 0) {
         ESP_LOGI(TAG, "VERDICT: CLEAN");
