@@ -1,0 +1,8 @@
+# ESP-IDF build output and generated config (regenerated from sdkconfig.defaults*).
+build*/
+sdkconfig
+sdkconfig.old
+# ccache/home spillover from the containerized build (HOME falls back to workdir).
+.cache/
+dependencies.lock
+managed_components/
