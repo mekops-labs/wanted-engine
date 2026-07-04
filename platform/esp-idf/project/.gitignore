@@ -1,0 +1,7 @@
+# ESP-IDF build output and generated config (regenerated from sdkconfig.defaults).
+build*/
+sdkconfig
+sdkconfig.old
+.cache/
+dependencies.lock
+managed_components/
