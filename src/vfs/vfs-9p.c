@@ -339,7 +339,7 @@ static C9aux *srv(char *s, struct vfs_driver_ctx_t *ctx) {
 }
 
 static C9aux *start(vfs_driver_ctx_t ctx) {
-    C9aux *a;
+    C9aux *a = NULL;
     C9tag tag;
     int i;
 
