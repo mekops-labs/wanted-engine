@@ -12,9 +12,20 @@ variables:
   CCACHE_BASEDIR: $CI_PROJECT_DIR
   CCACHE_MAXSIZE: "500M"
 
+# Retry on transient runner infrastructure failures (e.g. DNS flakiness when
+# pulling the build image). runner_system_failure covers the "connection refused
+# on [::1]:53" DNS errors seen on ganymede1.
+default:
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
 image:
-  name: registry.gitlab.com/mekops/wanted/wanted-engine/build
+  name: registry.gitlab.com/mekops/wanted/wanted-engine/build:0.6.5
   entrypoint: [""]
+  pull_policy: if-not-present
 
 stages:
   - lint
@@ -161,8 +172,9 @@ coverage:
 build-sheriff:
   stage: build
   image:
-    name: registry.gitlab.com/mekops/wanted/wanted-engine/wapp-sdk:latest
+    name: registry.gitlab.com/mekops/wanted/wanted-engine/wapp-sdk:0.1.0
     entrypoint: [""]
+    pull_policy: if-not-present
   variables:
     ZIG_GLOBAL_CACHE_DIR: $CI_PROJECT_DIR/.zig-cache
   cache:
