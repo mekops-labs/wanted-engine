@@ -37,12 +37,22 @@ set(vendor_srcs
     ${ENGINE}/vendor/uzlib/src/adler32.c
 )
 
-# Platform layer: dummy (-ENOSYS) stubs. Replaced by the real esp-idf layer in
-# later milestones.
+# Platform layer. Core primitives are the real ESP-IDF implementations plus the
+# shared POSIX layer; subsystems not yet ported (registry, wapps, net, crypto,
+# extram) remain dummy stubs until their milestones.
 set(platform_srcs
-    ${ENGINE}/platform/dummy/dummy.c
+    # ESP-IDF core primitives
+    ${ENGINE}/platform/esp-idf/memory.c
+    ${ENGINE}/platform/esp-idf/random.c
+    ${ENGINE}/platform/esp-idf/clock-sleep.c
+    ${ENGINE}/platform/esp-idf/fs-volume.c
+    ${ENGINE}/platform/esp-idf/platform.c
+    # Shared POSIX primitives (also compiled by the Linux/NuttX builds)
+    ${ENGINE}/platform/posix/clock.c
+    ${ENGINE}/platform/posix/mutex.c
+    ${ENGINE}/platform/posix/fs.c
+    # Not-yet-ported subsystems
     ${ENGINE}/platform/dummy/dummy-crypto.c
-    ${ENGINE}/platform/dummy/dummy-fs.c
     ${ENGINE}/platform/dummy/dummy-extram.c
     ${ENGINE}/platform/dummy/dummy-registry.c
     ${ENGINE}/platform/dummy/dummy-wapps.c
@@ -59,7 +69,7 @@ idf_component_register(
         ${ENGINE}/vendor/c9
         ${ENGINE}/vendor/cwalk/include
         ${ENGINE}/vendor/uzlib/src
-    REQUIRES wamr
+    REQUIRES wamr esp_hw_support pthread
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
