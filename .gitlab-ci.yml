@@ -91,13 +91,6 @@ build-clang:
     BUILD_DIR: build-clang
     CC: clang
 
-build-coverage:
-  <<: *build_defs
-  variables:
-    BUILD_DIR: build
-    CC: gcc
-    CMAKE_EXTRA_ARGS: -DENABLE_CODE_COVERAGE=on
-
 # Build-validation for the alternate supervisor-image cmake option
 # (-DWANTED_SUPERVISOR_IMAGE_PATH). The smoke tests select the wsh image at
 # runtime via config, so they don't depend on this job — it only asserts the
@@ -135,11 +128,12 @@ unit-test-clang:
 
 coverage:
   stage: test
-  needs:
-    - build-coverage
   variables:
     BUILD_DIR: build
+    CC: gcc
+    CMAKE_EXTRA_ARGS: -DENABLE_CODE_COVERAGE=on
   script:
+    - just build
     - just coverage
   coverage: '/lines: \d+\.\d+/'
   artifacts:
