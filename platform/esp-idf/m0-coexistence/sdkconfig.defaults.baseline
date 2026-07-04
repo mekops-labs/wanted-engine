@@ -1,0 +1,7 @@
+# Baseline: coexistence mitigations OFF (ESP-IDF defaults, stated explicitly).
+# The cache is disabled during each SPI1 flash operation — the coherency window
+# is open. Establishes whether the workload triggers corruption on this silicon.
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=n
+CONFIG_SPIRAM_RODATA=n
+# CONFIG_SPIRAM_XIP_FROM_PSRAM is not set
+# CONFIG_SPI_FLASH_AUTO_SUSPEND is not set
