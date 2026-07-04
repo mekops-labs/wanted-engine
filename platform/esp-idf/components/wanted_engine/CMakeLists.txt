@@ -37,15 +37,16 @@ set(vendor_srcs
     ${ENGINE}/vendor/uzlib/src/adler32.c
 )
 
-# Platform layer. Core primitives are the real ESP-IDF implementations plus the
-# shared POSIX layer; subsystems not yet ported (registry, wapps, net, crypto,
-# extram) remain dummy stubs until their milestones.
+# Platform layer. Core primitives and the wapp lifecycle are the real ESP-IDF
+# implementations plus the shared POSIX layer; subsystems not yet ported
+# (registry, net, crypto, extram) remain dummy stubs until their milestones.
 set(platform_srcs
-    # ESP-IDF core primitives
+    # ESP-IDF core primitives + wapp lifecycle
     ${ENGINE}/platform/esp-idf/memory.c
     ${ENGINE}/platform/esp-idf/random.c
     ${ENGINE}/platform/esp-idf/clock-sleep.c
     ${ENGINE}/platform/esp-idf/fs-volume.c
+    ${ENGINE}/platform/esp-idf/wapps.c
     ${ENGINE}/platform/esp-idf/platform.c
     # Shared POSIX primitives (also compiled by the Linux/NuttX builds)
     ${ENGINE}/platform/posix/clock.c
@@ -55,9 +56,24 @@ set(platform_srcs
     ${ENGINE}/platform/dummy/dummy-crypto.c
     ${ENGINE}/platform/dummy/dummy-extram.c
     ${ENGINE}/platform/dummy/dummy-registry.c
-    ${ENGINE}/platform/dummy/dummy-wapps.c
     ${ENGINE}/platform/dummy/dummy-net.c
 )
+
+# Engine resource limits. The idf.py build bypasses the top-level CMakeLists
+# profile loop, so resolve a profile here and turn its limits into compile
+# definitions (each is #ifndef-guarded in wanted-config.h). Defaults to the S3 +
+# PSRAM profile; override with -DWANTED_PROFILE=<name> from cmake/profiles/.
+if(NOT WANTED_PROFILE)
+    set(WANTED_PROFILE "psram-s3")
+endif()
+include(${ENGINE}/cmake/profiles/${WANTED_PROFILE}.cmake)
+set(_limit_defs "")
+foreach(_limit MAX_WAPPS WASM_STACK_SIZE WASM_HEAP_SIZE WASM_MAX_MEMORY_PAGES
+               WASM_WORKER_STACK_SIZE MAX_PATH_LEN MAX_DRIVERS_CNT MAX_OPTIONS_SIZE)
+    if(DEFINED ${_limit})
+        list(APPEND _limit_defs ${_limit}=${${_limit}})
+    endif()
+endforeach()
 
 idf_component_register(
     SRCS ${core_srcs} ${vfs_srcs} ${wasi_srcs} ${vendor_srcs} ${platform_srcs}
@@ -76,4 +92,5 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PLATFORM_ESP_IDF=1
     SECURE_SOCKETS=0
     SUPERVISOR_IMAGE_PATH="/rom/wanted/supervisor.tar"
+    ${_limit_defs}
 )

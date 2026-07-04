@@ -14,6 +14,20 @@
 #include <vfs-drivers.h>
 #include <vfs.h>
 
+/* Wapp image load/unload map a registry image into the read-only flash window
+ * (esp_partition_mmap) with the storage layer; until then loading is a no-op so
+ * the wapp lifecycle links. */
+int PlatformWappLoad(const char *name, wapp_t *wapp) {
+    (void)name;
+    (void)wapp;
+    return 0;
+}
+
+int PlatformWappUnload(const wapp_t *wapp) {
+    (void)wapp;
+    return 0;
+}
+
 static const vfs_driver_table_t esp_driver_table[] = {
     {NULL, NULL},
 };
