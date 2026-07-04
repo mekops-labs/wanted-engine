@@ -16,13 +16,13 @@
 
 #define TAG "wanted"
 
-static void selftest(void)
-{
+static void selftest(void) {
     ESP_LOGI(TAG, "platform: %s", PlatformName());
 
     size_t used = 0, total = 0;
     PlatformMemoryStats(&used, &total);
-    ESP_LOGI(TAG, "memory: used=%u total=%u bytes", (unsigned)used, (unsigned)total);
+    ESP_LOGI(TAG, "memory: used=%u total=%u bytes", (unsigned)used,
+             (unsigned)total);
 
     uint8_t a[16] = {0}, b[16] = {0};
     int64_t r1 = PlatfromGetRandom(a, sizeof(a));
@@ -34,8 +34,8 @@ static void selftest(void)
     PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &t1);
     PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC, 10000000ULL, 0); /* 10 ms */
     PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &t2);
-    ESP_LOGI(TAG, "clock: %s (dt=%" PRIu64 " ns)",
-             (t2 > t1) ? "OK" : "FAIL", (uint64_t)(t2 - t1));
+    ESP_LOGI(TAG, "clock: %s (dt=%" PRIu64 " ns)", (t2 > t1) ? "OK" : "FAIL",
+             (uint64_t)(t2 - t1));
 
     platform_mutex_t *m = PlatformMutexNew();
     if (m) {
@@ -46,8 +46,7 @@ static void selftest(void)
     ESP_LOGI(TAG, "mutex: %s", m ? "OK" : "FAIL");
 }
 
-void app_main(void)
-{
+void app_main(void) {
     ESP_LOGI(TAG, "WANTED engine — ESP-IDF platform bring-up");
     selftest();
     ESP_LOGI(TAG, "selftest done");
