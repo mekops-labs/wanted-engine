@@ -48,10 +48,14 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/fs-volume.c
     ${ENGINE}/platform/esp-idf/wapps.c
     ${ENGINE}/platform/esp-idf/platform.c
-    # Shared POSIX primitives (also compiled by the Linux/NuttX builds)
+    ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
+    # Shared POSIX primitives (also compiled by the Linux/NuttX builds).
+    # platform/posix/fs.c is NOT reused here: its PlatformFsRename/Mkdir call
+    # renameat/mkdirat, which esp-idf's newlib declares but never links (no
+    # *at() family in esp_vfs) — vfs-esp-idf.c provides esp-idf-native
+    # PlatformOpenStateDir/FsRename/FsMkdir instead.
     ${ENGINE}/platform/posix/clock.c
     ${ENGINE}/platform/posix/mutex.c
-    ${ENGINE}/platform/posix/fs.c
     # Not-yet-ported subsystems
     ${ENGINE}/platform/dummy/dummy-crypto.c
     ${ENGINE}/platform/dummy/dummy-extram.c
@@ -81,6 +85,7 @@ idf_component_register(
     PRIV_INCLUDE_DIRS
         ${ENGINE}/src/include
         ${ENGINE}/platform/include
+        ${ENGINE}/platform/esp-idf/include
         ${ENGINE}/vendor/tiny-json
         ${ENGINE}/vendor/c9
         ${ENGINE}/vendor/cwalk/include
