@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* Platform surface not yet implemented on ESP-IDF: the platform VFS driver
- * table, registry image write / wapp load, and the state-dir VFS driver. These
- * come online with the storage and VFS layers; they return errors / no driver
- * until then so the engine links and boots. */
+ * table and registry image write / wapp load. These come online with the
+ * storage layer; they return errors until then so the engine links and boots.
+ * The state-dir VFS driver (VfsPlatformFsInit) is real — see
+ * vfs/vfs-esp-idf.c. */
 
 #include <errno.h>
 #include <stdbool.h>
@@ -47,12 +48,4 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     (void)entry;
     (void)w;
     return -ENOSYS;
-}
-
-vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
-                                bool readonly) {
-    (void)wapp;
-    (void)options;
-    (void)readonly;
-    return NULL;
 }
