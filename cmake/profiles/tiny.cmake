@@ -11,12 +11,12 @@
 # smallest launch-config slot table. Use this where the M11 heap-relocation is
 # not available; PSRAM boards should use "constrained" instead.
 #
-# Measured footprint (`make sizes`), LP64 / ILP32:
-#   per-wapp structs  12.4 KB /  11.5 KB  (exact engine slot structures)
+# Measured footprint (`make sizes`, re-measured 2026-07-06 post M8-M10), LP64 / ILP32:
+#   per-wapp structs  12.5 KB /  11.5 KB  (exact engine slot structures)
 #   per-wapp runtime  40.0 KB /  40.0 KB  (WASM stack + heap + worker stack + ~16 KB WAMR)
 #   max linear        64.0 KB             (WASM_MAX_MEMORY_PAGES=1 x 64 KiB)
 #   engine overhead    4.2 KB /   4.2 KB  (wantedConfig_t)
-#   worst case       237.0 KB / 235.1 KB  (overhead + MAX_WAPPS x per-wapp)
+#   worst case       237.2 KB / 235.3 KB  (overhead + MAX_WAPPS x per-wapp)
 # WAMR overhead is approximate; excludes the per-image writable module copy.
 set(MAX_WAPPS              2    CACHE STRING "Max concurrent wapp instances")
 set(WASM_STACK_SIZE        4096 CACHE STRING "Per-instance WAMR stack (bytes)")
