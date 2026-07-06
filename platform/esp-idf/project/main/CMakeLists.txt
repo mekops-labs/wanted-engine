@@ -1,10 +1,13 @@
-# EMBED_FILES links looper.wapp and wifi-connect.wapp straight into the app
-# binary as linker sections (`_binary_<name>_wapp_{start,end}`, ESP-IDF's
-# standard symbol names for each file's basename). Both are smoke-test
-# fixtures: app_main.c factory-seeds them into the flash registry at boot so
-# the supervisor can start them without any host-side control-plane
-# connection. Prerequisite: `just wapps`, then package each
-# wapps/<name>/<name>.wasm per docs/quickstart.md into
+# EMBED_FILES links looper.wapp, wifi-connect.wapp and devcheck.wapp straight
+# into the app binary as linker sections (`_binary_<name>_wapp_{start,end}`,
+# ESP-IDF's standard symbol names for each file's basename). All three are
+# smoke-test fixtures: app_main.c factory-seeds them into the flash registry
+# at boot so the supervisor can start them without any host-side
+# control-plane connection. devcheck exercises /dev/sha256 (and /dev/inflate,
+# /dev/ed25519) with known-answer vectors from inside WASM — the M9 proof
+# that the hardware-backed PlatformSha256* seam produces a bit-correct digest
+# on real silicon, not just "doesn't crash". Prerequisite: `just wapps`, then
+# package each wapps/<name>/<name>.wasm per docs/quickstart.md into
 # wasm/registry-seed/<name>.wapp (gitignored, like every other packaged .wapp
 # — see .gitignore's REGISTRY_ROOT comment).
 #
@@ -25,4 +28,5 @@ idf_component_register(SRCS "app_main.c"
                        PRIV_REQUIRES littlefs esp_netif esp_driver_usb_serial_jtag
                        EMBED_FILES
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/looper.wapp"
-                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/wifi-connect.wapp")
+                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/wifi-connect.wapp"
+                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/devcheck.wapp")
