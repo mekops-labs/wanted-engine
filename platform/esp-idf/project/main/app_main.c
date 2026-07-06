@@ -9,13 +9,19 @@
  * (embedded via EMBED_FILES; see platform.c) boots and reads commands from
  * the USB-Serial/JTAG console. wifi-connect brings the radio up (M8) and is
  * driven with credentials supplied at runtime (its WIFI_SSID/WIFI_PASS
- * launch-config envs), never compiled in or persisted.
+ * launch-config envs), never compiled in or persisted. A background thread
+ * (M10, concurrentInstallSelftest) repeatedly installs/verifies/removes a
+ * synthetic wapp image via the flash registry while the interactive session
+ * runs a real wapp concurrently, proving flash writes are safe alongside
+ * PSRAM-resident WASM execution, not just flash reads (M0/M7).
  */
 
 #include <errno.h>
 #include <inttypes.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
@@ -296,6 +302,76 @@ static void socketSelftest(void) {
              ok ? "OK" : "FAIL");
 }
 
+/* M10: proves registry_flash.c's erase+program path (PlatformRegistryWrite)
+ * is safe to call from one thread while a wapp's WASM executes from PSRAM on
+ * the other core -- the concurrent-*write* case M0 (PSRAM churn vs. raw
+ * flash *reads*) and M7 (concurrent flash *reads* from a second wapp launch)
+ * did not cover. Runs a bounded number of install/load-verify/unload/remove
+ * rounds on its own thread (default esp_pthread cfg -- internal-DRAM stack,
+ * so PlatformRegistryWappLoad's own mmap-helper-thread handoff in
+ * registry_flash.c is exercised exactly as it is from any other caller) so
+ * the interactive wsh session has a window to start/stop a real wapp
+ * alongside it. Not a network installer: the plan's "download" trigger is
+ * folded into the Sheriff-integration item below -- a real fetch-and-stream
+ * path belongs to Sheriff's reconcile loop (different chunking/retry needs),
+ * not a one-off test harness here. This harness isolates the actual
+ * open question -- is the flash write itself safe concurrently with a
+ * running wapp -- from how the bytes get onto the device. */
+#define M10_ROUNDS 40
+#define M10_ROUND_DELAY_US 500000
+
+static void *concurrentInstallSelftest(void *arg) {
+    (void)arg;
+    static const uint8_t payload[] =
+        "m10 concurrent-install payload -- proves erase+program is safe "
+        "while a wapp runs from PSRAM on the other core\n";
+    int pass = 0, fail = 0;
+
+    for (int i = 0; i < M10_ROUNDS; i++) {
+        bool ok = true;
+
+        int w1 = PlatformRegistryWrite(START_WRITE, "m10concurrent:v1", payload, 32);
+        int w2 = PlatformRegistryWrite(CONTINUE_WRITE, NULL, payload + 32,
+                                       sizeof(payload) - 32);
+        int fin = PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
+        ok = ok && (w1 == 32) && (w2 == (int)sizeof(payload) - 32) && (fin == 0);
+
+        wapp_t *w = calloc(1, sizeof(*w));
+        int loadRc = -ENOMEM;
+        if (w != NULL) {
+            reg_entry_t query = {.name = "m10concurrent", .version = ""};
+            loadRc = PlatformRegistryWappLoad(&query, w);
+            ok = ok && (loadRc == 0) && (w->layer_cnt == 1) &&
+                 (w->layer_lens[0] == sizeof(payload)) &&
+                 (memcmp(w->layers[0], payload, sizeof(payload)) == 0);
+            if (loadRc == 0)
+                PlatformWappUnload(w);
+            free(w);
+        } else {
+            ok = false;
+        }
+
+        reg_entry_t rmEntry = {.name = "m10concurrent", .version = "v1"};
+        int rmRc = PlatformRegistryRemove(&rmEntry);
+        ok = ok && (rmRc == 0);
+
+        if (ok)
+            pass++;
+        else
+            fail++;
+        ESP_LOGI(TAG,
+                 "m10: round %d/%d -> %s (w1=%d w2=%d fin=%d load=%d rm=%d)",
+                 i + 1, M10_ROUNDS, ok ? "OK" : "FAIL", w1, w2, fin, loadRc,
+                 rmRc);
+
+        usleep(M10_ROUND_DELAY_US);
+    }
+
+    ESP_LOGI(TAG, "m10: concurrent-install selftest done: pass=%d fail=%d",
+             pass, fail);
+    return NULL;
+}
+
 /* M7/M8/M9 smoke-test fixtures, linked in via EMBED_FILES (see
  * main/CMakeLists.txt); ESP-IDF's standard symbol names for a
  * "<name>.wapp" embed. */
@@ -391,6 +467,14 @@ void app_main(void) {
         socketSelftest();
     }
     ESP_LOGI(TAG, "selftest done");
+
+    pthread_t m10Thread;
+    if (pthread_create(&m10Thread, NULL, concurrentInstallSelftest, NULL) == 0) {
+        pthread_detach(m10Thread);
+        ESP_LOGI(TAG, "m10: concurrent-install selftest thread started");
+    } else {
+        ESP_LOGE(TAG, "m10: concurrent-install selftest thread failed to start");
+    }
 
     PlatformSetProcessArgs(0, NULL);
     consoleUseBlockingDriver();
