@@ -285,7 +285,6 @@ void PlatformRequestReboot(void) {
 #define MAX_SUPERVISOR_LAUNCH_FAILURES 3
 
 void PlatformWappLoop(void) {
-    uint8_t supervisorOk;
     int supervisorFailures = 0;
 
     for (;;) {
@@ -305,7 +304,7 @@ void PlatformWappLoop(void) {
             return;
         }
 
-        supervisorOk = 0;
+        uint8_t supervisorOk = 0;
         int supervisorFailed = 0;
         int supervisorErr = 0;
         for (int i = 0; i < MAX_WAPPS; i++) {

@@ -89,7 +89,11 @@ static void wifiEventHandler(void *arg, esp_event_base_t base, int32_t evId,
     }
 }
 
+/* Signature must match esp_event_handler_t exactly (esp_event_handler_
+ * instance_register's expected type); const-qualifying data would mismatch
+ * it and force a cast at the registration call site. */
 static void ipEventHandler(void *arg, esp_event_base_t base, int32_t evId,
+                           /* cppcheck-suppress constParameterCallback */
                            void *data) {
     (void)arg;
     if (base == IP_EVENT && evId == IP_EVENT_STA_GOT_IP) {

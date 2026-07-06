@@ -165,7 +165,7 @@ static void fsSelftest(void) {
     if (rc == 0) {
         size_t off = 0;
         while (off < bufUsed) {
-            vfs_dirent_t *e = (vfs_dirent_t *)(dirbuf + off);
+            const vfs_dirent_t *e = (const vfs_dirent_t *)(dirbuf + off);
             const char *name = dirbuf + off + sizeof(*e);
             if (e->d_namlen == 9 && memcmp(name, "hello.txt", 9) == 0)
                 sawFile = true;
@@ -293,7 +293,7 @@ static void socketSelftest(void) {
         ok = ok && (freeRc == 0);
     }
 
-    void *stcp = PlatformNetOpen(VFS_SKT_STCP);
+    const void *stcp = PlatformNetOpen(VFS_SKT_STCP);
     ESP_LOGI(TAG, "socket: open(stcp, TLS disabled) -> %s (want NULL)",
              stcp ? "non-NULL" : "NULL");
     ok = ok && (stcp == NULL);
