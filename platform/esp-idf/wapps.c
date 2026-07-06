@@ -105,9 +105,9 @@ size_t PlatformWorkerStackSize(void) { return WASM_WORKER_STACK_SIZE; }
  * terminate a runaway wapp. */
 static int basePriority = -1;
 
-/* Start a worker pthread for a wapp with its stack in PSRAM. esp_pthread_set_cfg
- * configures the next pthread_create on this thread; the call is serialised by
- * state_mtx. */
+/* Start a worker pthread for a wapp with its stack in PSRAM.
+ * esp_pthread_set_cfg configures the next pthread_create on this thread; the
+ * call is serialised by state_mtx. */
 static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
     esp_pthread_cfg_t cfg = esp_pthread_get_default_config();
 
@@ -201,10 +201,10 @@ int PlatformWappStop(const char *name) {
         return -ENOENT;
     }
 
-    /* Cooperative stop: set the terminate flag so wasm_runtime_call_wasm returns
-     * false at the next instruction boundary. The thread unwinds through
-     * WA_threadEnd. A worker blocked in a host call unwinds once that call
-     * returns (no signal wakeup on ESP-IDF). */
+    /* Cooperative stop: set the terminate flag so wasm_runtime_call_wasm
+     * returns false at the next instruction boundary. The thread unwinds
+     * through WA_threadEnd. A worker blocked in a host call unwinds once that
+     * call returns (no signal wakeup on ESP-IDF). */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
 
     pthread_mutex_unlock(&state_mtx);

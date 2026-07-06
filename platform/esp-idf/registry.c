@@ -116,7 +116,8 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
          * check, so it is one of ours and always short; a would-be-truncated
          * entry is not — skip it defensively instead of sizing the buffer to
          * the dirent's theoretical worst case. */
-        int n = snprintf(path, sizeof(path), "%s/%s", REGISTRY_ROOT, de->d_name);
+        int n =
+            snprintf(path, sizeof(path), "%s/%s", REGISTRY_ROOT, de->d_name);
         if (n < 0 || (size_t)n >= sizeof(path)) {
             continue;
         }

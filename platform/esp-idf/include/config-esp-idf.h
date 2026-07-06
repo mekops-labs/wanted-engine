@@ -25,4 +25,5 @@
  * image. Slot count matches the "psram-s3" profile's MAX_WAPPS. */
 #define WAPP_IMAGE_PARTITION_LABEL "wapps"
 #define WAPP_IMAGE_MAX_SLOTS 8
-#define WAPP_IMAGE_SLOT_SIZE (3 * 1024 * 1024 / WAPP_IMAGE_MAX_SLOTS) /* 384 KiB, 96 sectors */
+#define WAPP_IMAGE_SLOT_SIZE                                                   \
+    (3 * 1024 * 1024 / WAPP_IMAGE_MAX_SLOTS) /* 384 KiB, 96 sectors */

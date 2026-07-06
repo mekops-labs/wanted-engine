@@ -128,8 +128,7 @@ int TLSWrite(void *connIn, const void *buf, int n) {
     tls_conn_t *conn = (tls_conn_t *)connIn;
     if (conn == NULL)
         return -EINVAL;
-    return mbedtls_ssl_write(&conn->ssl, (const unsigned char *)buf,
-                             (size_t)n);
+    return mbedtls_ssl_write(&conn->ssl, (const unsigned char *)buf, (size_t)n);
 }
 
 int TLSRead(void *connIn, void *buf, int n) {

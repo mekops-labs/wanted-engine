@@ -148,8 +148,7 @@ static void fsSelftest(void) {
         if (checkFd >= 0)
             drv->Close(drv->ctx, checkFd);
 
-        ESP_LOGI(TAG, "fs: open/write/read/seek/fstat: %s",
-                 ok ? "OK" : "FAIL");
+        ESP_LOGI(TAG, "fs: open/write/read/seek/fstat: %s", ok ? "OK" : "FAIL");
     }
 
     int rc = drv->Mkdir(drv->ctx, rootFd, "subdir");
@@ -182,7 +181,8 @@ static void fsSelftest(void) {
     rc = drv->Rename(drv->ctx, rootFd, "hello.txt", rootFd, "renamed.txt");
     ok = ok && (rc == 0);
     if (rc == 0) {
-        int reopened = drv->OpenAt(drv->ctx, rootFd, "renamed.txt", VFS_O_RDONLY);
+        int reopened =
+            drv->OpenAt(drv->ctx, rootFd, "renamed.txt", VFS_O_RDONLY);
         ok = ok && (reopened >= 0);
         if (reopened >= 0)
             drv->Close(drv->ctx, reopened);
@@ -330,11 +330,13 @@ static void *concurrentInstallSelftest(void *arg) {
     for (int i = 0; i < M10_ROUNDS; i++) {
         bool ok = true;
 
-        int w1 = PlatformRegistryWrite(START_WRITE, "m10concurrent:v1", payload, 32);
+        int w1 =
+            PlatformRegistryWrite(START_WRITE, "m10concurrent:v1", payload, 32);
         int w2 = PlatformRegistryWrite(CONTINUE_WRITE, NULL, payload + 32,
                                        sizeof(payload) - 32);
         int fin = PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
-        ok = ok && (w1 == 32) && (w2 == (int)sizeof(payload) - 32) && (fin == 0);
+        ok =
+            ok && (w1 == 32) && (w2 == (int)sizeof(payload) - 32) && (fin == 0);
 
         wapp_t *w = calloc(1, sizeof(*w));
         int loadRc = -ENOMEM;
@@ -359,10 +361,9 @@ static void *concurrentInstallSelftest(void *arg) {
             pass++;
         else
             fail++;
-        ESP_LOGI(TAG,
-                 "m10: round %d/%d -> %s (w1=%d w2=%d fin=%d load=%d rm=%d)",
-                 i + 1, M10_ROUNDS, ok ? "OK" : "FAIL", w1, w2, fin, loadRc,
-                 rmRc);
+        ESP_LOGI(
+            TAG, "m10: round %d/%d -> %s (w1=%d w2=%d fin=%d load=%d rm=%d)",
+            i + 1, M10_ROUNDS, ok ? "OK" : "FAIL", w1, w2, fin, loadRc, rmRc);
 
         usleep(M10_ROUND_DELAY_US);
     }
@@ -388,7 +389,7 @@ extern const uint8_t _binary_devcheck_wapp_end[];
  * seed_registry(). Safe to repeat every boot: registry_flash.c reuses the
  * name's existing slot rather than leaking a new one. */
 static void seedWapp(const char *name, const uint8_t *start,
-                    const uint8_t *end) {
+                     const uint8_t *end) {
     size_t len = (size_t)(end - start);
     int w = PlatformRegistryWrite(START_WRITE, name, start, len);
     int fin = PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
@@ -434,15 +435,15 @@ static void consoleUseBlockingDriver(void) {
  * log`, which docs/quickstart.md still shows stale). Reading
  * wifi-connect's captured output needs this to inspect its scan/connect
  * progress interactively. */
-#define WANTED_DEFAULT_CFG                                                    \
-    "{\"system\":{\"privileged\":true},"                                     \
-    "\"supervisor\":{\"params\":{"                                           \
-    "\"console\":{\"in\":{\"name\":\"platform\"},"                           \
-    "\"out\":{\"name\":\"platform\"},"                                       \
-    "\"err\":{\"name\":\"platform\"}},"                                      \
-    "\"drivers\":[{\"name\":\"wanted\"}],"                                   \
-    "\"mounts\":[{\"name\":\"log\",\"path\":\"/logs\"}],"                    \
-    "\"sockets\":[{\"name\":\"s\",\"address\":\"tcp://1.1.1.1:80\"},"        \
+#define WANTED_DEFAULT_CFG                                                     \
+    "{\"system\":{\"privileged\":true},"                                       \
+    "\"supervisor\":{\"params\":{"                                             \
+    "\"console\":{\"in\":{\"name\":\"platform\"},"                             \
+    "\"out\":{\"name\":\"platform\"},"                                         \
+    "\"err\":{\"name\":\"platform\"}},"                                        \
+    "\"drivers\":[{\"name\":\"wanted\"}],"                                     \
+    "\"mounts\":[{\"name\":\"log\",\"path\":\"/logs\"}],"                      \
+    "\"sockets\":[{\"name\":\"s\",\"address\":\"tcp://1.1.1.1:80\"},"          \
     "{\"name\":\"st\",\"address\":\"tcps://1.1.1.1:443\"}]}}}"
 
 void app_main(void) {
@@ -453,9 +454,9 @@ void app_main(void) {
         registrySelftest();
         seedWapp("looper", _binary_looper_wapp_start, _binary_looper_wapp_end);
         seedWapp("wifi-connect", _binary_wifi_connect_wapp_start,
-                _binary_wifi_connect_wapp_end);
+                 _binary_wifi_connect_wapp_end);
         seedWapp("devcheck", _binary_devcheck_wapp_start,
-                _binary_devcheck_wapp_end);
+                 _binary_devcheck_wapp_end);
     }
 
     /* Starts lwIP's tcpip thread; required before any socket() call. Brings
@@ -469,11 +470,13 @@ void app_main(void) {
     ESP_LOGI(TAG, "selftest done");
 
     pthread_t m10Thread;
-    if (pthread_create(&m10Thread, NULL, concurrentInstallSelftest, NULL) == 0) {
+    if (pthread_create(&m10Thread, NULL, concurrentInstallSelftest, NULL) ==
+        0) {
         pthread_detach(m10Thread);
         ESP_LOGI(TAG, "m10: concurrent-install selftest thread started");
     } else {
-        ESP_LOGE(TAG, "m10: concurrent-install selftest thread failed to start");
+        ESP_LOGE(TAG,
+                 "m10: concurrent-install selftest thread failed to start");
     }
 
     PlatformSetProcessArgs(0, NULL);

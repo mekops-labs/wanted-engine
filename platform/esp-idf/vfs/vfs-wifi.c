@@ -90,7 +90,7 @@ static void wifiEventHandler(void *arg, esp_event_base_t base, int32_t evId,
 }
 
 static void ipEventHandler(void *arg, esp_event_base_t base, int32_t evId,
-                          void *data) {
+                           void *data) {
     (void)arg;
     if (base == IP_EVENT && evId == IP_EVENT_STA_GOT_IP) {
         const ip_event_got_ip_t *evt = (const ip_event_got_ip_t *)data;
@@ -349,7 +349,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     int n;
     if (g_wifiConnected)
         n = snprintf(line, sizeof(line), "connected %s %s\n", g_wifiSsid,
-                    g_wifiIp);
+                     g_wifiIp);
     else
         n = snprintf(line, sizeof(line), "disconnected\n");
     if (n < 0)

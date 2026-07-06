@@ -153,8 +153,8 @@ static void metaPath(char *out, size_t outLen, const char *name,
  * REGISTRY_VERSION_SEPARATOR ('@') metaPath uses for the metadata filename. */
 #define INSTALL_REF_SEPARATOR ':'
 
-static bool splitRef(const char *ref, char *name, size_t nameLen,
-                     char *version, size_t versionLen) {
+static bool splitRef(const char *ref, char *name, size_t nameLen, char *version,
+                     size_t versionLen) {
     const char *sep = strchr(ref, INSTALL_REF_SEPARATOR);
     size_t n = sep ? (size_t)(sep - ref) : strlen(ref);
     const char *ver = sep ? sep + 1 : "";
@@ -197,7 +197,8 @@ static int scanUsedSlots(bool used[WAPP_IMAGE_MAX_SLOTS]) {
          * ones; a would-be-truncated entry is not — skip it defensively
          * rather than sizing the buffer to the dirent's theoretical worst
          * case. */
-        int n = snprintf(path, sizeof(path), "%s/%s", REGISTRY_ROOT, de->d_name);
+        int n =
+            snprintf(path, sizeof(path), "%s/%s", REGISTRY_ROOT, de->d_name);
         if (n < 0 || (size_t)n >= sizeof(path))
             continue;
         wapp_image_meta_t meta;
@@ -244,7 +245,8 @@ static int allocSlot(const bool used[WAPP_IMAGE_MAX_SLOTS]) {
 static struct {
     bool active;
     int slot;
-    size_t partitionOffset; /* running write cursor, absolute in the partition */
+    size_t
+        partitionOffset; /* running write cursor, absolute in the partition */
     size_t written;
     char name[WAPP_MAX_NAME_LEN];
     char version[WAPP_MAX_VERSION_LEN];
@@ -442,9 +444,9 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
 
     const void *ptr;
     esp_partition_mmap_handle_t handle;
-    esp_err_t err = flashHelperMmap(
-        part, (size_t)meta.slot * WAPP_IMAGE_SLOT_SIZE, meta.size, &ptr,
-        &handle);
+    esp_err_t err =
+        flashHelperMmap(part, (size_t)meta.slot * WAPP_IMAGE_SLOT_SIZE,
+                        meta.size, &ptr, &handle);
     if (err != ESP_OK)
         return -EIO;
 
