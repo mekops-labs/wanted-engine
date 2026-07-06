@@ -37,10 +37,10 @@ set(vendor_srcs
     ${ENGINE}/vendor/uzlib/src/adler32.c
 )
 
-# Platform layer. Core primitives, the wapp lifecycle, the registry, and
-# sockets are the real ESP-IDF implementations plus the shared POSIX layer;
-# subsystems not yet ported (crypto, extram) remain dummy stubs until their
-# milestones.
+# Platform layer. Core primitives, the wapp lifecycle, the registry, sockets,
+# and the extram (PSRAM) allocator are the real ESP-IDF implementations plus
+# the shared POSIX layer; subsystems not yet ported (crypto) remain dummy
+# stubs until their milestones.
 set(platform_srcs
     # ESP-IDF core primitives + wapp lifecycle
     ${ENGINE}/platform/esp-idf/memory.c
@@ -70,9 +70,11 @@ set(platform_srcs
     # is on by default for this SoC) -- unlike ECC/ECDSA, this chip has no
     # peripheral gap to work around.
     ${ENGINE}/platform/esp-idf/sha256.c
+    # PlatformExtram* routes WantedMalloc into PSRAM (heap_caps_malloc); see
+    # the M1 safety audit in plans/wanted-engine-esp-idf-psram-allocator.md.
+    ${ENGINE}/platform/esp-idf/extram.c
     # Not-yet-ported subsystems
     ${ENGINE}/platform/dummy/dummy-crypto.c
-    ${ENGINE}/platform/dummy/dummy-extram.c
 )
 
 # Engine resource limits. The idf.py build bypasses the top-level CMakeLists
