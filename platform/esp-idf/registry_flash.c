@@ -12,6 +12,8 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <pthread.h>
+#include <semaphore.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -26,6 +28,109 @@
 #include <wanted.h>
 
 static inline size_t min(size_t a, size_t b) { return (a) > (b) ? (b) : (a); }
+
+/* esp_partition_mmap/munmap reconfigure the flash cache's MMU mapping, which
+ * requires briefly freezing the cache; ESP-IDF asserts that the CALLING
+ * task's own native stack is not in PSRAM at that moment
+ * (esp_cache_utils.c's s_task_stack_is_sane_when_cache_frozen, which reads
+ * only the current core's stack pointer — other tasks' stacks are irrelevant
+ * since the other core is stalled for the duration). Every wapp worker
+ * thread's stack lives in PSRAM (Path B, platform/esp-idf/wapps.c), so a
+ * wapp that starts another wapp — the ordinary "start" control-plane path —
+ * calls PlatformRegistryWappLoad on its own PSRAM-stacked thread and hits
+ * this assert. A dedicated helper thread with a plain (internal-DRAM,
+ * esp_pthread's default) stack proxies just the mmap/munmap calls so the
+ * caller's PSRAM stack is never live during the frozen window.
+ * esp_partition_erase_range/write/read (PlatformRegistryWrite/ReadImage) do
+ * not touch this check and are called directly, as already exercised from
+ * multiple thread contexts by the M0/M3pre reproducers and M5's own
+ * selftest. */
+typedef struct {
+    bool isMmap;
+    const esp_partition_t *part;
+    size_t offset;
+    size_t size;
+    const void *ptr;
+    esp_partition_mmap_handle_t handle;
+    esp_err_t err;
+} flash_map_job_t;
+
+static pthread_mutex_t g_flashHelperLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_t g_flashHelperThread;
+static bool g_flashHelperStarted;
+static sem_t g_flashJobReady;
+static sem_t g_flashJobDone;
+static flash_map_job_t g_flashJob;
+
+static void *flashHelperMain(void *arg) {
+    (void)arg;
+    for (;;) {
+        sem_wait(&g_flashJobReady);
+        if (g_flashJob.isMmap) {
+            g_flashJob.err = esp_partition_mmap(
+                g_flashJob.part, g_flashJob.offset, g_flashJob.size,
+                ESP_PARTITION_MMAP_DATA, &g_flashJob.ptr, &g_flashJob.handle);
+        } else {
+            esp_partition_munmap(g_flashJob.handle);
+            g_flashJob.err = ESP_OK;
+        }
+        sem_post(&g_flashJobDone);
+    }
+    return NULL;
+}
+
+/* Lazily starts the helper thread on first use. No esp_pthread_set_cfg call
+ * here — that config only ever applies to the next pthread_create on the
+ * calling thread, so this picks up esp-idf's plain default (internal-DRAM)
+ * stack regardless of what the caller's own thread previously configured for
+ * itself (e.g. a wapp worker's own PSRAM cfg, already consumed by its own
+ * creation in platform/esp-idf/wapps.c). */
+static bool flashHelperEnsureStarted(void) {
+    if (g_flashHelperStarted)
+        return true;
+    if (sem_init(&g_flashJobReady, 0, 0) != 0)
+        return false;
+    if (sem_init(&g_flashJobDone, 0, 0) != 0)
+        return false;
+    if (pthread_create(&g_flashHelperThread, NULL, flashHelperMain, NULL) != 0)
+        return false;
+    g_flashHelperStarted = true;
+    return true;
+}
+
+static esp_err_t flashHelperMmap(const esp_partition_t *part, size_t offset,
+                                 size_t size, const void **ptr,
+                                 esp_partition_mmap_handle_t *handle) {
+    esp_err_t err;
+
+    pthread_mutex_lock(&g_flashHelperLock);
+    if (!flashHelperEnsureStarted()) {
+        pthread_mutex_unlock(&g_flashHelperLock);
+        return ESP_ERR_NO_MEM;
+    }
+    g_flashJob.isMmap = true;
+    g_flashJob.part = part;
+    g_flashJob.offset = offset;
+    g_flashJob.size = size;
+    sem_post(&g_flashJobReady);
+    sem_wait(&g_flashJobDone);
+    err = g_flashJob.err;
+    *ptr = g_flashJob.ptr;
+    *handle = g_flashJob.handle;
+    pthread_mutex_unlock(&g_flashHelperLock);
+    return err;
+}
+
+static void flashHelperMunmap(esp_partition_mmap_handle_t handle) {
+    pthread_mutex_lock(&g_flashHelperLock);
+    if (flashHelperEnsureStarted()) {
+        g_flashJob.isMmap = false;
+        g_flashJob.handle = handle;
+        sem_post(&g_flashJobReady);
+        sem_wait(&g_flashJobDone);
+    }
+    pthread_mutex_unlock(&g_flashHelperLock);
+}
 
 static const esp_partition_t *wappPartition(void) {
     static const esp_partition_t *part;
@@ -337,14 +442,14 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
 
     const void *ptr;
     esp_partition_mmap_handle_t handle;
-    esp_err_t err = esp_partition_mmap(
-        part, (size_t)meta.slot * WAPP_IMAGE_SLOT_SIZE, meta.size,
-        ESP_PARTITION_MMAP_DATA, &ptr, &handle);
+    esp_err_t err = flashHelperMmap(
+        part, (size_t)meta.slot * WAPP_IMAGE_SLOT_SIZE, meta.size, &ptr,
+        &handle);
     if (err != ESP_OK)
         return -EIO;
 
     if (!mmapTableAdd(ptr, handle)) {
-        esp_partition_munmap(handle);
+        flashHelperMunmap(handle);
         return -ENOMEM;
     }
 
@@ -368,7 +473,7 @@ int PlatformWappUnload(const wapp_t *wapp) {
     if (wapp == NULL)
         return -EINVAL;
     if (mmapTableTake(wapp->layers[0], &handle))
-        esp_partition_munmap(handle);
+        flashHelperMunmap(handle);
     return 0;
 }
 
