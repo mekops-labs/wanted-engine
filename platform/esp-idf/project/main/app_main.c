@@ -2,10 +2,11 @@
  * ESP-IDF entry point for the WANTED engine.
  *
  * Exercises the ESP-IDF platform core primitives (name, memory stats, RNG,
- * monotonic clock + sleep, mutex) and, once LittleFS is mounted, the platform
- * VFS driver (open/write/read/seek/fstat/mkdir/readdir/rename) on-target and
- * logs a pass/fail line each. Driving the full engine (WantedStart) waits on
- * the registry and wapp layers.
+ * monotonic clock + sleep, mutex), the platform VFS driver, the flash
+ * registry, and lwIP sockets on-target, logging a pass/fail line each, then
+ * seeds the "looper" M7 smoke-test fixture into the registry and hands off to
+ * WantedStart — the compiled-in wsh supervisor (embedded via EMBED_FILES; see
+ * platform.c) boots and reads commands from the USB-Serial/JTAG console.
  */
 
 #include <errno.h>
@@ -13,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -20,6 +23,7 @@
 #include <platform.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
+#include <wanted.h>
 
 #define TAG "wanted"
 #define LITTLEFS_PARTITION_LABEL "registry"
@@ -289,12 +293,64 @@ static void socketSelftest(void) {
              ok ? "OK" : "FAIL");
 }
 
+/* M7 smoke-test fixture, linked in via EMBED_FILES (see main/CMakeLists.txt);
+ * ESP-IDF's standard symbol names for a "looper.wapp" embed. */
+extern const uint8_t _binary_looper_wapp_start[];
+extern const uint8_t _binary_looper_wapp_end[];
+
+/* Factory-seeds "looper" into the flash registry so the supervisor can
+ * start/stop it via the ctl device with no host-side control-plane
+ * connection (WiFi/9P is M8) — mirrors the NuttX ESP32 port's
+ * seed_registry(). Safe to repeat every boot: registry_flash.c reuses
+ * "looper"'s existing slot rather than leaking a new one. */
+static void seedLooper(void) {
+    const uint8_t *img = _binary_looper_wapp_start;
+    size_t len = (size_t)(_binary_looper_wapp_end - _binary_looper_wapp_start);
+
+    int w = PlatformRegistryWrite(START_WRITE, "looper", img, len);
+    int fin = PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
+    ESP_LOGI(TAG, "seed: looper (%u bytes) -> write=%d finish=%d",
+             (unsigned)len, w, fin);
+}
+
+/* Matches configs/example_config_wsh.json (minus imagePath — leaving that
+ * empty falls back to SUPERVISOR_IMAGE_PATH, the embedded wsh tar; see
+ * src/wanted.c's supervisor bootstrap and platform.c's PlatformWappLoad).
+ * The engine's own compiled-in default (src/default_supervisor_cfg.json.h) is
+ * NOT used here: it targets the Linux production sheriff supervisor
+ * (mounts /var/lib/sheriff, a tcp://localhost:8888 socket) — neither exists
+ * on this board, and the mount failed the supervisor launch (-EPERM) before
+ * this config was written. */
+/* The USB-Serial/JTAG VFS console defaults to non-blocking reads ("used by
+ * default", per usb_serial_jtag_vfs.h) — a wsh console read then sees no data
+ * as an immediate EOF, so the interactive shell exits and gets respawned in a
+ * loop instead of blocking for a command. Installing the driver and switching
+ * the VFS to it makes fd 0 a normal blocking, interrupt-driven stream, same
+ * as a real terminal on Linux/NuttX. */
+static void consoleUseBlockingDriver(void) {
+    usb_serial_jtag_driver_config_t cfg =
+        USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    esp_err_t err = usb_serial_jtag_driver_install(&cfg);
+    ESP_LOGI(TAG, "console: usb_serial_jtag_driver_install -> %s",
+             err == ESP_OK ? "OK" : esp_err_to_name(err));
+    usb_serial_jtag_vfs_use_driver();
+}
+
+#define WANTED_DEFAULT_CFG                                                    \
+    "{\"system\":{\"privileged\":true},"                                     \
+    "\"supervisor\":{\"params\":{"                                           \
+    "\"console\":{\"in\":{\"name\":\"platform\"},"                           \
+    "\"out\":{\"name\":\"platform\"},"                                       \
+    "\"err\":{\"name\":\"platform\"}},"                                      \
+    "\"drivers\":[{\"name\":\"wanted\"}]}}}"
+
 void app_main(void) {
     ESP_LOGI(TAG, "WANTED engine — ESP-IDF platform bring-up");
     selftest();
     if (mountLittleFs()) {
         fsSelftest();
         registrySelftest();
+        seedLooper();
     }
 
     /* Starts lwIP's tcpip thread; required before any socket() call. Brings
@@ -306,4 +362,10 @@ void app_main(void) {
         socketSelftest();
     }
     ESP_LOGI(TAG, "selftest done");
+
+    PlatformSetProcessArgs(0, NULL);
+    consoleUseBlockingDriver();
+    ESP_LOGI(TAG, "starting WANTED engine (supervisor: wsh, privileged)");
+    int ret = WantedStart(WANTED_DEFAULT_CFG, strlen(WANTED_DEFAULT_CFG));
+    ESP_LOGI(TAG, "WantedStart returned %d", ret);
 }
