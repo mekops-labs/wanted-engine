@@ -61,9 +61,10 @@ set(platform_srcs
     ${ENGINE}/platform/posix/clock.c
     ${ENGINE}/platform/posix/mutex.c
     # lwIP exposes the same BSD socket API this file already targets (it is
-    # also the NuttX platform's socket.c, unmodified) — SECURE_SOCKETS=0 below
-    # compiles out its TLS branches, same as on NuttX.
+    # also the NuttX platform's socket.c, unmodified); SECURE_SOCKETS=1 below
+    # turns on its TLS branches, backed by ssocket.c's raw mbedTLS layer.
     ${ENGINE}/platform/posix/socket.c
+    ${ENGINE}/platform/esp-idf/ssocket.c
     # Not-yet-ported subsystems
     ${ENGINE}/platform/dummy/dummy-crypto.c
     ${ENGINE}/platform/dummy/dummy-extram.c
@@ -108,13 +109,13 @@ idf_component_register(
         ${ENGINE}/vendor/c9
         ${ENGINE}/vendor/cwalk/include
         ${ENGINE}/vendor/uzlib/src
-    REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash
+    REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash mbedtls
     EMBED_FILES ${ENGINE}/wasm/supervisor/wsh/supervisor.tar
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PLATFORM_ESP_IDF=1
-    SECURE_SOCKETS=0
+    SECURE_SOCKETS=1
     SUPERVISOR_IMAGE_PATH="embedded:supervisor.tar"
     ${_limit_defs}
 )
