@@ -1,11 +1,12 @@
-# EMBED_FILES links looper.wapp straight into the app binary as a linker
-# section (`_binary_looper_wapp_{start,end}`, ESP-IDF's standard symbol names
-# for a file named "looper.wapp"). It is an M7 smoke-test fixture: app_main.c
-# factory-seeds it into the flash registry at boot so the supervisor can
-# start/stop it without any host-side control-plane connection.
-# Prerequisite: `just wapps`, then package wapps/looper/looper.wasm per
-# docs/quickstart.md into wasm/registry-seed/looper.wapp (gitignored, like
-# every other packaged .wapp — see .gitignore's REGISTRY_ROOT comment).
+# EMBED_FILES links looper.wapp and wifi-connect.wapp straight into the app
+# binary as linker sections (`_binary_<name>_wapp_{start,end}`, ESP-IDF's
+# standard symbol names for each file's basename). Both are smoke-test
+# fixtures: app_main.c factory-seeds them into the flash registry at boot so
+# the supervisor can start them without any host-side control-plane
+# connection. Prerequisite: `just wapps`, then package each
+# wapps/<name>/<name>.wasm per docs/quickstart.md into
+# wasm/registry-seed/<name>.wapp (gitignored, like every other packaged .wapp
+# — see .gitignore's REGISTRY_ROOT comment).
 #
 # supervisor.tar (the compiled-in default supervisor) is embedded by the
 # wanted_engine component instead — see that CMakeLists.txt — because
@@ -23,4 +24,5 @@ idf_component_register(SRCS "app_main.c"
                        REQUIRES wanted_engine
                        PRIV_REQUIRES littlefs esp_netif esp_driver_usb_serial_jtag
                        EMBED_FILES
-                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/looper.wapp")
+                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/looper.wapp"
+                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/wifi-connect.wapp")
