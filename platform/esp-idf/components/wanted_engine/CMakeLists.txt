@@ -52,6 +52,7 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/registry.c
     ${ENGINE}/platform/esp-idf/registry_flash.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
+    ${ENGINE}/platform/esp-idf/vfs/vfs-wifi.c
     # Shared POSIX primitives (also compiled by the Linux/NuttX builds).
     # platform/posix/fs.c is NOT reused here: its PlatformFsRename/Mkdir call
     # renameat/mkdirat, which esp-idf's newlib declares but never links (no
@@ -107,7 +108,7 @@ idf_component_register(
         ${ENGINE}/vendor/c9
         ${ENGINE}/vendor/cwalk/include
         ${ENGINE}/vendor/uzlib/src
-    REQUIRES wamr esp_hw_support pthread esp_partition lwip
+    REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash
     EMBED_FILES ${ENGINE}/wasm/supervisor/wsh/supervisor.tar
 )
 

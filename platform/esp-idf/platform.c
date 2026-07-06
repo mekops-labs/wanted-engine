@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Platform surface: the platform VFS driver table (ESP32-S3 has no board
- * drivers of its own yet — gpio/wifi are future milestones) and the
- * compiled-in (single-path) wapp loader for the default supervisor image. The
- * state-dir VFS driver (VfsPlatformFsInit) is real — see vfs/vfs-esp-idf.c.
+/* Platform surface: the platform VFS driver table (wifi is real — see
+ * vfs/vfs-wifi.c; gpio is a future milestone) and the compiled-in
+ * (single-path) wapp loader for the default supervisor image. The state-dir
+ * VFS driver (VfsPlatformFsInit) is real — see vfs/vfs-esp-idf.c.
  * Registry-driven load/unload (registry_flash.c) is real. */
 
 #include <errno.h>
@@ -42,6 +42,7 @@ int PlatformWappLoad(const char *name, wapp_t *wapp) {
 }
 
 static const vfs_driver_table_t esp_driver_table[] = {
+    {"wifi", VfsWifiInit},
     {NULL, NULL},
 };
 
