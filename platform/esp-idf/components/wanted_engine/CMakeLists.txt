@@ -84,6 +84,18 @@ foreach(_limit MAX_WAPPS WASM_STACK_SIZE WASM_HEAP_SIZE WASM_MAX_MEMORY_PAGES
     endif()
 endforeach()
 
+# EMBED_FILES links the compiled-in default supervisor (wsh) straight into the
+# app binary as a linker section (`_binary_supervisor_tar_{start,end}`) —
+# platform.c's PlatformWappLoad reads it directly, zero-copy. The ESP-IDF
+# equivalent of the NuttX port's boot ROMFS (platform/nuttx/app/
+# wanted_esp32_main.c), since ESP-IDF has no host filesystem to stage a
+# supervisor image on. Prerequisite: `just supervisor`
+# (wasm/supervisor/wsh/supervisor.tar). Embedded here rather than by the
+# `main` component so platform.c and the embed live in the same static
+# library — a symbol EMBED_FILES defines in one component's archive is not
+# visible to a different component's archive without
+# --start-group/--end-group, which is exactly the link failure that surfaced
+# this constraint.
 idf_component_register(
     SRCS ${core_srcs} ${vfs_srcs} ${wasi_srcs} ${vendor_srcs} ${platform_srcs}
     INCLUDE_DIRS ${ENGINE}/include
@@ -96,11 +108,12 @@ idf_component_register(
         ${ENGINE}/vendor/cwalk/include
         ${ENGINE}/vendor/uzlib/src
     REQUIRES wamr esp_hw_support pthread esp_partition lwip
+    EMBED_FILES ${ENGINE}/wasm/supervisor/wsh/supervisor.tar
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PLATFORM_ESP_IDF=1
     SECURE_SOCKETS=0
-    SUPERVISOR_IMAGE_PATH="/rom/wanted/supervisor.tar"
+    SUPERVISOR_IMAGE_PATH="embedded:supervisor.tar"
     ${_limit_defs}
 )
