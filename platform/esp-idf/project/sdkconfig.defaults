@@ -19,6 +19,12 @@ CONFIG_SPI_FLASH_AUTO_SUSPEND=y
 # POSIX threads for the wapp lifecycle (matches the Linux/NuttX platform).
 CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
 
+# app_main's own selftest drives LittleFS/registry paths directly (mount,
+# opendir/readdir, fopen) on the main task, which is stack-hungrier than the
+# default 3584 B budget — a 4 KiB PATH_MAX-sized local plus littlefs's own
+# frames overflowed it. Matches the worker stack bump above.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
 # Console over USB-Serial/JTAG (XIAO ESP32-S3).
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 

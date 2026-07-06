@@ -10,6 +10,7 @@
 
 #include <errno.h>
 #include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_littlefs.h"
@@ -182,11 +183,85 @@ static void fsSelftest(void) {
     ESP_LOGI(TAG, "fs: %s", ok ? "OK" : "FAIL");
 }
 
+/* Exercises the flash-partition registry (registry.c + registry_flash.c)
+ * directly: install a synthetic image via the PlatformRegistryWrite state
+ * machine, confirm it enumerates, load it back through
+ * PlatformRegistryWappLoad (esp_partition_mmap zero-copy XIP) and byte-verify
+ * the mapped bytes, unload, then remove and confirm it is gone. Handing the
+ * mapped bytes to WAMR for real instantiation needs a loaded wapp — M7.
+ */
+static void registrySelftest(void) {
+    static const uint8_t payload[] =
+        "esp-idf registry selftest payload -- flash-mapped XIP\n";
+    bool ok = true;
+
+    int w1 = PlatformRegistryWrite(START_WRITE, "selftest:v1", payload, 32);
+    int w2 = PlatformRegistryWrite(CONTINUE_WRITE, NULL, payload + 32,
+                                   sizeof(payload) - 32);
+    int fin = PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
+    ESP_LOGI(TAG, "registry: install(selftest:v1) -> w1=%d w2=%d finish=%d", w1,
+             w2, fin);
+    ok = ok && (w1 == 32) && (w2 == (int)sizeof(payload) - 32) && (fin == 0);
+
+    reg_entry_t list[8];
+    int n = PlatformRegistryRead(list, 8);
+    bool found = false;
+    for (int i = 0; i < n && !found; i++) {
+        if (strcmp(list[i].name, "selftest") == 0 &&
+            strcmp(list[i].version, "v1") == 0 &&
+            list[i].size == sizeof(payload)) {
+            found = true;
+        }
+    }
+    ESP_LOGI(TAG, "registry: list -> n=%d found=%d", n, found);
+    ok = ok && found;
+
+    /* wapp_t (~10 KB with this profile's launch-config arrays) is heap-, not
+     * stack-, allocated — the main task's default stack does not have room
+     * for it (embedded-c standards, prefer heap over large stack locals). */
+    wapp_t *w = calloc(1, sizeof(*w));
+    bool loaded = false;
+    int loadRc = -ENOMEM;
+    if (w != NULL) {
+        reg_entry_t query = {.name = "selftest", .version = ""};
+        loadRc = PlatformRegistryWappLoad(&query, w);
+        loaded = (loadRc == 0) && (w->layer_cnt == 1) &&
+                 (w->layer_lens[0] == sizeof(payload)) &&
+                 (memcmp(w->layers[0], payload, sizeof(payload)) == 0);
+    }
+    ESP_LOGI(TAG, "registry: load(selftest) -> rc=%d len=%u match=%d", loadRc,
+             w ? (unsigned)w->layer_lens[0] : 0, loaded);
+    ok = ok && loaded;
+
+    if (w != NULL) {
+        if (loadRc == 0) {
+            int unloadRc = PlatformWappUnload(w);
+            ESP_LOGI(TAG, "registry: unload -> rc=%d", unloadRc);
+            ok = ok && (unloadRc == 0);
+        }
+        free(w);
+    }
+
+    reg_entry_t rmEntry = {.name = "selftest", .version = "v1"};
+    int rmRc = PlatformRegistryRemove(&rmEntry);
+    n = PlatformRegistryRead(list, 8);
+    bool gone = true;
+    for (int i = 0; i < n; i++) {
+        if (strcmp(list[i].name, "selftest") == 0)
+            gone = false;
+    }
+    ESP_LOGI(TAG, "registry: remove -> rc=%d gone=%d", rmRc, gone);
+    ok = ok && (rmRc == 0) && gone;
+
+    ESP_LOGI(TAG, "registry: %s", ok ? "OK" : "FAIL");
+}
+
 void app_main(void) {
     ESP_LOGI(TAG, "WANTED engine — ESP-IDF platform bring-up");
     selftest();
     if (mountLittleFs()) {
         fsSelftest();
+        registrySelftest();
     }
     ESP_LOGI(TAG, "selftest done");
 }
