@@ -15,6 +15,7 @@
 
 #include "esp_littlefs.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 
 #include <platform.h>
 #include <vfs-drivers.h>
@@ -256,12 +257,53 @@ static void registrySelftest(void) {
     ESP_LOGI(TAG, "registry: %s", ok ? "OK" : "FAIL");
 }
 
+/* Exercises platform/posix/socket.c (reused unmodified from the NuttX/Linux
+ * platforms) to the extent possible without a live network interface: opening
+ * and freeing a plain socket, and confirming a secure socket type is rejected
+ * (SECURE_SOCKETS=0 here, so PlatformNetOpen's TLS branch returns NULL).
+ * connect/send/recv need a routable interface — WiFi bring-up is M8.
+ *
+ * Requires esp_netif_init() (called once from app_main below) to have started
+ * lwIP's internal tcpip thread first — plain socket() asserts
+ * ("Invalid mbox") without it, even with no interface configured; the assert
+ * fires inside lwIP's own socket layer before it ever needs a route.
+ */
+static void socketSelftest(void) {
+    bool ok = true;
+
+    void *tcp = PlatformNetOpen(VFS_SKT_TCP);
+    ESP_LOGI(TAG, "socket: open(tcp) -> %s", tcp ? "OK" : "FAIL");
+    ok = ok && (tcp != NULL);
+    if (tcp != NULL) {
+        int freeRc = PlatformNetFree(tcp);
+        ESP_LOGI(TAG, "socket: free(tcp) -> rc=%d", freeRc);
+        ok = ok && (freeRc == 0);
+    }
+
+    void *stcp = PlatformNetOpen(VFS_SKT_STCP);
+    ESP_LOGI(TAG, "socket: open(stcp, TLS disabled) -> %s (want NULL)",
+             stcp ? "non-NULL" : "NULL");
+    ok = ok && (stcp == NULL);
+
+    ESP_LOGI(TAG, "socket: %s (connect/send/recv need a live interface — M8)",
+             ok ? "OK" : "FAIL");
+}
+
 void app_main(void) {
     ESP_LOGI(TAG, "WANTED engine — ESP-IDF platform bring-up");
     selftest();
     if (mountLittleFs()) {
         fsSelftest();
         registrySelftest();
+    }
+
+    /* Starts lwIP's tcpip thread; required before any socket() call. Brings
+     * up no interface by itself — WiFi bring-up (esp_wifi_init() and a
+     * default station netif) is M8. */
+    esp_err_t netifErr = esp_netif_init();
+    ESP_LOGI(TAG, "netif: init -> %s", netifErr == ESP_OK ? "OK" : "FAIL");
+    if (netifErr == ESP_OK) {
+        socketSelftest();
     }
     ESP_LOGI(TAG, "selftest done");
 }
