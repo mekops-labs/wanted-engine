@@ -7,8 +7,8 @@
 # footprint: many concurrent instances, generous per-instance WASM stack/heap,
 # and PATH_MAX-class path buffers.
 #
-# Measured footprint (`make sizes`), LP64 / ILP32:
-#   per-wapp structs 265.1 KB / 264.2 KB  (exact; MAX_PATH_LEN + driver slots inflate wapp_t)
+# Measured footprint (`make sizes`, re-measured 2026-07-06 post M8-M10), LP64 / ILP32:
+#   per-wapp structs 265.2 KB / 264.2 KB  (exact; MAX_PATH_LEN + driver slots inflate wapp_t)
 #   per-wapp runtime   1.27 MB /   1.27 MB (WASM stack + heap + worker stack + ~16 KB WAMR)
 #   max linear        unbounded            (WASM_MAX_MEMORY_PAGES=0: no cap)
 #   engine overhead  260.8 KB / 260.8 KB  (wantedConfig_t; MAX_PATH_LEN + options dominate)
