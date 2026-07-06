@@ -10,9 +10,9 @@
  * MALLOC_CAP_SPIRAM); their TCBs stay in internal RAM. Each worker repeatedly
  * fills and verifies a large on-stack canary buffer and recurses to touch deep
  * stack, yielding to force context switches. Concurrently a flash-thrash task
- * erases, writes, reads and byte-verifies a raw flash partition — the operations
- * that bracket a cache disable, which SPI_FLASH_AUTO_SUSPEND keeps the cache
- * live through on the S3.
+ * erases, writes, reads and byte-verifies a raw flash partition — the
+ * operations that bracket a cache disable, which SPI_FLASH_AUTO_SUSPEND keeps
+ * the cache live through on the S3.
  *
  * A PSRAM-stack that loses coherence across a flash cache-disable window shows
  * up as a canary mismatch (or a crash if the fault is fatal); flash corruption
@@ -47,8 +47,9 @@
 #define RECURSE_DEPTH 6                  /* touch deep stack each iteration */
 #define RECURSE_FRAME_BYTES 256u
 
-#define ERASE_WINDOW (64u * 1024u) /* per flash cycle; multiple of 4 KiB sector */
-#define FLASH_CHUNK 256u           /* divides ERASE_WINDOW evenly */
+#define ERASE_WINDOW                                                           \
+    (64u * 1024u)        /* per flash cycle; multiple of 4 KiB sector */
+#define FLASH_CHUNK 256u /* divides ERASE_WINDOW evenly */
 #define FLASH_CORE 0
 
 #define RUN_SECONDS 30
@@ -106,7 +107,8 @@ static void worker_task(void *arg) {
         volatile uint8_t sink = 0;
         stack_recurse(RECURSE_DEPTH, tag, &sink);
 
-        vTaskDelay(1); /* yield so a flash op can run while this stack is live */
+        vTaskDelay(
+            1); /* yield so a flash op can run while this stack is live */
 
         uint64_t bad = 0;
         for (uint32_t i = 0; i < ONSTACK_CANARY_BYTES; i++) {
@@ -173,18 +175,19 @@ static void flash_thrash_task(void *arg) {
 static int spawn_worker(int id) {
     /* Stack in PSRAM; TCB in internal RAM (the scheduler touches the TCB from
      * contexts where the external-RAM cache may be disabled). */
-    StackType_t *stack =
-        heap_caps_malloc(WORKER_STACK_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    StaticTask_t *tcb =
-        heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    StackType_t *stack = heap_caps_malloc(WORKER_STACK_BYTES,
+                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    StaticTask_t *tcb = heap_caps_malloc(sizeof(StaticTask_t),
+                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (stack == NULL || tcb == NULL) {
         ESP_LOGE(TAG, "worker %d alloc failed (stack=%p tcb=%p)", id,
                  (void *)stack, (void *)tcb);
         return -1;
     }
     if (!esp_ptr_external_ram(stack)) {
-        ESP_LOGE(TAG, "worker %d stack %p is NOT in PSRAM — aborting experiment",
-                 id, (void *)stack);
+        ESP_LOGE(TAG,
+                 "worker %d stack %p is NOT in PSRAM — aborting experiment", id,
+                 (void *)stack);
         return -1;
     }
 
@@ -197,8 +200,9 @@ static int spawn_worker(int id) {
         ESP_LOGE(TAG, "worker %d create failed", id);
         return -1;
     }
-    ESP_LOGI(TAG, "worker %d: PSRAM stack @%p (%u B) core %d", id, (void *)stack,
-             (unsigned)WORKER_STACK_BYTES, id % portNUM_PROCESSORS);
+    ESP_LOGI(TAG, "worker %d: PSRAM stack @%p (%u B) core %d", id,
+             (void *)stack, (unsigned)WORKER_STACK_BYTES,
+             id % portNUM_PROCESSORS);
     return 0;
 }
 
@@ -261,7 +265,8 @@ void app_main(void) {
     }
 
     atomic_store(&stop_flag, true);
-    while (atomic_load(&workers_done) < N_WORKERS || !atomic_load(&flash_done)) {
+    while (atomic_load(&workers_done) < N_WORKERS ||
+           !atomic_load(&flash_done)) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 
@@ -273,7 +278,8 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "=== RESULT ===");
     ESP_LOGI(TAG,
-             "flash_cycles=%" PRIu64 " read_err=%" PRIu64 " flash_mismatch=%" PRIu64,
+             "flash_cycles=%" PRIu64 " read_err=%" PRIu64
+             " flash_mismatch=%" PRIu64,
              fc, fre, fm);
     ESP_LOGI(TAG, "worker_iters=%" PRIu64 " stack_mismatch=%" PRIu64, wi, sm);
     if (fre == 0 && fm == 0 && sm == 0) {
