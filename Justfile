@@ -185,11 +185,20 @@ tidy: tidy-build
         $(python3 -c "import json,os; print('\n'.join(sorted({os.path.relpath(e['file']) for e in json.load(open('{{tidy_build_dir}}/compile_commands.json')) if os.path.relpath(e['file']).startswith(('src/','platform/linux/','cmd/'))})))")
 
 # cppcheck does its own parsing, so it covers every platform without a build.
+# Excludes ESP-IDF's own downloaded/generated build/managed_components/.cache
+# dirs (idf.py-owned, not our source — same reasoning as lint-format's prune).
 cppcheck:
+    #!/bin/sh
+    set -e
+    excludes=""
+    for d in $(find platform/esp-idf -type d \( -name build -o -name managed_components -o -name .cache \) 2>/dev/null); do
+        excludes="$excludes -i$d"
+    done
     cppcheck --enable=warning,style,performance,portability \
         --suppress=missingIncludeSystem --suppress=normalCheckLevelMaxBranches \
         --inline-suppr --error-exitcode=1 \
         -I include -I src/include -I platform/include \
+        $excludes \
         src platform cmd
 
 # gcc -fanalyzer: deep but slow/verbose — run out-of-band, not on every push.
