@@ -71,18 +71,19 @@
 #    wapps all reached `running`; the 20th cleanly rejected `-ENOSPC` (not
 #    `-ENOMEM` — confirms the fix); full teardown recovered heap to within
 #    noise of the pre-load baseline.
-# 6. **WiFi-up is not yet re-verified live** on this build. `MAX_WAPPS=20` was
-#    chosen using the WiFi-down hardware number above plus this profile's
-#    previously-measured WiFi internal-RAM cost (~54 KB — ESP-IDF/lwIP-owned
-#    DMA/IOB buffer overhead, independent of the engine's own allocator, so it
-#    should carry over unchanged, but this is an estimate, not a
-#    re-measurement): estimated WiFi-up floor ≈ 260 331 − 54 000 ≈ 206 000 B;
-#    at 19 wapps that leaves ≈ 206 000 − 19×6 200 ≈ 88 000 B (~86 KB,
-#    comfortably above the pre-plan ~33 KB WiFi-up margin at a fraction of
-#    today's wapp count). Re-check this live (and a live TLS handshake's
-#    mbedTLS buffers, still unmeasured concurrently with a fully-loaded WiFi
-#    configuration — a caveat carried over unresolved from the pre-plan
-#    measurement) before pushing MAX_WAPPS past 20.
+# 6. **WiFi-up verified live** (2026-07-06, follow-up): connected to a live
+#    WPA2-PSK network via the `wifi-connect` fixture (credentials supplied
+#    only as live launch-config env values for that session, never
+#    persisted). Actual WiFi internal-DRAM cost is **~44.8 KB** (idle
+#    260 147 B -> idle-WiFi-up 215 419 B) — better than the ~54 KB estimate
+#    this comment previously carried over. With **19 concurrent user wapps
+#    and WiFi associated**: internal free **98 039 B** (~95.7 KB), 20th
+#    `start` cleanly `-ENOSPC` (not `-ENOMEM`). A live TLS handshake
+#    (`write /net/st ping`) at that same full load dipped internal free to a
+#    transient low of **66 359 B** (~31.8 KB mbedTLS buffer cost) before
+#    recovering to ~97.8 KB — no crash, no OOM. `MAX_WAPPS=20` is fully
+#    verified; re-measure only if `WASM_WORKER_STACK_SIZE`, `MAX_DRIVERS_CNT`,
+#    or `MAX_OPTIONS_SIZE` change, or before raising it further.
 #
 # WASM_HEAP_SIZE is 0 (host-managed heap off), not a nonzero value: WAMR's
 # app-heap-append path (the module has no exported malloc, so the runtime
