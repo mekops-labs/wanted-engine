@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 
@@ -960,7 +961,11 @@ static NativeSymbol wasi_preview1_natives[] = {
 };
 
 wasi_ctx_t *InitWasiContext(void) {
-    wasi_ctx_t *ctx = (wasi_ctx_t *)WantedMalloc(sizeof(wasi_ctx_t));
+    /* Internal RAM, not WantedMalloc: dereferenced on every WASI syscall a
+     * running wapp makes, so it stays off the (slower on ESP-IDF) PSRAM
+     * allocator even where one is configured. argv/envp below stay on
+     * WantedMalloc — cold, read only by args_get/environ_get. */
+    wasi_ctx_t *ctx = (wasi_ctx_t *)malloc(sizeof(wasi_ctx_t));
     if (!ctx)
         return ctx;
     memset(ctx, 0, sizeof(*ctx));
@@ -1000,7 +1005,7 @@ void FreeWasiContext(wasi_ctx_t *c) {
      * arrays are freed. */
     WantedFree((void *)c->argv);
     WantedFree((void *)c->envp);
-    WantedFree(c);
+    free(c);
 }
 
 int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, const char *hostPath,
