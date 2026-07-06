@@ -4,9 +4,12 @@
  * Exercises the ESP-IDF platform core primitives (name, memory stats, RNG,
  * monotonic clock + sleep, mutex), the platform VFS driver, the flash
  * registry, and lwIP sockets on-target, logging a pass/fail line each, then
- * seeds the "looper" M7 smoke-test fixture into the registry and hands off to
- * WantedStart — the compiled-in wsh supervisor (embedded via EMBED_FILES; see
- * platform.c) boots and reads commands from the USB-Serial/JTAG console.
+ * seeds the "looper" and "wifi-connect" smoke-test fixtures into the
+ * registry and hands off to WantedStart — the compiled-in wsh supervisor
+ * (embedded via EMBED_FILES; see platform.c) boots and reads commands from
+ * the USB-Serial/JTAG console. wifi-connect brings the radio up (M8) and is
+ * driven with credentials supplied at runtime (its WIFI_SSID/WIFI_PASS
+ * launch-config envs), never compiled in or persisted.
  */
 
 #include <errno.h>
@@ -293,23 +296,25 @@ static void socketSelftest(void) {
              ok ? "OK" : "FAIL");
 }
 
-/* M7 smoke-test fixture, linked in via EMBED_FILES (see main/CMakeLists.txt);
- * ESP-IDF's standard symbol names for a "looper.wapp" embed. */
+/* M7/M8 smoke-test fixtures, linked in via EMBED_FILES (see
+ * main/CMakeLists.txt); ESP-IDF's standard symbol names for a
+ * "<name>.wapp" embed. */
 extern const uint8_t _binary_looper_wapp_start[];
 extern const uint8_t _binary_looper_wapp_end[];
+extern const uint8_t _binary_wifi_connect_wapp_start[];
+extern const uint8_t _binary_wifi_connect_wapp_end[];
 
-/* Factory-seeds "looper" into the flash registry so the supervisor can
- * start/stop it via the ctl device with no host-side control-plane
- * connection (WiFi/9P is M8) — mirrors the NuttX ESP32 port's
- * seed_registry(). Safe to repeat every boot: registry_flash.c reuses
- * "looper"'s existing slot rather than leaking a new one. */
-static void seedLooper(void) {
-    const uint8_t *img = _binary_looper_wapp_start;
-    size_t len = (size_t)(_binary_looper_wapp_end - _binary_looper_wapp_start);
-
-    int w = PlatformRegistryWrite(START_WRITE, "looper", img, len);
+/* Factory-seeds a wapp image into the flash registry under `name` so the
+ * supervisor can start it via the ctl device with no host-side
+ * control-plane connection — mirrors the NuttX ESP32 port's
+ * seed_registry(). Safe to repeat every boot: registry_flash.c reuses the
+ * name's existing slot rather than leaking a new one. */
+static void seedWapp(const char *name, const uint8_t *start,
+                    const uint8_t *end) {
+    size_t len = (size_t)(end - start);
+    int w = PlatformRegistryWrite(START_WRITE, name, start, len);
     int fin = PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
-    ESP_LOGI(TAG, "seed: looper (%u bytes) -> write=%d finish=%d",
+    ESP_LOGI(TAG, "seed: %s (%u bytes) -> write=%d finish=%d", name,
              (unsigned)len, w, fin);
 }
 
@@ -336,13 +341,30 @@ static void consoleUseBlockingDriver(void) {
     usb_serial_jtag_vfs_use_driver();
 }
 
+/* The "sockets" entry grants a wapp-visible /net/s TCP connection to a
+ * fixed, well-known public IP (Cloudflare, port 80) — a stable,
+ * DNS-independent M8 round-trip target. The engine wires this up
+ * (VfsSocketInit) but only connects lazily on the wapp's own open(), so
+ * granting it to the supervisor is safe even before WiFi associates: it
+ * exercises the M6 socket layer live once WiFi is up, entirely from the
+ * interactive wsh session (write/cat against /net/s), no separate test wapp
+ * needed.
+ *
+ * The "log" mount at /logs is the current (0.8.0+) way to read another
+ * wapp's captured stdout/stderr — per-wapp control nodes no longer carry a
+ * log node directly (that's `/logs/<name>`, not `/dev/wanted/wapps/<name>/
+ * log`, which docs/quickstart.md still shows stale). Reading
+ * wifi-connect's captured output needs this to inspect its scan/connect
+ * progress interactively. */
 #define WANTED_DEFAULT_CFG                                                    \
     "{\"system\":{\"privileged\":true},"                                     \
     "\"supervisor\":{\"params\":{"                                           \
     "\"console\":{\"in\":{\"name\":\"platform\"},"                           \
     "\"out\":{\"name\":\"platform\"},"                                       \
     "\"err\":{\"name\":\"platform\"}},"                                      \
-    "\"drivers\":[{\"name\":\"wanted\"}]}}}"
+    "\"drivers\":[{\"name\":\"wanted\"}],"                                   \
+    "\"mounts\":[{\"name\":\"log\",\"path\":\"/logs\"}],"                    \
+    "\"sockets\":[{\"name\":\"s\",\"address\":\"tcp://1.1.1.1:80\"}]}}}"
 
 void app_main(void) {
     ESP_LOGI(TAG, "WANTED engine — ESP-IDF platform bring-up");
@@ -350,12 +372,14 @@ void app_main(void) {
     if (mountLittleFs()) {
         fsSelftest();
         registrySelftest();
-        seedLooper();
+        seedWapp("looper", _binary_looper_wapp_start, _binary_looper_wapp_end);
+        seedWapp("wifi-connect", _binary_wifi_connect_wapp_start,
+                _binary_wifi_connect_wapp_end);
     }
 
     /* Starts lwIP's tcpip thread; required before any socket() call. Brings
-     * up no interface by itself — WiFi bring-up (esp_wifi_init() and a
-     * default station netif) is M8. */
+     * up no interface by itself — the wifi driver (vfs-wifi.c) creates the
+     * station netif and starts the radio, lazily, on first use. */
     esp_err_t netifErr = esp_netif_init();
     ESP_LOGI(TAG, "netif: init -> %s", netifErr == ESP_OK ? "OK" : "FAIL");
     if (netifErr == ESP_OK) {
