@@ -15,44 +15,74 @@
 # PSRAM-backed WASM stack/heap/worker-stack, and lean MAX_PATH_LEN / driver
 # slots to keep the internal-RAM slot struct small.
 #
-# Real-hardware capacity measurement (2026-07-06, XIAO ESP32-S3, this profile,
-# `heap_caps_get_free_size` split by MALLOC_CAP_INTERNAL/MALLOC_CAP_SPIRAM —
-# PlatformMemoryStats deliberately aggregates both pools, so it can't answer
-# this; see app_main.c's logHeapCaps): confirms MAX_WAPPS=8 as-is rather than
-# raising it.
+# Real-hardware capacity measurement, most recently 2026-07-06 (XIAO
+# ESP32-S3, this profile, `heap_caps_get_free_size` split by
+# MALLOC_CAP_INTERNAL/MALLOC_CAP_SPIRAM — PlatformMemoryStats deliberately
+# aggregates both pools, so it can't answer this on its own).
 #
-#   | state                                          | internal free | PSRAM free |
-#   |-------------------------------------------------|---------------|------------|
-#   | boot, supervisor only, no WiFi                   |     ~214-222 KB |    ~7.06 MB |
-#   | + WiFi (`wifi-connect`) associated + DHCP leased  |       ~168 KB |    ~6.97 MB |
-#   | + 7 concurrent user wapps (supervisor+7 = MAX_WAPPS) |      ~33 KB |    ~5.57 MB |
-#   | 8th wapp `start`                                  | rejected -ENOSPC (clean, no crash) | — |
+# Superseded by the PSRAM-allocator plan
+# (plans/wanted-engine-esp-idf-psram-allocator.md): `WantedMalloc` now routes
+# through a real `PlatformExtram*` (platform/esp-idf/extram.c,
+# heap_caps_malloc(MALLOC_CAP_SPIRAM)) instead of the dummy internal-RAM stub,
+# so per-wapp bookkeeping (wapp_t, TarFS index, log-store singleton, launch
+# config) moved to PSRAM; only `vfs_ctx_t`/`wasi_ctx_t` (hot syscall-dispatch
+# path) stay internal. This raised MAX_WAPPS from 8 to 20 — which in turn
+# required raising `WAPP_IMAGE_MAX_SLOTS` (platform/esp-idf/include/
+# config-esp-idf.h) from 8 to 20 and the "wapps" flash partition
+# (platform/esp-idf/project/partitions.csv) from 3M to 3200K: that constant
+# also sizes registry_flash.c's concurrently-mmap'd-image table, a resource
+# this plan's M0-M2 didn't originally account for (see M3's finding below).
 #
-# Findings:
-# 1. **MAX_WAPPS bounds the supervisor too.** `platform/esp-idf/wapps.c`'s
-#    `thread_data_t threads[MAX_WAPPS]` is shared by every instance including
-#    the compiled-in supervisor (`PlatformWappStart` takes an `isSupervisor`
-#    flag but no separate slot) — so this profile's real ceiling is **7
-#    concurrent user wapps**, not 8. Confirmed live: the 8th `start` failed
-#    with a clean `-ENOSPC` at the slot table, not a crash or memory
-#    exhaustion — the architectural limit bites before the memory limit does.
-# 2. **PSRAM is nowhere near the binding constraint** (>5.5 MB free at full
-#    load out of 8 MB) — internal DRAM is the real ceiling, matching this
-#    profile's own reasoning above.
-# 3. **Internal-DRAM margin at full load (WiFi + 7 wapps) is ~33 KB (~10 % of
-#    the ~320 KB total) — positive but thin**, and measurably tighter than
-#    without WiFi (~69 KB headroom at the same 7-wapp count with WiFi down).
-#    Each additional wapp costs ~19-22 KB of internal DRAM (structs +
-#    thread/WAMR bookkeeping — close to but somewhat above the ~17.7 KB
-#    static-struct estimate `make sizes` gives, since that excludes
-#    thread_data_t and WAMR's own per-instance heap allocations). **Not
-#    raising MAX_WAPPS past 8** on this evidence: the margin is too thin to
-#    spend on more concurrent instances, especially since a live TLS
-#    handshake's mbedTLS buffers (tens of KB, not yet measured concurrently
-#    with a fully-loaded 8-slot WiFi configuration — deliberately not tested,
-#    to avoid risking an internal-DRAM exhaustion crash on hardware) would
-#    eat further into it. Re-measure if WASM_WORKER_STACK_SIZE, MAX_DRIVERS_CNT,
-#    or MAX_OPTIONS_SIZE change, or before raising MAX_WAPPS.
+#   | state (WiFi down, post-allocator-fix, MAX_WAPPS=20)      | internal free | PSRAM free |
+#   |-----------------------------------------------------------|---------------|------------|
+#   | boot, supervisor only                                      |     260 331 B |   6.83 MB  |
+#   | + 19 concurrent user wapps (supervisor+19 = MAX_WAPPS)     |     143 039 B |   2.76 MB  |
+#   | 20th wapp `start`                                          | rejected -ENOSPC (clean) | — |
+#
+# Findings (M0-M3, plans/wanted-engine-esp-idf-psram-allocator.md):
+# 1. **MAX_WAPPS bounds the supervisor too** — unchanged finding,
+#    `platform/esp-idf/wapps.c`'s `thread_data_t threads[MAX_WAPPS]` is shared
+#    with the compiled-in supervisor, so N here is N-1 concurrent user wapps.
+# 2. **Per-wapp internal-DRAM cost dropped from ~21.9 KB to ~6.2 KB** (a ~72 %
+#    reduction), confirmed flat across the full 0-19 wapp range (117 352 B
+#    total delta / 19 = 6 176 B average). The remaining cost is exactly
+#    `vfs_ctx_t` + `wasi_ctx_t`, the two structs M1's audit kept internal for
+#    hot-path latency; everything else (`wapp_t`, TarFS index, log-store
+#    singleton, launch config) is PSRAM-resident and verified safe under
+#    concurrent flash writes (M2/M3's M10-harness regression, 40/40 clean, no
+#    corruption) with no host-suite regression (`make test`, 59/60 — the one
+#    failure is pre-existing/environmental, confirmed via `git stash`).
+# 3. **PSRAM remains nowhere near the binding constraint**: ~224 KB/wapp
+#    (linear memory + stacks, unchanged by this plan) against ~6.83 MB free
+#    at boot — 19 wapps uses ~4.3 MB, PSRAM free stays at 2.76 MB, well short
+#    of exhaustion.
+# 4. **The actual ceiling hit before internal/PSRAM capacity was
+#    `WAPP_IMAGE_MAX_SLOTS`** (registry_flash.c's `g_mmapTable`, sized off
+#    this constant, bounds concurrently-*mmap'd* wapp images) — a fixed
+#    flash-partition/mmap-handle-table resource, orthogonal to memory
+#    capacity. The first `MAX_WAPPS=20` attempt hit `-ENOMEM` at the 9th
+#    concurrent wapp with 211 KB internal and 5.1 MB PSRAM both free, because
+#    `WAPP_IMAGE_MAX_SLOTS` (config-esp-idf.h) was still 8. Fixed by raising
+#    it to 20 alongside `MAX_WAPPS` (its header comment already documents this
+#    coupling) and resizing the "wapps" partition slot size from 384 KiB to
+#    160 KiB (3200 KiB / 20) to fit within the 8 MB flash — comfortably above
+#    every observed test-wapp image (largest ~57.8 KB).
+# 5. **MAX_WAPPS=20 verified live on hardware, WiFi down**: 19 concurrent user
+#    wapps all reached `running`; the 20th cleanly rejected `-ENOSPC` (not
+#    `-ENOMEM` — confirms the fix); full teardown recovered heap to within
+#    noise of the pre-load baseline.
+# 6. **WiFi-up is not yet re-verified live** on this build. `MAX_WAPPS=20` was
+#    chosen using the WiFi-down hardware number above plus this profile's
+#    previously-measured WiFi internal-RAM cost (~54 KB — ESP-IDF/lwIP-owned
+#    DMA/IOB buffer overhead, independent of the engine's own allocator, so it
+#    should carry over unchanged, but this is an estimate, not a
+#    re-measurement): estimated WiFi-up floor ≈ 260 331 − 54 000 ≈ 206 000 B;
+#    at 19 wapps that leaves ≈ 206 000 − 19×6 200 ≈ 88 000 B (~86 KB,
+#    comfortably above the pre-plan ~33 KB WiFi-up margin at a fraction of
+#    today's wapp count). Re-check this live (and a live TLS handshake's
+#    mbedTLS buffers, still unmeasured concurrently with a fully-loaded WiFi
+#    configuration — a caveat carried over unresolved from the pre-plan
+#    measurement) before pushing MAX_WAPPS past 20.
 #
 # WASM_HEAP_SIZE is 0 (host-managed heap off), not a nonzero value: WAMR's
 # app-heap-append path (the module has no exported malloc, so the runtime
@@ -65,7 +95,7 @@
 # engine's own host functions (wasi-vfs.c, wanted_wasm_api.c) never call
 # wasm_runtime_module_malloc, and every wapp in wapps/ is wasi-sdk-compiled
 # with its own libc allocator operating on its own linear memory.
-set(MAX_WAPPS              8      CACHE STRING "Max concurrent wapp instances")
+set(MAX_WAPPS              20     CACHE STRING "Max concurrent wapp instances")
 set(WASM_STACK_SIZE        65536  CACHE STRING "Per-instance WAMR stack (bytes)")
 set(WASM_HEAP_SIZE         0      CACHE STRING "Per-instance WAMR host-managed heap (bytes); 0 = off, see above")
 set(WASM_WORKER_STACK_SIZE 65536  CACHE STRING "Per-wapp worker thread native C stack (bytes)")

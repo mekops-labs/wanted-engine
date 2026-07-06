@@ -22,8 +22,14 @@
  * image can be exposed zero-copy via esp_partition_mmap. Fixed-size,
  * erase-sector-aligned (4096 B) slots make allocation a used/free bitmap scan
  * instead of a general allocator; a slot bounds the largest installable wapp
- * image. Slot count matches the "psram-s3" profile's MAX_WAPPS. */
+ * image. Slot count matches the "psram-s3" profile's MAX_WAPPS: registry.c's
+ * mmap-handle table (registry_flash.c's g_mmapTable) is also sized off this
+ * constant, so it bounds concurrently-*loaded* images too, not just installed
+ * ones — a wapp `start` past this many concurrently-mapped images fails
+ * -ENOMEM even with free internal RAM and PSRAM (found at the
+ * PSRAM-allocator plan's M3, plans/wanted-engine-esp-idf-psram-allocator.md,
+ * when MAX_WAPPS was raised without this). */
 #define WAPP_IMAGE_PARTITION_LABEL "wapps"
-#define WAPP_IMAGE_MAX_SLOTS 8
+#define WAPP_IMAGE_MAX_SLOTS 20
 #define WAPP_IMAGE_SLOT_SIZE                                                   \
-    (3 * 1024 * 1024 / WAPP_IMAGE_MAX_SLOTS) /* 384 KiB, 96 sectors */
+    (3200 * 1024 / WAPP_IMAGE_MAX_SLOTS) /* 160 KiB, 40 sectors */
