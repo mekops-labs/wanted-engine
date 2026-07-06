@@ -37,9 +37,10 @@ set(vendor_srcs
     ${ENGINE}/vendor/uzlib/src/adler32.c
 )
 
-# Platform layer. Core primitives, the wapp lifecycle, and the registry are the
-# real ESP-IDF implementations plus the shared POSIX layer; subsystems not yet
-# ported (net, crypto, extram) remain dummy stubs until their milestones.
+# Platform layer. Core primitives, the wapp lifecycle, the registry, and
+# sockets are the real ESP-IDF implementations plus the shared POSIX layer;
+# subsystems not yet ported (crypto, extram) remain dummy stubs until their
+# milestones.
 set(platform_srcs
     # ESP-IDF core primitives + wapp lifecycle
     ${ENGINE}/platform/esp-idf/memory.c
@@ -58,10 +59,13 @@ set(platform_srcs
     # PlatformOpenStateDir/FsRename/FsMkdir instead.
     ${ENGINE}/platform/posix/clock.c
     ${ENGINE}/platform/posix/mutex.c
+    # lwIP exposes the same BSD socket API this file already targets (it is
+    # also the NuttX platform's socket.c, unmodified) — SECURE_SOCKETS=0 below
+    # compiles out its TLS branches, same as on NuttX.
+    ${ENGINE}/platform/posix/socket.c
     # Not-yet-ported subsystems
     ${ENGINE}/platform/dummy/dummy-crypto.c
     ${ENGINE}/platform/dummy/dummy-extram.c
-    ${ENGINE}/platform/dummy/dummy-net.c
 )
 
 # Engine resource limits. The idf.py build bypasses the top-level CMakeLists
@@ -91,7 +95,7 @@ idf_component_register(
         ${ENGINE}/vendor/c9
         ${ENGINE}/vendor/cwalk/include
         ${ENGINE}/vendor/uzlib/src
-    REQUIRES wamr esp_hw_support pthread esp_partition
+    REQUIRES wamr esp_hw_support pthread esp_partition lwip
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
