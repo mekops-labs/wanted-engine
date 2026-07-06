@@ -108,7 +108,7 @@ static esp_vfs_open_t *findByFdLocked(int fd) {
 /* Looks up `fd`'s recorded path and joins `relPath` onto it. */
 static int joinFromFd(int fd, const char *relPath, char *out, size_t outLen) {
     pthread_mutex_lock(&g_openLock);
-    esp_vfs_open_t *e = findByFdLocked(fd);
+    const esp_vfs_open_t *e = findByFdLocked(fd);
     char base[MAX_PATH_LEN];
     if (e != NULL)
         memcpy(base, e->path, sizeof(base));
@@ -404,7 +404,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
 
     if (fd >= ESP_IDF_VFS_STDIO_FD_MAX) {
         pthread_mutex_lock(&g_openLock);
-        esp_vfs_open_t *e = findByFdLocked(fd);
+        const esp_vfs_open_t *e = findByFdLocked(fd);
         isDir = e != NULL && e->isDir;
         if (e != NULL)
             memcpy(path, e->path, sizeof(path));
@@ -457,7 +457,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     }
 
     pthread_mutex_lock(&g_openLock);
-    esp_vfs_open_t *e = findByFdLocked(fd);
+    const esp_vfs_open_t *e = findByFdLocked(fd);
     bool canRead = e != NULL && e->canRead;
     pthread_mutex_unlock(&g_openLock);
     if (e == NULL)
@@ -483,7 +483,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     }
 
     pthread_mutex_lock(&g_openLock);
-    esp_vfs_open_t *e = findByFdLocked(fd);
+    const esp_vfs_open_t *e = findByFdLocked(fd);
     bool canWrite = e != NULL && e->canWrite;
     pthread_mutex_unlock(&g_openLock);
     if (e == NULL)
@@ -530,7 +530,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed) {
     (void)d;
     pthread_mutex_lock(&g_openLock);
-    esp_vfs_open_t *e = findByFdLocked(fd);
+    const esp_vfs_open_t *e = findByFdLocked(fd);
     char path[MAX_PATH_LEN];
     if (e != NULL)
         memcpy(path, e->path, sizeof(path));

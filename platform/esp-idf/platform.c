@@ -35,8 +35,12 @@ int PlatformWappLoad(const char *name, wapp_t *wapp) {
         return -EINVAL;
 
     wapp->layers[0] = (uint8_t *)_binary_supervisor_tar_start;
-    wapp->layer_lens[0] =
-        (size_t)(_binary_supervisor_tar_end - _binary_supervisor_tar_start);
+    /* start/end are the linker's boundary symbols for one embedded blob, not
+     * two unrelated objects — the standard EMBED_FILES size idiom. */
+    const uint8_t *start = _binary_supervisor_tar_start;
+    const uint8_t *end = _binary_supervisor_tar_end;
+    /* cppcheck-suppress subtractPointers */
+    wapp->layer_lens[0] = (size_t)(end - start);
     wapp->layer_cnt = 1;
     return 0;
 }
