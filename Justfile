@@ -151,13 +151,18 @@ clean:
 # All blocking lint checks.
 lint: lint-format lint-shell
 
-# Reject any formatting drift (clang-format config in .clang-format).
+# Reject any formatting drift (clang-format config in .clang-format). Prunes
+# ESP-IDF's own build/vendored dirs under platform/esp-idf/project/ (build/,
+# managed_components/, .cache/ — gitignored, not our source; idf.py downloads
+# and regenerates them, so linting them is both wrong and non-reproducible).
 lint-format:
-    find {{src_dirs}} \( -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
+    find {{src_dirs}} \( -name build -o -name 'build.*' -o -name managed_components -o -name .cache \) -prune -o \( -name '*.c' -o -name '*.h' \) -print0 \
+        | xargs -0 clang-format --dry-run --Werror
 
 # Reformat the tree in place (developer helper; not run in CI).
 format-fix:
-    find {{src_dirs}} \( -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
+    find {{src_dirs}} \( -name build -o -name 'build.*' -o -name managed_components -o -name .cache \) -prune -o \( -name '*.c' -o -name '*.h' \) -print0 \
+        | xargs -0 clang-format -i
 
 # Lint shell scripts. error severity only for now; ratchet down over time.
 lint-shell:
