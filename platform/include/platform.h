@@ -50,6 +50,20 @@ int PlatformEd25519Verify(const uint8_t pubkey[PLATFORM_ED25519_KEY_LEN],
                           const uint8_t sig[PLATFORM_ED25519_SIG_LEN],
                           const uint8_t *msg, size_t msgLen);
 
+/* Streaming SHA-256 (FIPS 180-4), offloaded to hardware where available.
+ * Unlike PlatformEd25519Verify there is no -ENOSYS path: /dev/sha256
+ * (src/vfs/vfs-sha256.c) has no other digest source, so a platform with no
+ * crypto peripheral runs a portable software implementation
+ * (platform/posix/sha256.c) instead of declining the request — every
+ * platform must provide a real backend. New returns NULL only on
+ * allocation failure. */
+#define PLATFORM_SHA256_DIGEST_LEN 32
+
+void *PlatformSha256New(void);
+void PlatformSha256Update(void *ctx, const uint8_t *data, size_t len);
+void PlatformSha256Final(void *ctx, uint8_t out[PLATFORM_SHA256_DIGEST_LEN]);
+void PlatformSha256Free(void *ctx);
+
 /* Opaque cross-platform mutex. src/ must not call native threading directly,
  * so shared state (e.g. the inter-wapp pipe store) guards itself through these.
  * Lock/Unlock/Free tolerate a NULL handle so callers need not special-case an
