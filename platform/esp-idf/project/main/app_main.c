@@ -296,13 +296,15 @@ static void socketSelftest(void) {
              ok ? "OK" : "FAIL");
 }
 
-/* M7/M8 smoke-test fixtures, linked in via EMBED_FILES (see
+/* M7/M8/M9 smoke-test fixtures, linked in via EMBED_FILES (see
  * main/CMakeLists.txt); ESP-IDF's standard symbol names for a
  * "<name>.wapp" embed. */
 extern const uint8_t _binary_looper_wapp_start[];
 extern const uint8_t _binary_looper_wapp_end[];
 extern const uint8_t _binary_wifi_connect_wapp_start[];
 extern const uint8_t _binary_wifi_connect_wapp_end[];
+extern const uint8_t _binary_devcheck_wapp_start[];
+extern const uint8_t _binary_devcheck_wapp_end[];
 
 /* Factory-seeds a wapp image into the flash registry under `name` so the
  * supervisor can start it via the ctl device with no host-side
@@ -341,14 +343,14 @@ static void consoleUseBlockingDriver(void) {
     usb_serial_jtag_vfs_use_driver();
 }
 
-/* The "sockets" entry grants a wapp-visible /net/s TCP connection to a
- * fixed, well-known public IP (Cloudflare, port 80) — a stable,
- * DNS-independent M8 round-trip target. The engine wires this up
- * (VfsSocketInit) but only connects lazily on the wapp's own open(), so
- * granting it to the supervisor is safe even before WiFi associates: it
- * exercises the M6 socket layer live once WiFi is up, entirely from the
- * interactive wsh session (write/cat against /net/s), no separate test wapp
- * needed.
+/* The "sockets" entries grant wapp-visible /net/s (plain) and /net/st (TLS)
+ * connections to a fixed, well-known public IP (Cloudflare, ports 80/443) —
+ * a stable, DNS-independent round-trip target for M6/M9. The engine wires
+ * these up (VfsSocketInit) but only connects lazily on the wapp's own
+ * open(), so granting them to the supervisor is safe even before WiFi
+ * associates: they exercise the socket layer live once WiFi is up, entirely
+ * from the interactive wsh session (write/cat against /net/s or /net/st), no
+ * separate test wapp needed.
  *
  * The "log" mount at /logs is the current (0.8.0+) way to read another
  * wapp's captured stdout/stderr — per-wapp control nodes no longer carry a
@@ -364,7 +366,8 @@ static void consoleUseBlockingDriver(void) {
     "\"err\":{\"name\":\"platform\"}},"                                      \
     "\"drivers\":[{\"name\":\"wanted\"}],"                                   \
     "\"mounts\":[{\"name\":\"log\",\"path\":\"/logs\"}],"                    \
-    "\"sockets\":[{\"name\":\"s\",\"address\":\"tcp://1.1.1.1:80\"}]}}}"
+    "\"sockets\":[{\"name\":\"s\",\"address\":\"tcp://1.1.1.1:80\"},"        \
+    "{\"name\":\"st\",\"address\":\"tcps://1.1.1.1:443\"}]}}}"
 
 void app_main(void) {
     ESP_LOGI(TAG, "WANTED engine — ESP-IDF platform bring-up");
@@ -375,6 +378,8 @@ void app_main(void) {
         seedWapp("looper", _binary_looper_wapp_start, _binary_looper_wapp_end);
         seedWapp("wifi-connect", _binary_wifi_connect_wapp_start,
                 _binary_wifi_connect_wapp_end);
+        seedWapp("devcheck", _binary_devcheck_wapp_start,
+                _binary_devcheck_wapp_end);
     }
 
     /* Starts lwIP's tcpip thread; required before any socket() call. Brings

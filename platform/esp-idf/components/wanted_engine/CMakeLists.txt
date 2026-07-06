@@ -65,6 +65,11 @@ set(platform_srcs
     # turns on its TLS branches, backed by ssocket.c's raw mbedTLS layer.
     ${ENGINE}/platform/posix/socket.c
     ${ENGINE}/platform/esp-idf/ssocket.c
+    # PlatformSha256* backed by mbedtls_sha256_context, which the ESP32-S3
+    # SHA hardware peripheral transparently accelerates (MBEDTLS_HARDWARE_SHA
+    # is on by default for this SoC) -- unlike ECC/ECDSA, this chip has no
+    # peripheral gap to work around.
+    ${ENGINE}/platform/esp-idf/sha256.c
     # Not-yet-ported subsystems
     ${ENGINE}/platform/dummy/dummy-crypto.c
     ${ENGINE}/platform/dummy/dummy-extram.c
