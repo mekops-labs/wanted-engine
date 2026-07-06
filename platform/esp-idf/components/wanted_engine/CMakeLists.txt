@@ -37,9 +37,9 @@ set(vendor_srcs
     ${ENGINE}/vendor/uzlib/src/adler32.c
 )
 
-# Platform layer. Core primitives and the wapp lifecycle are the real ESP-IDF
-# implementations plus the shared POSIX layer; subsystems not yet ported
-# (registry, net, crypto, extram) remain dummy stubs until their milestones.
+# Platform layer. Core primitives, the wapp lifecycle, and the registry are the
+# real ESP-IDF implementations plus the shared POSIX layer; subsystems not yet
+# ported (net, crypto, extram) remain dummy stubs until their milestones.
 set(platform_srcs
     # ESP-IDF core primitives + wapp lifecycle
     ${ENGINE}/platform/esp-idf/memory.c
@@ -48,6 +48,8 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/fs-volume.c
     ${ENGINE}/platform/esp-idf/wapps.c
     ${ENGINE}/platform/esp-idf/platform.c
+    ${ENGINE}/platform/esp-idf/registry.c
+    ${ENGINE}/platform/esp-idf/registry_flash.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
     # Shared POSIX primitives (also compiled by the Linux/NuttX builds).
     # platform/posix/fs.c is NOT reused here: its PlatformFsRename/Mkdir call
@@ -59,7 +61,6 @@ set(platform_srcs
     # Not-yet-ported subsystems
     ${ENGINE}/platform/dummy/dummy-crypto.c
     ${ENGINE}/platform/dummy/dummy-extram.c
-    ${ENGINE}/platform/dummy/dummy-registry.c
     ${ENGINE}/platform/dummy/dummy-net.c
 )
 
@@ -90,7 +91,7 @@ idf_component_register(
         ${ENGINE}/vendor/c9
         ${ENGINE}/vendor/cwalk/include
         ${ENGINE}/vendor/uzlib/src
-    REQUIRES wamr esp_hw_support pthread
+    REQUIRES wamr esp_hw_support pthread esp_partition
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
