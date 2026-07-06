@@ -49,6 +49,15 @@
  * comfortably out of range. */
 #define ESP_IDF_VFS_DIR_FD_BASE 0x10000
 
+/* Console stdio fds (0/1/2). VfsRegister wires the "platform" console driver
+ * straight to these native fd numbers without ever calling this driver's Open
+ * (src/vfs/vfs.c: "platform drivers use drv_fd directly as the native fd") —
+ * so they never enter the open-handle table below and must bypass it, exactly
+ * as the Linux platform driver does (it keeps no table at all and calls
+ * read/write/fstat on any fd directly). esp_vfs_console registers these at
+ * startup independent of this driver. */
+#define ESP_IDF_VFS_STDIO_FD_MAX 3
+
 typedef struct {
     bool used;
     bool isDir;
@@ -390,15 +399,19 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
  * littlefs's write cache). */
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
     (void)d;
-    pthread_mutex_lock(&g_openLock);
-    esp_vfs_open_t *e = findByFdLocked(fd);
+    bool isDir = false;
     char path[MAX_PATH_LEN];
-    bool isDir = e != NULL && e->isDir;
-    if (e != NULL)
-        memcpy(path, e->path, sizeof(path));
-    pthread_mutex_unlock(&g_openLock);
-    if (e == NULL)
-        return -EBADF;
+
+    if (fd >= ESP_IDF_VFS_STDIO_FD_MAX) {
+        pthread_mutex_lock(&g_openLock);
+        esp_vfs_open_t *e = findByFdLocked(fd);
+        isDir = e != NULL && e->isDir;
+        if (e != NULL)
+            memcpy(path, e->path, sizeof(path));
+        pthread_mutex_unlock(&g_openLock);
+        if (e == NULL)
+            return -EBADF;
+    }
 
     struct stat statbuf;
     int fl = 0;
@@ -438,6 +451,11 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     if (fd >= ESP_IDF_VFS_DIR_FD_BASE)
         return -EISDIR;
 
+    if (fd < ESP_IDF_VFS_STDIO_FD_MAX) {
+        int ret = read(fd, buf, nbyte);
+        return ret < 0 ? -errno : ret;
+    }
+
     pthread_mutex_lock(&g_openLock);
     esp_vfs_open_t *e = findByFdLocked(fd);
     bool canRead = e != NULL && e->canRead;
@@ -458,6 +476,11 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
         return -EROFS;
     if (fd >= ESP_IDF_VFS_DIR_FD_BASE)
         return -EISDIR;
+
+    if (fd < ESP_IDF_VFS_STDIO_FD_MAX) {
+        int ret = write(fd, buf, nbyte);
+        return ret < 0 ? -errno : ret;
+    }
 
     pthread_mutex_lock(&g_openLock);
     esp_vfs_open_t *e = findByFdLocked(fd);
