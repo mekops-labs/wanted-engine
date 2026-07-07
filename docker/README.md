@@ -74,6 +74,86 @@ denied" on the mounted sources.
 Only `amd64` and `arm64` are built — Espressif publishes xtensa-esp-elf for
 those two Linux arches only.
 
+## RP2350 cross-build + debug image (`Containerfile.rp2350`)
+
+A dedicated image for building the engine as a NuttX built-in app for the
+**RP2350 (ARM Cortex-M33, Adafruit Feather RP2350)** target, and for driving
+the board on the bench over SWD with a **Raspberry Pi Debug Probe** (any
+CMSIS-DAP adapter works). It carries `gcc-arm-none-eabi` + `picotool` for the
+cross-build/flash half, and `openocd` (built from the **Raspberry Pi fork**,
+not Debian's package — Debian's 0.12.0 has no RP2350 target support) +
+`gdb-multiarch` + `probe-rs` + `picocom` for the debug half.
+
+Build:
+
+```sh
+podman build -f docker/Containerfile.rp2350 -t wanted-rp2350 docker/
+```
+
+Cross-build (no hardware needed) — mount the NuttX tree and its `apps/`
+sibling so `tools/configure.sh` finds `../nuttx-apps` by its usual relative
+lookup; the container entrypoint expects the source at `/src`:
+
+```sh
+podman run --rm \
+  -v /path/to/nuttx:/src/nuttx:Z \
+  -v /path/to/nuttx-apps:/src/nuttx-apps:Z \
+  --entrypoint=/bin/sh wanted-rp2350 -c \
+  'cd /src/nuttx && ./tools/configure.sh adafruit-feather-rp2350:nsh && make -j"$(nproc)"'
+```
+
+Flash over the board's main USB (BOOTSEL mode: hold BOOTSEL, tap RESET) —
+`picotool` works directly on the host, no container needed:
+
+```sh
+picotool load -x /path/to/nuttx/nuttx.uf2
+```
+
+### Debug Probe: SWD (openocd/gdb) + UART console
+
+The Debug Probe exposes **two USB interfaces**: a CMSIS-DAP interface (SWD,
+`2e8a:000c`) for `openocd`, and a UART bridge that shows up on the host as a
+plain `/dev/ttyACM*` — wire its UART lines to the target's console UART pins.
+This UART is independent of the board's native USB port, so it's the
+reliable console path on boards/configs where native USB-CDC (`usbnsh`)
+doesn't come up.
+
+Console — no container needed, `picocom` also runs fine on the host:
+
+```sh
+picocom -b 115200 /dev/ttyACM0
+```
+
+SWD, from inside the container — pass the raw USB bus through. Under
+rootless podman this needs **three** things together, not just `:Z` on the
+bind mounts: `--userns=keep-id` (so the container's UID matches yours),
+`--group-add keep-groups` (so it inherits your `plugdev`-equivalent group
+membership), and on an SELinux host, `--security-opt label=disable` — `:Z`
+relabels bind-mounted *files*, but a raw `--device /dev/bus/usb` passthrough
+is denied by SELinux without it, and the failure mode is a generic
+"Permission denied" with no AVC hint in the container's own output:
+
+```sh
+podman run --rm --userns=keep-id --device /dev/bus/usb \
+  --group-add keep-groups --security-opt label=disable \
+  --entrypoint=/bin/sh wanted-rp2350 -c \
+  'openocd -f interface/cmsis-dap.cfg -c "adapter speed 5000" -f target/rp2350.cfg'
+```
+
+This starts a gdb server on `:3333` (also telnet on `:4444`). From a second
+shell in the same container (or `gdb-multiarch` on the host if it has RP2350
+gdb scripts available):
+
+```sh
+gdb-multiarch -q -ex "target extended-remote localhost:3333" nuttx.elf
+```
+
+RP2350 has **two Cortex-M33 cores** (`rp2350.cm0`/`rp2350.cm1`); openocd
+targets `cm0` by default. A `halt` on one core does not imply the other is
+halted too — `resume`/`reset run` both cores explicitly before ending the
+session, or the board is left stuck and stops responding on the UART console
+until a clean `reset run` is issued.
+
 ## Changelog
 
 ### 0.6.5
