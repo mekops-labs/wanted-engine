@@ -172,4 +172,47 @@ int PlatformNetAccept(void *ctx);
 int PlatformNetShutdown(void *ctx, int how);
 int PlatformNetFree(void *ctx);
 
+/* A/B firmware OTA (dual-slot bootloader-level update + rollback). Shared
+ * seam across every platform that can back it with a real bootloader
+ * (ESP-IDF's native esp_ota_ops A/B slots, NuttX/MCUboot's image trailer) --
+ * a platform without one (Linux, dummy) provides stubs that report a single
+ * always-confirmed slot and reject write attempts.
+ *
+ * Slots are always named 'a' (the first physical app slot -- ESP-IDF's
+ * ota_0) and 'b' (the second -- ota_1), so the wapp-facing /dev/ota wire
+ * text is identical across platforms regardless of which bootloader backs
+ * it. */
+typedef struct {
+    char active_slot;      /* 'a' or 'b': the slot currently running */
+    bool confirmed;        /* active_slot is marked good; no rollback armed */
+    bool pending_swap;     /* the inactive slot is scheduled to run on the
+                            * next boot (commit issued, reboot not yet
+                            * observed) */
+    char last_failed_slot; /* 'a', 'b', or '\0' if no slot has ever failed */
+    int boot_attempts;     /* boot attempts recorded for active_slot */
+} platform_ota_state_t;
+
+/* Read the current boot state (running slot + otadata/trailer state of both
+ * slots) into an engine-global OTA context. Called once at startup, before
+ * PlatformWappLoop starts the supervisor. */
+int PlatformOtaInit(void);
+/* Mark the active slot good, disarming any pending rollback. Idempotent --
+ * a no-op if the slot is already confirmed or no OTA is pending. */
+int PlatformOtaConfirm(void);
+int PlatformOtaGetBootState(platform_ota_state_t *out);
+/* Erase the inactive slot and open it for a streaming image write. */
+int PlatformOtaBeginWrite(void);
+/* Write `len` bytes at the current write cursor into the inactive slot.
+ * -EPERM if BeginWrite has not been called or Commit already issued. */
+int PlatformOtaWrite(const uint8_t *buf, size_t len);
+/* Finalise the write: validate the image, schedule the inactive slot to run
+ * on the next boot (still unconfirmed until PlatformOtaConfirm). A
+ * malformed image is rejected with -EBADMSG and the boot partition is left
+ * unchanged. */
+int PlatformOtaCommit(void);
+/* Explicitly revert to the other slot. May reboot the board as part of the
+ * call rather than merely scheduling the revert for next boot -- the caller
+ * must not assume control returns. */
+int PlatformOtaRollback(void);
+
 #endif /* PLATFORM_H */
