@@ -441,7 +441,7 @@ static void consoleUseBlockingDriver(void) {
     "\"console\":{\"in\":{\"name\":\"platform\"},"                             \
     "\"out\":{\"name\":\"platform\"},"                                         \
     "\"err\":{\"name\":\"platform\"}},"                                        \
-    "\"drivers\":[{\"name\":\"wanted\"}],"                                     \
+    "\"drivers\":[{\"name\":\"wanted\"},{\"name\":\"ota\"}],"                  \
     "\"mounts\":[{\"name\":\"log\",\"path\":\"/logs\"}],"                      \
     "\"sockets\":[{\"name\":\"s\",\"address\":\"tcp://1.1.1.1:80\"},"          \
     "{\"name\":\"st\",\"address\":\"tcps://1.1.1.1:443\"}]}}}"
@@ -478,6 +478,9 @@ void app_main(void) {
         ESP_LOGE(TAG,
                  "m10: concurrent-install selftest thread failed to start");
     }
+
+    int otaRc = PlatformOtaInit();
+    ESP_LOGI(TAG, "ota: init -> rc=%d", otaRc);
 
     PlatformSetProcessArgs(0, NULL);
     consoleUseBlockingDriver();
