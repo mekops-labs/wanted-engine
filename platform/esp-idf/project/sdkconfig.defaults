@@ -2,9 +2,20 @@
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 
-# Custom partition table: factory app + LittleFS registry + raw wapp-image area.
+# Custom partition table: A/B (ota_0/ota_1) app slots + LittleFS persist
+# partition + raw wapp-image area. Generated from partitions.csv.in by the
+# OTA_PROFILE mechanism -- see plans/wanted-engine-esp-idf-ota.md.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ESP-IDF native app-rollback: the bootloader boots a newly-committed OTA
+# slot as PENDING_VERIFY and reverts to the previous slot if the app never
+# confirms it (PlatformOtaConfirm, platform/esp-idf/ota.c) -- no MCUboot
+# needed, this is the stock ESP-IDF bootloader's own A/B mechanism. Secure
+# boot stays off (CONFIG_SECURE_BOOT unset): unsigned OTA images are
+# accepted by design for now (see the plan's risk register) -- signed OTA
+# is an explicit, separate follow-up.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 # Octal PSRAM with the flash/PSRAM coexistence mitigations validated in the
 # coexistence reproducer (auto-suspend keeps the cache enabled during flash ops;

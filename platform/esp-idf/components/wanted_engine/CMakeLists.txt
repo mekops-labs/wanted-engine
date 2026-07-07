@@ -89,6 +89,57 @@ if(NOT WANTED_PROFILE)
     set(WANTED_PROFILE "psram-s3")
 endif()
 include(${ENGINE}/cmake/profiles/${WANTED_PROFILE}.cmake)
+
+# ESP-IDF OTA flash-layout profile: couples MAX_WAPPS (overriding the
+# WANTED_PROFILE value above), WAPP_IMAGE_MAX_SLOTS (config-esp-idf.h
+# aliases it directly to MAX_WAPPS), and the generated partitions.csv from
+# one source -- the psram-allocator plan's M3 -ENOMEM bug was exactly these
+# values hand-edited out of sync. Two named profiles: s3-wapps (default,
+# MAX_WAPPS=20, max concurrency) and s3-storage (MAX_WAPPS=10, roomier
+# persist partition). Only MAX_WAPPS varies; slot size is fixed at 160 KiB
+# across both. See plans/wanted-engine-esp-idf-ota.md "Flash budget".
+if(NOT OTA_PROFILE)
+    set(OTA_PROFILE "s3-wapps")
+endif()
+include(${ENGINE}/platform/esp-idf/ota-profiles/${OTA_PROFILE}.cmake)
+
+# Fixed flash geometry (8 MB XIAO ESP32-S3): reserved 64 KiB (bootloader +
+# partition table + nvs 24 KiB + phy_init 4 KiB) + otadata 8 KiB + two OTA
+# app slots. 1600 KiB slots hold >=35% headroom over the measured,
+# OTA-code-included image (1 171 072 B, 2026-07-07) -- 1536 KiB (the
+# pre-OTA-code estimate) no longer clears that margin once this driver's own
+# code is counted, before the pending gpio driver or a real Ed25519 backend
+# land (floor-measured gpio stub: +832 B; Ed25519 unmeasured, budgeted
+# generously). Must stay a multiple of 64 KiB so ota_0/ota_1 auto-align with
+# zero padding waste -- see partitions.csv.in's layout comment.
+set(OTA_SLOT_KB 1600)
+math(EXPR OTA_POOL_KB "8192 - 64 - 8 - (2 * ${OTA_SLOT_KB})")
+
+set(WAPP_IMAGE_SLOT_SIZE_KB 160)
+math(EXPR OTA_WAPPS_KB "${MAX_WAPPS} * ${WAPP_IMAGE_SLOT_SIZE_KB}")
+math(EXPR OTA_PERSIST_KB "${OTA_POOL_KB} - ${OTA_WAPPS_KB}")
+
+# Build-time assert on the coupled quad: this is the derivation itself (not
+# an independent re-check), but it still catches a future OTA_SLOT_KB/
+# OTA_PROFILE edit that pushes wapps past the pool.
+if(OTA_WAPPS_KB GREATER OTA_POOL_KB)
+    message(FATAL_ERROR
+        "OTA_PROFILE=${OTA_PROFILE}: MAX_WAPPS=${MAX_WAPPS} needs "
+        "${OTA_WAPPS_KB} KiB of wapps, exceeding the ${OTA_POOL_KB} KiB "
+        "persist+wapps pool (OTA_SLOT_KB=${OTA_SLOT_KB})")
+endif()
+
+# Regenerated on every configure -- partitions.csv is a build artifact (like
+# sdkconfig from sdkconfig.defaults), not a hand-maintained file. Runs during
+# the cmake configure phase, strictly before the ninja build step that reads
+# CONFIG_PARTITION_TABLE_CUSTOM_FILENAME, so the ordering the plan calls out
+# to verify is satisfied by construction.
+configure_file(
+    ${ENGINE}/platform/esp-idf/project/partitions.csv.in
+    ${ENGINE}/platform/esp-idf/project/partitions.csv
+    @ONLY
+)
+
 set(_limit_defs "")
 foreach(_limit MAX_WAPPS WASM_STACK_SIZE WASM_HEAP_SIZE WASM_MAX_MEMORY_PAGES
                WASM_WORKER_STACK_SIZE MAX_PATH_LEN MAX_DRIVERS_CNT MAX_OPTIONS_SIZE)

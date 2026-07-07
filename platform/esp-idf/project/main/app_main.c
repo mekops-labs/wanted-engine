@@ -35,7 +35,7 @@
 #include <wanted.h>
 
 #define TAG "wanted"
-#define LITTLEFS_PARTITION_LABEL "registry"
+#define LITTLEFS_PARTITION_LABEL "persist"
 #define SELFTEST_DIR "/data/selftest"
 
 static void selftest(void) {
