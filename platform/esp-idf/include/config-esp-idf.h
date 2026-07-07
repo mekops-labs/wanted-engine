@@ -3,9 +3,10 @@
 #pragma once
 
 #include <platform-config.h>
+#include <wanted-config.h>
 
 /* The registry index (one small metadata file per entry: name/version/slot/
- * size) lives on the LittleFS "registry" partition, mounted at
+ * size) lives on the LittleFS "persist" partition, mounted at
  * PlatformVolumeRoot() ("/data", platform/esp-idf/fs-volume.c). Overrides
  * platform-config.h's relative default, which only makes sense against a
  * process CWD. */
@@ -18,18 +19,26 @@
 #define REGISTRY_MAX_ENTRIES 50
 
 /* Wapp image bytes live in a dedicated raw flash partition ("wapps",
- * partitions.csv) instead of the registry filesystem, so a running instance's
- * image can be exposed zero-copy via esp_partition_mmap. Fixed-size,
- * erase-sector-aligned (4096 B) slots make allocation a used/free bitmap scan
- * instead of a general allocator; a slot bounds the largest installable wapp
- * image. Slot count matches the "psram-s3" profile's MAX_WAPPS: registry.c's
- * mmap-handle table (registry_flash.c's g_mmapTable) is also sized off this
- * constant, so it bounds concurrently-*loaded* images too, not just installed
- * ones — a wapp `start` past this many concurrently-mapped images fails
- * -ENOMEM even with free internal RAM and PSRAM (found at the
- * PSRAM-allocator plan's M3, plans/wanted-engine-esp-idf-psram-allocator.md,
- * when MAX_WAPPS was raised without this). */
+ * generated into partitions.csv by an OTA_PROFILE — see partitions.csv.in
+ * and plans/wanted-engine-esp-idf-ota.md's "Flash budget") instead of the
+ * registry filesystem, so a running instance's image can be exposed
+ * zero-copy via esp_partition_mmap. Fixed-size, erase-sector-aligned
+ * (4096 B) slots make allocation a used/free bitmap scan instead of a
+ * general allocator; a slot bounds the largest installable wapp image.
+ *
+ * WAPP_IMAGE_MAX_SLOTS is an alias for MAX_WAPPS, not an independently
+ * hand-set constant: registry_flash.c's mmap-handle table (g_mmapTable) is
+ * sized off this same constant, so it bounds concurrently-*loaded* images
+ * too, not just installed ones -- a wapp `start` past this many
+ * concurrently-mapped images fails -ENOMEM even with free internal RAM and
+ * PSRAM. The psram-allocator plan's M3
+ * (plans/wanted-engine-esp-idf-psram-allocator.md) hit exactly this by
+ * raising MAX_WAPPS without also raising this constant; the OTA plan's
+ * s3-wapps/s3-storage profiles (plans/wanted-engine-esp-idf-ota.md) close
+ * that gap by deriving both this and the "wapps" partition size from the
+ * one MAX_WAPPS knob instead of hand-editing three places in sync. Slot
+ * size is fixed across every profile -- only the slot count (MAX_WAPPS)
+ * varies. */
 #define WAPP_IMAGE_PARTITION_LABEL "wapps"
-#define WAPP_IMAGE_MAX_SLOTS 20
-#define WAPP_IMAGE_SLOT_SIZE                                                   \
-    (3200 * 1024 / WAPP_IMAGE_MAX_SLOTS) /* 160 KiB, 40 sectors */
+#define WAPP_IMAGE_MAX_SLOTS MAX_WAPPS
+#define WAPP_IMAGE_SLOT_SIZE (160 * 1024) /* 40 sectors */
