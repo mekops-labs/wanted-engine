@@ -19,6 +19,7 @@ set(sources
     api/random.c
     api/registry.c
     api/wapps.c
+    api/ota.c
 )
 
 if (SECURE_SOCKETS)
