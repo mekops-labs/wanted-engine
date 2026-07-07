@@ -154,6 +154,67 @@ halted too — `resume`/`reset run` both cores explicitly before ending the
 session, or the board is left stuck and stops responding on the UART console
 until a clean `reset run` is issued.
 
+### Triggering BOOTSEL over SWD (no physical button needed)
+
+`picotool load`/`rp2350-flash` need the board in BOOTSEL, normally a physical
+hold-BOOTSEL-tap-RESET. If the Debug Probe is already attached and the current
+firmware is healthy (not hung), SWD alone can trigger BOOTSEL by calling the
+RP2350 bootrom's `reboot()` ROM function directly on the halted core — the
+same mechanism `picotool reboot -c riscv`/`-u` uses over USB, just invoked
+through the debugger instead. Two ROM lookups are needed: `rom_table_lookup`
+(its address is a fixed 16-bit value at ROM offset `0x16`) resolves the actual
+`reboot` function by 2-character code, matching the addresses in
+`arch/arm/src/rp23xx/rp23xx_rom.h` (`ROM_TABLE_CODE('R','B')` = `0x4252`,
+`RT_FLAG_FUNC_ARM_SEC` = `4`), then `reboot(flags, delay_ms, p0, p1)` with
+`flags = REBOOT2_FLAG_REBOOT_TYPE_BOOTSEL | REBOOT2_FLAG_REBOOT_TO_ARM`
+(`0x2 | 0x10 = 0x12`) does the actual switch:
+
+```sh
+gdb-multiarch -q -batch \
+  -ex "set architecture arm" \
+  -ex "file nuttx"  `# any valid ELF - only used for gdb's call-frame setup, need not match current flash` \
+  -ex "target extended-remote localhost:3333" \
+  -ex "monitor halt" \
+  -ex "print/x *(unsigned short*)0x16" \
+  -ex 'print/x ((void*(*)(unsigned int,unsigned int))$1)(0x4252, 4)' \
+  -ex 'print/x ((int(*)(unsigned int,unsigned int,unsigned int,unsigned int))$2)(0x12, 10, 0, 0)'
+```
+
+The final call resets the chip into BOOTSEL and never returns cleanly (the
+gdb session reports a disconnect/timeout — expected, not an error). Confirm
+with `picotool info -a` from the host; it should now report the family/image
+type instead of "No accessible RP-series devices in BOOTSEL mode". `file`
+needs *some* ELF loaded (any board's `nuttx` binary works) purely so gdb has
+entry-point context to set up its inferior-call return breakpoint — it does
+not have to match what's actually flashed.
+
+**This only works if the target actually halts.** If the running firmware is
+stuck in a low-power/blocking-syscall state, `monitor halt` (and even a plain
+`openocd ... -c halt` with no gdb involved) can time out indefinitely
+("target was in unknown state when halt was requested"). Use `rescue_reset`
+first to force both cores to a known-halted state in the bootrom regardless
+of what the firmware was doing:
+
+```sh
+openocd -f interface/cmsis-dap.cfg -c "adapter speed 1000" -f target/rp2350.cfg \
+  -c "init" -c "rescue_reset" -c "halt"
+```
+
+`rescue_reset` is a recovery mechanism, not a safe place to resume execution
+from — attempting the `reboot()` call sequence *from* a rescue-reset halt (as
+opposed to a halt on genuinely running application code) reliably faults
+("clearing lockup after double fault"), even after pointing `$sp` at real
+SRAM. If `rescue_reset` was needed to regain control, skip the ROM-call dance
+entirely and just reflash directly over SWD instead — raw SWD flash+reset
+works for ARM→ARM (no picotool/BOOTSEL involved at all); it's only an
+ARM↔RISC-V *architecture* switch that raw SWD can't do (see the RISC-V
+section below):
+
+```sh
+openocd -f interface/cmsis-dap.cfg -c "adapter speed 1000" -f target/rp2350.cfg \
+  -c "init" -c "rescue_reset" -c "program nuttx verify reset exit"
+```
+
 ## RP2350 RISC-V cross-build + debug image (`Containerfile.rp2350-riscv`)
 
 Sibling of `Containerfile.rp2350`, targeting the RP2350's *other* on-die
