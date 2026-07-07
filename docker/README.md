@@ -154,6 +154,71 @@ halted too — `resume`/`reset run` both cores explicitly before ending the
 session, or the board is left stuck and stops responding on the UART console
 until a clean `reset run` is issued.
 
+## RP2350 RISC-V cross-build + debug image (`Containerfile.rp2350-riscv`)
+
+Sibling of `Containerfile.rp2350`, targeting the RP2350's *other* on-die
+core: the RISC-V Hazard3. Same physical chip, same board — which core
+architecture boots is a runtime/flash selection, not a hardware
+difference. Only the cross-compiler differs from `Containerfile.rp2350`;
+the debug half (openocd, gdb-multiarch, probe-rs, picocom) is identical
+and already supports both cores (the Raspberry Pi openocd fork ships
+`target/rp2350-riscv.cfg` alongside `target/rp2350.cfg`).
+
+```sh
+podman build -f docker/Containerfile.rp2350-riscv -t wanted-rp2350-riscv docker/
+```
+
+Cross-build (no hardware needed) — same mount layout as the ARM image:
+
+```sh
+podman run --rm \
+  -v /path/to/nuttx:/src/nuttx:Z \
+  -v /path/to/nuttx-apps:/src/nuttx-apps:Z \
+  --entrypoint=/bin/sh wanted-rp2350-riscv -c \
+  'cd /src/nuttx && ./tools/configure.sh raspberrypi-pico-2-rv:nsh && make -j"$(nproc)"'
+```
+
+### Two gotchas specific to this toolchain
+
+Debian's `gcc-riscv64-unknown-elf` package (14.2.0, has the Zba/Zbb/Zbs/
+Zbkb/Zcb/Zcmp extension support NuttX's rp23xx-rv Kconfig needs — those
+are recent extensions requiring GCC 13+) has two gaps the ARM package
+doesn't:
+
+1. **No `riscv32-unknown-elf-*` binary names.** It only ships
+   `riscv64-unknown-elf-*`, even though it's a multilib toolchain that
+   targets rv32 fine via `-march=`. NuttX's rp23xx-rv `Toolchain.defs`
+   resolves `CROSSDEV` to `riscv32-unknown-elf-`, so the image aliases the
+   whole toolchain (and `gdb-multiarch`) under that prefix.
+2. **No libc wired in by default.** Unlike `libnewlib-arm-none-eabi`,
+   `picolibc-riscv64-unknown-elf` installs its headers/libs under
+   `/usr/lib/picolibc/riscv64-unknown-elf/`, not gcc's actual default
+   sysroot search path (`/usr/lib/riscv64-unknown-elf/`, confirmed via
+   `gcc -E -Wp,-v -`) — so `<math.h>` and friends 404 without a symlink
+   bridging the two.
+
+### Flashing a RISC-V image needs `picotool`, not raw SWD
+
+A RISC-V-tagged UF2 (`file nuttx.uf2` reports `RISC-V image`) does **not**
+switch the RP2350's boot architecture just by being written to flash over
+SWD (`openocd ... program nuttx.uf2 reset`) — the chip comes back up on
+whichever core was already selected (ARM, by default). The architecture
+switch is a `picotool` operation: with the board in BOOTSEL mode,
+
+```sh
+picotool load -x nuttx.uf2
+```
+
+recognizes the `rp2350-riscv` family ID and performs the switch as part
+of loading — confirmed by `openocd -f target/rp2350-riscv.cfg` then
+showing `rp2350.rv0`/`rp2350.rv1` as `running` (XLEN=32, Hazard3) instead
+of `unavailable`. This matches the RPi openocd fork's own comment in
+`target/rp2350-riscv.cfg`: *"each CPU must already be selected (e.g. from
+`picotool reboot -u -c riscv`)"* — `picotool reboot -c riscv` on an
+already-running board does the same switch without a full reflash, but
+needs either BOOTSEL or a currently-running image that exposes a USB
+PICOBOOT reset endpoint.
+
 ## Changelog
 
 ### 0.6.5

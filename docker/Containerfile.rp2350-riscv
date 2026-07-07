@@ -1,0 +1,213 @@
+# WANTED Engine — RP2350 (RISC-V Hazard3) NuttX build + on-hardware debug image.
+#
+# Sibling of docker/Containerfile.rp2350 (ARM Cortex-M33), targeting the RP2350's
+# other on-die core: the RISC-V Hazard3. Same physical chip, same board (the
+# Adafruit Feather RP2350 has both cores on-silicon; which one boots is an image/
+# OTP selection, not a hardware difference) — this image only swaps the ARM
+# cross-compiler for a RISC-V one and reuses everything else (kconfig/kbuild,
+# picotool, the debug half) unchanged from Containerfile.rp2350.
+#
+#   - gcc-riscv64-unknown-elf (14.2.0, Debian trixie) — despite the package name,
+#     this is a multilib bare-metal `-elf` toolchain: `-march=rv32imac...` at
+#     compile time targets the 32-bit Hazard3, not riscv64. Confirmed to support
+#     the Zba/Zbb/Zbs/Zbkb/Zcb/Zcmp extensions NuttX's rp23xx-rv Kconfig selects
+#     (CONFIG_ARCH_RV_ISA_VENDOR_EXTENSIONS) — these are recent (~2022-2023)
+#     ratified extensions that need GCC 13+; Debian trixie's 14.2.0 has them.
+#     The package only ships riscv64-unknown-elf-* binary names, but NuttX's
+#     rp23xx-rv Toolchain.defs resolves CROSSDEV to riscv32-unknown-elf- for
+#     this 32-bit target, so the whole toolchain (+ gdb) is aliased under that
+#     prefix below.
+#   - picotool, openocd (Raspberry Pi fork), gdb-multiarch, probe-rs, picocom —
+#     identical to Containerfile.rp2350; see that file's header for why each is
+#     built the way it is. The RPi openocd fork's target scripts already carry
+#     `target/rp2350-riscv.cfg` alongside the ARM `target/rp2350.cfg` — same
+#     openocd build serves both cores, no separate build needed.
+#
+# Build:   podman build -f Containerfile.rp2350-riscv -t wanted-rp2350-riscv .
+#
+# Cross-build firmware (no hardware):
+#   podman run --rm -v "$PWD:/src:Z" wanted-rp2350-riscv \
+#     sh -c 'cd third_party/nuttx && make -j"$(nproc)"'
+#
+# On-hardware debug — same USB passthrough as Containerfile.rp2350, but the
+# RISC-V-specific openocd target file:
+#   podman run --rm -it --userns=keep-id \
+#     --device /dev/bus/usb --group-add keep-groups \
+#     -v "$PWD:/src:Z" wanted-rp2350-riscv sh -c '\
+#       openocd -f interface/cmsis-dap.cfg -c "adapter speed 5000" \
+#               -f target/rp2350-riscv.cfg'
+#   #   gdb-multiarch nuttx -ex "target extended-remote :3333"
+
+FROM debian:trixie-slim
+
+LABEL maintainer="mek.xgt@gmail.com"
+LABEL org.opencontainers.image.title="wanted-engine-rp2350-riscv-build-debug"
+LABEL org.opencontainers.image.description="RP2350 (RISC-V Hazard3) NuttX cross-build + SWD debug toolchain (openocd/gdb/probe-rs) for the WANTED engine."
+LABEL version="0.1.0"
+
+# Pinned tool versions for the debug half (bump deliberately).
+ARG PROBE_RS_VERSION=0.31.0
+# Raspberry Pi openocd fork ref carrying RP2350 support (default branch).
+ARG OPENOCD_REF=rpi-common
+# buildx sets TARGETARCH; fall back to the host arch for plain `podman build`.
+ARG TARGETARCH
+
+RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update \
+    && export DEBIAN_FRONTEND=noninteractive \
+    && apt-get install -y --no-install-recommends \
+    # Core build toolchain (host side of the NuttX kbuild + CMake pieces)
+    build-essential \
+    ccache \
+    cmake \
+    ninja-build \
+    # NuttX kconfig + kbuild prerequisites (same set as the sim build)
+    kconfig-frontends \
+    genromfs \
+    gperf \
+    flex \
+    bison \
+    gettext \
+    libelf-dev \
+    # RISC-V bare-metal cross-compiler for the RP2350's Hazard3 core. Despite
+    # the "riscv64" package name this is a multilib -elf toolchain: NuttX's
+    # rp23xx-rv Toolchain.defs passes -march=rv32imac_..._zcb_zcmp, targeting
+    # 32-bit Hazard3, not riscv64. Unlike Debian's ARM package, this one ships
+    # no libc at all on its own - picolibc-riscv64-unknown-elf provides the
+    # headers (math.h etc.) and libc/libm the link step needs.
+    gcc-riscv64-unknown-elf \
+    picolibc-riscv64-unknown-elf \
+    # picotool: NuttX rp23xx post-build `uf2 convert` step, and BOOTSEL flashing.
+    # Chip-level tool, identical for either core.
+    picotool \
+    # Debug front-end + serial console (runtime libs for openocd/probe-rs are
+    # pulled here so the openocd build layer can purge its -dev deps safely).
+    gdb-multiarch \
+    picocom \
+    libusb-1.0-0 \
+    libhidapi-hidraw0 \
+    libftdi1-2 \
+    # jimtcl: openocd's required Tcl interpreter (libjim >= 0.79). Kept (not
+    # purged) — openocd dynamically links -ljim, so libjim0.83 (pulled by
+    # libjim-dev, which also carries jim.h + jimtcl.pc for configure) must stay.
+    # Its runtime libssl3t64 dependency comes along and survives too.
+    libjim-dev \
+    # NuttX occasionally shells out to python3 during the build.
+    python3 \
+    python-is-python3 \
+    # Utilities
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    xxd \
+    xz-utils \
+    # Container plumbing (match the main build image's UID-remap entrypoint)
+    dumb-init \
+    gosu \
+    # openocd build-time deps (autotools + USB/HID/FTDI -dev libs). Installed in
+    # THIS layer — before the Qt force-purge below — so the whole openocd build
+    # and its own apt-purge run while the dpkg state is still consistent (apt
+    # refuses to operate once the Qt purge leaves it intentionally broken). The
+    # runtime libs (libusb-1.0-0/libhidapi-hidraw0/libftdi1-2, above) survive.
+    autoconf \
+    automake \
+    libtool \
+    pkg-config \
+    texinfo \
+    libusb-1.0-0-dev \
+    libhidapi-dev \
+    libftdi1-dev \
+    # libssl-dev only satisfies jimtcl.pc's `Requires: openssl` at configure
+    # time; the runtime libssl3t64 survives via libjim0.83's dependency.
+    libssl-dev \
+    # Build openocd from the Raspberry Pi fork — the only openocd with RP2350
+    # support (both target/rp2350.cfg for ARM and target/rp2350-riscv.cfg for
+    # Hazard3) and CMSIS-DAP v2. Debian's openocd 0.12.0 has neither.
+    # --disable-werror keeps gcc-14 warnings from failing the build; installs
+    # to /usr/local (scripts land in /usr/local/share/openocd/scripts, on
+    # openocd's default search path).
+    && git clone --depth 1 --branch "${OPENOCD_REF}" \
+       https://github.com/raspberrypi/openocd.git /tmp/openocd \
+    && cd /tmp/openocd \
+    && ./bootstrap \
+    && ./configure --prefix=/usr/local --disable-werror \
+       --enable-cmsis-dap --enable-cmsis-dap-v2 \
+    && make -j"$(nproc)" \
+    && make install \
+    && cd / \
+    && rm -rf /tmp/openocd \
+    # Drop the openocd build-deps while the dpkg state is still consistent.
+    && apt-get purge -y \
+       autoconf automake libtool pkg-config texinfo \
+       libusb-1.0-0-dev libhidapi-dev libftdi1-dev libssl-dev \
+    && apt-get autoremove -y \
+    # kconfig-frontends hard-depends on Qt5 for its `qconf` GUI frontend, which
+    # drags in Mesa + LLVM + Z3 (~220 MB) that a headless cross-build never uses.
+    # NuttX only invokes the CLI tools (kconfig-conf/-mconf/-tweak), which do not
+    # link Qt, so force-remove the GUI chain and the orphaned qconf binary in the
+    # same layer. This MUST be the last apt/dpkg step: it leaves the dpkg state
+    # with unmet (GUI) deps by design, and the image never apt-installs again.
+    && dpkg --purge --force-depends \
+       libqt5widgets5t64 libqt5gui5t64 libqt5core5t64 \
+       libglx-mesa0 libgl1 libglx0 libglvnd0 mesa-libgallium libllvm19 libz3-4 \
+    && rm -f /usr/bin/kconfig-qconf \
+    && rm -rf /var/lib/apt/lists/*
+
+# probe-rs (probe-rs-tools) — prebuilt CMSIS-DAP binaries, selected per arch.
+# Installs probe-rs + cargo-flash + cargo-embed into /usr/local/bin.
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "${arch}" in \
+      amd64) triple=x86_64-unknown-linux-gnu ;; \
+      arm64) triple=aarch64-unknown-linux-gnu ;; \
+      *) echo "unsupported arch for probe-rs: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    url="https://github.com/probe-rs/probe-rs/releases/download/v${PROBE_RS_VERSION}/probe-rs-tools-${triple}.tar.xz"; \
+    mkdir -p /tmp/probe-rs; \
+    curl -fsSL "${url}" | tar -xJ -C /tmp/probe-rs; \
+    find /tmp/probe-rs -maxdepth 2 -type f -perm -u+x \
+      -exec install -m 0755 {} /usr/local/bin/ \; ; \
+    rm -rf /tmp/probe-rs; \
+    probe-rs --version
+
+# Debian's gcc-riscv64-unknown-elf package is a multilib -elf toolchain (the
+# "riscv64" in its name is packaging convention, not a target restriction:
+# `-march=rv32imac...` at compile time targets the 32-bit Hazard3 fine), but
+# it only ships riscv64-unknown-elf-* binary names. NuttX's rp23xx-rv
+# Toolchain.defs resolves CROSSDEV to riscv32-unknown-elf- for this 32-bit
+# target, so alias the whole toolchain (and gdb) under that prefix.
+RUN for t in gcc g++ cpp ld ar as nm objcopy objdump ranlib strip size; do \
+      ln -sf "/usr/bin/riscv64-unknown-elf-${t}" "/usr/local/bin/riscv32-unknown-elf-${t}"; \
+    done \
+    && ln -sf /usr/bin/gdb-multiarch /usr/local/bin/riscv32-unknown-elf-gdb
+
+# picolibc-riscv64-unknown-elf installs its headers/libs under
+# /usr/lib/picolibc/riscv64-unknown-elf/{include,lib}, but this gcc build's
+# baked-in default sysroot search path (confirmed via `gcc -E -Wp,-v -`) is
+# /usr/lib/riscv64-unknown-elf/{include,lib} - a real gap in this Debian
+# package pairing (the ARM equivalent, libnewlib-arm-none-eabi, installs
+# directly into gcc-arm-none-eabi's expected path with no such gap). Symlink
+# the two together so <math.h> and friends resolve without needing
+# -specs=picolibc.specs on every NuttX compile invocation.
+RUN mkdir -p /usr/lib/riscv64-unknown-elf \
+    && ln -sf /usr/lib/picolibc/riscv64-unknown-elf/include /usr/lib/riscv64-unknown-elf/include \
+    && ln -sf /usr/lib/picolibc/riscv64-unknown-elf/lib /usr/lib/riscv64-unknown-elf/lib
+
+# Route every compile through ccache via the masquerade dir on PATH. Add
+# cc/c++ (the NuttX kbuild invokes `cc`) and the riscv32-unknown-elf-*
+# aliased names so the cross-build is cached too. One shared cache serves
+# the host-side kbuild and the RISC-V compiles alike.
+RUN ln -sf ../../bin/ccache /usr/lib/ccache/cc \
+    && ln -sf ../../bin/ccache /usr/lib/ccache/c++ \
+    && for t in gcc g++ cc c++; do \
+         ln -sf /usr/bin/ccache "/usr/lib/ccache/riscv32-unknown-elf-${t}"; \
+       done
+ENV PATH="/usr/lib/ccache:${PATH}"
+
+RUN printf '[safe]\n\tdirectory = /src\n' > /root/.gitconfig
+
+ADD entry.sh /
+
+WORKDIR /src
+
+ENTRYPOINT [ "/bin/sh", "-C", "/entry.sh" ]
