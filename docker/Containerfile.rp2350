@@ -1,0 +1,211 @@
+# WANTED Engine — RP2350 (ARM Cortex-M33) NuttX build + on-hardware debug image.
+#
+# A dedicated cross-toolchain image for building the engine as a NuttX built-in
+# app for the Raspberry Pi RP2350 (Adafruit Feather RP2350) target, producing the
+# UF2 flashed over the BOOTSEL mass-storage / picotool path, AND driving the board
+# on the bench over SWD (Raspberry Pi Debug Probe / any CMSIS-DAP adapter). Kept
+# separate from the main build image (docker/Dockerfile) so the cross toolchain
+# does not bloat every lint/build/test job that only needs the host + sim
+# toolchain.
+#
+# Unlike the ESP32 image, the RP2350 cross toolchain ships entirely in Debian
+# trixie, so the build half needs no upstream tarball:
+#   - gcc-arm-none-eabi (14.2.rel1) + libnewlib-arm-none-eabi — the ARM
+#     bare-metal cross-compiler for the RP2350's dual Cortex-M33 (armv8-m.main).
+#   - picotool (2.1.1) — the NuttX rp23xx board build runs `picotool uf2 convert`
+#     as a post-link step to emit nuttx.uf2 (a pure file conversion, no USB), and
+#     it also flashes/inspects a BOOTSEL board over USB when a device is passed in.
+#   - The NuttX kconfig + kbuild prerequisites (same set as the main image's sim
+#     build) plus cmake/ninja for the engine's CMake-driven pieces.
+#   - ccache, wired as a PATH masquerade for both the host and the arm-none-eabi
+#     compilers so CI build jobs warm-cache across pipelines.
+#
+# Debug / development half (needs a USB adapter passed into the container):
+#   - openocd — built from the Raspberry Pi fork (github.com/raspberrypi/openocd),
+#     NOT Debian's package: trixie ships openocd 0.12.0, whose target scripts have
+#     NO RP2350 support (only rp2040.cfg, no `rp2xxx` flash driver). The RPi fork
+#     carries `target/rp2350.cfg`, the `rp2xxx` driver, and CMSIS-DAP v2 (the
+#     transport the RPi Debug Probe uses). This is the openocd gdb-server backend.
+#   - gdb-multiarch — the ARM Cortex-M debugger front-end (Debian dropped the
+#     arm-none-eabi-gdb package; gdb-multiarch is its replacement). Symlinked as
+#     arm-none-eabi-gdb for scripts/docs that expect that name. Point it at
+#     openocd's `:3333` (or `probe-rs gdb`) with `target extended-remote`.
+#   - probe-rs (v0.31.0) — single-binary CMSIS-DAP tool with first-class RP2350
+#     support: flash, attach, RTT, and its own gdb stub. The quick/basic backend;
+#     openocd is retained for the full gdb workflow.
+#   - picocom — serial console for the board / probe UART bridge (/dev/ttyACM*).
+#
+# The WASM supervisor TAR is NOT built here — it is produced by the main image
+# (which carries the wasi-sdk) as the `supervisor` prerequisite, and baked into
+# the boot ROMFS before this image cross-links it. This image therefore needs no
+# wasi-sdk / clang / analysis tooling.
+#
+# Build (single arch):  podman build -f Containerfile.rp2350 -t wanted-rp2350 .
+# Build (multi arch):   podman build --platform linux/amd64,linux/arm64 \
+#                         -f Containerfile.rp2350 -t wanted-rp2350 .
+#
+# Cross-build firmware (no hardware):  see the Makefile `rp2350` target, or
+#   podman run --rm -v "$PWD:/src:Z" wanted-rp2350 \
+#     sh -c 'cd third_party/nuttx && make -j"$(nproc)"'
+#
+# On-hardware debug — pass the CMSIS-DAP adapter's raw USB through, and (rootless
+# podman) keep the host's supplementary groups so the container can open it:
+#   podman run --rm -it --userns=keep-id \
+#     --device /dev/bus/usb --group-add keep-groups \
+#     -v "$PWD:/src:Z" wanted-rp2350 sh -c '\
+#       openocd -f interface/cmsis-dap.cfg -c "adapter speed 5000" \
+#               -f target/rp2350.cfg'
+#   # then, in a second shell in the same container:
+#   #   gdb-multiarch nuttx -ex "target extended-remote :3333"
+#   # or the probe-rs path:  probe-rs list && probe-rs info --chip RP2350
+# The adapter also exposes a UART bridge (e.g. /dev/ttyACM0); pass it with
+# `--device /dev/ttyACM0` and open it with `picocom -b 115200 /dev/ttyACM0`.
+# NOTE: non-root USB access needs the probe-rs/CMSIS-DAP udev rules ON THE HOST.
+
+FROM debian:trixie-slim
+
+LABEL maintainer="mek.xgt@gmail.com"
+LABEL org.opencontainers.image.title="wanted-engine-rp2350-build-debug"
+LABEL org.opencontainers.image.description="RP2350 (ARM Cortex-M33) NuttX cross-build + SWD debug toolchain (openocd/gdb/probe-rs) for the WANTED engine."
+LABEL version="0.2.0"
+
+# Pinned tool versions for the debug half (bump deliberately).
+ARG PROBE_RS_VERSION=0.31.0
+# Raspberry Pi openocd fork ref carrying RP2350 support (default branch).
+ARG OPENOCD_REF=rpi-common
+# buildx sets TARGETARCH; fall back to the host arch for plain `podman build`.
+ARG TARGETARCH
+
+RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update \
+    && export DEBIAN_FRONTEND=noninteractive \
+    && apt-get install -y --no-install-recommends \
+    # Core build toolchain (host side of the NuttX kbuild + CMake pieces)
+    build-essential \
+    ccache \
+    cmake \
+    ninja-build \
+    # NuttX kconfig + kbuild prerequisites (same set as the sim build)
+    kconfig-frontends \
+    genromfs \
+    gperf \
+    flex \
+    bison \
+    gettext \
+    libelf-dev \
+    # ARM bare-metal cross-compiler for the RP2350 (dual Cortex-M33). newlib
+    # provides the multilib archives + headers the NuttX link step references.
+    gcc-arm-none-eabi \
+    libnewlib-arm-none-eabi \
+    # picotool: NuttX rp23xx post-build `uf2 convert` step, and BOOTSEL flashing.
+    picotool \
+    # Debug front-end + serial console (runtime libs for openocd/probe-rs are
+    # pulled here so the openocd build layer can purge its -dev deps safely).
+    gdb-multiarch \
+    picocom \
+    libusb-1.0-0 \
+    libhidapi-hidraw0 \
+    libftdi1-2 \
+    # jimtcl: openocd's required Tcl interpreter (libjim >= 0.79). Kept (not
+    # purged) — openocd dynamically links -ljim, so libjim0.83 (pulled by
+    # libjim-dev, which also carries jim.h + jimtcl.pc for configure) must stay.
+    # Its runtime libssl3t64 dependency comes along and survives too.
+    libjim-dev \
+    # NuttX occasionally shells out to python3 during the build.
+    python3 \
+    python-is-python3 \
+    # Utilities
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    xxd \
+    xz-utils \
+    # Container plumbing (match the main build image's UID-remap entrypoint)
+    dumb-init \
+    gosu \
+    # openocd build-time deps (autotools + USB/HID/FTDI -dev libs). Installed in
+    # THIS layer — before the Qt force-purge below — so the whole openocd build
+    # and its own apt-purge run while the dpkg state is still consistent (apt
+    # refuses to operate once the Qt purge leaves it intentionally broken). The
+    # runtime libs (libusb-1.0-0/libhidapi-hidraw0/libftdi1-2, above) survive.
+    autoconf \
+    automake \
+    libtool \
+    pkg-config \
+    texinfo \
+    libusb-1.0-0-dev \
+    libhidapi-dev \
+    libftdi1-dev \
+    # libssl-dev only satisfies jimtcl.pc's `Requires: openssl` at configure
+    # time; the runtime libssl3t64 survives via libjim0.83's dependency.
+    libssl-dev \
+    # Build openocd from the Raspberry Pi fork — the only openocd with RP2350
+    # (`rp2xxx` flash driver + target/rp2350.cfg) and CMSIS-DAP v2. Debian's
+    # openocd 0.12.0 has no RP2350 support. --disable-werror keeps gcc-14
+    # warnings from failing the build; installs to /usr/local (scripts land in
+    # /usr/local/share/openocd/scripts, on openocd's default search path).
+    && git clone --depth 1 --branch "${OPENOCD_REF}" \
+       https://github.com/raspberrypi/openocd.git /tmp/openocd \
+    && cd /tmp/openocd \
+    && ./bootstrap \
+    && ./configure --prefix=/usr/local --disable-werror \
+       --enable-cmsis-dap --enable-cmsis-dap-v2 \
+    && make -j"$(nproc)" \
+    && make install \
+    && cd / \
+    && rm -rf /tmp/openocd \
+    # Drop the openocd build-deps while the dpkg state is still consistent.
+    && apt-get purge -y \
+       autoconf automake libtool pkg-config texinfo \
+       libusb-1.0-0-dev libhidapi-dev libftdi1-dev libssl-dev \
+    && apt-get autoremove -y \
+    # kconfig-frontends hard-depends on Qt5 for its `qconf` GUI frontend, which
+    # drags in Mesa + LLVM + Z3 (~220 MB) that a headless cross-build never uses.
+    # NuttX only invokes the CLI tools (kconfig-conf/-mconf/-tweak), which do not
+    # link Qt, so force-remove the GUI chain and the orphaned qconf binary in the
+    # same layer. This MUST be the last apt/dpkg step: it leaves the dpkg state
+    # with unmet (GUI) deps by design, and the image never apt-installs again.
+    && dpkg --purge --force-depends \
+       libqt5widgets5t64 libqt5gui5t64 libqt5core5t64 \
+       libglx-mesa0 libgl1 libglx0 libglvnd0 mesa-libgallium libllvm19 libz3-4 \
+    && rm -f /usr/bin/kconfig-qconf \
+    && rm -rf /var/lib/apt/lists/*
+
+# probe-rs (probe-rs-tools) — prebuilt CMSIS-DAP binaries, selected per arch.
+# Installs probe-rs + cargo-flash + cargo-embed into /usr/local/bin.
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "${arch}" in \
+      amd64) triple=x86_64-unknown-linux-gnu ;; \
+      arm64) triple=aarch64-unknown-linux-gnu ;; \
+      *) echo "unsupported arch for probe-rs: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    url="https://github.com/probe-rs/probe-rs/releases/download/v${PROBE_RS_VERSION}/probe-rs-tools-${triple}.tar.xz"; \
+    mkdir -p /tmp/probe-rs; \
+    curl -fsSL "${url}" | tar -xJ -C /tmp/probe-rs; \
+    find /tmp/probe-rs -maxdepth 2 -type f -perm -u+x \
+      -exec install -m 0755 {} /usr/local/bin/ \; ; \
+    rm -rf /tmp/probe-rs; \
+    probe-rs --version
+
+# gdb-multiarch under the arm-none-eabi-gdb name some Pico/NuttX docs expect.
+RUN ln -sf /usr/bin/gdb-multiarch /usr/local/bin/arm-none-eabi-gdb
+
+# Route every compile through ccache via the masquerade dir on PATH. The package
+# ships gcc/clang/g++ symlinks; add cc/c++ (the NuttX kbuild invokes `cc`) and
+# the arm-none-eabi driver names so the cross-build is cached too. One shared
+# cache serves the host-side kbuild and the ARM compiles alike.
+RUN ln -sf ../../bin/ccache /usr/lib/ccache/cc \
+    && ln -sf ../../bin/ccache /usr/lib/ccache/c++ \
+    && for t in gcc g++ cc c++; do \
+         ln -sf /usr/bin/ccache "/usr/lib/ccache/arm-none-eabi-${t}"; \
+       done
+ENV PATH="/usr/lib/ccache:${PATH}"
+
+RUN printf '[safe]\n\tdirectory = /src\n' > /root/.gitconfig
+
+ADD entry.sh /
+
+WORKDIR /src
+
+ENTRYPOINT [ "/bin/sh", "-C", "/entry.sh" ]

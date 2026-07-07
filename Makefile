@@ -35,7 +35,7 @@ JUST = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" -w /src $(ENVS) --entrypoint=jus
 
 .DEFAULT_GOAL := help
 
-.PHONY: help shell wsh-shell nuttx-shell esp32 esp32-flash docs-sync FORCE
+.PHONY: help shell wsh-shell nuttx-shell esp32 esp32-flash rp2350 rp2350-flash docs-sync FORCE
 
 # Catch-all: forward any goal without an explicit rule below to `just` in the
 # container. FORCE defeats make's "up to date" check so a goal that matches an
@@ -84,6 +84,36 @@ esp32-flash: ## flash third_party/nuttx/nuttx.bin to the board [ESP32_PORT=/dev/
 	    --after no_reset write_flash -fs detect -fm dio -ff 40m 0x1000 \
 	    third_party/nuttx/nuttx.bin
 
+# --- RP2350 firmware (real hardware) --------------------------------------
+# Cross-build the NuttX firmware for the Adafruit Feather RP2350 in the ARM
+# Cortex-M33 toolchain container ($(RP2350_IMAGE), from
+# docker/Containerfile.rp2350; distinct from the sim's $(IMAGE)). The engine app
+# is linked into nuttx-apps by `nuttx-sim.sh deps` (shared with the sim); the
+# boot ROMFS bakes the wsh supervisor, so `supervisor` is a prerequisite. The
+# rp23xx board POSTBUILD runs `picotool uf2 convert` (picotool is in the image;
+# CONFIG_RP23XX_UF2_BINARY is default-y) -> third_party/nuttx/nuttx.uf2.
+#
+# RP2350_CONFIG defaults to the stock `raspberrypi-pico-2:usbnsh` — console over
+# native USB CDC, i.e. the same /dev/ttyACM0 cable — so the
+# container->build->uf2->flash->console pipeline is validatable on the Feather
+# before the `wanted` board variant (which selects SYSTEM_WANTED) exists.
+# Override once it lands:  make rp2350 RP2350_CONFIG=feather-rp2350:wanted
+RP2350_IMAGE  ?= localhost/wanted-rp2350
+RP2350_CONFIG ?= raspberrypi-pico-2:usbnsh
+RP2350_BIN    ?= third_party/nuttx/nuttx.uf2
+# The xtensa image bypasses its UID-remap entrypoint under rootless podman; do
+# the same here and build as the container root (mapped back to the host user).
+RP2350_RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(RP2350_IMAGE) -c
+
+rp2350: supervisor ## cross-build the RP2350 firmware -> third_party/nuttx/nuttx.uf2 [RP2350_CONFIG=...]
+	$(RUN) 'cd /src && ./test/nuttx-sim.sh deps'
+	$(RP2350_RUN) 'cd /src/third_party/nuttx && \
+	    { [ -f .config ] || ./tools/configure.sh -a ../nuttx-apps $(RP2350_CONFIG); } && \
+	    make -j"$$(nproc)"'
+
+rp2350-flash: ## flash $(RP2350_BIN) over USB; put board in BOOTSEL first (hold BOOTSEL, tap RESET) [RP2350_BIN=...]
+	picotool load -x $(RP2350_BIN)
+
 # docs-sync runs on the host, not in the build container: it only copies Markdown
 # (no toolchain needed) to the destination directory. Pass DOCS_DEST.
 docs-sync: ## sync docs/*.md to the MekOps Hugo blog (pass DOCS_DEST=<blog content dir>)
@@ -93,7 +123,7 @@ docs-sync: ## sync docs/*.md to the MekOps Hugo blog (pass DOCS_DEST=<blog conte
 help: ## list the available targets
 	@echo "Host wrapper targets (run on the host):"
 	@grep -hE '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) \
-	    | awk 'BEGIN{FS=":.*## "}{printf "  make %-12s %s\n", $$1, $$2}'
+	    | awk 'BEGIN{FS=":.*## "}{printf "  make %-14s %s\n", $$1, $$2}'
 	@echo
 	@echo "Container recipes (forwarded to just; also: just <recipe> in the devcontainer):"
 	@$(JUST) --list
