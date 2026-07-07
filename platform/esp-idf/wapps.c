@@ -286,6 +286,7 @@ void PlatformRequestReboot(void) {
 
 void PlatformWappLoop(void) {
     int supervisorFailures = 0;
+    bool otaConfirmed = false;
 
     for (;;) {
         sleep(1);
@@ -324,6 +325,13 @@ void PlatformWappLoop(void) {
 
         if (supervisorOk) {
             supervisorFailures = 0;
+            /* Supervisor reached RUNNING at least once this boot: the image
+             * is good. Confirms a PENDING_VERIFY slot (disarming the M4
+             * revert timer) and is a no-op once already confirmed. */
+            if (!otaConfirmed) {
+                PlatformOtaConfirm();
+                otaConfirmed = true;
+            }
             continue;
         }
 
