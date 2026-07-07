@@ -105,11 +105,16 @@ RP2350_BIN    ?= third_party/nuttx/nuttx.uf2
 # the same here and build as the container root (mapped back to the host user).
 RP2350_RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(RP2350_IMAGE) -c
 
-rp2350: supervisor ## cross-build the RP2350 firmware -> third_party/nuttx/nuttx.uf2 [RP2350_CONFIG=...]
-	$(RUN) 'cd /src && ./test/nuttx-sim.sh deps'
-	$(RP2350_RUN) 'cd /src/third_party/nuttx && \
+rp2350: supervisor ## cross-build the RP2350 firmware -> third_party/nuttx/nuttx.uf2 [RP2350_CONFIG=... PROFILE=...]
+	$(RP2350_RUN) 'cd /src && ./test/nuttx-sim.sh deps && cd third_party/nuttx && \
 	    { [ -f .config ] || ./tools/configure.sh -a ../nuttx-apps $(RP2350_CONFIG); } && \
-	    make -j"$$(nproc)"'
+	    DEFS=""; \
+	    if [ -n "$(PROFILE)" ]; then \
+	      f=/src/cmake/profiles/$(PROFILE).cmake; \
+	      [ -f "$$f" ] || { echo "unknown profile '$(PROFILE)' (no $$f)" >&2; exit 1; }; \
+	      DEFS=$$(sed -nE "s/^[[:space:]]*set\(([A-Z_]+)[[:space:]]+([0-9]+).*/-D\1=\2/p" "$$f" | tr "\n" " "); \
+	    fi; \
+	    make -j"$$(nproc)" WANTED_RESOURCE_DEFINES="$$DEFS"'
 
 rp2350-flash: ## flash $(RP2350_BIN) over USB; put board in BOOTSEL first (hold BOOTSEL, tap RESET) [RP2350_BIN=...]
 	picotool load -x $(RP2350_BIN)
