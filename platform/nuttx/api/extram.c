@@ -32,9 +32,28 @@
 #define WANTED_EXTRAM_POOL_SIZE (3 * 1024 * 1024)
 #endif
 
+/* PSRAM cached window, per target - this file is shared across every NuttX
+ * board the engine runs on, and the two currently supported have PSRAM at
+ * unrelated addresses. This range was hardcoded to the ESP32's window
+ * everywhere, so on RP2350 every probe below always misses regardless of
+ * whether it actually landed in PSRAM - fixed here to the correct window
+ * (verified: an RP2350 PSRAM allocation genuinely returns an address in
+ * this range). Note this alone does not explain the large-allocation
+ * failure investigated in plans/wanted-sheriff-deputy-uart-transport.md's
+ * M4 status note - the size probes below still fail outright (not just
+ * address-mismatch) for 1 MiB+ requests even with this fix in place; kept
+ * because it is independently correct regardless. */
+#if defined(CONFIG_ARCH_CHIP_RP23XX)
+/* RP2350 Feather, CS1 cached window (see plans/wanted-engine-nuttx-rp2350.md
+ * M5 and research/rp2350-vs-esp32s3-psram-flash-coherency.md): 8 MB @
+ * 0x11000000. */
+#define PSRAM_LO 0x11000000u
+#define PSRAM_HI 0x11800000u
+#else
 /* ESP32 PSRAM cached window (CONFIG_HEAP2_BASE, 4 MB). */
 #define PSRAM_LO 0x3f800000u
 #define PSRAM_HI 0x3fc00000u
+#endif
 
 static struct mm_heap_s *g_extram;
 static uintptr_t
