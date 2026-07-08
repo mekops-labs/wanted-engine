@@ -12,9 +12,18 @@
 # trixie, so the build half needs no upstream tarball:
 #   - gcc-arm-none-eabi (14.2.rel1) + libnewlib-arm-none-eabi — the ARM
 #     bare-metal cross-compiler for the RP2350's dual Cortex-M33 (armv8-m.main).
-#   - picotool (2.1.1) — the NuttX rp23xx board build runs `picotool uf2 convert`
-#     as a post-link step to emit nuttx.uf2 (a pure file conversion, no USB), and
-#     it also flashes/inspects a BOOTSEL board over USB when a device is passed in.
+#   - picotool, built from source (github.com/raspberrypi/picotool, master) —
+#     the NuttX rp23xx board build runs `picotool uf2 convert` as a post-link
+#     step to emit nuttx.uf2, it flashes/inspects a BOOTSEL board over USB when
+#     a device is passed in, AND (the reason it's built from source rather than
+#     `apt install picotool`, which is stuck on 2.1.1) `picotool seal --sign`
+#     signs a firmware image entirely offline — no device, no OTP — for M6's
+#     signed-firmware pipeline (see plans/wanted-engine-nuttx-rp2350.md M6 and
+#     research/rp2350-secure-boot-signature-verification-without-otp.md).
+#     Needs pico-sdk checked out alongside it purely for headers, plus
+#     pico-sdk's `lib/mbedtls` submodule specifically (the only one initialized
+#     — the crypto backend picotool's signing/hashing links against; without it
+#     `seal --sign` silently has no signing support at all).
 #   - The NuttX kconfig + kbuild prerequisites (same set as the main image's sim
 #     build) plus cmake/ninja for the engine's CMake-driven pieces.
 #   - ccache, wired as a PATH masquerade for both the host and the arm-none-eabi
@@ -73,6 +82,12 @@ LABEL version="0.2.0"
 ARG PROBE_RS_VERSION=0.31.0
 # Raspberry Pi openocd fork ref carrying RP2350 support (default branch).
 ARG OPENOCD_REF=rpi-common
+# picotool release tag with `seal --sign` (added 2.0.0); apt's trixie build is
+# stuck on 2.1.1, which predates it entirely.
+ARG PICOTOOL_REF=2.3.0
+# pico-sdk tag matching PICOTOOL_REF — needed only for headers + the mbedtls
+# submodule picotool's signing links against, not to build any firmware.
+ARG PICO_SDK_REF=2.3.0
 # buildx sets TARGETARCH; fall back to the host arch for plain `podman build`.
 ARG TARGETARCH
 
@@ -96,8 +111,6 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     # provides the multilib archives + headers the NuttX link step references.
     gcc-arm-none-eabi \
     libnewlib-arm-none-eabi \
-    # picotool: NuttX rp23xx post-build `uf2 convert` step, and BOOTSEL flashing.
-    picotool \
     # Debug front-end + serial console (runtime libs for openocd/probe-rs are
     # pulled here so the openocd build layer can purge its -dev deps safely).
     gdb-multiarch \
@@ -154,7 +167,31 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     && make install \
     && cd / \
     && rm -rf /tmp/openocd \
-    # Drop the openocd build-deps while the dpkg state is still consistent.
+    # Build picotool from source (same layer as openocd, so it can reuse the
+    # same build-deps — pkg-config + libusb/hidapi/ftdi -dev — before they're
+    # purged below). pico-sdk is checked out purely for headers picotool's
+    # CMake reads at build time (never used to build firmware here); only its
+    # `lib/mbedtls` submodule is initialized, since that's the one dependency
+    # actually linked in (picotool's own CMakeLists.txt silently builds with
+    # `signing/hashing support: no` if `TARGET mbedtls` doesn't exist — this is
+    # NOT a hard configure error, so it's easy to get a picotool that builds
+    # fine but silently can't sign anything; confirmed this exact failure mode
+    # while validating this recipe). CCACHE_DISABLE=1: ccache's own cache dir
+    # permissions don't cooperate with a plain `cmake --build` invocation here.
+    && git clone --depth 1 --branch "${PICO_SDK_REF}" \
+       https://github.com/raspberrypi/pico-sdk.git /tmp/pico-sdk \
+    && git -C /tmp/pico-sdk submodule update --init --depth 1 lib/mbedtls \
+    && git clone --depth 1 --branch "${PICOTOOL_REF}" \
+       https://github.com/raspberrypi/picotool.git /tmp/picotool \
+    && mkdir -p /tmp/picotool/build && cd /tmp/picotool/build \
+    && PICO_SDK_PATH=/tmp/pico-sdk CCACHE_DISABLE=1 \
+       cmake -DCMAKE_BUILD_TYPE=Release .. \
+    && CCACHE_DISABLE=1 make -j"$(nproc)" \
+    && make install \
+    && cd / \
+    && rm -rf /tmp/picotool /tmp/pico-sdk \
+    # Drop the openocd + picotool build-deps while the dpkg state is still
+    # consistent.
     && apt-get purge -y \
        autoconf automake libtool pkg-config texinfo \
        libusb-1.0-0-dev libhidapi-dev libftdi1-dev libssl-dev \
