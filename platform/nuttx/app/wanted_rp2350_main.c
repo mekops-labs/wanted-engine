@@ -19,22 +19,30 @@
  * this shim does the same thing itself; skipping it leaves the engine with no
  * console fds at all (no crash, just total silence).
  *
- * Unlike wanted_esp32_main.c, this shim mounts no writable registry: the M2
- * baseline runs PSRAM-off with no installed wapps, and the QSPI-flash
- * LittleFS registry is a separate, later milestone. Selected via
+ * Unlike wanted_esp32_main.c, this shim mounts no writable registry itself:
+ * the LittleFS volume over the internal-flash MTD region (CONFIG_
+ * RP23XX_FLASH_MTD) is already mounted by board bring-up
+ * (rp23xx_common_bringup.c), before this shim ever runs. This shim only
+ * chdir's into it and seeds any bundled factory wapps, mirroring the ESP32
+ * shim's SD-card handling minus the mount. Selected via
  * CONFIG_INIT_ENTRYPOINT=wanted_rp2350_main; the NSH built-in entry stays
  * wanted_main. */
 
+#include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/boardctl.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <nuttx/usb/cdcacm.h>
 
 #include "boot-romfs.h" /* generated: boot_romfs_img[], boot_romfs_img_len */
+#include "debug_trace.h"
 
 #define ROMFS_MINOR 0
 #define ROMFS_SECTSIZE 512
@@ -44,7 +52,65 @@
 #define CDCACM_DEVMINOR 0
 #define CDCACM_DEVPATH "/dev/ttyACM0"
 
+/* Writable persistent registry storage: the LittleFS volume board bring-up
+ * already mounted over the internal-flash MTD region at
+ * CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT. Unlike the ESP32 (SD card, kept off
+ * internal SPI flash to dodge a flash/PSRAM cache-coherency bug), this M3
+ * baseline is PSRAM-off, so no such coexistence issue applies yet - flag for
+ * revisiting once PSRAM lands (see the flash-mtd driver plan's Risk 2). */
+#define REGISTRY_VOLUME CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT
+
 int wanted_main(int argc, char *argv[]);
+
+#define SEED_DIR                                                              \
+    ROMFS_MOUNTPT "/registry"   /* /rom/registry (bundled factory wapps) */
+#define REGISTRY_DIR "registry" /* relative to REGISTRY_VOLUME (chdir'd) */
+#define SEED_COPY_BUF 1024
+
+/* Copy one factory image from the read-only boot ROMFS into the writable
+ * registry. Best-effort: a failure just means that image is not installed. */
+static void seed_copy(const char *src, const char *dst) {
+    int in = open(src, O_RDONLY);
+    if (in < 0)
+        return;
+    int out = open(dst, O_WRONLY | O_CREAT | O_EXCL, 0644);
+    if (out < 0) {
+        close(in);
+        return;
+    }
+    char buf[SEED_COPY_BUF];
+    ssize_t n;
+    while ((n = read(in, buf, sizeof(buf))) > 0) {
+        if (write(out, buf, (size_t)n) != n)
+            break;
+    }
+    close(in);
+    close(out);
+}
+
+/* First-boot factory seed: copy any /rom/registry/*.wapp the firmware bundles
+ * into the writable registry, skipping ones already installed (O_EXCL). Lets
+ * a freshly-flashed board start its bundled wapps with no network; on later
+ * boots the persisted copies win and nothing is re-seeded. */
+static void seed_registry(void) {
+    DIR *d = opendir(SEED_DIR);
+    if (!d) {
+        DEBUG_TRACE("opendir(%s) failed: %s", SEED_DIR, strerror(errno));
+        return; /* no factory bundle */
+    }
+    mkdir(REGISTRY_DIR, 0755);
+    const struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        if (e->d_name[0] == '.')
+            continue;
+        DEBUG_TRACE("seeding %s", e->d_name);
+        char src[256], dst[256];
+        snprintf(src, sizeof(src), "%s/%s", SEED_DIR, e->d_name);
+        snprintf(dst, sizeof(dst), "%s/%s", REGISTRY_DIR, e->d_name);
+        seed_copy(src, dst);
+    }
+    closedir(d);
+}
 
 /* Bring up the USB-CDC console: connect the CDCACM class driver, then block
  * until a host terminal actually opens the port and sends a few carriage
@@ -120,6 +186,16 @@ int wanted_rp2350_main(int argc, char *argv[]) {
     }
 
     bring_up_usb_console();
+
+    /* Persist the registry on the LittleFS volume board bring-up already
+     * mounted at REGISTRY_VOLUME. Done after the console is up so any
+     * failure here is visible instead of silently lost. */
+    if (chdir(REGISTRY_VOLUME) < 0) {
+        perror("chdir " REGISTRY_VOLUME);
+    } else {
+        DEBUG_TRACE("chdir %s ok", REGISTRY_VOLUME);
+        seed_registry();
+    }
 
     int rc = wanted_main(argc, argv);
 
