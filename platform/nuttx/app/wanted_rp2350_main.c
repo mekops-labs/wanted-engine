@@ -36,6 +36,13 @@
  * reader that attaches even slightly late looks identical to "nothing was
  * ever sent".
  *
+ * Either way, the CDC-ACM class driver is connected regardless of which
+ * transport is the console: with UART0 as console, USB-CDC is still brought
+ * up (just not bound to fd 0-2), so a wapp can be granted a `serial://`
+ * socket onto CDCACM_DEVPATH - e.g. Sheriff's Deputy uplink, with UART0
+ * reserved for the debug console (see plans/wanted-sheriff-deputy-uart-
+ * transport.md in the mekops-kb).
+ *
  * Unlike wanted_esp32_main.c, this shim mounts no writable registry itself:
  * the LittleFS volume over the internal-flash MTD region (CONFIG_
  * RP23XX_FLASH_MTD) is already mounted by board bring-up
@@ -79,7 +86,7 @@
 
 int wanted_main(int argc, char *argv[]);
 
-#define SEED_DIR                                                              \
+#define SEED_DIR                                                               \
     ROMFS_MOUNTPT "/registry"   /* /rom/registry (bundled factory wapps) */
 #define REGISTRY_DIR "registry" /* relative to REGISTRY_VOLUME (chdir'd) */
 #define SEED_COPY_BUF 1024
@@ -129,13 +136,14 @@ static void seed_registry(void) {
     closedir(d);
 }
 
-#ifndef CONFIG_UART0_SERIAL_CONSOLE
-/* Bring up the USB-CDC console: connect the CDCACM class driver, then block
- * until a host terminal actually opens the port and sends a few carriage
- * returns (same handshake nsh_usbconsole.c uses) before binding it to fd
- * 0-2 - otherwise early engine output races the host terminal attaching and
- * is lost. */
-static void bring_up_usb_console(void) {
+/* Connect the CDCACM class driver so CDCACM_DEVPATH exists and is openable.
+ * Needed either way: as the console's own transport (below), or - when the
+ * console is on UART0 instead - so a wapp can still be granted a `serial://`
+ * socket onto it (e.g. Sheriff's Deputy uplink over USB-CDC, with UART0
+ * reserved for the debug console; see plans/wanted-sheriff-deputy-uart-
+ * transport.md). Idempotent to call once; NuttX doesn't expose a "already
+ * connected" query, so this shim only ever calls it the one time below. */
+static void connect_usb_cdcacm(void) {
     struct boardioc_usbdev_ctrl_s ctrl = {
         .usbdev = BOARDIOC_USBDEV_CDCACM,
         .action = BOARDIOC_USBDEV_CONNECT,
@@ -147,8 +155,17 @@ static void bring_up_usb_console(void) {
 
     if (boardctl(BOARDIOC_USBDEV_CONTROL, (uintptr_t)&ctrl) < 0) {
         perror("boardctl(USBDEV_CDCACM)");
-        return;
     }
+}
+
+#ifndef CONFIG_UART0_SERIAL_CONSOLE
+/* Bring up the USB-CDC console: connect the CDCACM class driver, then block
+ * until a host terminal actually opens the port and sends a few carriage
+ * returns (same handshake nsh_usbconsole.c uses) before binding it to fd
+ * 0-2 - otherwise early engine output races the host terminal attaching and
+ * is lost. */
+static void bring_up_usb_console(void) {
+    connect_usb_cdcacm();
 
     for (;;) {
         int fd;
@@ -204,7 +221,12 @@ int wanted_rp2350_main(int argc, char *argv[]) {
         perror("mount " ROMFS_MOUNTPT);
     }
 
-#ifndef CONFIG_UART0_SERIAL_CONSOLE
+#ifdef CONFIG_UART0_SERIAL_CONSOLE
+    /* Console is already on UART0 (CONFIG_DEV_CONSOLE bound fd 0-2 before
+     * this shim ran) - still connect CDC-ACM so a wapp can be granted a
+     * `serial://` socket onto it. */
+    connect_usb_cdcacm();
+#else
     bring_up_usb_console();
 #endif
 
