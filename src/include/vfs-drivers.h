@@ -16,8 +16,14 @@ enum vfs_socket_type_t {
     VFS_SKT_UDP,
     VFS_SKT_STCP,   /* secure tcp */
     VFS_SKT_SUDP,   /* secure udp */
-    VFS_SKT_SERIAL, /* raw char device (UART, USB-CDC...), e.g.
-                     * "serial:///dev/ttyACM0" - no port */
+    VFS_SKT_SERIAL, /* any point-to-point byte-stream device reachable as a
+                     * plain character device - UART, USB-CDC, or an ISM/LoRa
+                     * module's AT-command UART bridge - e.g.
+                     * "serial:///dev/ttyACM0" - no port. Assumes a reliable,
+                     * ordered byte stream: a raw packet-radio link with no
+                     * UART bridge (lossy, size-limited, no ordering
+                     * guarantee) needs a framing/retry layer on top of this,
+                     * not provided here. */
 };
 
 typedef vfs_driver_t *(*VfsInitFunction_t)(const wapp_t *wapp,
