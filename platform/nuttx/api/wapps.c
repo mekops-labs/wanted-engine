@@ -262,9 +262,20 @@ int PlatformWappStart(wapp_t *wapp) {
     state.threads[slot].status = STARTING;
     state.threads[slot].interrupted = 0;
 
-    startWorker((pthread_t *)&state.threads[slot].t,
-                (wapp_data_t *)&state.threads[slot].data,
-                wapp == WantedGetCurrentSupervisor());
+    int rc = startWorker((pthread_t *)&state.threads[slot].t,
+                         (wapp_data_t *)&state.threads[slot].data,
+                         wapp == WantedGetCurrentSupervisor());
+    if (rc != 0) {
+        /* pthread_create failed both attempts (see startWorker): leave no
+         * thread ever running to move the slot past STARTING. Free the slot
+         * for reuse and report the failure - the caller owns unloading
+         * `wapp` on a negative return, so this must not touch it further. */
+        state.threads[slot].status = NOT_STARTED;
+        state.threads[slot].data.wapp = NULL;
+        pthread_mutex_unlock(&state_mtx);
+        return -rc;
+    }
+
     pthread_detach(state.threads[slot].t);
     state.n++;
 
