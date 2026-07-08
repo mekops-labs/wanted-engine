@@ -10,14 +10,31 @@
  * mmap-based loader (platform/posix/wapps-image.c) copy the image into the
  * heap.
  *
- * The Feather's console is native USB-CDC, which (unlike a plain UART) is not
- * up at early boot and has no fd bound to it by the generic CONFIG_DEV_CONSOLE
- * path: nsh normally does this itself (apps/nshlib/nsh_usbconsole.c) via
- * BOARDIOC_USBDEV_CDCACM/CONNECT, then waits for a host terminal to actually
- * open the port before dup2'ing it onto fd 0-2. Since this shim replaces
- * nsh_main as the init entrypoint, nsh's own console bring-up never runs, so
- * this shim does the same thing itself; skipping it leaves the engine with no
- * console fds at all (no crash, just total silence).
+ * Console: the Feather's default `wanted` defconfig uses native USB-CDC,
+ * which (unlike a plain UART) is not up at early boot and has no fd bound to
+ * it by the generic CONFIG_DEV_CONSOLE path: nsh normally brings it up itself
+ * (apps/nshlib/nsh_usbconsole.c) via BOARDIOC_USBDEV_CDCACM/CONNECT, then
+ * waits for a host terminal to actually open the port before dup2'ing it onto
+ * fd 0-2. Since this shim replaces nsh_main as the init entrypoint, nsh's own
+ * console bring-up never runs, so this shim does the same thing itself;
+ * skipping it leaves the engine with no console fds at all (no crash, just
+ * total silence).
+ *
+ * A UART0 console is also supported, selected purely by CONFIG_
+ * UART0_SERIAL_CONSOLE (no WANTED-specific Kconfig needed): with that set,
+ * CONFIG_DEV_CONSOLE already binds fd 0-2 to UART0 before this shim runs
+ * (UART needs no enumeration/host handshake the way USB-CDC does), so
+ * bring_up_usb_console() is skipped entirely. Useful as a higher-throughput,
+ * more reliable transport for -DDEBUG=1 engine tracing than USB-CDC, whose
+ * throughput/capture reliability struggles under that volume - build with
+ * CONFIG_RP23XX_UART0=y + CONFIG_UART0_SERIAL_CONSOLE=y + CONFIG_DEV_CONSOLE=y
+ * and CDCACM_CONSOLE/NSH_USBCONSOLE unset, then read/write the Debug Probe's
+ * UART bridge tty (a second, separate /dev/ttyACMx from the board's own
+ * USB-CDC - identify both by USB descriptor, not device number). Start any
+ * capture *before* triggering reset/flash: boot console output is a one-time
+ * burst with no ongoing heartbeat once wsh reaches its idle prompt, so a
+ * reader that attaches even slightly late looks identical to "nothing was
+ * ever sent".
  *
  * Unlike wanted_esp32_main.c, this shim mounts no writable registry itself:
  * the LittleFS volume over the internal-flash MTD region (CONFIG_
@@ -112,6 +129,7 @@ static void seed_registry(void) {
     closedir(d);
 }
 
+#ifndef CONFIG_UART0_SERIAL_CONSOLE
 /* Bring up the USB-CDC console: connect the CDCACM class driver, then block
  * until a host terminal actually opens the port and sends a few carriage
  * returns (same handshake nsh_usbconsole.c uses) before binding it to fd
@@ -169,6 +187,7 @@ static void bring_up_usb_console(void) {
         return;
     }
 }
+#endif /* !CONFIG_UART0_SERIAL_CONSOLE */
 
 int wanted_rp2350_main(int argc, char *argv[]) {
     struct boardioc_romdisk_s desc = {
@@ -185,7 +204,9 @@ int wanted_rp2350_main(int argc, char *argv[]) {
         perror("mount " ROMFS_MOUNTPT);
     }
 
+#ifndef CONFIG_UART0_SERIAL_CONSOLE
     bring_up_usb_console();
+#endif
 
     /* Persist the registry on the LittleFS volume board bring-up already
      * mounted at REGISTRY_VOLUME. Done after the console is up so any
