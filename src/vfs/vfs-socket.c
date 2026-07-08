@@ -52,7 +52,7 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
     case VFS_SKT_UDP:
     case VFS_SKT_SUDP:
         return VFS_FILETYPE_SOCKET_DGRAM;
-    case VFS_SKT_UART:
+    case VFS_SKT_SERIAL:
         return VFS_FILETYPE_CHARACTER_DEVICE;
     default:
         return VFS_FILETYPE_UNKNOWN;
@@ -70,8 +70,8 @@ static bool schemeToType(const char *scheme, size_t len, uint8_t *type) {
         *type = VFS_SKT_UDP;
     else if (len == 4 && strncmp(scheme, "udps", 4) == 0)
         *type = VFS_SKT_SUDP;
-    else if (len == 4 && strncmp(scheme, "uart", 4) == 0)
-        *type = VFS_SKT_UART;
+    else if (len == 6 && strncmp(scheme, "serial", 6) == 0)
+        *type = VFS_SKT_SERIAL;
     else
         return false;
     return true;
@@ -90,7 +90,7 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     }
 
     /* The address is a URL "<scheme>://<host>:<port>"; the scheme picks the
-     * transport (tcp, tcps, udp, udps). */
+     * transport (tcp, tcps, udp, udps, serial). */
     const char *sep = strstr(options, "://");
     if (NULL == sep) {
         DEBUG_TRACE("socket address: missing scheme");
@@ -109,8 +109,8 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     }
 
     const char *host = sep + 3;
-    if (type == VFS_SKT_UART) {
-        /* "uart:///dev/ttyS1" - a bare device path, no port to parse. */
+    if (type == VFS_SKT_SERIAL) {
+        /* "serial:///dev/ttyACM0" - a bare device path, no port to parse. */
         size_t hostLen = strlen(host);
         if (hostLen == 0 || hostLen >= MAX_ADDR_LEN) {
             DEBUG_TRACE("socket address: bad device path");
