@@ -23,6 +23,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <malloc.h>
 
 #include <nuttx/mm/mm.h>
 
@@ -109,6 +110,19 @@ static void extram_init(void) {
     DEBUG_TRACE("extram: PSRAM heap @ %p (%u bytes)", pool, (unsigned)got);
 }
 
+/* Force the PSRAM grab as early in boot as possible. On RP2350 the merged
+ * SRAM+PSRAM heap (CONFIG_MM_REGIONS=2, one segregated-fit allocator) starts
+ * fragmenting the instant any other subsystem allocates - littlefs/ROMFS
+ * mount, registry seeding, etc. - which chips the one giant PSRAM free node
+ * into pieces well under 1 MiB long before extram_init()'s own multi-MB
+ * malloc() probes ever run, so every probe fails outright even though the
+ * *aggregate* free memory is still ~8 MiB (confirmed via mm_heapfree() vs.
+ * mm_heapfree_largest(): ~8.4 MiB free, ~456 KiB largest contiguous block,
+ * right before the probes start failing). Calling this before any other
+ * heap activity avoids the fragmentation entirely. Not needed on ESP32,
+ * whose PSRAM lives in its own separate heap_caps pool from boot. */
+void PlatformExtramEarlyInit(void) { extram_init(); }
+
 void *PlatformExtramMalloc(size_t size) {
     extram_init();
     return (g_extram != NULL) ? mm_malloc(g_extram, size) : malloc(size);
@@ -138,5 +152,6 @@ void *PlatformExtramRealloc(void *ptr, size_t size) {
     return realloc(ptr, size);
 }
 void PlatformExtramFree(void *ptr) { free(ptr); }
+void PlatformExtramEarlyInit(void) {}
 
 #endif /* __NuttX__ */

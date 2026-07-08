@@ -65,6 +65,7 @@
 
 #include <nuttx/usb/cdcacm.h>
 
+#include <platform.h>
 #include <wanted.h>
 
 #include "boot-romfs.h" /* generated: boot_romfs_img[], boot_romfs_img_len */
@@ -297,6 +298,12 @@ static void bring_up_usb_console(void) {
 #endif /* !CONFIG_UART0_SERIAL_CONSOLE */
 
 int wanted_rp2350_main(int argc, char *argv[]) {
+    /* Grab the PSRAM pool before anything else (littlefs/ROMFS mount,
+     * seed_registry file I/O) touches the shared heap and fragments its one
+     * big PSRAM free node - see PlatformExtramEarlyInit's doc comment and
+     * the M4 status note in plans/wanted-sheriff-deputy-uart-transport.md. */
+    PlatformExtramEarlyInit();
+
     struct boardioc_romdisk_s desc = {
         .minor = ROMFS_MINOR,
         .nsectors = (boot_romfs_img_len + ROMFS_SECTSIZE - 1) / ROMFS_SECTSIZE,
