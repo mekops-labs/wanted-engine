@@ -119,6 +119,9 @@ rp2350: supervisor ## cross-build the RP2350 firmware -> third_party/nuttx/nuttx
 rp2350-flash: ## flash $(RP2350_BIN) over USB; put board in BOOTSEL first (hold BOOTSEL, tap RESET) [RP2350_BIN=...]
 	picotool load -x $(RP2350_BIN)
 
+rp2350-sign: ## sign $(RP2350_BIN) and validate the signature offline (no OTP, no device) [RP2350_BIN=...]
+	$(RP2350_RUN) './test/rp2350-sign-verify.sh $(RP2350_BIN)'
+
 # docs-sync runs on the host, not in the build container: it only copies Markdown
 # (no toolchain needed) to the destination directory. Pass DOCS_DEST.
 docs-sync: ## sync docs/*.md to the MekOps Hugo blog (pass DOCS_DEST=<blog content dir>)
