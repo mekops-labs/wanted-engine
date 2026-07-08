@@ -71,6 +71,25 @@ TEST(vfs_socket_driver, Init_SecureUdp_RejectedWithoutSecureSupport) {
     TEST_ASSERT_NULL(VfsSocketInit(NULL, "udps://addr:1"));
 }
 
+TEST(vfs_socket_driver, Init_Uart_CharDeviceFiletype) {
+    drv = VfsSocketInit(NULL, "uart:///dev/ttyS1");
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_EQUAL_UINT8(VFS_FILETYPE_CHARACTER_DEVICE, drv->filetype);
+}
+
+TEST(vfs_socket_driver, Init_Uart_EmptyPath_ReturnsNull) {
+    TEST_ASSERT_NULL(VfsSocketInit(NULL, "uart://"));
+}
+
+TEST(vfs_socket_driver, Init_Uart_IgnoresColonInPath) {
+    /* A path with no port to parse - unlike tcp/udp, a trailing ":n" in a
+     * device path (unusual, but not disallowed) is just part of the path,
+     * not a port to extract. */
+    drv = VfsSocketInit(NULL, "uart:///dev/ttyS1:0");
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_EQUAL_UINT8(VFS_FILETYPE_CHARACTER_DEVICE, drv->filetype);
+}
+
 /* ── Open / OpenAt / Close ──────────────────────────────────────────────── */
 
 TEST(vfs_socket_driver, Open_AllocatesNetCtx) {
@@ -244,6 +263,9 @@ TEST_GROUP_RUNNER(vfs_socket_driver) {
     RUN_TEST_CASE(vfs_socket_driver, Init_BadScheme_ReturnsNull);
     RUN_TEST_CASE(vfs_socket_driver, Init_SecureTcp_RejectedWithoutSecureSupport);
     RUN_TEST_CASE(vfs_socket_driver, Init_SecureUdp_RejectedWithoutSecureSupport);
+    RUN_TEST_CASE(vfs_socket_driver, Init_Uart_CharDeviceFiletype);
+    RUN_TEST_CASE(vfs_socket_driver, Init_Uart_EmptyPath_ReturnsNull);
+    RUN_TEST_CASE(vfs_socket_driver, Init_Uart_IgnoresColonInPath);
     RUN_TEST_CASE(vfs_socket_driver, Open_AllocatesNetCtx);
     RUN_TEST_CASE(vfs_socket_driver, Open_OpenFailure_ReturnsEconnaborted);
     RUN_TEST_CASE(vfs_socket_driver, Open_WhenConnected_ReturnsZeroEarly);
