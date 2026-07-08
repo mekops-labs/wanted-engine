@@ -16,6 +16,7 @@ enum vfs_socket_type_t {
     VFS_SKT_UDP,
     VFS_SKT_STCP, /* secure tcp */
     VFS_SKT_SUDP, /* secure udp */
+    VFS_SKT_UART, /* raw serial device, e.g. "uart:///dev/ttyS1" - no port */
 };
 
 typedef vfs_driver_t *(*VfsInitFunction_t)(const wapp_t *wapp,
