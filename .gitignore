@@ -22,3 +22,7 @@ wapps/*/*.o
 utils/measure_structs
 platform/nuttx/app/boot-romfs.h
 wasm/registry-seed/
+
+# RP2350 M6 dev signing key (test/rp2350-sign-verify.sh) - generated locally,
+# never committed. A real production key would live outside this repo entirely.
+/keys/
