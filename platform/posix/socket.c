@@ -28,7 +28,7 @@ struct netCtx {
     bool secure;
 #endif
     int socket;
-    bool isUart; /* plain device fd: read()/write(), not recv()/send() */
+    bool isSerial; /* plain device fd: read()/write(), not recv()/send() */
 };
 
 void *PlatformNetOpen(int socket_type) {
@@ -37,7 +37,7 @@ void *PlatformNetOpen(int socket_type) {
 
     struct netCtx *netCtx;
 
-    if (socket_type == VFS_SKT_UART) {
+    if (socket_type == VFS_SKT_SERIAL) {
         /* The device path isn't known until PlatformNetConnect; defer the
          * real open() there. */
         netCtx = WantedMalloc(sizeof(struct netCtx));
@@ -46,7 +46,7 @@ void *PlatformNetOpen(int socket_type) {
         }
         memset(netCtx, 0, sizeof(struct netCtx));
         netCtx->socket = -1;
-        netCtx->isUart = true;
+        netCtx->isSerial = true;
         return netCtx;
     }
 
@@ -114,7 +114,7 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
         return -EINVAL;
     }
 
-    if (c->isUart) {
+    if (c->isSerial) {
         (void)port;
         int fd = open(hostname, O_RDWR | O_NOCTTY);
         if (fd < 0) {
@@ -202,7 +202,7 @@ int PlatformNetRecv(struct netCtx *c, void *buf, size_t nbyte, int flags) {
         return -EINVAL;
     }
 
-    if (c->isUart) {
+    if (c->isSerial) {
         (void)flags;
         if ((ret = (int)read(c->socket, buf, nbyte)) < 0) {
             return -errno;
@@ -232,7 +232,7 @@ int PlatformNetSend(struct netCtx *c, const void *buf, size_t nbyte,
         return -EINVAL;
     }
 
-    if (c->isUart) {
+    if (c->isSerial) {
         (void)flags;
         if ((ret = (int)write(c->socket, buf, nbyte)) < 0) {
             return -errno;
@@ -261,8 +261,8 @@ int PlatformNetAccept(struct netCtx *c) {
         return -EINVAL;
     }
 
-    if (c->isUart) {
-        /* A UART device fd has no listen/accept model. */
+    if (c->isSerial) {
+        /* A plain serial device fd has no listen/accept model. */
         return -ENOTSUP;
     }
 
@@ -289,7 +289,7 @@ int PlatformNetShutdown(struct netCtx *c, int how) {
         return -EINVAL;
     }
 
-    if (c->isUart) {
+    if (c->isSerial) {
         /* shutdown() isn't defined for a plain device fd; close() is what
          * actually ends the exchange, and the caller does that separately. */
         (void)how;
