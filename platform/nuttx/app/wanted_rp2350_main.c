@@ -65,6 +65,8 @@
 
 #include <nuttx/usb/cdcacm.h>
 
+#include <wanted.h>
+
 #include "boot-romfs.h" /* generated: boot_romfs_img[], boot_romfs_img_len */
 #include "debug_trace.h"
 
@@ -135,6 +137,94 @@ static void seed_registry(void) {
     }
     closedir(d);
 }
+
+/* Sheriff demo support (plans/wanted-sheriff-deputy-uart-transport.md in the
+ * mekops-kb): when CONFIG_SYSTEM_WANTED_BOOT_ROMFS_SUPERVISOR is "sheriff",
+ * this shim provisions Sheriff's identity and passes its own launch config
+ * instead of falling through to wanted_main()'s generic minimal default
+ * (which has no mounts/sockets at all - fine for wsh, since wsh's console is
+ * wired up separately above, but Sheriff needs a `platform` mount and a
+ * `manager` socket to even start).
+ *
+ * Identity provisioning mirrors the ESP-IDF port's one-off hardware-
+ * validation run (see the mekops-kb plan): Sheriff's on-disk identity format
+ * has no interactive way to write it (wsh's `write` command can't carry raw
+ * CBOR), so this shim writes the bytes directly with plain POSIX calls
+ * against the LittleFS volume - the same primitives seed_copy() above
+ * already uses, no VfsPlatformFsInit/WASI-preopen machinery needed since
+ * this code runs as plain NuttX C, not inside a wapp's sandbox.
+ *
+ * The pubkey below is a fixed demo key (Ed25519 pubkey for the all-0x11
+ * 32-byte seed already used as SHERIFF_E2E_SEED's default in
+ * wapps/sheriff/test/e2e-deputy.sh) - matches a Deputy instance started with
+ * `--signing-seed <the same all-0x11 hex>`, not a real provisioning flow. */
+#define SHERIFF_IDENTITY_DIR "sheriff/identity" /* under REGISTRY_VOLUME */
+#define SHERIFF_DEVICE_ID "rp2350-01"
+
+static const uint8_t sheriff_demo_pubkey[32] = {
+    0xd0, 0x4a, 0xb2, 0x32, 0x74, 0x2b, 0xb4, 0xab, 0x3a, 0x13, 0x68,
+    0xbd, 0x46, 0x15, 0xe4, 0xe6, 0xd0, 0x22, 0x4a, 0xb7, 0x1a, 0x01,
+    0x6b, 0xaf, 0x85, 0x20, 0xa3, 0x32, 0xc9, 0x77, 0x87, 0x37,
+};
+
+/* CBOR array(1)[map(2){0: key_id(1), 1: pubkey(bstr32)}] - matches
+ * identity.zig's on-disk format and harness.sh's Python-built envelope. */
+static void write_marshal_pubkeys(const char *path) {
+    static const uint8_t header[] = {0x81, 0xA2, 0x00, 0x01, 0x01, 0x58, 0x20};
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        DEBUG_TRACE("write %s failed: %s", path, strerror(errno));
+        return;
+    }
+    write(fd, header, sizeof(header));
+    write(fd, sheriff_demo_pubkey, sizeof(sheriff_demo_pubkey));
+    close(fd);
+}
+
+static void write_device_id(const char *path) {
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        DEBUG_TRACE("write %s failed: %s", path, strerror(errno));
+        return;
+    }
+    write(fd, SHERIFF_DEVICE_ID, strlen(SHERIFF_DEVICE_ID));
+    close(fd);
+}
+
+/* Idempotent to re-run every boot: O_TRUNC overwrites in place, no stale
+ * leftovers from a prior demo key. Run after chdir(REGISTRY_VOLUME), so
+ * these paths are relative to it, matching seed_registry()'s convention. */
+static void provision_sheriff_identity(void) {
+    mkdir("sheriff", 0755);
+    mkdir(SHERIFF_IDENTITY_DIR, 0755);
+    write_marshal_pubkeys(SHERIFF_IDENTITY_DIR "/marshal_pubkeys.cbor");
+    write_device_id(SHERIFF_IDENTITY_DIR "/device_id");
+    DEBUG_TRACE("sheriff identity provisioned under %s/" SHERIFF_IDENTITY_DIR,
+                REGISTRY_VOLUME);
+}
+
+/* `platform` mount: options carries `src=<real path>`, since the wapp-visible
+ * path (Sheriff's hardcoded ROOT_PATH, storage.zig) must stay "/var/lib/
+ * sheriff" while the real backing directory lives under the flash-MTD
+ * registry volume (REGISTRY_VOLUME "/" SHERIFF_IDENTITY_DIR's parent, i.e.
+ * REGISTRY_VOLUME "/sheriff") - there is no real "/var" on this board.
+ * "manager" is the one socket name Sheriff's engine-owned uplink looks for
+ * (sheriff/src/main.zig: MANAGER_SOCKET = "/net/manager") - the address here
+ * is what actually varies per deployment: serial:///dev/ttyACM0 on the
+ * RP2350 (no network stack; see plans/wanted-sheriff-deputy-uart-transport.md)
+ * versus tcp://... on Linux/ESP-IDF. */
+#define SHERIFF_CFG                                                            \
+    "{\"system\":{\"privileged\":true},"                                       \
+    "\"supervisor\":{\"params\":{"                                             \
+    "\"console\":{\"in\":{\"name\":\"platform\"},"                             \
+    "\"out\":{\"name\":\"platform\"},"                                         \
+    "\"err\":{\"name\":\"platform\"}},"                                        \
+    "\"drivers\":[{\"name\":\"wanted\"},{\"name\":\"sha256\"},"                \
+    "{\"name\":\"ed25519\"},{\"name\":\"inflate\"}],"                          \
+    "\"mounts\":[{\"name\":\"platform\",\"path\":\"/var/lib/sheriff\","        \
+    "\"options\":\"src=" REGISTRY_VOLUME "/sheriff\"}],"                       \
+    "\"sockets\":[{\"name\":\"manager\",\"address\":"                          \
+    "\"serial://" CDCACM_DEVPATH "\"}]}}}"
 
 /* Connect the CDCACM class driver so CDCACM_DEVPATH exists and is openable.
  * Needed either way: as the console's own transport (below), or - when the
@@ -233,14 +323,25 @@ int wanted_rp2350_main(int argc, char *argv[]) {
     /* Persist the registry on the LittleFS volume board bring-up already
      * mounted at REGISTRY_VOLUME. Done after the console is up so any
      * failure here is visible instead of silently lost. */
+    bool sheriffDemo = false;
     if (chdir(REGISTRY_VOLUME) < 0) {
         perror("chdir " REGISTRY_VOLUME);
     } else {
         DEBUG_TRACE("chdir %s ok", REGISTRY_VOLUME);
         seed_registry();
+        sheriffDemo =
+            strcmp(CONFIG_SYSTEM_WANTED_BOOT_ROMFS_SUPERVISOR, "sheriff") == 0;
+        if (sheriffDemo) {
+            provision_sheriff_identity();
+        }
     }
 
-    int rc = wanted_main(argc, argv);
+    int rc;
+    if (sheriffDemo) {
+        rc = WantedStart(SHERIFF_CFG, strlen(SHERIFF_CFG));
+    } else {
+        rc = wanted_main(argc, argv);
+    }
 
     /* Engine loop returned (supervisor drained / poweroff requested). Power the
      * board off so we don't idle in init; falls through if the config lacks
