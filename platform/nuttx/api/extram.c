@@ -27,6 +27,10 @@
 
 #include <nuttx/mm/mm.h>
 
+#if defined(CONFIG_RP23XX_PSRAM_HEAP_SEPARATE)
+#include <arch/chip/psram.h>
+#endif
+
 #include <debug_trace.h>
 
 #ifndef WANTED_EXTRAM_POOL_SIZE
@@ -74,6 +78,28 @@ static void extram_init(void) {
     if (g_extram_tried)
         return;
     g_extram_tried = true;
+
+#if defined(CONFIG_RP23XX_PSRAM_HEAP_SEPARATE)
+    /* PSRAM is its own independent mm_heap_s (see up_extraheaps_init() in
+     * rp23xx_heaps.c) - not merged with SRAM/flash-MTD's heap at all, unlike
+     * CONFIG_RP23XX_PSRAM_HEAP_SINGLE below. No malloc()-probe dance needed:
+     * the whole 8 MB region is already known and already initialized by the
+     * arch layer before this ever runs. Tried as an experiment
+     * (2026-07-09) to see whether the recurring PSRAM-corruption bug (see
+     * plans/wanted-sheriff-deputy-uart-transport.md's M4 status notes and
+     * research/rp2350-vs-esp32s3-psram-flash-coherency.md) is specific to
+     * the merged-heap model or a genuine hardware/driver issue independent
+     * of heap organization. */
+    g_extram = rp23xx_psram_heap();
+    if (g_extram != NULL) {
+        g_extram_lo = PSRAM_LO;
+        g_extram_hi = PSRAM_HI;
+        DEBUG_TRACE("extram: separate PSRAM heap @ %p", (void *)g_extram);
+    } else {
+        DEBUG_TRACE("extram: rp23xx_psram_heap() returned NULL");
+    }
+    return;
+#endif
 
     /* Grab as much PSRAM as possible from the common heap so almost no external
      * RAM is left there — the common heap then hands out internal RAM only,
@@ -179,7 +205,6 @@ void *PlatformExtramRealloc(void *ptr, size_t size) {
 }
 void PlatformExtramFree(void *ptr) { free(ptr); }
 void PlatformExtramEarlyInit(void) {}
-void PlatformExtramSaveHeader(void) {}
 void PlatformExtramRepairHeader(void) {}
 
 #endif /* __NuttX__ */
