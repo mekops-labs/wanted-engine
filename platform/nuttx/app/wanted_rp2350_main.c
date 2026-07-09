@@ -301,7 +301,14 @@ int wanted_rp2350_main(int argc, char *argv[]) {
     /* Grab the PSRAM pool before anything else (littlefs/ROMFS mount,
      * seed_registry file I/O) touches the shared heap and fragments its one
      * big PSRAM free node - see PlatformExtramEarlyInit's doc comment and
-     * the M4 status note in plans/wanted-sheriff-deputy-uart-transport.md. */
+     * the M4 status note in plans/wanted-sheriff-deputy-uart-transport.md.
+     * Tried moving this to run after seed_registry()/provision_sheriff_
+     * identity() instead (hypothesis: keep PSRAM "clean" through those flash
+     * writes, dodging the cache-coherency corruption below) - ruled out on
+     * hardware: extram_init()'s probes then fail outright (g_extram stays
+     * NULL, same fragmentation this early call exists to prevent), just
+     * trading the corruption hang for the original "allocate linear memory
+     * failed" failure. Keep this call first. */
     PlatformExtramEarlyInit();
 
     struct boardioc_romdisk_s desc = {
