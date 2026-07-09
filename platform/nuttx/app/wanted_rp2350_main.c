@@ -350,6 +350,11 @@ int wanted_rp2350_main(int argc, char *argv[]) {
         }
     }
 
+    /* All flash-program calls above are done; repair the heap header before
+     * the engine's first real allocation - see PlatformExtramRepairHeader's
+     * doc comment in platform.h. */
+    PlatformExtramRepairHeader();
+
     int rc;
     if (sheriffDemo) {
         rc = WantedStart(SHERIFF_CFG, strlen(SHERIFF_CFG));
