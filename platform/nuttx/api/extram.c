@@ -149,32 +149,6 @@ static void extram_init(void) {
  * whose PSRAM lives in its own separate heap_caps pool from boot. */
 void PlatformExtramEarlyInit(void) { extram_init(); }
 
-/* Mitigation, not a fix, for the RP2350 flash/PSRAM cache-coherency bug
- * (research/rp2350-vs-esp32s3-psram-flash-coherency.md; M4 status note in
- * plans/wanted-sheriff-deputy-uart-transport.md): a LittleFS flash-program
- * call (e.g. the first file create in a freshly-mkdir'd registry
- * subdirectory) has been observed to zero the extram heap's own mm_heap_s
- * header - embedded at the base of its pool. First tried reinitializing just
- * the mutex (mm_lock sits at the struct's start) since struct mm_heap_s is
- * opaque to application code (no sizeof/member access for a full backup/
- * restore) - that unblocks the deadlock but leaves mm_nodelist/mm_heapsize
- * zeroed too, so mm_malloc() then fails clean with ENOMEM instead of hanging
- * (progress, but not usable). Re-running mm_initialize() on the same pool
- * address/size instead fixes both: it re-links mm_nodelist, re-adds the one
- * big free region, and reinitializes the mutex, all via the same public call
- * extram_init() already uses - no struct-layout knowledge needed. Safe
- * because nothing legitimately allocates from this heap between
- * PlatformExtramEarlyInit() and the engine's first real allocation
- * (confirmed on hardware), so there's no live data to lose. Papers over the
- * symptom without the real fix (a cache-maintenance shim around the flash-
- * program path, which belongs in the flash-MTD driver, not here). */
-void PlatformExtramRepairHeader(void) {
-    if (g_extram != NULL) {
-        g_extram = mm_initialize("wanted-extram", (void *)g_extram_lo,
-                                  g_extram_hi - g_extram_lo);
-    }
-}
-
 void *PlatformExtramMalloc(size_t size) {
     extram_init();
     return (g_extram != NULL) ? mm_malloc(g_extram, size) : malloc(size);
@@ -205,6 +179,5 @@ void *PlatformExtramRealloc(void *ptr, size_t size) {
 }
 void PlatformExtramFree(void *ptr) { free(ptr); }
 void PlatformExtramEarlyInit(void) {}
-void PlatformExtramRepairHeader(void) {}
 
 #endif /* __NuttX__ */

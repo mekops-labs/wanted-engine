@@ -117,15 +117,6 @@ void PlatformExtramFree(void *ptr);
  * since PlatformExtramMalloc/Realloc already lazy-init on first use. */
 void PlatformExtramEarlyInit(void);
 
-/* Mitigation for the RP2350 flash/PSRAM cache-coherency bug (see the M4
- * status note in plans/wanted-sheriff-deputy-uart-transport.md in the KB):
- * a flash-program operation has been observed to zero (corrupting its
- * mutex) the extram pool's own heap header sometime after
- * PlatformExtramEarlyInit() runs. Call right before the engine's first real
- * PlatformExtramMalloc/Realloc call, after any flash-writing boot steps
- * (registry seeding, identity provisioning) have run. No-op elsewhere. */
-void PlatformExtramRepairHeader(void);
-
 /* Short identifier for the target the engine was built against ("linux",
  * "nuttx", "dummy"). Static storage; the caller must not free it. Exposed at
  * /proc/wanted so a wapp can read which platform hosts it. */
