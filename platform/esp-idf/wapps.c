@@ -308,8 +308,8 @@ void PlatformWappLoop(void) {
         if (supervisorOk) {
             supervisorFailures = 0;
             /* Supervisor reached RUNNING at least once this boot: the image
-             * is good. Confirms a PENDING_VERIFY slot (disarming the M4
-             * revert timer) and is a no-op once already confirmed. */
+             * is good. Confirms a PENDING_VERIFY slot and is a no-op once
+             * already confirmed. */
             if (!otaConfirmed) {
                 PlatformOtaConfirm();
                 otaConfirmed = true;

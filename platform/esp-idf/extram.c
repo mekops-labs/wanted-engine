@@ -2,8 +2,7 @@
 
 /* ESP-IDF PlatformExtram* backend: routes the engine's general allocator
  * (WantedMalloc, wanted_malloc.c) into PSRAM via heap_caps_malloc. Safe under
- * concurrent flash writes and never ISR-touched — see the M1 audit in
- * plans/wanted-engine-esp-idf-psram-allocator.md for the full routing table.
+ * concurrent flash writes and never ISR-touched.
  * A caller needing internal RAM (the hot-path vfs_ctx_t/wasi_ctx_t contexts)
  * calls malloc() directly instead of WantedMalloc(), per the existing
  * convention (wanted_malloc.c's own comment). */

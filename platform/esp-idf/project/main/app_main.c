@@ -175,13 +175,7 @@ static void fsSelftest(void) {
     ESP_LOGI(TAG, "fs: %s", ok ? "OK" : "FAIL");
 }
 
-/* Exercises the flash-partition registry (registry.c + registry_flash.c)
- * directly: install a synthetic image via the PlatformRegistryWrite state
- * machine, confirm it enumerates, load it back through
- * PlatformRegistryWappLoad (esp_partition_mmap zero-copy XIP) and byte-verify
- * the mapped bytes, unload, then remove and confirm it is gone. Handing the
- * mapped bytes to WAMR for real instantiation needs a loaded wapp — M7.
- */
+/* Exercises the flash-partition registry. */
 static void registrySelftest(void) {
     static const uint8_t payload[] =
         "esp-idf registry selftest payload -- flash-mapped XIP\n";
@@ -208,9 +202,7 @@ static void registrySelftest(void) {
     ESP_LOGI(TAG, "registry: list -> n=%d found=%d", n, found);
     ok = ok && found;
 
-    /* wapp_t (~10 KB with this profile's launch-config arrays) is heap-, not
-     * stack-, allocated — the main task's default stack does not have room
-     * for it (embedded-c standards, prefer heap over large stack locals). */
+    /* wapp_t is heap-allocated. */
     wapp_t *w = calloc(1, sizeof(*w));
     bool loaded = false;
     int loadRc = -ENOMEM;
@@ -248,17 +240,8 @@ static void registrySelftest(void) {
     ESP_LOGI(TAG, "registry: %s", ok ? "OK" : "FAIL");
 }
 
-/* Exercises platform/posix/socket.c (reused unmodified from the NuttX/Linux
- * platforms) to the extent possible without a live network interface: opening
- * and freeing a plain socket, and confirming a secure socket type is rejected
- * (SECURE_SOCKETS=0 here, so PlatformNetOpen's TLS branch returns NULL).
- * connect/send/recv need a routable interface — WiFi bring-up is M8.
- *
- * Requires esp_netif_init() (called once from app_main below) to have started
- * lwIP's internal tcpip thread first — plain socket() asserts
- * ("Invalid mbox") without it, even with no interface configured; the assert
- * fires inside lwIP's own socket layer before it ever needs a route.
- */
+/* Exercises socket layer without a live network interface.
+ * Requires esp_netif_init() to have started lwIP's tcpip thread. */
 static void socketSelftest(void) {
     bool ok = true;
 
@@ -276,40 +259,26 @@ static void socketSelftest(void) {
              stcp ? "non-NULL" : "NULL");
     ok = ok && (stcp == NULL);
 
-    ESP_LOGI(TAG, "socket: %s (connect/send/recv need a live interface — M8)",
+    ESP_LOGI(TAG, "socket: %s (connect/send/recv need a live interface)",
              ok ? "OK" : "FAIL");
 }
 
-/* M10: proves registry_flash.c's erase+program path (PlatformRegistryWrite)
- * is safe to call from one thread while a wapp's WASM executes from PSRAM on
- * the other core -- the concurrent-*write* case M0 (PSRAM churn vs. raw
- * flash *reads*) and M7 (concurrent flash *reads* from a second wapp launch)
- * did not cover. Runs a bounded number of install/load-verify/unload/remove
- * rounds on its own thread (default esp_pthread cfg -- internal-DRAM stack,
- * so PlatformRegistryWappLoad's own mmap-helper-thread handoff in
- * registry_flash.c is exercised exactly as it is from any other caller) so
- * the interactive wsh session has a window to start/stop a real wapp
- * alongside it. Not a network installer: the plan's "download" trigger is
- * folded into the Sheriff-integration item below -- a real fetch-and-stream
- * path belongs to Sheriff's reconcile loop (different chunking/retry needs),
- * not a one-off test harness here. This harness isolates the actual
- * open question -- is the flash write itself safe concurrently with a
- * running wapp -- from how the bytes get onto the device. */
-#define M10_ROUNDS 40
-#define M10_ROUND_DELAY_US 500000
+/* Proves PlatformRegistryWrite is safe to call while a wapp runs from PSRAM. */
+#define CONCURRENT_INSTALL_ROUNDS 40
+#define CONCURRENT_INSTALL_DELAY_US 500000
 
 static void *concurrentInstallSelftest(void *arg) {
     (void)arg;
     static const uint8_t payload[] =
-        "m10 concurrent-install payload -- proves erase+program is safe "
+        "concurrent-install payload -- proves erase+program is safe "
         "while a wapp runs from PSRAM on the other core\n";
     int pass = 0, fail = 0;
 
-    for (int i = 0; i < M10_ROUNDS; i++) {
+    for (int i = 0; i < CONCURRENT_INSTALL_ROUNDS; i++) {
         bool ok = true;
 
-        int w1 =
-            PlatformRegistryWrite(START_WRITE, "m10concurrent:v1", payload, 32);
+        int w1 = PlatformRegistryWrite(START_WRITE, "testconcurrent:v1",
+                                       payload, 32);
         int w2 = PlatformRegistryWrite(CONTINUE_WRITE, NULL, payload + 32,
                                        sizeof(payload) - 32);
         int fin = PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
@@ -319,7 +288,7 @@ static void *concurrentInstallSelftest(void *arg) {
         wapp_t *w = calloc(1, sizeof(*w));
         int loadRc = -ENOMEM;
         if (w != NULL) {
-            reg_entry_t query = {.name = "m10concurrent", .version = ""};
+            reg_entry_t query = {.name = "testconcurrent", .version = ""};
             loadRc = PlatformRegistryWappLoad(&query, w);
             ok = ok && (loadRc == 0) && (w->layer_cnt == 1) &&
                  (w->layer_lens[0] == sizeof(payload)) &&
@@ -331,7 +300,7 @@ static void *concurrentInstallSelftest(void *arg) {
             ok = false;
         }
 
-        reg_entry_t rmEntry = {.name = "m10concurrent", .version = "v1"};
+        reg_entry_t rmEntry = {.name = "testconcurrent", .version = "v1"};
         int rmRc = PlatformRegistryRemove(&rmEntry);
         ok = ok && (rmRc == 0);
 
@@ -339,21 +308,20 @@ static void *concurrentInstallSelftest(void *arg) {
             pass++;
         else
             fail++;
-        ESP_LOGI(
-            TAG, "m10: round %d/%d -> %s (w1=%d w2=%d fin=%d load=%d rm=%d)",
-            i + 1, M10_ROUNDS, ok ? "OK" : "FAIL", w1, w2, fin, loadRc, rmRc);
+        ESP_LOGI(TAG,
+                 "ci: round %d/%d -> %s (w1=%d w2=%d fin=%d load=%d rm=%d)",
+                 i + 1, CONCURRENT_INSTALL_ROUNDS, ok ? "OK" : "FAIL", w1, w2,
+                 fin, loadRc, rmRc);
 
-        usleep(M10_ROUND_DELAY_US);
+        usleep(CONCURRENT_INSTALL_DELAY_US);
     }
 
-    ESP_LOGI(TAG, "m10: concurrent-install selftest done: pass=%d fail=%d",
-             pass, fail);
+    ESP_LOGI(TAG, "ci: concurrent-install selftest done: pass=%d fail=%d", pass,
+             fail);
     return NULL;
 }
 
-/* M7/M8/M9 smoke-test fixtures, linked in via EMBED_FILES (see
- * main/CMakeLists.txt); ESP-IDF's standard symbol names for a
- * "<name>.wapp" embed. */
+/* Smoke-test fixtures linked via EMBED_FILES. */
 extern const uint8_t _binary_looper_wapp_start[];
 extern const uint8_t _binary_looper_wapp_end[];
 extern const uint8_t _binary_wifi_connect_wapp_start[];
@@ -361,11 +329,7 @@ extern const uint8_t _binary_wifi_connect_wapp_end[];
 extern const uint8_t _binary_devcheck_wapp_start[];
 extern const uint8_t _binary_devcheck_wapp_end[];
 
-/* Factory-seeds a wapp image into the flash registry under `name` so the
- * supervisor can start it via the ctl device with no host-side
- * control-plane connection — mirrors the NuttX ESP32 port's
- * seed_registry(). Safe to repeat every boot: registry_flash.c reuses the
- * name's existing slot rather than leaking a new one. */
+/* Factory-seeds a wapp into the flash registry. Safe to repeat every boot. */
 static void seedWapp(const char *name, const uint8_t *start,
                      const uint8_t *end) {
     size_t len = (size_t)(end - start);
@@ -375,20 +339,9 @@ static void seedWapp(const char *name, const uint8_t *start,
              (unsigned)len, w, fin);
 }
 
-/* Matches configs/example_config_wsh.json (minus imagePath — leaving that
- * empty falls back to SUPERVISOR_IMAGE_PATH, the embedded wsh tar; see
- * src/wanted.c's supervisor bootstrap and platform.c's PlatformWappLoad).
- * The engine's own compiled-in default (src/default_supervisor_cfg.json.h) is
- * NOT used here: it targets the Linux production sheriff supervisor
- * (mounts /var/lib/sheriff, a tcp://localhost:8888 socket) — neither exists
- * on this board, and the mount failed the supervisor launch (-EPERM) before
- * this config was written. */
-/* The USB-Serial/JTAG VFS console defaults to non-blocking reads ("used by
- * default", per usb_serial_jtag_vfs.h) — a wsh console read then sees no data
- * as an immediate EOF, so the interactive shell exits and gets respawned in a
- * loop instead of blocking for a command. Installing the driver and switching
- * the VFS to it makes fd 0 a normal blocking, interrupt-driven stream, same
- * as a real terminal on Linux/NuttX. */
+/* Supervisor config matches configs/example_config_wsh.json minus imagePath
+ * (defaults to SUPERVISOR_IMAGE_PATH, the embedded wsh tar).
+ * Sets console to blocking USB-Serial/JTAG mode. */
 static void consoleUseBlockingDriver(void) {
     usb_serial_jtag_driver_config_t cfg =
         USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
@@ -398,21 +351,9 @@ static void consoleUseBlockingDriver(void) {
     usb_serial_jtag_vfs_use_driver();
 }
 
-/* The "sockets" entries grant wapp-visible /net/s (plain) and /net/st (TLS)
- * connections to a fixed, well-known public IP (Cloudflare, ports 80/443) —
- * a stable, DNS-independent round-trip target for M6/M9. The engine wires
- * these up (VfsSocketInit) but only connects lazily on the wapp's own
- * open(), so granting them to the supervisor is safe even before WiFi
- * associates: they exercise the socket layer live once WiFi is up, entirely
- * from the interactive wsh session (write/cat against /net/s or /net/st), no
- * separate test wapp needed.
- *
- * The "log" mount at /logs is the current (0.8.0+) way to read another
- * wapp's captured stdout/stderr — per-wapp control nodes no longer carry a
- * log node directly (that's `/logs/<name>`, not `/dev/wanted/wapps/<name>/
- * log`, which docs/quickstart.md still shows stale). Reading
- * wifi-connect's captured output needs this to inspect its scan/connect
- * progress interactively. */
+/* Sockets entries grant /net/s (TCP) and /net/st (TLS) to Cloudflare
+ * (1.1.1.1:80/443) — a DNS-independent round-trip target. Log mount at
+ * /logs for reading wapp stdout/stderr. */
 #define WANTED_DEFAULT_CFG                                                     \
     "{\"system\":{\"privileged\":true},"                                       \
     "\"supervisor\":{\"params\":{"                                             \
@@ -437,9 +378,7 @@ void app_main(void) {
                  _binary_devcheck_wapp_end);
     }
 
-    /* Starts lwIP's tcpip thread; required before any socket() call. Brings
-     * up no interface by itself — the wifi driver (vfs-wifi.c) creates the
-     * station netif and starts the radio, lazily, on first use. */
+    /* Starts lwIP's tcpip thread; required before any socket() call. */
     esp_err_t netifErr = esp_netif_init();
     ESP_LOGI(TAG, "netif: init -> %s", netifErr == ESP_OK ? "OK" : "FAIL");
     if (netifErr == ESP_OK) {
@@ -447,14 +386,12 @@ void app_main(void) {
     }
     ESP_LOGI(TAG, "selftest done");
 
-    pthread_t m10Thread;
-    if (pthread_create(&m10Thread, NULL, concurrentInstallSelftest, NULL) ==
-        0) {
-        pthread_detach(m10Thread);
-        ESP_LOGI(TAG, "m10: concurrent-install selftest thread started");
+    pthread_t ciThread;
+    if (pthread_create(&ciThread, NULL, concurrentInstallSelftest, NULL) == 0) {
+        pthread_detach(ciThread);
+        ESP_LOGI(TAG, "ci: concurrent-install selftest thread started");
     } else {
-        ESP_LOGE(TAG,
-                 "m10: concurrent-install selftest thread failed to start");
+        ESP_LOGE(TAG, "ci: concurrent-install selftest thread failed to start");
     }
 
     int otaRc = PlatformOtaInit();

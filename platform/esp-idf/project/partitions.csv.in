@@ -2,8 +2,7 @@
 # ESP32-S3, 8 MB flash. Generated into partitions.csv by
 # components/wanted_engine/CMakeLists.txt (configure_file, @ONLY) from the
 # active OTA_PROFILE (platform/esp-idf/ota-profiles/*.cmake) -- do not edit
-# partitions.csv by hand, it is regenerated on every configure. See
-# plans/wanted-engine-esp-idf-ota.md's "Flash budget" for the derivation.
+# partitions.csv by hand, it is regenerated on every configure.
 #
 # ota_0 is placed immediately after the reserved 64 KiB region (bootloader +
 # partition table + nvs 24 KiB + phy_init 4 KiB, ending exactly on a 64 KiB

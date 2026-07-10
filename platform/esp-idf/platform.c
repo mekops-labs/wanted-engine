@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* Platform surface: the platform VFS driver table (wifi and ota are real —
- * see vfs/vfs-wifi.c and vfs/vfs-ota.c; gpio is a future milestone) and the
- * compiled-in (single-path) wapp loader for the default supervisor image.
+ * see vfs/vfs-wifi.c and vfs/vfs-ota.c) and the compiled-in (single-path)
+ * wapp loader for the default supervisor image.
  * The state-dir VFS driver (VfsPlatformFsInit) is real — see
  * vfs/vfs-esp-idf.c. Registry-driven load/unload (registry_flash.c) is
  * real. */
