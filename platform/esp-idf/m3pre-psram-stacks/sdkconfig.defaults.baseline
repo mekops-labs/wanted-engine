@@ -1,8 +1,0 @@
-# Baseline: coexistence mitigations OFF (ESP-IDF defaults, stated explicitly).
-# The cache is disabled during each SPI1 flash erase/program; the other CPU is
-# stalled into IRAM for the window. Establishes whether PSRAM-resident task
-# stacks survive that window without the S3 mitigations.
-CONFIG_SPIRAM_FETCH_INSTRUCTIONS=n
-CONFIG_SPIRAM_RODATA=n
-# CONFIG_SPIRAM_XIP_FROM_PSRAM is not set
-# CONFIG_SPI_FLASH_AUTO_SUSPEND is not set

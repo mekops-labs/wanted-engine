@@ -7,7 +7,6 @@ dependencies.lock
 managed_components/
 
 # Generated from partitions.csv.in by the OTA_PROFILE mechanism in
-# components/wanted_engine/CMakeLists.txt -- see
-# plans/wanted-engine-esp-idf-ota.md. Do not hand-edit; edit
+# components/wanted_engine/CMakeLists.txt. Do not hand-edit; edit
 # partitions.csv.in instead.
 partitions.csv

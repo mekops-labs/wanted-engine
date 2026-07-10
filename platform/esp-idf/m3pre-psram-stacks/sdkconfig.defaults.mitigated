@@ -1,5 +1,0 @@
-# Mitigated: coexistence mitigations ON — the production ESP-IDF config. Both
-# keep the cache enabled during an SPI1 flash operation, so a PSRAM-stacked task
-# on the other core keeps running instead of being stalled.
-CONFIG_SPIRAM_XIP_FROM_PSRAM=y
-CONFIG_SPI_FLASH_AUTO_SUSPEND=y

@@ -40,7 +40,7 @@ set(vendor_srcs
 # Platform layer. Core primitives, the wapp lifecycle, the registry, sockets,
 # and the extram (PSRAM) allocator are the real ESP-IDF implementations plus
 # the shared POSIX layer; subsystems not yet ported (crypto) remain dummy
-# stubs until their milestones.
+# stubs.
 set(platform_srcs
     # ESP-IDF core primitives + wapp lifecycle
     ${ENGINE}/platform/esp-idf/memory.c
@@ -53,8 +53,7 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/registry_flash.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-wifi.c
-    # PlatformOta* on esp_ota_ops + the /dev/ota VFS driver — see
-    # plans/wanted-engine-esp-idf-ota.md.
+    # PlatformOta* on esp_ota_ops + the /dev/ota VFS driver.
     ${ENGINE}/platform/esp-idf/ota.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-ota.c
     # Shared POSIX primitives (also compiled by the Linux/NuttX builds).
@@ -74,8 +73,7 @@ set(platform_srcs
     # is on by default for this SoC) -- unlike ECC/ECDSA, this chip has no
     # peripheral gap to work around.
     ${ENGINE}/platform/esp-idf/sha256.c
-    # PlatformExtram* routes WantedMalloc into PSRAM (heap_caps_malloc); see
-    # the M1 safety audit in plans/wanted-engine-esp-idf-psram-allocator.md.
+    # PlatformExtram* routes WantedMalloc into PSRAM (heap_caps_malloc).
     ${ENGINE}/platform/esp-idf/extram.c
     # Not-yet-ported subsystems
     ${ENGINE}/platform/dummy/dummy-crypto.c
@@ -93,11 +91,9 @@ include(${ENGINE}/cmake/profiles/${WANTED_PROFILE}.cmake)
 # ESP-IDF OTA flash-layout profile: couples MAX_WAPPS (overriding the
 # WANTED_PROFILE value above), WAPP_IMAGE_MAX_SLOTS (config-esp-idf.h
 # aliases it directly to MAX_WAPPS), and the generated partitions.csv from
-# one source -- the psram-allocator plan's M3 -ENOMEM bug was exactly these
-# values hand-edited out of sync. Two named profiles: s3-wapps (default,
-# MAX_WAPPS=20, max concurrency) and s3-storage (MAX_WAPPS=10, roomier
-# persist partition). Only MAX_WAPPS varies; slot size is fixed at 160 KiB
-# across both. See plans/wanted-engine-esp-idf-ota.md "Flash budget".
+# one source. Two named profiles: s3-wapps (default, MAX_WAPPS=20, max
+# concurrency) and s3-storage (MAX_WAPPS=10, roomier persist partition).
+# Only MAX_WAPPS varies; slot size is fixed at 160 KiB across both.
 if(NOT OTA_PROFILE)
     set(OTA_PROFILE "s3-wapps")
 endif()
@@ -132,8 +128,7 @@ endif()
 # Regenerated on every configure -- partitions.csv is a build artifact (like
 # sdkconfig from sdkconfig.defaults), not a hand-maintained file. Runs during
 # the cmake configure phase, strictly before the ninja build step that reads
-# CONFIG_PARTITION_TABLE_CUSTOM_FILENAME, so the ordering the plan calls out
-# to verify is satisfied by construction.
+# CONFIG_PARTITION_TABLE_CUSTOM_FILENAME.
 configure_file(
     ${ENGINE}/platform/esp-idf/project/partitions.csv.in
     ${ENGINE}/platform/esp-idf/project/partitions.csv

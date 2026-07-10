@@ -4,7 +4,7 @@
 # smoke-test fixtures: app_main.c factory-seeds them into the flash registry
 # at boot so the supervisor can start them without any host-side
 # control-plane connection. devcheck exercises /dev/sha256 (and /dev/inflate,
-# /dev/ed25519) with known-answer vectors from inside WASM — the M9 proof
+# /dev/ed25519) with known-answer vectors from inside WASM
 # that the hardware-backed PlatformSha256* seam produces a bit-correct digest
 # on real silicon, not just "doesn't crash". Prerequisite: `just wapps`, then
 # package each wapps/<name>/<name>.wasm per docs/quickstart.md into

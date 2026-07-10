@@ -3,15 +3,10 @@
 # Usage: cmake -C cmake/profiles/tiny.cmake -S . -B build
 #        make build PROFILE=tiny
 #
-# The floor profile, below "constrained". It targets a board with only the
-# ESP32's ~180 KB internal DRAM and NO external PSRAM: there is no heap to
-# extend, so both the engine's static .bss AND the runtime WASM allocations must
-# fit internal RAM alongside NuttX. Everything is squeezed — one concurrent wapp
-# beside the supervisor, minimal WASM stack/heap, a single linear page, and the
-# smallest launch-config slot table. Use this where the M11 heap-relocation is
-# not available; PSRAM boards should use "constrained" instead.
+# The floor profile, below "constrained". It targets a board without PSRAM.
+# Smallest launch-config slot table. PSRAM boards should use "constrained" instead.
 #
-# Measured footprint (`make sizes`, re-measured 2026-07-06 post M8-M10), LP64 / ILP32:
+# Measured footprint (`make sizes`), LP64 / ILP32:
 #   per-wapp structs  12.5 KB /  11.5 KB  (exact engine slot structures)
 #   per-wapp runtime  40.0 KB /  40.0 KB  (WASM stack + heap + worker stack + ~16 KB WAMR)
 #   max linear        64.0 KB             (WASM_MAX_MEMORY_PAGES=1 x 64 KiB)
