@@ -1,14 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF wapp registry index: enumerates the LittleFS "registry" directory.
- * Each entry is a small metadata file ("<name>@<version>.wapp", registry-
- * image.h's wapp_image_meta_t) rather than the image itself — the image bytes
- * live in the "wapps" raw flash partition (registry_flash.c). Enumeration
- * mirrors the NuttX platform's opendir/readdir + qsort approach (scandir is
- * avoided; its availability is not guaranteed across NuttX/ESP-IDF C
- * libraries), but reads each entry's real image size out of the metadata
- * record instead of the metadata file's own (tiny, uninformative) stat size.
- */
+/* ESP-IDF wapp registry index: enumerates the LittleFS "registry" directory. */
 
 #include <dirent.h>
 #include <errno.h>

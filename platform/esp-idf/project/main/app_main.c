@@ -1,20 +1,4 @@
-/*
- * ESP-IDF entry point for the WANTED engine.
- *
- * Exercises the ESP-IDF platform core primitives (name, memory stats, RNG,
- * monotonic clock + sleep, mutex), the platform VFS driver, the flash
- * registry, and lwIP sockets on-target, logging a pass/fail line each, then
- * seeds the "looper" and "wifi-connect" smoke-test fixtures into the
- * registry and hands off to WantedStart — the compiled-in wsh supervisor
- * (embedded via EMBED_FILES; see platform.c) boots and reads commands from
- * the USB-Serial/JTAG console. wifi-connect brings the radio up (M8) and is
- * driven with credentials supplied at runtime (its WIFI_SSID/WIFI_PASS
- * launch-config envs), never compiled in or persisted. A background thread
- * (M10, concurrentInstallSelftest) repeatedly installs/verifies/removes a
- * synthetic wapp image via the flash registry while the interactive session
- * runs a real wapp concurrently, proving flash writes are safe alongside
- * PSRAM-resident WASM execution, not just flash reads (M0/M7).
- */
+/* ESP-IDF entry point for the WANTED engine. */
 
 #include <errno.h>
 #include <inttypes.h>
@@ -87,10 +71,7 @@ static bool mountLittleFs(void) {
     return true;
 }
 
-/* Exercises the platform VFS driver (vfs-esp-idf.c) directly against the
- * mounted LittleFS partition: open/write/read/seek/fstat, mkdir, readdir, and
- * rename, plus PlatformOpenStateDir as the preopen root the driver's OpenAt
- * resolves against — the same path a wapp's WASI preopen takes. */
+/* Exercises the platform VFS driver. */
 static void fsSelftest(void) {
     bool ok = true;
 
@@ -134,10 +115,7 @@ static void fsSelftest(void) {
 
         drv->Close(drv->ctx, fileFd);
 
-        /* esp-idf's LittleFS fstat reads the on-disk directory entry, not the
-         * live handle's pending size (see vfs-esp-idf.c's _Stat comment), so
-         * a size check against fileFd here would see stale/zero data. Reopen
-         * to get a synced-on-close, on-disk view. */
+        /* esp-idf's LittleFS fstat reads on-disk directory entry. */
         int checkFd = drv->OpenAt(drv->ctx, rootFd, "hello.txt", VFS_O_RDONLY);
         vfs_stat_t st = {0};
         rc = (checkFd >= 0) ? drv->Stat(drv->ctx, checkFd, &st) : checkFd;

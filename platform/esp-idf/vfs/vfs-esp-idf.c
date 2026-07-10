@@ -1,22 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF platform VFS driver over esp_vfs (LittleFS-backed).
- *
- * esp_vfs is a path-based POSIX subset: it has no openat/mkdirat/renameat and
- * no fdopendir (confirmed against the ESP-IDF v5.3 vfs component — its
- * registration table offers only open/stat/rename/mkdir/opendir taking a
- * path, never a directory fd). The engine's VFS contract requires all of
- * those (OpenAt resolves relative to a previously-opened directory fd,
- * ReadDir takes only an fd), so this driver keeps its own open-handle table
- * mapping every fd it hands out back to an absolute path, and resolves
- * *at()-style calls by joining against that recorded path instead of asking
- * the kernel to do it. Regular files still get a real newlib fd (Read/Write/
- * Seek/Close/fstat go straight through it); directories get a synthetic id
- * above ESP_IDF_VFS_DIR_FD_BASE; ReadDir/Stat resolve those back to a path and
- * use opendir()/stat(). PlatformOpenStateDir's returned fd is registered in
- * the same table, since it is what the engine later passes to this driver's
- * OpenAt as the preopen base.
- */
+/* ESP-IDF platform VFS driver over esp_vfs (LittleFS-backed). */
 
 #include <dirent.h>
 #include <errno.h>
@@ -37,25 +21,13 @@
 #include <wanted-api.h>
 #include <wanted_malloc.h>
 
-/* Driver-private open-handle table size. Shared by every state-dir preopen
- * and every file/dir a wapp opens beneath one, across the whole engine — not
- * per-wapp, since PlatformOpenStateDir (called once per mount) and this
- * driver's Open/OpenAt (called per wapp file access) must resolve the same
- * fd space. */
+/* Driver-private open-handle table size. */
 #define ESP_IDF_VFS_MAX_OPEN 24
 
-/* Synthetic fd base for directory handles. Real newlib/esp_vfs fds stay small
- * (bounded by CONFIG_LWIP_MAX_SOCKETS + CONFIG_VFS_ fd table size), so this is
- * comfortably out of range. */
+/* Synthetic fd base for directory handles. */
 #define ESP_IDF_VFS_DIR_FD_BASE 0x10000
 
-/* Console stdio fds (0/1/2). VfsRegister wires the "platform" console driver
- * straight to these native fd numbers without ever calling this driver's Open
- * (src/vfs/vfs.c: "platform drivers use drv_fd directly as the native fd") —
- * so they never enter the open-handle table below and must bypass it, exactly
- * as the Linux platform driver does (it keeps no table at all and calls
- * read/write/fstat on any fd directly). esp_vfs_console registers these at
- * startup independent of this driver. */
+/* Console stdio fds (0/1/2). */
 #define ESP_IDF_VFS_STDIO_FD_MAX 3
 
 typedef struct {
@@ -70,9 +42,7 @@ typedef struct {
 static esp_vfs_open_t g_open[ESP_IDF_VFS_MAX_OPEN];
 static pthread_mutex_t g_openLock = PTHREAD_MUTEX_INITIALIZER;
 
-/* Caller must hold g_openLock. canRead/canWrite are irrelevant for a
- * directory slot (Read/Write reject any fd >= ESP_IDF_VFS_DIR_FD_BASE before
- * consulting them). */
+/* Caller must hold g_openLock. */
 static int recordOpenLocked(const char *path, bool isDir, int fdIn,
                             bool canRead, bool canWrite) {
     int slot = -1;
@@ -154,9 +124,7 @@ int PlatformOpenStateDir(const char *path, bool readonly) {
             return rc;
     }
 
-    /* esp_vfs has no O_DIRECTORY open to validate against, so check
-     * existence/type explicitly — a missing or non-directory path must fail
-     * the same way a real open(O_DIRECTORY) would. */
+    /* esp_vfs has no O_DIRECTORY open to validate against. */
     struct stat st;
     if (stat(path, &st) < 0)
         return -errno;
@@ -287,9 +255,7 @@ static int _Destroy(struct vfs_driver_t *d) {
     return 0;
 }
 
-/* ESP-IDF's runtime dirent only ever populates DT_UNKNOWN/DT_REG/DT_DIR — the
- * other DT_* constants exist in the header for libstdc++ but no registered
- * filesystem emits them. */
+/* ESP-IDF's runtime dirent only populates DT_UNKNOWN/DT_REG/DT_DIR. */
 static inline vfs_filetype_t convertDirtype(uint8_t t) {
     switch (t) {
     case DT_REG:
@@ -302,9 +268,7 @@ static inline vfs_filetype_t convertDirtype(uint8_t t) {
 }
 
 /* Opens `path` (already absolute, already root-joined) and records it in the
- * open-handle table. A directory open resolves via stat() and a synthetic id
- * — esp_vfs's open() does not reliably support O_DIRECTORY on a registered
- * filesystem. */
+ * open-handle table. */
 static int espOpen(const char *path, vfs_oflags_t flags) {
     if ((flags & VFS_O_DIRECTORY) != 0) {
         if ((flags & VFS_O_CREAT) != 0) {

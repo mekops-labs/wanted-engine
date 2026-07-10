@@ -1,30 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF binding of the shared PlatformOta* seam (platform/include/
- * platform.h) to the ESP-IDF native OTA subsystem (esp_ota_ops + bootloader
- * app-rollback, CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE) -- the ESP-IDF half of
- * plans/wanted-engine-esp-idf-ota.md; NuttX binds the same seam to MCUboot
- * instead (plans/wanted-engine-nuttx-ota.md). Slots are reported as 'a'/'b'
- * regardless of which esp_partition_subtype_t (OTA_0/OTA_1) backs them, so
- * the wapp-facing /dev/ota wire format matches the NuttX platform's
- * byte-for-byte.
- *
- * The revert timer that closes ESP-IDF's "no reboot -> no auto-revert" gap
- * (a new image that boots but never reaches a running supervisor) is armed
- * here, in PlatformOtaInit, and disarmed by PlatformOtaConfirm.
- *
- * Helper-thread indirection: esp_ota_ops calls that touch the OTA app
- * partitions (ota_0/ota_1, which are cache-mapped for XIP, unlike the plain
- * "wapps" data partition registry_flash.c manages) transiently freeze the
- * flash cache, which asserts the calling task's own native stack is not in
- * PSRAM (esp_cache_utils.c's s_task_stack_is_sane_when_cache_frozen) --
- * confirmed on-target: every wapp worker thread's stack lives in PSRAM
- * (platform/esp-idf/wapps.c), so the ordinary "a wapp opens /dev/ota" path
- * crashes with that exact assert. registry_flash.c hit the equivalent
- * problem for esp_partition_mmap and fixed it with a dedicated
- * internal-DRAM-stacked helper thread that proxies the sensitive calls; the
- * same fix applies here, generalised to every esp_ota_* entry point rather
- * than just mmap. */
+/* ESP-IDF binding of the shared PlatformOta* seam to the ESP-IDF native OTA
+ * subsystem (esp_ota_ops + bootloader app-rollback). Slots are reported as
+ * 'a'/'b' regardless of underlying partition subtype */
 
 #include <errno.h>
 #include <pthread.h>

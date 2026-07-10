@@ -1,14 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* ESP-IDF wapp image storage: a raw flash partition ("wapps", partitions.csv)
- * holding WAPP_IMAGE_MAX_SLOTS fixed-size, erase-sector-aligned slots. Each
- * install writes its TAR bytes directly into a slot (no RAM staging copy);
- * PlatformRegistryWappLoad exposes the stored bytes zero-copy via
- * esp_partition_mmap into the cached flash window — the read path the M0
- * coexistence experiment proved safe alongside a running wapp's dirty PSRAM.
- * The LittleFS registry index (registry.c) tracks which slot and byte length
- * each install occupies via a wapp_image_meta_t record; slot allocation scans
- * those records rather than keeping a separate persistent free-list. */
+ * holding WAPP_IMAGE_MAX_SLOTS fixed-size, erase-sector-aligned slots. */
 
 #include <dirent.h>
 #include <errno.h>
@@ -29,22 +22,6 @@
 
 static inline size_t min(size_t a, size_t b) { return (a) > (b) ? (b) : (a); }
 
-/* esp_partition_mmap/munmap reconfigure the flash cache's MMU mapping, which
- * requires briefly freezing the cache; ESP-IDF asserts that the CALLING
- * task's own native stack is not in PSRAM at that moment
- * (esp_cache_utils.c's s_task_stack_is_sane_when_cache_frozen, which reads
- * only the current core's stack pointer — other tasks' stacks are irrelevant
- * since the other core is stalled for the duration). Every wapp worker
- * thread's stack lives in PSRAM (Path B, platform/esp-idf/wapps.c), so a
- * wapp that starts another wapp — the ordinary "start" control-plane path —
- * calls PlatformRegistryWappLoad on its own PSRAM-stacked thread and hits
- * this assert. A dedicated helper thread with a plain (internal-DRAM,
- * esp_pthread's default) stack proxies just the mmap/munmap calls so the
- * caller's PSRAM stack is never live during the frozen window.
- * esp_partition_erase_range/write/read (PlatformRegistryWrite/ReadImage) do
- * not touch this check and are called directly, as already exercised from
- * multiple thread contexts by the M0/M3pre reproducers and M5's own
- * selftest. */
 typedef struct {
     bool isMmap;
     const esp_partition_t *part;
