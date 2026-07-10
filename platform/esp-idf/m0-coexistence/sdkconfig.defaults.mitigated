@@ -1,4 +1,0 @@
-# Mitigated: coexistence mitigations ON. Both are required for ESP-IDF to keep
-# the cache enabled during an SPI1 flash operation.
-CONFIG_SPIRAM_XIP_FROM_PSRAM=y
-CONFIG_SPI_FLASH_AUTO_SUSPEND=y

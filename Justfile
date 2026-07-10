@@ -151,13 +151,18 @@ clean:
 # All blocking lint checks.
 lint: lint-format lint-shell
 
-# Reject any formatting drift (clang-format config in .clang-format).
+# Reject any formatting drift (clang-format config in .clang-format). Prunes
+# ESP-IDF's own build/vendored dirs under platform/esp-idf/project/ (build/,
+# managed_components/, .cache/ — gitignored, not our source; idf.py downloads
+# and regenerates them, so linting them is both wrong and non-reproducible).
 lint-format:
-    find {{src_dirs}} \( -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
+    find {{src_dirs}} \( -name build -o -name 'build.*' -o -name managed_components -o -name .cache \) -prune -o \( -name '*.c' -o -name '*.h' \) -print0 \
+        | xargs -0 clang-format --dry-run --Werror
 
 # Reformat the tree in place (developer helper; not run in CI).
 format-fix:
-    find {{src_dirs}} \( -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
+    find {{src_dirs}} \( -name build -o -name 'build.*' -o -name managed_components -o -name .cache \) -prune -o \( -name '*.c' -o -name '*.h' \) -print0 \
+        | xargs -0 clang-format -i
 
 # Lint shell scripts. error severity only for now; ratchet down over time.
 lint-shell:
@@ -180,11 +185,20 @@ tidy: tidy-build
         $(python3 -c "import json,os; print('\n'.join(sorted({os.path.relpath(e['file']) for e in json.load(open('{{tidy_build_dir}}/compile_commands.json')) if os.path.relpath(e['file']).startswith(('src/','platform/linux/','cmd/'))})))")
 
 # cppcheck does its own parsing, so it covers every platform without a build.
+# Excludes ESP-IDF's own downloaded/generated build/managed_components/.cache
+# dirs (idf.py-owned, not our source — same reasoning as lint-format's prune).
 cppcheck:
+    #!/bin/sh
+    set -e
+    excludes=""
+    for d in $(find platform/esp-idf -type d \( -name build -o -name managed_components -o -name .cache \) 2>/dev/null); do
+        excludes="$excludes -i$d"
+    done
     cppcheck --enable=warning,style,performance,portability \
         --suppress=missingIncludeSystem --suppress=normalCheckLevelMaxBranches \
         --inline-suppr --error-exitcode=1 \
         -I include -I src/include -I platform/include \
+        $excludes \
         src platform cmd
 
 # gcc -fanalyzer: deep but slow/verbose — run out-of-band, not on every push.

@@ -7,13 +7,17 @@
 # all three profiles read in parallel; on this target the static slot table and
 # per-instance WASM stack/heap are kept deliberately tight.
 #
+# MAX_WAPPS bounds the supervisor too — MAX_WAPPS=3 means 2 concurrent user wapps
+# alongside the supervisor.
+
 # Measured footprint (`make sizes`), LP64 / ILP32:
-#   per-wapp structs  17.5 KB /  16.6 KB  (exact engine slot structures)
+#   per-wapp structs  17.7 KB /  16.7 KB  (exact engine slot structures)
 #   per-wapp runtime  96.0 KB /  96.0 KB  (WASM stack + heap + worker stack + ~16 KB WAMR)
 #   max linear        64.0 KB             (WASM_MAX_MEMORY_PAGES=1 x 64 KiB)
 #   engine overhead    9.5 KB /   9.5 KB  (wantedConfig_t)
-#   worst case       542.1 KB / 539.3 KB  (overhead + MAX_WAPPS x per-wapp)
+#   worst case       542.5 KB / 539.5 KB  (overhead + MAX_WAPPS x per-wapp)
 # WAMR overhead is approximate; excludes the per-image writable module copy.
+
 set(MAX_WAPPS              3    CACHE STRING "Max concurrent wapp instances")
 set(WASM_STACK_SIZE        8192 CACHE STRING "Per-instance WAMR stack (bytes)")
 set(WASM_HEAP_SIZE         8192 CACHE STRING "Per-instance WAMR heap (bytes)")

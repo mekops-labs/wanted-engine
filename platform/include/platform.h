@@ -50,6 +50,20 @@ int PlatformEd25519Verify(const uint8_t pubkey[PLATFORM_ED25519_KEY_LEN],
                           const uint8_t sig[PLATFORM_ED25519_SIG_LEN],
                           const uint8_t *msg, size_t msgLen);
 
+/* Streaming SHA-256 (FIPS 180-4), offloaded to hardware where available.
+ * Unlike PlatformEd25519Verify there is no -ENOSYS path: /dev/sha256
+ * (src/vfs/vfs-sha256.c) has no other digest source, so a platform with no
+ * crypto peripheral runs a portable software implementation
+ * (platform/posix/sha256.c) instead of declining the request — every
+ * platform must provide a real backend. New returns NULL only on
+ * allocation failure. */
+#define PLATFORM_SHA256_DIGEST_LEN 32
+
+void *PlatformSha256New(void);
+void PlatformSha256Update(void *ctx, const uint8_t *data, size_t len);
+void PlatformSha256Final(void *ctx, uint8_t out[PLATFORM_SHA256_DIGEST_LEN]);
+void PlatformSha256Free(void *ctx);
+
 /* Opaque cross-platform mutex. src/ must not call native threading directly,
  * so shared state (e.g. the inter-wapp pipe store) guards itself through these.
  * Lock/Unlock/Free tolerate a NULL handle so callers need not special-case an
@@ -157,5 +171,48 @@ int PlatformNetSend(void *ctx, const void *buf, size_t nbyte, int flags);
 int PlatformNetAccept(void *ctx);
 int PlatformNetShutdown(void *ctx, int how);
 int PlatformNetFree(void *ctx);
+
+/* A/B firmware OTA (dual-slot bootloader-level update + rollback). Shared
+ * seam across every platform that can back it with a real bootloader
+ * (ESP-IDF's native esp_ota_ops A/B slots, NuttX/MCUboot's image trailer) --
+ * a platform without one (Linux, dummy) provides stubs that report a single
+ * always-confirmed slot and reject write attempts.
+ *
+ * Slots are always named 'a' (the first physical app slot -- ESP-IDF's
+ * ota_0) and 'b' (the second -- ota_1), so the wapp-facing /dev/ota wire
+ * text is identical across platforms regardless of which bootloader backs
+ * it. */
+typedef struct {
+    char active_slot;      /* 'a' or 'b': the slot currently running */
+    bool confirmed;        /* active_slot is marked good; no rollback armed */
+    bool pending_swap;     /* the inactive slot is scheduled to run on the
+                            * next boot (commit issued, reboot not yet
+                            * observed) */
+    char last_failed_slot; /* 'a', 'b', or '\0' if no slot has ever failed */
+    int boot_attempts;     /* boot attempts recorded for active_slot */
+} platform_ota_state_t;
+
+/* Read the current boot state (running slot + otadata/trailer state of both
+ * slots) into an engine-global OTA context. Called once at startup, before
+ * PlatformWappLoop starts the supervisor. */
+int PlatformOtaInit(void);
+/* Mark the active slot good, disarming any pending rollback. Idempotent --
+ * a no-op if the slot is already confirmed or no OTA is pending. */
+int PlatformOtaConfirm(void);
+int PlatformOtaGetBootState(platform_ota_state_t *out);
+/* Erase the inactive slot and open it for a streaming image write. */
+int PlatformOtaBeginWrite(void);
+/* Write `len` bytes at the current write cursor into the inactive slot.
+ * -EPERM if BeginWrite has not been called or Commit already issued. */
+int PlatformOtaWrite(const uint8_t *buf, size_t len);
+/* Finalise the write: validate the image, schedule the inactive slot to run
+ * on the next boot (still unconfirmed until PlatformOtaConfirm). A
+ * malformed image is rejected with -EBADMSG and the boot partition is left
+ * unchanged. */
+int PlatformOtaCommit(void);
+/* Explicitly revert to the other slot. May reboot the board as part of the
+ * call rather than merely scheduling the revert for next boot -- the caller
+ * must not assume control returns. */
+int PlatformOtaRollback(void);
 
 #endif /* PLATFORM_H */

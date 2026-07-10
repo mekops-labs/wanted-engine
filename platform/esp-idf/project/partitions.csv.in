@@ -1,0 +1,21 @@
+# A/B (ota_0/ota_1) partition table template for the WANTED engine on
+# ESP32-S3, 8 MB flash. Generated into partitions.csv by
+# components/wanted_engine/CMakeLists.txt (configure_file, @ONLY) from the
+# active OTA_PROFILE (platform/esp-idf/ota-profiles/*.cmake) -- do not edit
+# partitions.csv by hand, it is regenerated on every configure.
+#
+# ota_0 is placed immediately after the reserved 64 KiB region (bootloader +
+# partition table + nvs 24 KiB + phy_init 4 KiB, ending exactly on a 64 KiB
+# boundary) so it needs no alignment padding; ota_1 follows it directly and
+# is itself 64 KiB-aligned because @OTA_SLOT_KB@ KiB is a multiple of 64.
+# otadata/persist/wapps (all "data" type, page-granular alignment) come
+# after both app slots, so neither takes an alignment-padding tax.
+#
+# Name,     Type, SubType,  Offset,   Size,  Flags
+nvs,        data, nvs,      0x9000,   0x6000,
+phy_init,   data, phy,      0xf000,   0x1000,
+ota_0,      app,  ota_0,    0x10000,  @OTA_SLOT_KB@K,
+ota_1,      app,  ota_1,    ,         @OTA_SLOT_KB@K,
+otadata,    data, ota,      ,         0x2000,
+persist,    data, littlefs, ,         @OTA_PERSIST_KB@K,
+wapps,      data, 0x40,     ,         @OTA_WAPPS_KB@K,
