@@ -1,21 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* ESP-IDF OTA VFS driver, exposed to a wapp as a text control node plus a
- * binary image sink -- the same wire contract as the NuttX platform's
- * vfs-ota.c (plans/wanted-engine-nuttx-ota.md's "VFS Interface Design"), so
- * the wapp-facing API does not diverge across platforms:
- *
- *   /dev/ota       read  -> status text block (active_slot/status/
- *                           pending_slot/last_failed_slot/boot_attempts)
- *                  write -> one command per call: "begin", "commit",
- *                           "confirm", "rollback"
- *   /dev/ota/slot  write-only binary sink for the new image; -EPERM before
- *                  "begin" or after "commit"
- *
- * `ota` is a launch-config singleton like `wifi` -- a wapp without
- * {"name":"ota"} in its drivers[] has no /dev/ota node at all (the grant
- * mechanism is generic; nothing OTA-specific is needed here for that).
- */
+ * binary image sink. */
 
 #include <errno.h>
 #include <stdbool.h>

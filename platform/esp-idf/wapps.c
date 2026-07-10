@@ -1,24 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF platform wapp lifecycle.
- *
- * Threading mirrors the Linux/NuttX platforms: one detached pthread per wapp,
- * one slot per wapp. Two ESP-IDF specifics:
- *
- *  - Worker stacks live in PSRAM, not internal RAM. ESP-IDF forces
- *    pthread/xTaskCreate stacks into scarce internal DRAM by default; setting
- *    esp_pthread_cfg_t.stack_alloc_caps to MALLOC_CAP_SPIRAM moves them to the
- *    8 MB PSRAM, so the wapp count is not bounded by internal RAM. The S3's
- *    flash auto-suspend keeps this coherent under concurrent flash operations.
- *
- *  - Stop is cooperative: PlatformWappStop sets the per-instruction terminate
- *    flag (WantedWappTerminate) so wasm_runtime_call_wasm returns false at the
- *    next instruction boundary; the worker then unwinds through WA_threadEnd.
- *    There is no signal-based wakeup of a worker blocked in a host call —
- *    ESP-IDF signal delivery to a task is unreliable — so a wapp parked in a
- *    blocking host call (a read on an empty pipe, a long sleep) terminates only
- *    once that call returns; a wapp executing wasm terminates promptly.
- */
+/* ESP-IDF platform wapp lifecycle. */
 
 #include <errno.h>
 #include <pthread.h>

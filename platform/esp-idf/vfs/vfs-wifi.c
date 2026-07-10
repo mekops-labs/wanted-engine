@@ -1,22 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF WiFi station driver, exposed to a wapp as a text command/status
- * node — the same wire contract as the NuttX platform's vfs-wifi.c, so the
- * wapp-facing API does not diverge across platforms:
- *   write "scan"                  -> blocking scan; following reads stream
- *                                    one "<ssid> <bssid> <rssi>\n" line per
- *                                    AP, then EOF
- *   write "connect <ssid> <pass>" -> associate (open or WPA2-PSK) and run
- *                                    DHCP
- *   write "disconnect"            -> drop the association
- *   read (no pending scan)        -> one status line: "disconnected\n" or
- *                                    "connected <ssid> <ip>\n"
- *
- * Connection state is process-global (module-static), driven by ESP-IDF's
- * WIFI_EVENT/IP_EVENT handlers, rather than copied into each driver
- * instance: the radio is one shared resource regardless of how many wapp
- * opens exist, unlike the per-fd scan buffer below.
- */
+/* ESP-IDF WiFi station driver. */
 
 #include <errno.h>
 #include <stdbool.h>
