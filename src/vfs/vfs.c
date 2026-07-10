@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "vfs-internal.h"
@@ -14,7 +15,6 @@
 #include <vfs-procfs.h>
 #include <vfs-tarfs.h>
 #include <vfs.h>
-#include <wanted_malloc.h>
 
 /* Stateless prefix router on top of a single typed-FD table.
  *
@@ -302,7 +302,11 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
 vfs_ctx_t VfsInit(void) {
     struct vfs_ctx_t *c;
 
-    c = (struct vfs_ctx_t *)WantedMalloc(sizeof(*c));
+    /* Internal RAM, not WantedMalloc: the fd/mount/devfs/netfs/procfs tables
+     * here are dereferenced on every VFS call a running wapp makes, so this
+     * stays off the (slower on ESP-IDF) PSRAM allocator even where one is
+     * configured. */
+    c = (struct vfs_ctx_t *)malloc(sizeof(*c));
     if (!c)
         return c;
 
@@ -431,7 +435,7 @@ void VfsDestroy(vfs_ctx_t *c) {
     if ((*c)->tarfs)
         TarFsDestroy((*c)->tarfs);
 
-    WantedFree(*c);
+    free(*c);
     *c = NULL;
 }
 

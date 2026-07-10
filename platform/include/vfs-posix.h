@@ -35,6 +35,16 @@ static inline vfs_filetype_t convertFiletype(uint32_t t) {
     }
 }
 
+/* O_DSYNC/O_RSYNC (synchronised I/O) are absent from esp-idf's newlib
+ * fcntl.h — fall back to 0 (no-op bit) so this shared header compiles on
+ * every platform target. */
+#ifndef O_DSYNC
+#define O_DSYNC 0
+#endif
+#ifndef O_RSYNC
+#define O_RSYNC 0
+#endif
+
 static inline int convertVfsFlags(vfs_oflags_t f) {
     int flags =
         ((f & VFS_O_CREAT) ? O_CREAT : 0) |

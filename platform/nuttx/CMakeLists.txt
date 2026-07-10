@@ -11,6 +11,7 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/posix/registry-store.c
     ${CMAKE_SOURCE_DIR}/platform/posix/socket.c
     ${CMAKE_SOURCE_DIR}/platform/posix/wapps-image.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/sha256.c
     api/wapps.c
     api/crypto.c
     api/memory.c
