@@ -21,9 +21,9 @@
 
 #ifdef __NuttX__
 
+#include <malloc.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <malloc.h>
 
 #include <nuttx/mm/mm.h>
 
