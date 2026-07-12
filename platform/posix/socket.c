@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include <debug_trace.h>
@@ -120,6 +121,26 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
         if (fd < 0) {
             return -errno;
         }
+
+        /* The engine opens a serial:// socket fresh for every request/response
+         * round (Sheriff's connection-per-fetch model). Put the line into raw
+         * mode so an HTTP byte stream is delivered verbatim (no canonical line
+         * buffering, no CR/LF translation, VMIN=1 so read() blocks for at least
+         * one byte), and flush any bytes left in the RX buffer from a prior
+         * round: without this a partially-drained or late-arriving previous
+         * response desyncs the next fetch, which then reads a headers-mid-stream
+         * fragment with no HTTP status line and fails to parse. Best-effort —
+         * a port that doesn't support termios (a pty in the host tests) just
+         * keeps its default discipline. */
+        struct termios tio;
+        if (tcgetattr(fd, &tio) == 0) {
+            cfmakeraw(&tio);
+            tio.c_cc[VMIN] = 1;
+            tio.c_cc[VTIME] = 0;
+            (void)tcsetattr(fd, TCSANOW, &tio);
+        }
+        (void)tcflush(fd, TCIFLUSH);
+
         c->socket = fd;
         return 0;
     }
