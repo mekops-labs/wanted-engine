@@ -46,16 +46,25 @@ static inline vfs_filetype_t convertFiletype(uint32_t t) {
 #endif
 
 static inline int convertVfsFlags(vfs_oflags_t f) {
-    int flags =
-        ((f & VFS_O_CREAT) ? O_CREAT : 0) |
-        ((f & VFS_O_DIRECTORY) ? O_DIRECTORY : 0) |
-        ((f & VFS_O_EXCL) ? O_EXCL : 0) | ((f & VFS_O_TRUNC) ? O_TRUNC : 0) |
-        ((f & VFS_O_APPEND) ? O_APPEND : 0) |
-        ((f & VFS_O_NONBLOCK) ? O_NONBLOCK : 0) |
-        ((f & VFS_O_DSYNC) ? O_DSYNC : 0) | ((f & VFS_O_SYNC) ? O_SYNC : 0) |
-        ((f & VFS_O_RSYNC) ? O_RSYNC : 0) | ((f & VFS_O_RDWR) ? O_RDWR : 0) |
-        ((f & VFS_O_WRONLY) ? O_WRONLY : 0) |
-        ((f & VFS_O_RDONLY) ? O_RDONLY : 0);
+    int flags = ((f & VFS_O_CREAT) ? O_CREAT : 0) |
+                ((f & VFS_O_DIRECTORY) ? O_DIRECTORY : 0) |
+                ((f & VFS_O_EXCL) ? O_EXCL : 0) |
+                ((f & VFS_O_TRUNC) ? O_TRUNC : 0) |
+                ((f & VFS_O_APPEND) ? O_APPEND : 0) |
+                ((f & VFS_O_NONBLOCK) ? O_NONBLOCK : 0) |
+                ((f & VFS_O_DSYNC) ? O_DSYNC : 0) |
+                ((f & VFS_O_SYNC) ? O_SYNC : 0) |
+                ((f & VFS_O_RSYNC) ? O_RSYNC : 0);
+
+    /* Access mode is a 2-bit value (VFS_O_RDONLY==0, then WRONLY, RDWR), not
+     * three independent flags: because VFS_O_RDONLY is 0 it can never be OR'd
+     * in, so read-only must be the default. On Linux/newlib O_RDONLY==0 hid
+     * this — a missing access bit still reads — but on NuttX O_RDONLY==(1<<0),
+     * so a missing bit opens the file with no read permission and read() then
+     * fails with EACCES. Select the access mode explicitly. */
+    flags |= (f & VFS_O_RDWR)      ? O_RDWR
+             : (f & VFS_O_WRONLY)  ? O_WRONLY
+                                   : O_RDONLY;
 
     return flags;
 }
