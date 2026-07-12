@@ -1,14 +1,23 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.9.0 (unreleased)
+------------------
 
 ### Added
 
+- **ESP-IDF platform port (ESP32-S3).** Re-established after being dropped in the WAMR migration (MDR-0015): a native `app_main` port with a flash-backed LittleFS registry, octal PSRAM, A/B firmware OTA via `esp_ota_ops`, and mbedTLS secure sockets using the ESP32-S3 hardware crypto (currently `MBEDTLS_SSL_VERIFY_NONE` — encrypted but unauthenticated).
+- **NuttX on RP2350 hardware (Adafruit Feather RP2350).** A flash-MTD LittleFS registry on the internal QSPI flash, 8 MB PSRAM merged into one heap, and a real `PlatformEd25519Verify` backend (vendored `orlp/ed25519`, since NuttX's mbedTLS has no Ed25519). Board configs `adafruit-feather-rp2350:{wanted,sheriff}`; the flash-MTD driver cleans the XIP cache and saves/restores the QMI CS1 registers around every flash op so a write can't corrupt PSRAM.
+- **`serial://` socket scheme.** A device-path socket (in place of `host:port`) that lets a wapp drive a UART or USB-CDC as a byte stream — used for the Sheriff↔Deputy control-plane link on a board with no network stack. Its full reconcile loop (State Report → Ed25519-verified signed Desired State → wapp `RUNNING`, with tampered state rejected) is verified on the RP2350 Feather over USB-CDC.
 - `sha256` driver: `/dev/sha256`, a streaming digest device — writes feed message bytes, reads return the digest as 64 hex characters. Two concurrent streams per wapp.
-- `ed25519` driver: `/dev/ed25519`, a signature-verification device — the wapp writes public key (32 B) + signature (64 B) + message (≤64 KiB) and reads back an `ok`/`fail` verdict. Backed by the new platform seam symbol `PlatformEd25519Verify` (OpenSSL on Linux; reads fail with `-ENOSYS` on a build without a crypto backend).
+- `ed25519` driver: `/dev/ed25519`, a signature-verification device — the wapp writes public key (32 B) + signature (64 B) + message (≤64 KiB) and reads back an `ok`/`fail` verdict. Backed by the new platform seam symbol `PlatformEd25519Verify` (OpenSSL on Linux, `orlp/ed25519` on NuttX; reads fail with `-ENOSYS` on a build without a crypto backend, e.g. the current ESP-IDF port).
 - `inflate` driver: `/dev/inflate`, a streaming gzip decompression device — a 4-byte LE size prefix, then the gzip member in any chunking; reads drain the decompressed output, trailer CRC32/length validated. The 32 KiB DEFLATE window lives in engine memory, not the wapp's. Vendors uzlib 2.9.5 (decompressor + checksums only).
+- `make rp2350-flash-swd` / `rp2350-reset`: flash or reset a running RP2350 board over SWD via a Raspberry Pi Debug Probe (no BOOTSEL).
+
+### Fixed
+
+- `convertVfsFlags`: a read-only VFS open now emits an explicit host access mode instead of relying on `O_RDONLY == 0`, fixing `read()` returning `EACCES` on NuttX (where `O_RDONLY` is `1 << 0`) — which had silently broken every file read through a WASI preopen there.
+- `serial://` sockets: the device is put in raw mode and its RX buffer flushed on open, fixing a request/response framing desync over USB-CDC that made the client read a mid-stream response fragment.
 
 0.8.0 (2026-06-29)
 ------------------
