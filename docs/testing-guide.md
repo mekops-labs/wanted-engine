@@ -11,7 +11,7 @@ The engine has three test tiers, each catching a different class of failure. All
 | Suite | Command | Scope |
 |-------|---------|-------|
 | Unit (ctest) | `just test` | C unit tests: VFS, TarFS, WASI, registry, API parsing |
-| In-WASM selftest | `just selftest` / `just nuttx-selftest` | 29 functional + robustness scenarios from inside WASM; TAP |
+| In-WASM selftest | `just selftest` / `just nuttx-selftest` | The functional + robustness scenario suite, run from inside WASM; TAP |
 | Smoke | `just smoke-engine` | The production sheriff supervisor instantiates cleanly |
 
 ## Unit suite (ctest)
@@ -20,7 +20,7 @@ The engine has three test tiers, each catching a different class of failure. All
 just test                    # full suite
 ```
 
-Each `test/test-*.c` file is one group exercising a subsystem directly in C: `test-vfs*` (router, mount table, ops, the per-namespace drivers), `test-tarfs` (layer merge, whiteouts), `test-pipe`, `test-procfs`, `test-platform-clock` / `test-platform-registry`, `test-vfs-wanted-*` (control-plane drivers), `test-api`. Tests are built into one `tests` binary and registered with CTest per group, so you can run one:
+Each `test/test-*.c` file is one group exercising a subsystem directly in C: `test-vfs*` (router, mount table, ops, and the per-namespace drivers — including the `sha256`/`ed25519`/`inflate` offload devices and the `log` mount), `test-tarfs` (layer merge, whiteouts), `test-pipe`, `test-procfs` / `test-procfs-wapps`, `test-platform-clock` / `test-platform-registry`, `test-vfs-wanted-*` (control-plane drivers), `test-wasm-meta` (the wasm `(memory)`-section parser), `test-vendor-ed25519` (the vendored verifier against RFC 8032 vectors), `test-api`. Tests are built into one `tests` binary and registered with CTest per group, so you can run one:
 
 ```bash
 cd build && ctest -R test-tarfs --output-on-failure
@@ -39,11 +39,15 @@ The suite covers four categories:
 | VFS / namespace | Path normalisation, read-only TarFS, parent-traversal denial, `/proc` access, control-plane enumeration |
 | Inter-wapp IPC | A two-wapp `/dev/pipe` round-trip: `preader` blocks while `pwriter` writes from a separate namespace |
 | Concurrency and stop | `looper` running alongside the supervisor, stopped via the control plane; stop of a dead or unknown wapp |
+| Observability | The `observer` reference wapp: granted a `log` mount and `/proc/wapps` but **not** the control plane — it enumerates the fleet and tails logs while every control-plane access is denied (observe-without-control) |
+| Args / env / volumes / memory | `argv`/`environ` delivery (`argenv`), instance-vs-image resolution (`duplex`), private/shared volume semantics (`volcheck`), the per-wapp linear-memory cap (`bigmem`, `biginit`) |
 | Negative / robustness | Trap containment (`trapper`), CPU runaway (`cpuhog`), memory exhaustion (`membomb`), stack overflow (`stackbomb`), blocking-syscall stop (`blocker`, `pblock`), sandbox-escape denial (`escaper`), fd-table bounds (`fdhog`), crash-loop stability (`crasher`), and a malformed-image battery (no `app.wasm` entrypoint, invalid WASM, truncated TAR) |
 
 Each scenario is a small purpose-built wapp under `wapps/` that the supervisor launches and then checks via the control plane — a misbehaving wapp must be contained without taking down the engine or its neighbours.
 
 A companion recipe, `just syscontrol` (Linux) / `just nuttx-syscontrol` (sim), runs `test/syscontrol.sh`, which drives the `wsh` supervisor through poweroff / reboot / exit and asserts the engine-process lifecycle the in-WASM suite cannot observe — including that a respawned supervisor keeps a working console.
+
+A standalone script, `test/devcheck.sh`, boots the `devcheck` wapp as the supervisor and round-trips the `sha256` / `ed25519` / `inflate` offload devices end to end (WASI → VFS → driver), powering the engine off after one pass.
 
 ## Smoke test
 
@@ -67,12 +71,13 @@ The suite is the reference for how to drive the control plane from a wapp; new p
 
 ## Continuous integration
 
-GitLab CI (`.gitlab-ci.yml`) runs:
+GitLab CI (`.gitlab-ci.yml`) runs the same `just` recipes you run locally:
 
-- **`build-gcc` / `build-clang`** — the engine under both compilers; **`build-wsh`** the debug-supervisor build; **`build-coverage`** the instrumented build.
-- **`unit-test-gcc` / `unit-test-clang`** — the ctest suite under each; **`coverage`** reports it.
-- **`integration-tests`** — the selftest + smoke suites on Linux.
-- **`nuttx-integration-tests`** — the engine built as a NuttX built-in, running `smoke-engine` + selftest on the sim.
+- **`build-gcc` / `build-clang`** — the engine under both compilers; **`build-wsh`** the debug-supervisor build; **`build-sheriff`** the production supervisor from the `wapps/sheriff` submodule; **`build-nuttx`** the sim build.
+- **`unit-test-gcc` / `unit-test-clang`** — the ctest suite under each; **`coverage`** the instrumented build + report.
+- **`integration-tests`** — `smoke-engine` + `selftest` + `syscontrol` on Linux.
+- **`nuttx-selftest` / `nuttx-syscontrol`** — the same selftest and system-control suites on the NuttX sim, built in-job from a clean tree.
+- **Static analysis** — `format-check`, `shell-check`, `clang-tidy`, `cppcheck`, `semgrep`, `trivy`.
 
 ## See also
 
