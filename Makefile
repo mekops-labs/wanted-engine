@@ -85,23 +85,19 @@ esp32-flash: ## flash third_party/nuttx/nuttx.bin to the board [ESP32_PORT=/dev/
 	    third_party/nuttx/nuttx.bin
 
 # --- RP2350 firmware (real hardware) --------------------------------------
-# Cross-build the NuttX firmware for the Adafruit Feather RP2350 in the ARM
+# Cross-builds the NuttX firmware for the Adafruit Feather RP2350 in the ARM
 # Cortex-M33 toolchain container ($(RP2350_IMAGE), from
 # docker/Containerfile.rp2350; distinct from the sim's $(IMAGE)). The engine app
 # is linked into nuttx-apps by `nuttx-sim.sh deps` (shared with the sim); the
 # boot ROMFS bakes the wsh supervisor, so `supervisor` is a prerequisite. The
-# rp23xx board POSTBUILD runs `picotool uf2 convert` (picotool is in the image;
-# CONFIG_RP23XX_UF2_BINARY is default-y) -> third_party/nuttx/nuttx.uf2.
+# rp23xx board POSTBUILD runs `picotool uf2 convert` -> third_party/nuttx/nuttx.uf2.
 #
-# RP2350_CONFIG defaults to the stock `raspberrypi-pico-2:usbnsh` — console over
-# native USB CDC, i.e. the same /dev/ttyACM0 cable — so the
-# container->build->uf2->flash->console pipeline is validatable on the Feather
-# with an off-the-shelf config. The WANTED board variants:
+# WANTED board variants:
 #   make rp2350 RP2350_CONFIG=adafruit-feather-rp2350:wanted            # wsh supervisor
 #   make rp2350 RP2350_CONFIG=adafruit-feather-rp2350:sheriff PROFILE=small  # Sheriff over USB-CDC
 # The `sheriff` config puts the console on UART0 (Debug Probe) and frees the
 # native USB-CDC for the Sheriff<->Deputy link; flash it over SWD with
-# `rp2350-flash-swd` (no BOOTSEL) and watch the console on the Probe's UART.
+# `rp2350-flash-swd` and watch the console on the Probe's UART.
 RP2350_IMAGE  ?= localhost/wanted-rp2350
 RP2350_CONFIG ?= raspberrypi-pico-2:usbnsh
 RP2350_BIN    ?= third_party/nuttx/nuttx.uf2
@@ -111,10 +107,9 @@ RP2350_RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(RP2
 
 # openocd (RPi fork, shipped in $(RP2350_IMAGE)) driving the board over SWD via a
 # Raspberry Pi Debug Probe (CMSIS-DAP). Needs raw USB access, hence --privileged
-# + /dev/bus/usb; the repo is mounted so `program` can read the ELF. This is the
-# no-BOOTSEL path — it flashes or resets a *running* board without the hold-
-# BOOTSEL/tap-RESET dance picotool requires, which is what makes iterative
-# RP2350 hardware dev practical (the ELF, not the .uf2, is what openocd flashes).
+# + /dev/bus/usb; the repo is mounted so `program` can read the ELF. Flashes or
+# resets a *running* board over SWD, no BOOTSEL needed (the ELF, not the .uf2,
+# is what openocd flashes).
 RP2350_ELF     ?= third_party/nuttx/nuttx
 RP2350_OPENOCD = $(RUNNER) run --rm --privileged -v /dev/bus/usb:/dev/bus/usb \
     -v "$(CURDIR):/src:Z" --entrypoint=/usr/local/bin/openocd $(RP2350_IMAGE) \

@@ -1,27 +1,25 @@
 # WANTED Engine — RP2350 (RISC-V Hazard3) NuttX build + on-hardware debug image.
 #
 # Sibling of docker/Containerfile.rp2350 (ARM Cortex-M33), targeting the RP2350's
-# other on-die core: the RISC-V Hazard3. Same physical chip, same board (the
-# Adafruit Feather RP2350 has both cores on-silicon; which one boots is an image/
-# OTP selection, not a hardware difference) — this image only swaps the ARM
-# cross-compiler for a RISC-V one and reuses everything else (kconfig/kbuild,
+# other on-die core: the RISC-V Hazard3. Same physical chip, same board — which
+# core boots is an image/OTP selection, not a hardware difference. Swaps the
+# ARM cross-compiler for a RISC-V one; reuses everything else (kconfig/kbuild,
 # picotool, the debug half) unchanged from Containerfile.rp2350.
 #
-#   - gcc-riscv64-unknown-elf (14.2.0, Debian trixie) — despite the package name,
-#     this is a multilib bare-metal `-elf` toolchain: `-march=rv32imac...` at
-#     compile time targets the 32-bit Hazard3, not riscv64. Confirmed to support
-#     the Zba/Zbb/Zbs/Zbkb/Zcb/Zcmp extensions NuttX's rp23xx-rv Kconfig selects
-#     (CONFIG_ARCH_RV_ISA_VENDOR_EXTENSIONS) — these are recent (~2022-2023)
-#     ratified extensions that need GCC 13+; Debian trixie's 14.2.0 has them.
-#     The package only ships riscv64-unknown-elf-* binary names, but NuttX's
-#     rp23xx-rv Toolchain.defs resolves CROSSDEV to riscv32-unknown-elf- for
-#     this 32-bit target, so the whole toolchain (+ gdb) is aliased under that
+#   - gcc-riscv64-unknown-elf (Debian trixie) — despite the package name, a
+#     multilib bare-metal `-elf` toolchain: `-march=rv32imac...` at compile
+#     time targets the 32-bit Hazard3, not riscv64. Supports the Zba/Zbb/
+#     Zbs/Zbkb/Zcb/Zcmp extensions NuttX's rp23xx-rv Kconfig selects
+#     (CONFIG_ARCH_RV_ISA_VENDOR_EXTENSIONS). The package only ships
+#     riscv64-unknown-elf-* binary names, but NuttX's rp23xx-rv
+#     Toolchain.defs resolves CROSSDEV to riscv32-unknown-elf- for this
+#     32-bit target, so the whole toolchain (+ gdb) is aliased under that
 #     prefix below.
 #   - picotool, openocd (Raspberry Pi fork), gdb-multiarch, probe-rs, picocom —
-#     identical to Containerfile.rp2350; see that file's header for why each is
-#     built the way it is. The RPi openocd fork's target scripts already carry
-#     `target/rp2350-riscv.cfg` alongside the ARM `target/rp2350.cfg` — same
-#     openocd build serves both cores, no separate build needed.
+#     identical to Containerfile.rp2350; see that file's header for why each
+#     is built the way it is. The RPi openocd fork's target scripts carry
+#     `target/rp2350-riscv.cfg` alongside the ARM `target/rp2350.cfg` — one
+#     openocd build serves both cores.
 #
 # Build:   podman build -f Containerfile.rp2350-riscv -t wanted-rp2350-riscv .
 #
@@ -183,11 +181,8 @@ RUN for t in gcc g++ cpp ld ar as nm objcopy objdump ranlib strip size; do \
 
 # picolibc-riscv64-unknown-elf installs its headers/libs under
 # /usr/lib/picolibc/riscv64-unknown-elf/{include,lib}, but this gcc build's
-# baked-in default sysroot search path (confirmed via `gcc -E -Wp,-v -`) is
-# /usr/lib/riscv64-unknown-elf/{include,lib} - a real gap in this Debian
-# package pairing (the ARM equivalent, libnewlib-arm-none-eabi, installs
-# directly into gcc-arm-none-eabi's expected path with no such gap). Symlink
-# the two together so <math.h> and friends resolve without needing
+# default sysroot search path is /usr/lib/riscv64-unknown-elf/{include,lib}.
+# Symlink the two together so <math.h> and friends resolve without needing
 # -specs=picolibc.specs on every NuttX compile invocation.
 RUN mkdir -p /usr/lib/riscv64-unknown-elf \
     && ln -sf /usr/lib/picolibc/riscv64-unknown-elf/include /usr/lib/riscv64-unknown-elf/include \

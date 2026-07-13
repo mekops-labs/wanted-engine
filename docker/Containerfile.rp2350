@@ -1,53 +1,36 @@
 # WANTED Engine — RP2350 (ARM Cortex-M33) NuttX build + on-hardware debug image.
 #
-# A dedicated cross-toolchain image for building the engine as a NuttX built-in
-# app for the Raspberry Pi RP2350 (Adafruit Feather RP2350) target, producing the
-# UF2 flashed over the BOOTSEL mass-storage / picotool path, AND driving the board
-# on the bench over SWD (Raspberry Pi Debug Probe / any CMSIS-DAP adapter). Kept
-# separate from the main build image (docker/Dockerfile) so the cross toolchain
-# does not bloat every lint/build/test job that only needs the host + sim
-# toolchain.
+# Cross-toolchain image for building the engine as a NuttX built-in app for
+# the Adafruit Feather RP2350, producing the UF2 flashed over BOOTSEL/picotool,
+# and driving the board over SWD (Raspberry Pi Debug Probe / any CMSIS-DAP
+# adapter). Kept separate from the main build image (docker/Dockerfile) so
+# the cross toolchain does not bloat every lint/build/test job.
 #
-# Unlike the ESP32 image, the RP2350 cross toolchain ships entirely in Debian
-# trixie, so the build half needs no upstream tarball:
-#   - gcc-arm-none-eabi (14.2.rel1) + libnewlib-arm-none-eabi — the ARM
-#     bare-metal cross-compiler for the RP2350's dual Cortex-M33 (armv8-m.main).
-#   - picotool, built from source (github.com/raspberrypi/picotool, master) —
-#     the NuttX rp23xx board build runs `picotool uf2 convert` as a post-link
-#     step to emit nuttx.uf2, it flashes/inspects a BOOTSEL board over USB when
-#     a device is passed in, AND (the reason it's built from source rather than
-#     `apt install picotool`, which is stuck on 2.1.1) `picotool seal --sign`
-#     signs a firmware image entirely offline — no device, no OTP — for M6's
-#     signed-firmware pipeline (see plans/wanted-engine-nuttx-rp2350.md M6 and
-#     research/rp2350-secure-boot-signature-verification-without-otp.md).
-#     Needs pico-sdk checked out alongside it purely for headers, plus
-#     pico-sdk's `lib/mbedtls` submodule specifically (the only one initialized
-#     — the crypto backend picotool's signing/hashing links against; without it
-#     `seal --sign` silently has no signing support at all).
-#   - The NuttX kconfig + kbuild prerequisites (same set as the main image's sim
+# Build half:
+#   - gcc-arm-none-eabi + libnewlib-arm-none-eabi — ARM bare-metal
+#     cross-compiler for the RP2350's dual Cortex-M33 (armv8-m.main).
+#   - picotool, built from source (apt's package predates `seal --sign`) —
+#     runs `picotool uf2 convert` as a NuttX rp23xx post-link step, flashes/
+#     inspects a BOOTSEL board over USB, and signs a firmware image offline
+#     with no device/OTP needed. Needs pico-sdk checked out for headers, plus
+#     its `lib/mbedtls` submodule (picotool's signing/hashing backend).
+#   - NuttX kconfig + kbuild prerequisites (same set as the main image's sim
 #     build) plus cmake/ninja for the engine's CMake-driven pieces.
-#   - ccache, wired as a PATH masquerade for both the host and the arm-none-eabi
+#   - ccache, wired as a PATH masquerade for the host and arm-none-eabi
 #     compilers so CI build jobs warm-cache across pipelines.
 #
-# Debug / development half (needs a USB adapter passed into the container):
-#   - openocd — built from the Raspberry Pi fork (github.com/raspberrypi/openocd),
-#     NOT Debian's package: trixie ships openocd 0.12.0, whose target scripts have
-#     NO RP2350 support (only rp2040.cfg, no `rp2xxx` flash driver). The RPi fork
-#     carries `target/rp2350.cfg`, the `rp2xxx` driver, and CMSIS-DAP v2 (the
-#     transport the RPi Debug Probe uses). This is the openocd gdb-server backend.
-#   - gdb-multiarch — the ARM Cortex-M debugger front-end (Debian dropped the
-#     arm-none-eabi-gdb package; gdb-multiarch is its replacement). Symlinked as
-#     arm-none-eabi-gdb for scripts/docs that expect that name. Point it at
-#     openocd's `:3333` (or `probe-rs gdb`) with `target extended-remote`.
-#   - probe-rs (v0.31.0) — single-binary CMSIS-DAP tool with first-class RP2350
-#     support: flash, attach, RTT, and its own gdb stub. The quick/basic backend;
-#     openocd is retained for the full gdb workflow.
-#   - picocom — serial console for the board / probe UART bridge (/dev/ttyACM*).
+# Debug half (needs a USB adapter passed into the container):
+#   - openocd — built from the Raspberry Pi fork, not Debian's package
+#     (Debian's 0.12.0 has no RP2350 target support). The gdb-server backend.
+#   - gdb-multiarch — ARM Cortex-M debugger front-end, symlinked as
+#     arm-none-eabi-gdb. Points at openocd's `:3333` (or `probe-rs gdb`).
+#   - probe-rs (v0.31.0) — single-binary CMSIS-DAP tool with RP2350 support:
+#     flash, attach, RTT, its own gdb stub.
+#   - picocom — serial console for the board / probe UART bridge.
 #
-# The WASM supervisor TAR is NOT built here — it is produced by the main image
-# (which carries the wasi-sdk) as the `supervisor` prerequisite, and baked into
-# the boot ROMFS before this image cross-links it. This image therefore needs no
-# wasi-sdk / clang / analysis tooling.
+# The WASM supervisor TAR is built by the main image (which carries the
+# wasi-sdk) as the `supervisor` prerequisite, and baked into the boot ROMFS
+# before this image cross-links it.
 #
 # Build (single arch):  podman build -f Containerfile.rp2350 -t wanted-rp2350 .
 # Build (multi arch):   podman build --platform linux/amd64,linux/arm64 \
@@ -167,17 +150,12 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     && make install \
     && cd / \
     && rm -rf /tmp/openocd \
-    # Build picotool from source (same layer as openocd, so it can reuse the
-    # same build-deps — pkg-config + libusb/hidapi/ftdi -dev — before they're
-    # purged below). pico-sdk is checked out purely for headers picotool's
-    # CMake reads at build time (never used to build firmware here); only its
-    # `lib/mbedtls` submodule is initialized, since that's the one dependency
-    # actually linked in (picotool's own CMakeLists.txt silently builds with
-    # `signing/hashing support: no` if `TARGET mbedtls` doesn't exist — this is
-    # NOT a hard configure error, so it's easy to get a picotool that builds
-    # fine but silently can't sign anything; confirmed this exact failure mode
-    # while validating this recipe). CCACHE_DISABLE=1: ccache's own cache dir
-    # permissions don't cooperate with a plain `cmake --build` invocation here.
+    # Build picotool from source (same layer as openocd, reusing its
+    # build-deps before they're purged below). pico-sdk is checked out purely
+    # for headers; only its `lib/mbedtls` submodule is initialized, since
+    # picotool silently builds with `signing/hashing support: no` (not a hard
+    # configure error) if `TARGET mbedtls` doesn't exist. CCACHE_DISABLE=1:
+    # ccache's cache dir permissions don't cooperate with `cmake --build`.
     && git clone --depth 1 --branch "${PICO_SDK_REF}" \
        https://github.com/raspberrypi/pico-sdk.git /tmp/pico-sdk \
     && git -C /tmp/pico-sdk submodule update --init --depth 1 lib/mbedtls \
