@@ -2,55 +2,23 @@
 
 /* RP2350 init shim.
  *
- * Like the ESP32, the Feather RP2350 has no host filesystem to stage the
- * supervisor image onto (see wanted_sim_main.c for the sim's hostfs case), so
- * the supervisor OCI TAR is bundled into the firmware as a ROMFS image and
- * mounted read-only at /rom; CONFIG_SYSTEM_WANTED_SUPERVISOR_IMAGE points the
- * engine at "/rom/wanted/supervisor.tar". CONFIG_FS_RAMMAP lets the existing
- * mmap-based loader (platform/posix/wapps-image.c) copy the image into the
- * heap.
+ * The supervisor OCI TAR is bundled into the firmware as a ROMFS image,
+ * mounted read-only at /rom. CONFIG_SYSTEM_WANTED_SUPERVISOR_IMAGE points
+ * the engine at "/rom/wanted/supervisor.tar"; CONFIG_FS_RAMMAP lets the
+ * mmap-based loader (platform/posix/wapps-image.c) copy it into the heap.
  *
- * Console: the Feather's default `wanted` defconfig uses native USB-CDC,
- * which (unlike a plain UART) is not up at early boot and has no fd bound to
- * it by the generic CONFIG_DEV_CONSOLE path: nsh normally brings it up itself
- * (apps/nshlib/nsh_usbconsole.c) via BOARDIOC_USBDEV_CDCACM/CONNECT, then
- * waits for a host terminal to actually open the port before dup2'ing it onto
- * fd 0-2. Since this shim replaces nsh_main as the init entrypoint, nsh's own
- * console bring-up never runs, so this shim does the same thing itself;
- * skipping it leaves the engine with no console fds at all (no crash, just
- * total silence).
+ * Console: this shim replaces nsh_main as the init entrypoint, so nsh's own
+ * USB-CDC console bring-up never runs; bring_up_usb_console() does it here
+ * instead. CONFIG_UART0_SERIAL_CONSOLE selects UART0 instead, whose fd 0-2
+ * binding is already done by CONFIG_DEV_CONSOLE before this shim runs. The
+ * CDC-ACM class driver is connected either way, so a wapp can be granted a
+ * `serial://` socket onto CDCACM_DEVPATH.
  *
- * A UART0 console is also supported, selected purely by CONFIG_
- * UART0_SERIAL_CONSOLE (no WANTED-specific Kconfig needed): with that set,
- * CONFIG_DEV_CONSOLE already binds fd 0-2 to UART0 before this shim runs
- * (UART needs no enumeration/host handshake the way USB-CDC does), so
- * bring_up_usb_console() is skipped entirely. Useful as a higher-throughput,
- * more reliable transport for -DDEBUG=1 engine tracing than USB-CDC, whose
- * throughput/capture reliability struggles under that volume - build with
- * CONFIG_RP23XX_UART0=y + CONFIG_UART0_SERIAL_CONSOLE=y + CONFIG_DEV_CONSOLE=y
- * and CDCACM_CONSOLE/NSH_USBCONSOLE unset, then read/write the Debug Probe's
- * UART bridge tty (a second, separate /dev/ttyACMx from the board's own
- * USB-CDC - identify both by USB descriptor, not device number). Start any
- * capture *before* triggering reset/flash: boot console output is a one-time
- * burst with no ongoing heartbeat once wsh reaches its idle prompt, so a
- * reader that attaches even slightly late looks identical to "nothing was
- * ever sent".
- *
- * Either way, the CDC-ACM class driver is connected regardless of which
- * transport is the console: with UART0 as console, USB-CDC is still brought
- * up (just not bound to fd 0-2), so a wapp can be granted a `serial://`
- * socket onto CDCACM_DEVPATH - e.g. Sheriff's Deputy uplink, with UART0
- * reserved for the debug console (see plans/wanted-sheriff-deputy-uart-
- * transport.md in the mekops-kb).
- *
- * Unlike wanted_esp32_main.c, this shim mounts no writable registry itself:
- * the LittleFS volume over the internal-flash MTD region (CONFIG_
- * RP23XX_FLASH_MTD) is already mounted by board bring-up
- * (rp23xx_common_bringup.c), before this shim ever runs. This shim only
- * chdir's into it and seeds any bundled factory wapps, mirroring the ESP32
- * shim's SD-card handling minus the mount. Selected via
- * CONFIG_INIT_ENTRYPOINT=wanted_rp2350_main; the NSH built-in entry stays
- * wanted_main. */
+ * The registry's LittleFS volume (CONFIG_RP23XX_FLASH_MTD) is mounted by
+ * board bring-up (rp23xx_common_bringup.c) before this shim runs; it only
+ * chdir's into it and seeds bundled factory wapps. Entry point is selected
+ * via CONFIG_INIT_ENTRYPOINT=wanted_rp2350_main; the NSH built-in entry
+ * stays wanted_main. */
 
 #include <dirent.h>
 #include <errno.h>
@@ -81,10 +49,7 @@
 
 /* Writable persistent registry storage: the LittleFS volume board bring-up
  * already mounted over the internal-flash MTD region at
- * CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT. Unlike the ESP32 (SD card, kept off
- * internal SPI flash to dodge a flash/PSRAM cache-coherency bug), this M3
- * baseline is PSRAM-off, so no such coexistence issue applies yet - flag for
- * revisiting once PSRAM lands (see the flash-mtd driver plan's Risk 2). */
+ * CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT. */
 #define REGISTRY_VOLUME CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT
 
 int wanted_main(int argc, char *argv[]);
@@ -139,26 +104,17 @@ static void seed_registry(void) {
     closedir(d);
 }
 
-/* Sheriff demo support (plans/wanted-sheriff-deputy-uart-transport.md in the
- * mekops-kb): when CONFIG_SYSTEM_WANTED_BOOT_ROMFS_SUPERVISOR is "sheriff",
- * this shim provisions Sheriff's identity and passes its own launch config
- * instead of falling through to wanted_main()'s generic minimal default
- * (which has no mounts/sockets at all - fine for wsh, since wsh's console is
- * wired up separately above, but Sheriff needs a `platform` mount and a
- * `manager` socket to even start).
+/* When CONFIG_SYSTEM_WANTED_BOOT_ROMFS_SUPERVISOR is "sheriff", provisions
+ * Sheriff's identity and passes a launch config with a `platform` mount and
+ * `manager` socket, instead of wanted_main()'s minimal default.
  *
- * Identity provisioning mirrors the ESP-IDF port's one-off hardware-
- * validation run (see the mekops-kb plan): Sheriff's on-disk identity format
- * has no interactive way to write it (wsh's `write` command can't carry raw
- * CBOR), so this shim writes the bytes directly with plain POSIX calls
- * against the LittleFS volume - the same primitives seed_copy() above
- * already uses, no VfsPlatformFsInit/WASI-preopen machinery needed since
- * this code runs as plain NuttX C, not inside a wapp's sandbox.
+ * Identity is written directly via POSIX calls against the LittleFS volume,
+ * since there is no interactive way to write raw CBOR.
  *
- * The pubkey below is a fixed demo key (Ed25519 pubkey for the all-0x11
- * 32-byte seed already used as SHERIFF_E2E_SEED's default in
- * wapps/sheriff/test/e2e-deputy.sh) - matches a Deputy instance started with
- * `--signing-seed <the same all-0x11 hex>`, not a real provisioning flow. */
+ * The pubkey below is a fixed demo key: the Ed25519 pubkey for the all-0x11
+ * 32-byte seed used as SHERIFF_E2E_SEED's default in
+ * wapps/sheriff/test/e2e-deputy.sh, matching a Deputy instance started with
+ * `--signing-seed <the same all-0x11 hex>`. */
 #define SHERIFF_IDENTITY_DIR "sheriff/identity" /* under REGISTRY_VOLUME */
 #define SHERIFF_DEVICE_ID "rp2350-01"
 
@@ -192,9 +148,8 @@ static void write_device_id(const char *path) {
     close(fd);
 }
 
-/* Idempotent to re-run every boot: O_TRUNC overwrites in place, no stale
- * leftovers from a prior demo key. Run after chdir(REGISTRY_VOLUME), so
- * these paths are relative to it, matching seed_registry()'s convention. */
+/* Idempotent: O_TRUNC overwrites in place. Paths are relative to
+ * REGISTRY_VOLUME (chdir'd by the caller). */
 static void provision_sheriff_identity(void) {
     mkdir("sheriff", 0755);
     mkdir(SHERIFF_IDENTITY_DIR, 0755);
@@ -205,15 +160,108 @@ static void provision_sheriff_identity(void) {
 }
 
 /* `platform` mount: options carries `src=<real path>`, since the wapp-visible
- * path (Sheriff's hardcoded ROOT_PATH, storage.zig) must stay "/var/lib/
- * sheriff" while the real backing directory lives under the flash-MTD
- * registry volume (REGISTRY_VOLUME "/" SHERIFF_IDENTITY_DIR's parent, i.e.
- * REGISTRY_VOLUME "/sheriff") - there is no real "/var" on this board.
- * "manager" is the one socket name Sheriff's engine-owned uplink looks for
- * (sheriff/src/main.zig: MANAGER_SOCKET = "/net/manager") - the address here
- * is what actually varies per deployment: serial:///dev/ttyACM0 on the
- * RP2350 (no network stack; see plans/wanted-sheriff-deputy-uart-transport.md)
- * versus tcp://... on Linux/ESP-IDF. */
+ * path (Sheriff's hardcoded ROOT_PATH, storage.zig) stays "/var/lib/sheriff"
+ * while the real backing directory is REGISTRY_VOLUME "/sheriff" - there is
+ * no real "/var" on this board. "manager" is the socket name Sheriff's
+ * engine-owned uplink looks for (sheriff/src/main.zig: MANAGER_SOCKET =
+ * "/net/manager"). The tcp:// host below is a demo/dev-only constant. */
+#ifdef CONFIG_RP23XX_INFINEON_CYW43439
+#define SHERIFF_MANAGER_ADDRESS "tcp://172.27.175.123:8080"
+#else
+#define SHERIFF_MANAGER_ADDRESS "serial://" CDCACM_DEVPATH
+#endif
+
+#ifdef CONFIG_RP23XX_INFINEON_CYW43439
+/* Joins Wi-Fi before Sheriff's manager fetch loop starts (SHERIFF_MANAGER_
+ * ADDRESS is a tcp:// socket, unreachable until associated). Credentials are
+ * read live from the console; never baked into firmware/committed config.
+ *
+ * Associates directly via the NuttX WAPI library (wpa_driver_wext_associate/
+ * netlib_obtain_ipv4addr) - the same calls platform/nuttx/vfs/vfs-wifi.c
+ * makes for a wapp's /dev/wifi. */
+#include <netutils/netlib.h>
+#include <nuttx/wireless/wireless.h>
+#include <wireless/wapi.h>
+
+#define WIFI_IFNAME "wlan0"
+#define WIFI_SSID_MAX_LEN 32
+#define WIFI_PASS_MAX_LEN 63
+
+/* Read one line, retrying once on an empty result: a "\r\n"-terminated send
+ * leaves a bare trailing '\n' in the cooked-mode input queue, which the next
+ * prompt's fgets() consumes immediately as an empty line before the real
+ * answer arrives. One retry skips exactly that stray line. */
+static void read_console_line(const char *prompt, char *buf, size_t bufSz) {
+    for (int attempt = 0; attempt < 2; attempt++) {
+        printf("%s", prompt);
+        fflush(stdout);
+        if (fgets(buf, (int)bufSz, stdin) == NULL) {
+            buf[0] = '\0';
+            return;
+        }
+        size_t n = strlen(buf);
+        while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+            buf[--n] = '\0';
+        if (buf[0] != '\0')
+            return;
+    }
+}
+
+static void wifi_connect_bringup(void) {
+    char ssid[WIFI_SSID_MAX_LEN + 1] = {0};
+    char pass[WIFI_PASS_MAX_LEN + 1] = {0};
+
+    read_console_line("wifi ssid: ", ssid, sizeof(ssid));
+    if (ssid[0] == '\0') {
+        DEBUG_TRACE("wifi_connect_bringup: no ssid entered, skipping");
+        return;
+    }
+    read_console_line("wifi passphrase: ", pass, sizeof(pass));
+
+    struct wpa_wconfig_s conf;
+    memset(&conf, 0, sizeof(conf));
+    conf.ifname = WIFI_IFNAME;
+    conf.sta_mode = WAPI_MODE_MANAGED;
+    conf.ssid = ssid;
+    conf.ssidlen = strlen(ssid);
+    conf.passphrase = pass;
+    conf.phraselen = strlen(pass);
+    conf.bssid = NULL;
+    if (pass[0] == '\0') {
+        conf.auth_wpa = IW_AUTH_WPA_VERSION_DISABLED;
+        conf.cipher_mode = IW_AUTH_CIPHER_NONE;
+        conf.alg = WPA_ALG_NONE;
+    } else {
+        conf.auth_wpa = IW_AUTH_WPA_VERSION_WPA2;
+        conf.cipher_mode = IW_AUTH_CIPHER_CCMP;
+        conf.alg = WPA_ALG_CCMP;
+    }
+
+    netlib_ifup(WIFI_IFNAME);
+    int ret = wpa_driver_wext_associate(&conf);
+    printf("wifi: associate -> %d\n", ret);
+    if (ret == 0) {
+        struct in_addr ip;
+        /* dhcpc_open() returns EINVAL this early in boot, before the
+         * network stack has settled; a short delay avoids it. */
+        sleep(2);
+        for (int attempt = 0; attempt < 5; attempt++) {
+            int dhcpRet = netlib_obtain_ipv4addr(WIFI_IFNAME);
+            memset(&ip, 0, sizeof(ip));
+            netlib_get_ipv4addr(WIFI_IFNAME, &ip);
+            printf("wifi: dhcp attempt %d -> %d, ip -> %s\n", attempt, dhcpRet,
+                   inet_ntoa(ip));
+            if (dhcpRet == 0 && ip.s_addr != 0)
+                break;
+        }
+    }
+
+    memset(ssid, 0, sizeof(ssid));
+    memset(pass, 0, sizeof(pass));
+    memset(&conf, 0, sizeof(conf));
+}
+#endif /* CONFIG_RP23XX_INFINEON_CYW43439 */
+
 #define SHERIFF_CFG                                                            \
     "{\"system\":{\"privileged\":true},"                                       \
     "\"supervisor\":{\"params\":{"                                             \
@@ -225,15 +273,11 @@ static void provision_sheriff_identity(void) {
     "\"mounts\":[{\"name\":\"platform\",\"path\":\"/var/lib/sheriff\","        \
     "\"options\":\"src=" REGISTRY_VOLUME "/sheriff\"}],"                       \
     "\"sockets\":[{\"name\":\"manager\",\"address\":"                          \
-    "\"serial://" CDCACM_DEVPATH "\"}]}}}"
+    "\"" SHERIFF_MANAGER_ADDRESS "\"}]}}}"
 
-/* Connect the CDCACM class driver so CDCACM_DEVPATH exists and is openable.
- * Needed either way: as the console's own transport (below), or - when the
- * console is on UART0 instead - so a wapp can still be granted a `serial://`
- * socket onto it (e.g. Sheriff's Deputy uplink over USB-CDC, with UART0
- * reserved for the debug console; see plans/wanted-sheriff-deputy-uart-
- * transport.md). Idempotent to call once; NuttX doesn't expose a "already
- * connected" query, so this shim only ever calls it the one time below. */
+/* Connects the CDCACM class driver so CDCACM_DEVPATH exists and is openable,
+ * for the console transport or for a wapp's `serial://` socket. NuttX has
+ * no "already connected" query, so this is only ever called once. */
 static void connect_usb_cdcacm(void) {
     struct boardioc_usbdev_ctrl_s ctrl = {
         .usbdev = BOARDIOC_USBDEV_CDCACM,
@@ -298,17 +342,9 @@ static void bring_up_usb_console(void) {
 #endif /* !CONFIG_UART0_SERIAL_CONSOLE */
 
 int wanted_rp2350_main(int argc, char *argv[]) {
-    /* Grab the PSRAM pool before anything else (littlefs/ROMFS mount,
-     * seed_registry file I/O) touches the shared heap and fragments its one
-     * big PSRAM free node - see PlatformExtramEarlyInit's doc comment and
-     * the M4 status note in plans/wanted-sheriff-deputy-uart-transport.md.
-     * Tried moving this to run after seed_registry()/provision_sheriff_
-     * identity() instead (hypothesis: keep PSRAM "clean" through those flash
-     * writes, dodging the cache-coherency corruption below) - ruled out on
-     * hardware: extram_init()'s probes then fail outright (g_extram stays
-     * NULL, same fragmentation this early call exists to prevent), just
-     * trading the corruption hang for the original "allocate linear memory
-     * failed" failure. Keep this call first. */
+    /* Must run before anything else (littlefs/ROMFS mount, seed_registry
+     * file I/O) touches the shared heap and fragments its one big PSRAM
+     * free node - see PlatformExtramEarlyInit's doc comment. */
     PlatformExtramEarlyInit();
 
     struct boardioc_romdisk_s desc = {
@@ -326,17 +362,15 @@ int wanted_rp2350_main(int argc, char *argv[]) {
     }
 
 #ifdef CONFIG_UART0_SERIAL_CONSOLE
-    /* Console is already on UART0 (CONFIG_DEV_CONSOLE bound fd 0-2 before
-     * this shim ran) - still connect CDC-ACM so a wapp can be granted a
-     * `serial://` socket onto it. */
+    /* UART0 already owns fd 0-2; still connect CDC-ACM for a wapp's
+     * `serial://` socket. */
     connect_usb_cdcacm();
 #else
     bring_up_usb_console();
 #endif
 
-    /* Persist the registry on the LittleFS volume board bring-up already
-     * mounted at REGISTRY_VOLUME. Done after the console is up so any
-     * failure here is visible instead of silently lost. */
+    /* Board bring-up already mounted REGISTRY_VOLUME. Done after the console
+     * is up so failures here are visible instead of silently lost. */
     bool sheriffDemo = false;
     if (chdir(REGISTRY_VOLUME) < 0) {
         perror("chdir " REGISTRY_VOLUME);
@@ -349,6 +383,12 @@ int wanted_rp2350_main(int argc, char *argv[]) {
             provision_sheriff_identity();
         }
     }
+
+#ifdef CONFIG_RP23XX_INFINEON_CYW43439
+    if (sheriffDemo) {
+        wifi_connect_bringup();
+    }
+#endif
 
     int rc;
     if (sheriffDemo) {
