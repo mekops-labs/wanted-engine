@@ -62,9 +62,12 @@ static inline int convertVfsFlags(vfs_oflags_t f) {
      * this — a missing access bit still reads — but on NuttX O_RDONLY==(1<<0),
      * so a missing bit opens the file with no read permission and read() then
      * fails with EACCES. Select the access mode explicitly. */
-    flags |= (f & VFS_O_RDWR)      ? O_RDWR
-             : (f & VFS_O_WRONLY)  ? O_WRONLY
-                                   : O_RDONLY;
+    if (f & VFS_O_RDWR)
+        flags |= O_RDWR;
+    else if (f & VFS_O_WRONLY)
+        flags |= O_WRONLY;
+    else
+        flags |= O_RDONLY;
 
     return flags;
 }
