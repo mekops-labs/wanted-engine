@@ -21,10 +21,15 @@
 
 #ifdef __NuttX__
 
+#include <malloc.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 #include <nuttx/mm/mm.h>
+
+#if defined(CONFIG_RP23XX_PSRAM_HEAP_SEPARATE)
+#include <arch/chip/psram.h>
+#endif
 
 #include <debug_trace.h>
 
@@ -32,9 +37,18 @@
 #define WANTED_EXTRAM_POOL_SIZE (3 * 1024 * 1024)
 #endif
 
+/* PSRAM cached window, per target - this file is shared across every NuttX
+ * board the engine runs on, and the two currently supported have PSRAM at
+ * unrelated addresses. */
+#if defined(CONFIG_ARCH_CHIP_RP23XX)
+/* RP2350 Feather, CS1 cached window: 8 MB @ 0x11000000. */
+#define PSRAM_LO 0x11000000u
+#define PSRAM_HI 0x11800000u
+#else
 /* ESP32 PSRAM cached window (CONFIG_HEAP2_BASE, 4 MB). */
 #define PSRAM_LO 0x3f800000u
 #define PSRAM_HI 0x3fc00000u
+#endif
 
 static struct mm_heap_s *g_extram;
 static uintptr_t
@@ -54,6 +68,23 @@ static void extram_init(void) {
     if (g_extram_tried)
         return;
     g_extram_tried = true;
+
+#if defined(CONFIG_RP23XX_PSRAM_HEAP_SEPARATE)
+    /* PSRAM is its own independent mm_heap_s (see up_extraheaps_init() in
+     * rp23xx_heaps.c) - not merged with SRAM/flash-MTD's heap at all, unlike
+     * CONFIG_RP23XX_PSRAM_HEAP_SINGLE below. No malloc()-probe dance needed:
+     * the whole 8 MB region is already known and already initialized by the
+     * arch layer before this ever runs. */
+    g_extram = rp23xx_psram_heap();
+    if (g_extram != NULL) {
+        g_extram_lo = PSRAM_LO;
+        g_extram_hi = PSRAM_HI;
+        DEBUG_TRACE("extram: separate PSRAM heap @ %p", (void *)g_extram);
+    } else {
+        DEBUG_TRACE("extram: rp23xx_psram_heap() returned NULL");
+    }
+    return;
+#endif
 
     /* Grab as much PSRAM as possible from the common heap so almost no external
      * RAM is left there — the common heap then hands out internal RAM only,
@@ -90,6 +121,15 @@ static void extram_init(void) {
     DEBUG_TRACE("extram: PSRAM heap @ %p (%u bytes)", pool, (unsigned)got);
 }
 
+/* Forces the PSRAM grab as early in boot as possible. On RP2350 the merged
+ * SRAM+PSRAM heap (CONFIG_MM_REGIONS=2, one segregated-fit allocator) starts
+ * fragmenting the instant any other subsystem allocates, chipping the one
+ * giant PSRAM free node into pieces well under 1 MiB before extram_init()'s
+ * multi-MB malloc() probes ever run. Calling this before any other heap
+ * activity avoids the fragmentation. Not needed on ESP32, whose PSRAM lives
+ * in its own separate heap_caps pool from boot. */
+void PlatformExtramEarlyInit(void) { extram_init(); }
+
 void *PlatformExtramMalloc(size_t size) {
     extram_init();
     return (g_extram != NULL) ? mm_malloc(g_extram, size) : malloc(size);
@@ -119,5 +159,6 @@ void *PlatformExtramRealloc(void *ptr, size_t size) {
     return realloc(ptr, size);
 }
 void PlatformExtramFree(void *ptr) { free(ptr); }
+void PlatformExtramEarlyInit(void) {}
 
 #endif /* __NuttX__ */

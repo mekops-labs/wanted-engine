@@ -63,13 +63,14 @@ Wapps target **`wasm32-wasi`** and link against WASI `snapshot_preview1`. The en
 | `poll_oneoff` | restricted | **Clock subscriptions only.** An `fd_read`/`fd_write` subscription returns `ENOSYS`; poll the fd directly instead. |
 | `fd_datasync` | stub | Returns success without doing anything (the root is read-only). |
 | `proc_exit` | full | Terminates the wapp with the given exit code. |
-| `sock_accept`, `sock_recv`, `sock_send`, `sock_shutdown` | full (Linux) | Sockets are reached through `/net/`; see [VFS Reference → /net/](vfs-reference.md#net--network-namespace). |
+| `sock_accept`, `sock_recv`, `sock_send`, `sock_shutdown` | full | Sockets are reached through `/net/` and need a `sockets[]` grant; availability follows the platform (the NuttX sim is built without a network stack). See [VFS Reference → /net/](vfs-reference.md#net--network-namespace). |
 
 Practical consequences for a wapp author:
 
 - **Environment variables and argv come from the launch config.** A wapp's `argv` and `environ` are set from the `args[]` and `envs[]` arrays in its launch config (`getenv`/`argc` work normally). `argv[0]` is always the wapp name. The `hello` sample selects its behaviour from a `ROLE` env var passed this way. See [Control Plane Reference → Launch-config schema](control-plane-reference.md). Larger or writable configuration still belongs in a packaged file or a [preopen](#preopens).
 - **`poll_oneoff` is a timer, not a readiness selector.** A `sleep()` works; an event loop that selects across file descriptors does not.
 - **`stdout`/`stderr` are not files you open.** Writing to fd 1/2 reaches a console only if the launch config gives the wapp one; see [Filesystem access](#filesystem-access) and [Control Plane Reference](control-plane-reference.md).
+- **Heavy primitives can be offloaded to the engine.** A wapp granted the `sha256`, `ed25519`, or `inflate` driver computes digests, verifies signatures, or gunzips through plain `open`/`write`/`read` on the device node — the algorithm's code, tables, and buffers live in engine memory, not in the wapp's linear memory. See [VFS Reference → Config-mounted drivers](vfs-reference.md#config-mounted-drivers).
 
 ## Filesystem access
 
