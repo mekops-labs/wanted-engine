@@ -198,6 +198,7 @@ cppcheck:
         --suppress=missingIncludeSystem --suppress=normalCheckLevelMaxBranches \
         --inline-suppr --error-exitcode=1 \
         -I include -I src/include -I platform/include \
+        -DCONFIG_RP23XX_FLASH_MTD_MOUNTPOINT='"/mnt/flash"' \
         $excludes \
         src platform cmd
 
