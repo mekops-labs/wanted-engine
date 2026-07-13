@@ -52,6 +52,8 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
     case VFS_SKT_UDP:
     case VFS_SKT_SUDP:
         return VFS_FILETYPE_SOCKET_DGRAM;
+    case VFS_SKT_SERIAL:
+        return VFS_FILETYPE_CHARACTER_DEVICE;
     default:
         return VFS_FILETYPE_UNKNOWN;
     }
@@ -68,6 +70,8 @@ static bool schemeToType(const char *scheme, size_t len, uint8_t *type) {
         *type = VFS_SKT_UDP;
     else if (len == 4 && strncmp(scheme, "udps", 4) == 0)
         *type = VFS_SKT_SUDP;
+    else if (len == 6 && strncmp(scheme, "serial", 6) == 0)
+        *type = VFS_SKT_SERIAL;
     else
         return false;
     return true;
@@ -86,7 +90,7 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     }
 
     /* The address is a URL "<scheme>://<host>:<port>"; the scheme picks the
-     * transport (tcp, tcps, udp, udps). */
+     * transport (tcp, tcps, udp, udps, serial). */
     const char *sep = strstr(options, "://");
     if (NULL == sep) {
         DEBUG_TRACE("socket address: missing scheme");
@@ -104,29 +108,43 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
         return NULL;
     }
 
-    /* Host runs from after "://" up to the ':' that introduces the port. */
     const char *host = sep + 3;
-    const char *colon = strrchr(host, ':');
-    if (NULL == colon || colon == host) {
-        DEBUG_TRACE("socket address: missing host or port");
-        return NULL;
-    }
-    size_t hostLen = (size_t)(colon - host);
-    if (hostLen >= MAX_ADDR_LEN) {
-        DEBUG_TRACE("socket address: host too long");
-        return NULL;
-    }
+    if (type == VFS_SKT_SERIAL) {
+        /* "serial:///dev/ttyACM0" - a bare device path, no port to parse. */
+        size_t hostLen = strlen(host);
+        if (hostLen == 0 || hostLen >= MAX_ADDR_LEN) {
+            DEBUG_TRACE("socket address: bad device path");
+            return NULL;
+        }
+        memcpy(addr, host, hostLen);
+        addr[hostLen] = '\0';
+        port = 0;
+    } else {
+        /* Host runs from after "://" up to the ':' that introduces the port.
+         */
+        const char *colon = strrchr(host, ':');
+        if (NULL == colon || colon == host) {
+            DEBUG_TRACE("socket address: missing host or port");
+            return NULL;
+        }
+        size_t hostLen = (size_t)(colon - host);
+        if (hostLen >= MAX_ADDR_LEN) {
+            DEBUG_TRACE("socket address: host too long");
+            return NULL;
+        }
 
-    char *endp = NULL;
-    long portVal = strtol(colon + 1, &endp, 10);
-    if (endp == colon + 1 || *endp != '\0' || portVal <= 0 || portVal > 65535) {
-        DEBUG_TRACE("socket address: bad port");
-        return NULL;
-    }
-    port = (uint16_t)portVal;
+        char *endp = NULL;
+        long portVal = strtol(colon + 1, &endp, 10);
+        if (endp == colon + 1 || *endp != '\0' || portVal <= 0 ||
+            portVal > 65535) {
+            DEBUG_TRACE("socket address: bad port");
+            return NULL;
+        }
+        port = (uint16_t)portVal;
 
-    memcpy(addr, host, hostLen);
-    addr[hostLen] = '\0';
+        memcpy(addr, host, hostLen);
+        addr[hostLen] = '\0';
+    }
 
     driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
     if (NULL == driver) {

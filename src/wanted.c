@@ -948,19 +948,25 @@ int WantedStart(const char *cfg, size_t cfgLen) {
     wapp_t *app;
 
     ret = WantedParseConfig(cfg, cfgLen);
+    DEBUG_TRACE("WantedParseConfig -> %d", ret);
     if (ret < 0)
         return ret;
 
-    if (ensureWamrInit() < 0)
+    ret = ensureWamrInit();
+    DEBUG_TRACE("ensureWamrInit -> %d", ret);
+    if (ret < 0)
         return -1;
 
     app = WantedGetCurrentSupervisor();
+    DEBUG_TRACE("WantedGetCurrentSupervisor -> %p", (void *)app);
 
     ret = PlatformWappStart(app);
+    DEBUG_TRACE("PlatformWappStart -> %d", ret);
     if (ret < 0)
         return ret;
 
     PlatformWappLoop();
+    DEBUG_TRACE("PlatformWappLoop returned");
 
     return 0;
 }

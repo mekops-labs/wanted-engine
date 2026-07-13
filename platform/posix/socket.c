@@ -6,11 +6,13 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include <debug_trace.h>
@@ -27,6 +29,7 @@ struct netCtx {
     bool secure;
 #endif
     int socket;
+    bool isSerial; /* plain device fd: read()/write(), not recv()/send() */
 };
 
 void *PlatformNetOpen(int socket_type) {
@@ -34,6 +37,19 @@ void *PlatformNetOpen(int socket_type) {
     int type;
 
     struct netCtx *netCtx;
+
+    if (socket_type == VFS_SKT_SERIAL) {
+        /* The device path isn't known until PlatformNetConnect; defer the
+         * real open() there. */
+        netCtx = WantedMalloc(sizeof(struct netCtx));
+        if (netCtx == NULL) {
+            return NULL;
+        }
+        memset(netCtx, 0, sizeof(struct netCtx));
+        netCtx->socket = -1;
+        netCtx->isSerial = true;
+        return netCtx;
+    }
 
     switch (socket_type) {
     case VFS_SKT_TCP:
@@ -97,6 +113,36 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
 
     if (NULL == c) {
         return -EINVAL;
+    }
+
+    if (c->isSerial) {
+        (void)port;
+        int fd = open(hostname, O_RDWR | O_NOCTTY);
+        if (fd < 0) {
+            return -errno;
+        }
+
+        /* The engine opens a serial:// socket fresh for every request/response
+         * round (Sheriff's connection-per-fetch model). Put the line into raw
+         * mode so an HTTP byte stream is delivered verbatim (no canonical line
+         * buffering, no CR/LF translation, VMIN=1 so read() blocks for at least
+         * one byte), and flush any bytes left in the RX buffer from a prior
+         * round: without this a partially-drained or late-arriving previous
+         * response desyncs the next fetch, which then reads a
+         * headers-mid-stream fragment with no HTTP status line and fails to
+         * parse. Best-effort — a port that doesn't support termios (a pty in
+         * the host tests) just keeps its default discipline. */
+        struct termios tio;
+        if (tcgetattr(fd, &tio) == 0) {
+            cfmakeraw(&tio);
+            tio.c_cc[VMIN] = 1;
+            tio.c_cc[VTIME] = 0;
+            (void)tcsetattr(fd, TCSANOW, &tio);
+        }
+        (void)tcflush(fd, TCIFLUSH);
+
+        c->socket = fd;
+        return 0;
     }
 
     if ((host = gethostbyname(hostname)) == NULL) {
@@ -177,6 +223,14 @@ int PlatformNetRecv(struct netCtx *c, void *buf, size_t nbyte, int flags) {
         return -EINVAL;
     }
 
+    if (c->isSerial) {
+        (void)flags;
+        if ((ret = (int)read(c->socket, buf, nbyte)) < 0) {
+            return -errno;
+        }
+        return ret;
+    }
+
 #if SECURE_SOCKETS
     if (c->secure) {
         if ((ret = TLSRead(c->ssl, buf, nbyte)) < 0) {
@@ -197,6 +251,14 @@ int PlatformNetSend(struct netCtx *c, const void *buf, size_t nbyte,
 
     if (NULL == c) {
         return -EINVAL;
+    }
+
+    if (c->isSerial) {
+        (void)flags;
+        if ((ret = (int)write(c->socket, buf, nbyte)) < 0) {
+            return -errno;
+        }
+        return ret;
     }
 
 #if SECURE_SOCKETS
@@ -220,6 +282,11 @@ int PlatformNetAccept(struct netCtx *c) {
         return -EINVAL;
     }
 
+    if (c->isSerial) {
+        /* A plain serial device fd has no listen/accept model. */
+        return -ENOTSUP;
+    }
+
     if ((newFd = accept(c->socket, NULL, NULL)) < 0) {
         return -errno;
     }
@@ -241,6 +308,13 @@ int PlatformNetAccept(struct netCtx *c) {
 int PlatformNetShutdown(struct netCtx *c, int how) {
     if (NULL == c) {
         return -EINVAL;
+    }
+
+    if (c->isSerial) {
+        /* shutdown() isn't defined for a plain device fd; close() is what
+         * actually ends the exchange, and the caller does that separately. */
+        (void)how;
+        return 0;
     }
 
 #if SECURE_SOCKETS

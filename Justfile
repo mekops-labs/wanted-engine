@@ -44,6 +44,12 @@ supervisor:
 sheriff:
     make -C wasm/supervisor sheriff
 
+# Build the wifi-connect boot-time helper TAR from wapps/wifi-connect. Opt-in
+# (not part of `supervisor`) since it's a boot-time helper, not a general
+# supervisor.
+wifi-connect:
+    make -C wasm/supervisor wifi-connect
+
 # Compile the sample wapp images under wapps/ (excludes the wsh supervisor).
 wapps:
     #!/bin/sh
@@ -198,6 +204,7 @@ cppcheck:
         --suppress=missingIncludeSystem --suppress=normalCheckLevelMaxBranches \
         --inline-suppr --error-exitcode=1 \
         -I include -I src/include -I platform/include \
+        -DCONFIG_RP23XX_FLASH_MTD_MOUNTPOINT='"/mnt/flash"' \
         $excludes \
         src platform cmd
 

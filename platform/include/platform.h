@@ -109,6 +109,14 @@ void *PlatformExtramMalloc(size_t size);
 void *PlatformExtramRealloc(void *ptr, size_t size);
 void PlatformExtramFree(void *ptr);
 
+/* Force the extram pool to be carved out now, before any other allocation can
+ * fragment the heap region it needs a large contiguous block from. A no-op
+ * after the first call (idempotent, same as the lazy path). Call as early as
+ * possible in boot on targets where PSRAM shares a merged heap with internal
+ * RAM (see platform/nuttx/api/extram.c); harmless (and unnecessary) elsewhere
+ * since PlatformExtramMalloc/Realloc already lazy-init on first use. */
+void PlatformExtramEarlyInit(void);
+
 /* Short identifier for the target the engine was built against ("linux",
  * "nuttx", "dummy"). Static storage; the caller must not free it. Exposed at
  * /proc/wanted so a wapp can read which platform hosts it. */

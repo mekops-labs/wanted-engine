@@ -61,7 +61,7 @@ Each entry reads its value in one shot; a second read on the same fd returns EOF
 
 ```text
 platform:	linux
-version:	0.6.0+g06f5cca.20260608205353
+version:	0.8.0+gf0d012c.20260713121818
 max_wapps:	3
 max_wapp_name:	15 B
 max_path:	256 B
@@ -72,7 +72,7 @@ wasm_max_pages:	1
 max_drivers:	6
 max_options:	128 B
 log_slots:	3
-drivers:	null log 9p config platform socket wanted
+drivers:	null log 9p config platform socket sha256 ed25519 inflate wanted
 ```
 
 `wasm_worker_stack` is the effective per-wapp worker thread native C stack (the
@@ -111,6 +111,8 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `ed25519` | `drivers[]` | `/dev/ed25519` | Ed25519 signature-verification device; see below. |
 | `inflate` | `drivers[]` | `/dev/inflate` | Streaming gzip decompression device; see below. |
 | `gpio` | `drivers[]` | `/dev/gpio` | A GPIO pin as a text level node — `write "1"/"0"` drives it high/low, `read` returns `"0\n"/"1\n"`. The engine does the GPIO ioctl; the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via `options`). NuttX only — naming it on a platform without GPIO (Linux) fails the launch with `-ENODEV`. |
+| `wifi` | `drivers[]` | `/dev/wifi` | Wi-Fi station control as a text node. `write "scan"` starts a scan (following reads stream one `<ssid> <bssid> <rssi>` line per AP, then EOF); `write "connect <ssid> <pass>"` associates (WPA2-PSK) and runs DHCP; `write "disconnect"` drops the association; a plain `read` returns one status line — `connected <ssid> <ip>` or `disconnected`. The engine drives the radio (WAPI on NuttX, `esp_wifi` on ESP-IDF); the wapp stays pure WASI. NuttX and ESP-IDF only — `-ENODEV` elsewhere. |
+| `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `confirm` / `rollback`), `read` drains a status snapshot (active slot, confirmed state, pending swap); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. ESP-IDF only (`esp_ota_ops`) — `-ENODEV` elsewhere. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
 | `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
 | `config` | `mounts[]` | chosen `path` (e.g. `/etc/config`) | Read-only config-file injection, reachable outside `/dev`. |
@@ -152,8 +154,9 @@ verification is in flight at a time per wapp (second open: `-EBUSY`).
 The engine holds no keys: the wapp supplies the public key it trusts, so key
 custody stays with the caller and the engine only runs the curve arithmetic —
 through `PlatformEd25519Verify`, which a platform backs with its crypto
-library or hardware. On a build without a backend (e.g. `SECURE_SOCKETS=0`)
-the verdict read fails with `-ENOSYS`.
+library or hardware: OpenSSL on Linux, the vendored `orlp/ed25519` on NuttX.
+On a build without a backend (Linux with `SECURE_SOCKETS=0`, or the current
+ESP-IDF port) the verdict read fails with `-ENOSYS`.
 
 ### `inflate` — streaming gzip decompression device
 
@@ -194,16 +197,19 @@ window nor the inflate code.
 
 ### `socket` — the `/net/` network namespace
 
-`/net/` routes to the socket driver. A `sockets[]` entry is created at `/net/<name>` (the name is the node label) and bound to the connection described by its `address` — a URL `<scheme>://<host>:<port>`:
+`/net/` routes to the socket driver. A `sockets[]` entry is created at `/net/<name>` (the name is the node label) and bound to the connection described by its `address` — a URL, `<scheme>://<host>:<port>` for the network schemes or `serial://<device-path>` for a local device:
 
 | Scheme | Transport |
 |--------|-----------|
 | `tcp://host:port` | Plain TCP |
 | `udp://host:port` | Plain UDP |
-| `tcps://host:port` | TLS TCP (Linux only) |
+| `tcps://host:port` | TLS TCP — Linux (OpenSSL) and ESP-IDF (mbedTLS; no CA bundle provisioned, so encrypted but unauthenticated) |
 | `udps://host:port` | DTLS UDP (Linux only) |
+| `serial:///dev/ttyACM0` | A local point-to-point byte-stream device — a UART or USB-CDC — in place of a network connection; a bare device path, no host or port |
 
-A wapp `open`s the `/net/<name>` node, then `read`/`write`s the stream and `close`s it; connection parameters come from the entry's `address`, not from the wapp. TLS is OpenSSL-backed on Linux; the NuttX sim has no TLS.
+A wapp `open`s the `/net/<name>` node, then `read`/`write`s the stream and `close`s it; connection parameters come from the entry's `address`, not from the wapp. NuttX has no TLS backend.
+
+A `serial://` socket puts the device in raw mode and flushes its RX buffer on open, so a request/response exchange starts from a clean stream. It assumes the device delivers a reliable, ordered byte stream (true for a UART or USB-CDC); a lossy, unordered link needs its own framing/retry layer on top. It is how the Sheriff↔Deputy control-plane link runs on a board with no network stack — see the [Platform Guide](platform-guide.md).
 
 #### Testing a TLS socket
 
