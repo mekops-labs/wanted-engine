@@ -39,19 +39,9 @@
 
 /* PSRAM cached window, per target - this file is shared across every NuttX
  * board the engine runs on, and the two currently supported have PSRAM at
- * unrelated addresses. This range was hardcoded to the ESP32's window
- * everywhere, so on RP2350 every probe below always misses regardless of
- * whether it actually landed in PSRAM - fixed here to the correct window
- * (verified: an RP2350 PSRAM allocation genuinely returns an address in
- * this range). Note this alone does not explain the large-allocation
- * failure investigated in plans/wanted-sheriff-deputy-uart-transport.md's
- * M4 status note - the size probes below still fail outright (not just
- * address-mismatch) for 1 MiB+ requests even with this fix in place; kept
- * because it is independently correct regardless. */
+ * unrelated addresses. */
 #if defined(CONFIG_ARCH_CHIP_RP23XX)
-/* RP2350 Feather, CS1 cached window (see plans/wanted-engine-nuttx-rp2350.md
- * M5 and research/rp2350-vs-esp32s3-psram-flash-coherency.md): 8 MB @
- * 0x11000000. */
+/* RP2350 Feather, CS1 cached window: 8 MB @ 0x11000000. */
 #define PSRAM_LO 0x11000000u
 #define PSRAM_HI 0x11800000u
 #else
@@ -84,12 +74,7 @@ static void extram_init(void) {
      * rp23xx_heaps.c) - not merged with SRAM/flash-MTD's heap at all, unlike
      * CONFIG_RP23XX_PSRAM_HEAP_SINGLE below. No malloc()-probe dance needed:
      * the whole 8 MB region is already known and already initialized by the
-     * arch layer before this ever runs. Tried as an experiment
-     * (2026-07-09) to see whether the recurring PSRAM-corruption bug (see
-     * plans/wanted-sheriff-deputy-uart-transport.md's M4 status notes and
-     * research/rp2350-vs-esp32s3-psram-flash-coherency.md) is specific to
-     * the merged-heap model or a genuine hardware/driver issue independent
-     * of heap organization. */
+     * arch layer before this ever runs. */
     g_extram = rp23xx_psram_heap();
     if (g_extram != NULL) {
         g_extram_lo = PSRAM_LO;
@@ -136,17 +121,13 @@ static void extram_init(void) {
     DEBUG_TRACE("extram: PSRAM heap @ %p (%u bytes)", pool, (unsigned)got);
 }
 
-/* Force the PSRAM grab as early in boot as possible. On RP2350 the merged
+/* Forces the PSRAM grab as early in boot as possible. On RP2350 the merged
  * SRAM+PSRAM heap (CONFIG_MM_REGIONS=2, one segregated-fit allocator) starts
- * fragmenting the instant any other subsystem allocates - littlefs/ROMFS
- * mount, registry seeding, etc. - which chips the one giant PSRAM free node
- * into pieces well under 1 MiB long before extram_init()'s own multi-MB
- * malloc() probes ever run, so every probe fails outright even though the
- * *aggregate* free memory is still ~8 MiB (confirmed via mm_heapfree() vs.
- * mm_heapfree_largest(): ~8.4 MiB free, ~456 KiB largest contiguous block,
- * right before the probes start failing). Calling this before any other
- * heap activity avoids the fragmentation entirely. Not needed on ESP32,
- * whose PSRAM lives in its own separate heap_caps pool from boot. */
+ * fragmenting the instant any other subsystem allocates, chipping the one
+ * giant PSRAM free node into pieces well under 1 MiB before extram_init()'s
+ * multi-MB malloc() probes ever run. Calling this before any other heap
+ * activity avoids the fragmentation. Not needed on ESP32, whose PSRAM lives
+ * in its own separate heap_caps pool from boot. */
 void PlatformExtramEarlyInit(void) { extram_init(); }
 
 void *PlatformExtramMalloc(size_t size) {

@@ -1,17 +1,13 @@
 #!/bin/bash
-# RP2350 M6: validate the signed-firmware pipeline entirely offline. Signs the
-# built NuttX/WANTED image with picotool (secp256k1 + SHA-256, RP2350's actual
+# Validates the signed-firmware pipeline entirely offline. Signs the built
+# NuttX/WANTED image with picotool (secp256k1 + SHA-256, RP2350's actual
 # bootrom scheme), confirms the signature verifies, then confirms a tampered
 # copy of the same image reports an invalid signature.
 #
-# Deliberately does NOT touch OTP or a device: no `picotool otp load`, no
-# `--device`. RP2350 OTP fuses are physically one-way (0->1, unrecoverable),
-# and the bootrom's own signature enforcement is gated entirely by an
-# OTP-derived flag with no dry-run mode (see research/
-# rp2350-secure-boot-signature-verification-without-otp.md) - this script
-# proves the signing/verification tooling is correct, not that the chip itself
-# would refuse an unsigned image, which requires that OTP burn and is out of
-# scope here.
+# Does not touch OTP or a device: no `picotool otp load`, no `--device`.
+# RP2350 OTP fuses are physically one-way (0->1, unrecoverable). This script
+# proves the signing/verification tooling is correct, not that the chip
+# itself would refuse an unsigned image.
 #
 # Usage: test/rp2350-sign-verify.sh [path-to-nuttx.uf2]
 #        (runs in the build container; see `make rp2350-sign`)
