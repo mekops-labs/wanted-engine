@@ -6,7 +6,7 @@ toc: true
 description: "The complete /dev/wanted contract: nodes, verbs, the wapp state machine, and the launch-config schema."
 ---
 
-The control plane is the VFS namespace a supervisor uses to install, launch, observe, and stop wapps, and to drive the engine's own power state. It is usually mounted at `/dev/wanted` (depnds on mount path in config; in default its `/dev/wanted`) and is a privileged capability: a wapp reaches it only if its launch config grants the `wanted` driver. An ordinary wapp has no path to it.
+The control plane is the VFS namespace a supervisor uses to install, launch, observe, and stop wapps, and to drive the engine's own power state. It is mounted at `/dev/wanted` and is a privileged capability: a wapp reaches it only if its launch config grants the `wanted` driver. An ordinary wapp has no path to it.
 
 Every interaction is an ordinary file operation. Identity travels in the path — never in a payload field — so reads compose as plain text and only the launch config is JSON.
 
@@ -43,6 +43,7 @@ The `wanted` driver is a device singleton: it mounts at its canonical `/dev/want
 |------|--------|-------------|
 | `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `delete <name>` releases a slot — a `create` reservation or a terminal (`exited`/`failure`) wapp — so the name leaves `wapps/` and its nodes return `-ENOENT` again. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). |
 | `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`, plus the declared linear-memory profile — see below) synthesized from the registry, peeking only the image header. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image. The version is an opaque tag; each ref component must match `[A-Za-z0-9_][A-Za-z0-9._-]*` or the open is rejected. A plain read of the directory itself returns `-EISDIR`. |
+| `/dev/wanted/config` | r | Supervisor bootstrap meta-config. |
 
 The registry descriptor reports each image's **declared** linear-memory envelope, parsed from the wasm `(memory)` section without loading the module — a pre-flight check for whether an image fits this build's per-wapp cap (`WASM_MAX_MEMORY_PAGES`):
 
@@ -54,7 +55,6 @@ The registry descriptor reports each image's **declared** linear-memory envelope
 | `over_cap` | Present when the build sets a cap: `true` when `init_pages` already exceeds it, so the image would be **refused at load**. |
 
 The memory fields are the declared envelope, not a runtime prediction; they are omitted when the image header cannot be read or declares no memory of its own (e.g. an imported memory).
-| `/dev/wanted/config` | r | Supervisor bootstrap meta-config. |
 
 The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, and `reboot`; any other token returns `-EINVAL`. The root ctl does **not** launch wapps — `start` and `stop` exist only per-wapp (`wapps/<name>/ctl`). `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.
 
@@ -180,9 +180,9 @@ A wapp that needs a console, drivers, mounts, or sockets has its config written 
 |-------|------|-------|
 | `image` | string | **Optional** registry image this instance runs, as a reference `<name>[:<tag>]` — a bare name resolves to the first match, a pinned tag (`duplex:stable`) resolves exactly. When omitted it defaults to the instance name, so a single-instance wapp needs no `image`. Set it to run several instances off one image, or override it per launch with `start <image>`. |
 | `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. **Optional**: an unset slot defaults — `in` to `null`, `out`/`err` to `log` — so a wapp launches without an explicit console and its output is captured to the per-wapp log (read through a `log` mount). Override a slot with `log` (capture), `null` (discard), `pipe` (a live stream a peer reads at `/dev/pipe/<wapp>.<slot>`), or `platform` (redirect to the engine's native stdio, fds 0/1/2). The `platform` *name* backs stdio here; in `mounts[]` it is instead a host directory. |
-| `drivers` | array | Up to 10 device singletons. Each mounts at `/dev/<name>` derived from the name; a `path` is rejected. |
-| `mounts` | array | Up to 10 file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev`, `/proc` and `/net`. The `platform` backend binds a host directory as a native WASI preopen (a bind mount); the `volume` backend binds an engine-managed persistent store (the wapp names only a volume, the engine owns the host path); other backends mount through the VFS router. `options` are backend-specific — see below. |
-| `sockets` | array | Up to 10 named connections. Each is created at `/net/<name>`; the transport is the entry's `address`. A `path` is rejected. |
+| `drivers` | array | Up to `MAX_DRIVERS_CNT` (default 6, profile-tunable) device singletons. Each mounts at `/dev/<name>` derived from the name; a `path` is rejected. |
+| `mounts` | array | Up to `MAX_DRIVERS_CNT` file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev`, `/proc` and `/net`. The `platform` backend binds a host directory as a native WASI preopen (a bind mount); the `volume` backend binds an engine-managed persistent store (the wapp names only a volume, the engine owns the host path); other backends mount through the VFS router. `options` are backend-specific — see below. |
+| `sockets` | array | Up to `MAX_DRIVERS_CNT` named connections. Each is created at `/net/<name>`; the transport is the entry's `address`. A `path` is rejected. |
 | `args` | array | Up to 8 strings (≤63 chars each), the wapp's `argv[1..]`. `argv[0]` is always the instance name, set by the engine. |
 | `envs` | array | Up to 8 POSIX `KEY=VALUE` strings (≤63 chars each), the wapp's `environ`. |
 
@@ -192,8 +192,8 @@ Entry shapes per section:
 |---------|------|-------|
 | `console.*` | `name`, `options` | `name` is one of `null`, `log`, `pipe`, `platform`. For `pipe`, `options` may pin the pipe name (`name=<pipe>`); otherwise it is `<wapp>.<slot>`. |
 | `drivers[]` | `name`, `options` | `name` is a device driver (e.g. `null`, `wanted`); mounted at `/dev/<name>`. |
-| `mounts[]` | `name`, `path`, `options` | `name` is a file/backend driver (`platform`, `volume`, `config`, `9p`); `path` is required, absolute, and outside `/dev`/`/net`. |
-| `sockets[]` | `name`, `address` | `name` is the `/net` node label; `address` is a URL `<scheme>://<host>:<port>` with scheme `tcp`/`udp`/`tcps`/`udps`. |
+| `mounts[]` | `name`, `path`, `options` | `name` is a file/backend driver (`platform`, `volume`, `config`, `9p`, `log`); `path` is required, absolute, and outside `/dev`/`/net`. |
+| `sockets[]` | `name`, `address` | `name` is the `/net` node label; `address` is a URL — `<scheme>://<host>:<port>` with scheme `tcp`/`udp`/`tcps`/`udps`, or `serial://<device-path>`. |
 
 A `platform` mount is a bind mount; its `options` accept two comma-separated knobs: `src=<abshostpath>` (the host directory backing the mount — defaults to `path`) and `ro`/`rw` (access mode — defaults to `rw`). A `ro` mount denies every write (`-EROFS`) and requires the host directory to already exist; `path` stays the wapp-visible mount point. A relative/empty `src` or an unrecognised token is rejected at install. Example: `{ "name": "platform", "path": "/cfg", "options": "src=/etc/app,ro" }`.
 

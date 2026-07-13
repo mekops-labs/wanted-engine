@@ -65,9 +65,9 @@ The launch config addresses resources through three purpose-specific sections, e
 | Field | Type | Notes |
 |-------|------|-------|
 | `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. |
-| `drivers` | array | Up to 10 device singletons. Each mounts at `/dev/<name>` — the name determines the mount, so no `path`. |
-| `mounts` | array | Up to 10 file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev` and `/net`. |
-| `sockets` | array | Up to 10 named connections, each created at `/net/<name>`; the transport is the entry's `address`. |
+| `drivers` | array | Up to `MAX_DRIVERS_CNT` (default 6, profile-tunable) device singletons. Each mounts at `/dev/<name>` — the name determines the mount, so no `path`. |
+| `mounts` | array | Up to `MAX_DRIVERS_CNT` file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev` and `/net`. |
+| `sockets` | array | Up to `MAX_DRIVERS_CNT` named connections, each created at `/net/<name>`; the transport is the entry's `address`. |
 
 Entry shapes per section:
 
@@ -80,13 +80,19 @@ Entry shapes per section:
 
 ## Driver name registry
 
-`name` selects one of the engine's built-in drivers. Some are platform-specific (e.g. `gpio`, `wifi` exist only on NuttX); naming a driver the running platform does not implement fails the launch with `-ENODEV`. Read `/proc/wanted` (`drivers` field) for the names available on a given build.
+`name` selects one of the engine's built-in drivers. Some are platform-specific (`gpio` exists only on NuttX, `wifi` on NuttX and ESP-IDF, `ota` on ESP-IDF); naming a driver the running platform does not implement fails the launch with `-ENODEV`. Read `/proc/wanted` (`drivers` field) for the names available on a given build.
 
 | `name` | Section | Purpose | `options` example |
 |--------|---------|---------|-------------------|
 | `null` | `drivers` | Bit bucket at `/dev/null`. | — |
+| `sha256` | `drivers` | Streaming SHA-256 digest device at `/dev/sha256` — writes feed message bytes, the first read returns the digest as 64 hex characters. | — |
+| `ed25519` | `drivers` | Ed25519 signature verification at `/dev/ed25519` — write public key + signature + message, read back `ok`/`fail`. `-ENOSYS` on a build without a crypto backend. | — |
+| `inflate` | `drivers` | Streaming gzip decompression at `/dev/inflate` — a 4-byte LE size prefix, then the member; reads drain the decompressed output. | — |
 | `gpio` | `drivers` | A GPIO pin at `/dev/gpio` as a text level node: `write "1"/"0"` drives it high/low, `read` returns the level. Backed by the host GPIO char device on NuttX. NuttX only — naming it elsewhere (Linux) fails the launch with `-ENODEV`. | `/dev/gpio0` |
+| `wifi` | `drivers` | Wi-Fi station control at `/dev/wifi` as a text node: `write "scan"` / `"connect <ssid> <pass>"` / `"disconnect"`; reads stream scan results or a status line. NuttX and ESP-IDF only. | — |
+| `ota` | `drivers` | A/B firmware update: `/dev/ota` control/status node (`begin`/`commit`/`confirm`/`rollback`), `/dev/ota/slot` streaming image sink. ESP-IDF only. | — |
 | `log` | console slot | Ring-buffer console; output captured per-wapp and read back through a `log` mount. | — |
+| `log` | `mounts` | Read-only directory view of per-wapp captured logs at `path`: `<path>/<name>` reads wapp `<name>`'s ring. Grantable independently of `/dev/wanted`. | `name=app1` |
 | `pipe` | console slot | Live console: backs the slot with a named pipe in the shared store, so a peer wapp reads the stream at `/dev/pipe/<name>`. The pipe is auto-named `<wapp>.<slot>` (e.g. `app.out`) unless `options` pins `name=`. `out`/`err` are lossy (drop oldest on a full ring so an unread console never wedges the wapp); `in` reads a peer's writes. | `name=feed` |
 | `platform` | console slot / `mounts` | As a console slot: the engine's native stdio (fds 0/1/2). In `mounts[]`: a bind mount of a host directory as a native WASI preopen at `path`; `options` set the host source and access mode. | `src=/etc/app,ro` |
 | `volume` | `mounts` | An engine-managed persistent store mounted at `path`. The engine owns the host location, so the wapp names only a volume — no host path. Private per wapp by default; `shared` makes it a cross-wapp store. Portable across hosts. | `name=cache` |
@@ -95,7 +101,7 @@ Entry shapes per section:
 | `config` | `mounts` | Read-only config-file injection (e.g. mounted at `/etc/config`). | `{"config_file":"/config.json"}` |
 | `wanted` | `drivers` | The control-plane namespace at `/dev/wanted` (privileged). | — |
 
-A socket `address` is a URL `<scheme>://<host>:<port>`, where the scheme picks the transport: `tcp`/`udp` (plain) or `tcps`/`udps` (TLS/DTLS). See the [VFS Reference](vfs-reference.md).
+A socket `address` is a URL, where the scheme picks the transport: `<scheme>://<host>:<port>` with `tcp`/`udp` (plain) or `tcps`/`udps` (TLS/DTLS), or `serial://<device-path>` (a local UART / USB-CDC byte-stream device in place of a network connection). See the [VFS Reference](vfs-reference.md).
 
 A `platform` mount is a **bind mount** — the Docker `-v /host/path:/wapp/path[:ro]` equivalent. Its `options` string carries two comma-separated knobs:
 
@@ -154,7 +160,7 @@ A relative/empty `src` or an unrecognised token is rejected at install.
 }
 ```
 
-`configs/example_config_wsh.json` is the same with `imagePath` pointing at the `wsh` debug supervisor; `configs/sheriff.json` adds a `manager` socket and a `/var/lib/sheriff` platform mount for Sheriff's state.
+`configs/example_config_wsh.json` is the same with `imagePath` pointing at the `wsh` debug supervisor. `configs/sheriff.json` is the production Sheriff config: it adds the `sha256`/`ed25519`/`inflate` offload devices, a `/var/lib/sheriff` platform mount for Sheriff's state, and two TLS sockets — `manager` (`tcps://localhost:8443`, the control-plane uplink) and `registry` (`tcps://localhost:5000`, OCI image pulls). `configs/sheriff-deputy.json` is the same wiring over plain TCP (`manager` at `tcp://localhost:8080`) for the local Deputy demo.
 
 ## See also
 
