@@ -128,10 +128,10 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
          * buffering, no CR/LF translation, VMIN=1 so read() blocks for at least
          * one byte), and flush any bytes left in the RX buffer from a prior
          * round: without this a partially-drained or late-arriving previous
-         * response desyncs the next fetch, which then reads a headers-mid-stream
-         * fragment with no HTTP status line and fails to parse. Best-effort —
-         * a port that doesn't support termios (a pty in the host tests) just
-         * keeps its default discipline. */
+         * response desyncs the next fetch, which then reads a
+         * headers-mid-stream fragment with no HTTP status line and fails to
+         * parse. Best-effort — a port that doesn't support termios (a pty in
+         * the host tests) just keeps its default discipline. */
         struct termios tio;
         if (tcgetattr(fd, &tio) == 0) {
             cfmakeraw(&tio);
