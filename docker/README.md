@@ -77,7 +77,7 @@ those two Linux arches only.
 ## RP2350 cross-build + debug image (`Containerfile.rp2350`)
 
 A dedicated image for building the engine as a NuttX built-in app for the
-**RP2350 (ARM Cortex-M33, Adafruit Feather RP2350)** target, and for driving
+**RP2350 (ARM Cortex-M33, Adafruit Feather RP2350, Pimoroni Pico 2 W Plus)** target, and for driving
 the board on the bench over SWD with a **Raspberry Pi Debug Probe** (any
 CMSIS-DAP adapter works). It carries `gcc-arm-none-eabi` + `picotool` for the
 cross-build/flash half, and `openocd` (built from the **Raspberry Pi fork**,
