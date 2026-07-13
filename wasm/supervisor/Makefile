@@ -20,9 +20,10 @@
 #   make -C wasm/supervisor VARIANT=wsh build
 
 # Default build is the C supervisors (wasi-sdk clang, in the main build image).
-# sheriff (Zig, from the submodule) is opt-in so the default build needs no zig.
+# sheriff (Zig, from the submodule) and wifi-connect (a boot-time helper, not
+# a general-purpose supervisor) are opt-in so the default build stays minimal.
 VARIANTS     ?= wsh selftest
-ALL_VARIANTS := $(VARIANTS) sheriff
+ALL_VARIANTS := $(VARIANTS) sheriff wifi-connect
 
 DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
@@ -76,6 +77,15 @@ $(VARIANT_DIR)/app.wasm: $(wildcard $(SHERIFF_SRC)/src/*.zig) $(SHERIFF_SRC)/bui
 	mkdir -p $(VARIANT_DIR)
 	cd $(SHERIFF_SRC) && $(ZIG) build
 	cp $(SHERIFF_SRC)/zig-out/bin/sheriff.wasm $@
+endif
+
+# wifi-connect's app.wasm is compiled from the wapps/wifi-connect/ source tree.
+ifeq ($(VARIANT),wifi-connect)
+WIFI_CONNECT_SRC := $(DIR)../../wapps/wifi-connect
+$(VARIANT_DIR)/app.wasm: $(wildcard $(WIFI_CONNECT_SRC)/*.c) $(WIFI_CONNECT_SRC)/Makefile
+	mkdir -p $(VARIANT_DIR)
+	$(MAKE) -C $(WIFI_CONNECT_SRC)
+	cp $(WIFI_CONNECT_SRC)/wifi-connect.wasm $@
 endif
 
 endif
