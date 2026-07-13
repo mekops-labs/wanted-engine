@@ -9,6 +9,7 @@ wasm/supervisor/*/supervisor.tar
 wasm/supervisor/wsh/app.wasm
 wasm/supervisor/selftest/app.wasm
 wasm/supervisor/sheriff/app.wasm
+wasm/supervisor/wifi-connect/app.wasm
 wapps/*/*.wasm
 wapps/*/*.wasm.h
 wapps/*/*.o
