@@ -166,7 +166,7 @@ static void provision_sheriff_identity(void) {
  * engine-owned uplink looks for (sheriff/src/main.zig: MANAGER_SOCKET =
  * "/net/manager"). The tcp:// host below is a demo/dev-only constant. */
 #ifdef CONFIG_RP23XX_INFINEON_CYW43439
-#define SHERIFF_MANAGER_ADDRESS "tcp://172.27.175.123:8080"
+#define SHERIFF_MANAGER_ADDRESS "tcp://192.168.5.147:8080"
 #else
 #define SHERIFF_MANAGER_ADDRESS "serial://" CDCACM_DEVPATH
 #endif
