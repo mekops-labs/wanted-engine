@@ -223,3 +223,4 @@ The filesystem builtins (`ls`, `cat`, `write`) operate on any node directly — 
 - [Quick Start](quickstart.md) — a worked launch from the `wsh` shell.
 - [Configuration Reference](configuration-reference.md) — the engine-level config that boots the supervisor.
 - [VFS Reference](vfs-reference.md) — every other namespace a wapp can see.
+- [Error Reference](error-reference.md) — the errno a control-plane write returns and what it means.

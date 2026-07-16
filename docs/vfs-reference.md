@@ -226,3 +226,4 @@ openssl s_server -key key.pem -cert cert.pem -accept 8889
 
 - [Control Plane Reference](control-plane-reference.md) — the `/dev/wanted` namespace in full, and the launch config that mounts drivers.
 - [Wapp Authoring](wapp-authoring.md) — packaging files into the TarFS root and declaring preopens.
+- [Error Reference](error-reference.md) — what each errno these operations return means in engine context.

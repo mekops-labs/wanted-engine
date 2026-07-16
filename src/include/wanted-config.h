@@ -29,6 +29,10 @@
  *
  * Changing any limit resizes statically allocated structures — audit every
  * array dimensioned by it before adjusting a default here.
+ *
+ * The rationale for centralizing these limits and the per-target profile model
+ * is recorded in the ecosystem decision log as ***REMOVED*** (engine resource-limits
+ * config).
  */
 
 /* Maximum concurrent wapp instances. Dimensions the per-platform static slot

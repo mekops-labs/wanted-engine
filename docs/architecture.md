@@ -20,6 +20,31 @@ Each wapp runs on its own thread (thread-per-wapp), scheduled by the platform. I
 
 A wapp is written against a **POSIX environment**: it is an ordinary `wasm32-wasi` program calling `open`/`read`/`write`/`close`, `clock_gettime`, `sleep`, and the rest of the standard C library, which the toolchain lowers to WASI. Existing POSIX code ports with little change — the wapp does not know it is sandboxed; it only sees a filesystem that happens to be entirely virtual.
 
+The full lifecycle, from a supervisor `create` to slot release, threading the control plane, the engine, and WAMR:
+
+```mermaid
+sequenceDiagram
+    participant S as Supervisor
+    participant C as Control plane<br/>(/dev/wanted)
+    participant P as Platform
+    participant E as Engine<br/>(wanted.c)
+    participant M as WAMR
+    S->>C: create <name>
+    S->>C: config (JSON on the config node)
+    S->>C: start
+    C->>P: PlatformWappStart(wapp)
+    Note over P,E: new worker thread
+    P->>E: WantedWappRun(ctx)
+    E->>M: load + instantiate module
+    E->>E: build WASI ctx, mount VFS
+    E->>M: call entrypoint  → RUNNING
+    M-->>E: exit or trap
+    E->>E: WantedWappStop(ctx)  → EXITED / FAILURE
+    S->>C: delete  → release the slot
+```
+
+A `stop` drives the same teardown early via `WantedWappTerminate` (a cooperative abort), and a supervisor that exits is respawned; only an explicit `poweroff`/`reboot` ends the engine.
+
 ## VFS router
 
 The router follows the **Plan 9** principle that *everything is a file*: hardware devices, network sockets, inter-wapp pipes, process state, and even the runtime control plane are not special syscalls — they are paths in the wapp's namespace, opened and read and written like any file. This is what makes the POSIX surface above sufficient to reach every capability, and what makes a wapp's access exactly equal to the set of paths its launch config mounts.
@@ -41,6 +66,27 @@ graph LR
 - **`/`** — TarFS, the merged read-only OCI layer stack — the wapp's root filesystem.
 
 A WASI call carries a path; the router normalises it (`cwk_path_normalize` via `cwalk` — collapsing `.`, `..`, double slashes, trailing slashes, and denying parent-traversal past root), consults the mount table to pick the namespace, and dispatches to the driver. Open files live in a per-wapp **typed FD table**: each entry records its driver type and the absolute path it was opened at, which is what makes relative resolution (`VfsOpenAt`) work. The four namespaces are routed independently, so a driver in one cannot shadow another.
+
+The path a syscall takes from the wapp to a driver — `open` then `read`:
+
+```mermaid
+sequenceDiagram
+    participant W as wapp (wasm32-wasi)
+    participant B as WASI bridge<br/>(wasi/wasi-vfs.c)
+    participant R as VFS router<br/>(vfs/vfs.c)
+    participant D as Driver<br/>(DevFS / NetFS / ProcFS / TarFS)
+    W->>B: path_open("/dev/gpio", flags)
+    B->>R: VfsOpenAt(dirfd, path, flags)
+    R->>R: normalise path (cwalk),<br/>match the mount table
+    R->>D: driver OpenAt(ctx, ...)
+    D-->>R: driver handle
+    R-->>B: typed FD (driver type + absolute path)
+    B-->>W: wasi fd
+    W->>B: fd_read(fd, iov)
+    B->>R: VfsRead(fd, buf, n)
+    R->>D: driver Read(ctx, ...)
+    D-->>W: bytes
+```
 
 ## Supervisor
 

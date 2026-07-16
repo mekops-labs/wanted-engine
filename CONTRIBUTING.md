@@ -37,9 +37,13 @@ A change is ready for review once `just test` and `just smoke-engine` pass.
   committing.
 - **Tests:** new VFS drivers or core behaviour need a corresponding
   `test/test-*.c` Unity test group.
-- **Docs:** if a change affects the `/dev/wanted` contract, the VFS
-  namespace, or the public API, update the matching file under `docs/` in
-  the same change.
+- **Docs:** keep `docs/` in sync **in the same change**. When a change alters a
+  VFS path or mountpoint, a `/dev/wanted` verb or node, an errno returned at the
+  VFS/control boundary, a config key, or the public API, update the matching
+  page in the same commit — `vfs-reference.md`, `control-plane-reference.md`,
+  `error-reference.md`, `configuration-reference.md`, or the doc comments on the
+  public header — so a reader never sees a stale contract. The pages carry Hugo
+  front matter and flow to the docs site via `make docs-sync`.
 
 ## Naming conventions
 
