@@ -962,11 +962,9 @@ static void launch_config_validation_check(void) {
  * engine names the volume by instance, so both runs see the same store — proves
  * the first run's write persists into the second.
  *
- * Persistence (the marker re-opens after the restart) is asserted on every
- * platform. The byte-level read-back is asserted where the host-fs preopen
- * returns content; a build whose preopen opens but reads back nothing (the
- * NuttX sim's hostfs) skips that one assertion with a diagnostic, the same way
- * the socket check skips on a netless build. */
+ * Both the persistence (the marker re-opens after the restart) and the
+ * byte-level read-back of the payload through the preopen are asserted on every
+ * platform. */
 static void volume_check(void) {
     char buf[160];
 
@@ -988,22 +986,16 @@ static void volume_check(void) {
     tap_ok(n > 0 && strstr(buf, "vol-open") != NULL,
            "volume: state persists across a wapp restart (marker re-opens)");
 
-    if (n > 0 && strstr(buf, "vol-read:" VOLCHECK_PAYLOAD) != NULL) {
-        tap_ok(1, "volume: the persisted bytes read back through the preopen");
-    } else {
-        tap_diag(
-            "volume: byte read-back skipped — this build's host-fs preopen "
-            "opens the persisted file but reads back no content (e.g. the "
-            "NuttX sim hostfs)");
-    }
+    tap_ok(n > 0 && strstr(buf, "vol-read:" VOLCHECK_PAYLOAD) != NULL,
+           "volume: the persisted bytes read back through the preopen");
 }
 
 /* A shared volume crosses the wapp isolation boundary by design: two instances
  * that name the same `shared` volume see one store. The producer writes a
  * marker to a fresh shared volume; the consumer — a separate instance —
  * re-opens that marker, proving the store is shared, not per-wapp. The byte
- * read-back is asserted only where the host-fs preopen returns content (skipped
- * on the NuttX sim hostfs, like the persistence check). */
+ * read-back of the shared payload through the preopen is asserted on every
+ * platform. */
 static void shared_volume_check(void) {
     char buf[160];
 
@@ -1023,14 +1015,8 @@ static void shared_volume_check(void) {
            "shared volume: a second wapp reaches the producer's store "
            "(cross-wapp share)");
 
-    if (n > 0 && strstr(buf, "vol-read:" VOLCHECK_PAYLOAD) != NULL) {
-        tap_ok(1,
-               "shared volume: the shared bytes read back through the preopen");
-    } else {
-        tap_diag(
-            "shared volume: byte read-back skipped — host-fs preopen opens "
-            "the shared file but reads back no content (e.g. the NuttX sim)");
-    }
+    tap_ok(n > 0 && strstr(buf, "vol-read:" VOLCHECK_PAYLOAD) != NULL,
+           "shared volume: the shared bytes read back through the preopen");
 }
 
 /* Private and shared namespaces must never alias: a `name=iso` private volume
