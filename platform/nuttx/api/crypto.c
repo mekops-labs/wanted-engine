@@ -1,8 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* NuttX's vendored mbedTLS has no Ed25519 support (confirmed against the
- * ESP-IDF port's own finding for the same gap - see the mekops-kb
- * plans/wanted-sheriff-deputy-uart-transport.md), so this backs
+/* NuttX's vendored mbedTLS has no Ed25519 support, so this backs
  * PlatformEd25519Verify with vendor/ed25519 (orlp/ed25519, verify-only
  * subset) instead - portable C, no hardware crypto peripheral needed. */
 
