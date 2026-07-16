@@ -815,9 +815,10 @@ static void mounts_check(void) {
 
     /* A socket needs an IP netstack: socket() must succeed even to enumerate
      * the node, because listing /net stats each entry and stat'ing a socket
-     * node opens it. The sim:wanted board is built without CONFIG_NET, so
-     * socket() fails there and /net enumeration aborts. Distinguish three
-     * outcomes:
+     * node opens it. Current selftest targets — Linux and the NuttX sim (the
+     * latter over host-backed usrsock) — carry a netstack, so the socket node
+     * is present; the abort branch stays a guard for a genuinely netless
+     * build. Distinguish three outcomes:
      *   - found        → the socket is present (assert pass);
      *   - readdir abort → no netstack on this build (skip with a diagnostic);
      *   - enumerable but absent → a real regression (assert fail). */
