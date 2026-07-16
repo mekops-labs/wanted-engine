@@ -11,20 +11,32 @@ platform/nuttx/
   CMakeLists.txt           Static library platform_nuttx (sim)
   include/
     config-nuttx.h         Registry root paths and constants
+    wapp-stop.h            Cooperative wapp-stop contract
   api/
-    clock.c                clock_gettime / nanosleep
+    clock-sleep.c          nanosleep-backed PlatformSleep
     random.c               /dev/urandom
-    mutex.c                pthread mutex wrapper
     wapps.c                Thread lifecycle; wasm_runtime_terminate stop
     memory.c               PlatformMemoryStats via mallinfo()
     registry.c             Wapp index (sim: opendir/readdir over hostfs)
-    fs.c                   Preopen state dir, rename, mkdir
-    socket.c               Plain BSD sockets
-    ssocket.c              TLS via mbedTLS
-    registry_flash.c       HW only: flash partition mapping
+    crypto.c               PlatformEd25519Verify via vendored orlp/ed25519
+    extram.c               External-RAM seam
+    fs-volume.c            Volume store
+  app/
+    wanted_sim_main.c      Sim init shim (hostfs /data mount)
+    wanted_esp32_main.c    Boot-ROMFS init shims (HW)
+    wanted_rp2350_main.c
   vfs/
     vfs-nuttx.c            VfsPlatformFsInit driver
+    vfs-gpio.c             /dev/gpio driver
+    vfs-wifi.c             /dev/wifi driver
 ```
+
+Shared POSIX sources (`platform/posix/`: `clock.c`, `mutex.c`, `fs.c`,
+`socket.c`, `registry-store.c`, `wapps-image.c`, `sha256.c`) are compiled
+into the build alongside this directory. TLS secure sockets come from the
+shared raw-mbedTLS layer (`platform/posix/ssocket-mbedtls.c`), compiled when
+`CONFIG_SYSTEM_WANTED_TLS` enables mbedTLS (`apps/crypto/mbedtls`) and
+`SECURE_SOCKETS=1`.
 
 
 ## Build note (sim)

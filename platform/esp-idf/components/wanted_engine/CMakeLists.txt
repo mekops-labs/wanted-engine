@@ -65,9 +65,9 @@ set(platform_srcs
     ${ENGINE}/platform/posix/mutex.c
     # lwIP exposes the same BSD socket API this file already targets (it is
     # also the NuttX platform's socket.c, unmodified); SECURE_SOCKETS=1 below
-    # turns on its TLS branches, backed by ssocket.c's raw mbedTLS layer.
+    # turns on its TLS branches, backed by the shared raw-mbedTLS layer.
     ${ENGINE}/platform/posix/socket.c
-    ${ENGINE}/platform/esp-idf/ssocket.c
+    ${ENGINE}/platform/posix/ssocket-mbedtls.c
     # PlatformSha256* backed by mbedtls_sha256_context, which the ESP32-S3
     # SHA hardware peripheral transparently accelerates (MBEDTLS_HARDWARE_SHA
     # is on by default for this SoC) -- unlike ECC/ECDSA, this chip has no
