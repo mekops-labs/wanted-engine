@@ -18,7 +18,8 @@
                 {"name": "log", "path": "/log"}
             ],
             "sockets": [
-                {"name": "uplink", "address": "tcp://localhost:8899"}
+                {"name": "uplink", "address": "tcp://localhost:8899"},
+                {"name": "tlslink", "address": "tcps://localhost:8889"}
             ]
         }
     }
