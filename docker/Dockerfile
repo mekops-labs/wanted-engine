@@ -58,6 +58,9 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     bison \
     gettext \
     libelf-dev \
+    # apps/crypto/mbedtls fetches its source as a GitHub zip and unpacks it
+    # with unzip at build time (sim TLS build).
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Route every host compile through ccache via the masquerade dir on PATH. The
