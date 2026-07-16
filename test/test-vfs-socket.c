@@ -63,12 +63,27 @@ TEST(vfs_socket_driver, Init_BadScheme_ReturnsNull) {
     TEST_ASSERT_NULL(VfsSocketInit(NULL, "zzz://addr:1"));
 }
 
-TEST(vfs_socket_driver, Init_SecureTcp_RejectedWithoutSecureSupport) {
+/* The secure schemes (tcps/udps) are honoured only when the build has
+ * secure-socket support compiled in; otherwise VfsSocketInit rejects them.
+ * Assert the branch that matches this build's SECURE_SOCKETS. */
+TEST(vfs_socket_driver, Init_SecureTcp_HonoursSecureSupport) {
+#if SECURE_SOCKETS
+    drv = VfsSocketInit(NULL, "tcps://addr:1");
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_EQUAL_UINT8(VFS_FILETYPE_SOCKET_STREAM, drv->filetype);
+#else
     TEST_ASSERT_NULL(VfsSocketInit(NULL, "tcps://addr:1"));
+#endif
 }
 
-TEST(vfs_socket_driver, Init_SecureUdp_RejectedWithoutSecureSupport) {
+TEST(vfs_socket_driver, Init_SecureUdp_HonoursSecureSupport) {
+#if SECURE_SOCKETS
+    drv = VfsSocketInit(NULL, "udps://addr:1");
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_EQUAL_UINT8(VFS_FILETYPE_SOCKET_DGRAM, drv->filetype);
+#else
     TEST_ASSERT_NULL(VfsSocketInit(NULL, "udps://addr:1"));
+#endif
 }
 
 TEST(vfs_socket_driver, Init_Serial_CharDeviceFiletype) {
@@ -261,8 +276,8 @@ TEST_GROUP_RUNNER(vfs_socket_driver) {
     RUN_TEST_CASE(vfs_socket_driver, Init_NoScheme_ReturnsNull);
     RUN_TEST_CASE(vfs_socket_driver, Init_MissingPort_ReturnsNull);
     RUN_TEST_CASE(vfs_socket_driver, Init_BadScheme_ReturnsNull);
-    RUN_TEST_CASE(vfs_socket_driver, Init_SecureTcp_RejectedWithoutSecureSupport);
-    RUN_TEST_CASE(vfs_socket_driver, Init_SecureUdp_RejectedWithoutSecureSupport);
+    RUN_TEST_CASE(vfs_socket_driver, Init_SecureTcp_HonoursSecureSupport);
+    RUN_TEST_CASE(vfs_socket_driver, Init_SecureUdp_HonoursSecureSupport);
     RUN_TEST_CASE(vfs_socket_driver, Init_Serial_CharDeviceFiletype);
     RUN_TEST_CASE(vfs_socket_driver, Init_Serial_EmptyPath_ReturnsNull);
     RUN_TEST_CASE(vfs_socket_driver, Init_Serial_IgnoresColonInPath);
