@@ -203,11 +203,11 @@ window nor the inflate code.
 |--------|-----------|
 | `tcp://host:port` | Plain TCP |
 | `udp://host:port` | Plain UDP |
-| `tcps://host:port` | TLS TCP — Linux (OpenSSL) and ESP-IDF (mbedTLS; no CA bundle provisioned, so encrypted but unauthenticated) |
+| `tcps://host:port` | TLS TCP — Linux (OpenSSL); ESP-IDF and the NuttX sim (shared raw-mbedTLS layer; no CA bundle provisioned, so encrypted but unauthenticated) |
 | `udps://host:port` | DTLS UDP (Linux only) |
 | `serial:///dev/ttyACM0` | A local point-to-point byte-stream device — a UART or USB-CDC — in place of a network connection; a bare device path, no host or port |
 
-A wapp `open`s the `/net/<name>` node, then `read`/`write`s the stream and `close`s it; connection parameters come from the entry's `address`, not from the wapp. NuttX has no TLS backend.
+A wapp `open`s the `/net/<name>` node, then `read`/`write`s the stream and `close`s it; connection parameters come from the entry's `address`, not from the wapp. On NuttX, TLS is available where the board config enables `CONFIG_SYSTEM_WANTED_TLS` (the sim `wanted` config does); a build without it rejects the secure schemes at wapp launch.
 
 A `serial://` socket puts the device in raw mode and flushes its RX buffer on open, so a request/response exchange starts from a clean stream. It assumes the device delivers a reliable, ordered byte stream (true for a UART or USB-CDC); a lossy, unordered link needs its own framing/retry layer on top. It is how the Sheriff↔Deputy control-plane link runs on a board with no network stack — see the [Platform Guide](platform-guide.md).
 
