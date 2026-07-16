@@ -150,7 +150,53 @@ typedef struct wantedConfig_t {
     bool privileged; /* enables privileged /proc entries when true */
 } wantedConfig_t;
 
+/**
+ * Load and run a wapp to completion on the calling worker thread.
+ *
+ * Instantiates the WAMR module from the wapp's TarFS layer stack, builds its
+ * WASI context and VFS from the launch config, and invokes the entry point.
+ * Blocks until the wapp exits or traps. The WASI exit code (or
+ * WAPP_EXIT_CODE_NONE on a trap) is written to @p ctx->exit_code; instance
+ * teardown is the caller's responsibility via WantedWappStop().
+ *
+ * @param ctx  Wapp slot to run (image, VFS, and WAMR state). Must be non-NULL.
+ * @return 0 on a completed run; negative on a setup failure (NULL ctx, WAMR
+ *         init, per-thread env, load, or instantiation) before the wapp ran.
+ */
 int WantedWappRun(wapp_data_t *ctx);
+
+/**
+ * Tear down the instance WantedWappRun() built for @p ctx.
+ *
+ * Destroys the VFS, WASI context, WAMR exec-env/instance/module, and image
+ * bytes, then unwinds the per-thread WAMR env. Idempotent on the failure path
+ * (a failed run has already unwound its instance), so it is safe to call on
+ * every worker-thread exit.
+ *
+ * @param ctx  Wapp slot previously passed to WantedWappRun().
+ */
 void WantedWappStop(wapp_data_t *ctx);
+
+/**
+ * Asynchronously abort a running wapp's in-flight WASM execution.
+ *
+ * Signals the WAMR instance so the worker thread's call returns and unwinds
+ * through WantedWappStop(). This is the cooperative stop path for platforms
+ * that cannot force thread cancellation. Self-guards when the wapp has no live
+ * instance.
+ *
+ * @param ctx  Wapp slot to terminate; a NULL ctx or dead instance is a no-op.
+ */
 void WantedWappTerminate(wapp_data_t *ctx);
+
+/**
+ * Return the process-wide supervisor wapp descriptor.
+ *
+ * Lazily constructs the descriptor on first call from the operator config, or
+ * the compiled-in default config when none is valid; the supervisor always
+ * runs the factory image (a downloaded newer version is not adopted).
+ *
+ * @return The cached supervisor descriptor, or NULL if the config cannot be
+ *         parsed.
+ */
 wapp_t *WantedGetCurrentSupervisor(void);
