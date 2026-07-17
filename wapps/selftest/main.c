@@ -135,9 +135,9 @@
 
 /* A read-only shared volume must deny writes. vroro mounts a fresh
  * `name=roonly,shared,ro` store; volcheck finds no marker and tries to create
- * one, which the ro grant rejects (-EROFS), so it reports "vol-fail". This is
- * the publisher's mount in a producer→processor→publisher chain — read the
- * shared feed, never mutate it. */
+ * one, which the ro grant refuses, so it reports "vol-fail". This is the
+ * publisher's mount in a producer→processor→publisher chain — read the shared
+ * feed, never mutate it. */
 #define VRORO "vroro"
 #define VRORO_CFG "/dev/wanted/wapps/" VRORO "/config"
 #define VRORO_LOG LOG_MOUNT "/" VRORO
@@ -1048,7 +1048,7 @@ static void volume_isolation_check(void) {
 
 /* `ro` is orthogonal to `shared`: a read-only shared volume is provisioned by
  * the engine but denies the wapp every write. vroro tries to create a marker on
- * a fresh ro shared store and is refused (-EROFS), reporting "vol-fail". */
+ * a fresh ro shared store and is refused, reporting "vol-fail". */
 static void volume_readonly_check(void) {
     char buf[160];
 
@@ -1057,7 +1057,7 @@ static void volume_readonly_check(void) {
     int denied = r && read_path(VRORO_LOG, buf, sizeof(buf)) > 0 &&
                  strstr(buf, "vol-fail") != NULL &&
                  strstr(buf, "vol-wrote") == NULL;
-    tap_ok(denied, "volume: a read-only shared volume denies writes (-EROFS)");
+    tap_ok(denied, "volume: a read-only shared volume denies writes");
 }
 
 /* Multiple readers on one pipe. A named pipe is a single consume-once ring, not
