@@ -129,8 +129,7 @@ typedef uint8_t __wasi_sdflags_t;
      __WASI_RIGHTS_FD_ALLOCATE | __WASI_RIGHTS_PATH_CREATE_DIRECTORY |         \
      __WASI_RIGHTS_PATH_CREATE_FILE | __WASI_RIGHTS_PATH_LINK_SOURCE |         \
      __WASI_RIGHTS_PATH_LINK_TARGET | __WASI_RIGHTS_PATH_RENAME_SOURCE |       \
-     __WASI_RIGHTS_PATH_RENAME_TARGET |                                        \
-     __WASI_RIGHTS_PATH_FILESTAT_SET_SIZE |                                    \
+     __WASI_RIGHTS_PATH_RENAME_TARGET | __WASI_RIGHTS_PATH_FILESTAT_SET_SIZE | \
      __WASI_RIGHTS_PATH_FILESTAT_SET_TIMES |                                   \
      __WASI_RIGHTS_FD_FILESTAT_SET_SIZE |                                      \
      __WASI_RIGHTS_FD_FILESTAT_SET_TIMES | __WASI_RIGHTS_PATH_SYMLINK |        \

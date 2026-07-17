@@ -1006,11 +1006,12 @@ wasi_ctx_t *InitWasiContext(void) {
      * via fd_prestat enumeration. stdio fds 0-2 are registered separately as
      * STREAM slots by VfsRegister — we record them here only so the table is
      * dense for the resolve_preopen scan, and grant them every right except
-     * SEEK/TELL. The root preopen at fd=3 is lazy: the first prestat_get triggers
-     * VfsOpen("/") which succeeds once wapp setup has called VfsAttachTarfs. The
-     * root advertises the full grant — the TarFS driver enforces its read-only
-     * nature by failing write-opens, and advertising it read-only would only
-     * make libc silently downgrade a write-open under it to a read-open. */
+     * SEEK/TELL. The root preopen at fd=3 is lazy: the first prestat_get
+     * triggers VfsOpen("/") which succeeds once wapp setup has called
+     * VfsAttachTarfs. The root advertises the full grant — the TarFS driver
+     * enforces its read-only nature by failing write-opens, and advertising it
+     * read-only would only make libc silently downgrade a write-open under it
+     * to a read-open. */
     static const struct {
         const char *path;
         int fd;
