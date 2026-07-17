@@ -15,7 +15,7 @@
 # print after WantedStart returns. The real correctness signal is the absence
 # of a crash plus the absence of fatal markers.
 #
-# When run with a Sheriff M0+ supervisor that writes its clock-quality byte
+# When run with a Sheriff supervisor that writes its clock-quality byte
 # (and traces are off), the byte will be the only thing on stdout — we report
 # it but do not gate on it because the checked-in supervisor TAR may predate
 # that change.
