@@ -26,6 +26,7 @@ Changelog
 - RP2350 secure boot validation: `picotool seal --sign` (`make rp2350-sign`); the one-way OTP `SECURE_BOOT_ENABLE` fuse is deliberately never burned.
 - `make rp2350-flash-swd` / `rp2350-reset`: flash or reset a running RP2350 board over SWD via a Raspberry Pi Debug Probe (no BOOTSEL).
 - New platform seam symbols: `PlatformSha256New`/`Update`/`Final`/`Free`, `PlatformEd25519Verify`, `PlatformOtaInit`/`Confirm`/`GetBootState`/`BeginWrite`/`Write`/`Commit`/`Rollback`, `PlatformExtramEarlyInit`.
+- **Per-preopen WASI rights.** Each preopen advertises its capability rights through `fd_fdstat_get`; a read-only mount (`ro`) advertises no write rights, so libc caps a write request, and a `path_open` that exceeds a preopen's grant is refused with `ENOTCAPABLE` — defence in depth over the backing driver's `-EROFS`.
 
 ### Fixed
 
