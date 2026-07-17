@@ -142,7 +142,7 @@ rp2350-sign: ## sign $(RP2350_BIN) and validate the signature offline (no OTP, n
 # docs-sync runs on the host, not in the build container: it only copies Markdown
 # (no toolchain needed) to the destination directory. Pass DOCS_DEST.
 docs-sync: ## sync docs/*.md to the MekOps Hugo blog (pass DOCS_DEST=<blog content dir>)
-	@test -n "$(DOCS_DEST)" || { echo "DOCS_DEST is required, e.g. make docs-sync DOCS_DEST=<path to blog>/content/projects/wanted"; exit 1; }
+	@test -n "$(DOCS_DEST)" || { echo "DOCS_DEST is required, e.g. make docs-sync DOCS_DEST=<blog content dir>"; exit 1; }
 	rsync -av --include='*.md' --exclude='*' docs/ $(DOCS_DEST)/
 
 help: ## list the available targets

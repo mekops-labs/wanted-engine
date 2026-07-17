@@ -72,7 +72,7 @@ static void CreateWapp(const char *name) {
     ctl->Write(ctl->ctx, fd, cmd, (size_t)n);
 }
 
-/* M0 — enumeration */
+/* enumeration */
 
 TEST(vfs_wanted_wapps, ReadDirRoot_EnumeratesKnownWapps) {
     wapp_state_t seed[2] = {
@@ -128,7 +128,7 @@ TEST(vfs_wanted_wapps, OpenUnknownLeaf_ReturnsEnoent) {
     TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("alpha/bogus"));
 }
 
-/* M1 — plain-text reads */
+/* plain-text reads */
 
 TEST(vfs_wanted_wapps, ReadState_Running) {
     wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 2, 3, 4);
@@ -172,7 +172,7 @@ TEST(vfs_wanted_wapps, ReadWriteOnlyNode_ReturnsEinval) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Read(drv->ctx, fd, buf, sizeof(buf)));
 }
 
-/* M2 — ctl verb */
+/* ctl verb */
 
 TEST(vfs_wanted_wapps, CtlStop_TransitionsState) {
     wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 0, 0, 0);
@@ -225,7 +225,7 @@ TEST(vfs_wanted_wapps, CtlOversizedWrite_ReturnsEmsgsize) {
                           drv->Write(drv->ctx, c, big, sizeof(big)));
 }
 
-/* M3 — config + root ctl */
+/* config + root ctl */
 
 TEST(vfs_wanted_wapps, ConfigWrite_ParsesJson) {
     CreateWapp("alpha");

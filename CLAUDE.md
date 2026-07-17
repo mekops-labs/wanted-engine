@@ -4,6 +4,10 @@ WANTED (Web Assembly Nanocontainer Technology for Embedded Devices) is a Cloud-N
 
 Public API surface is a single function: `int WantedStart(const char *cfg, size_t cfgLen)` in `include/wanted.h`.
 
+## Confidentiality — keep internal planning out of this repo
+
+This is a publishable repository. Do **not** put internal planning artifacts into code, comments, commit messages, or docs: no milestone labels (e.g. `M5`, `M8c`, phase numbers), no internal spec/section references (e.g. `§7.2`), and no references to private or internal repositories or documents. External readers won't have that context — state the technical fact directly (e.g. "the code-size win", not "the M8c win"). Public-standard section references (e.g. `RFC 8949 §4.2`, `C11 §7.1.3`) are fine.
+
 ## First Steps
 
 Before executing any build or test command, read `README.md`. It is the authoritative source for build instructions, test procedures, and run commands. Do not guess or reconstruct commands from memory.
