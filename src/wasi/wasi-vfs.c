@@ -223,6 +223,18 @@ static wasi_preopen_t *resolve_preopen(wasi_ctx_t *ctx, int fd) {
     return NULL;
 }
 
+const wasi_preopen_t *WasiCtxFindPreopen(const wasi_ctx_t *ctx, int fd) {
+    for (uint8_t i = 0; i < ctx->preopens_cnt; i++) {
+        if (ctx->preopens[i].fd == fd)
+            return &ctx->preopens[i];
+    }
+    return NULL;
+}
+
+bool WasiRightsWithin(uint64_t inheriting, uint64_t requested) {
+    return (requested & ~inheriting) == 0;
+}
+
 static int32_t wasi_fd_prestat_dir_name(wasm_exec_env_t exec_env, int32_t fd,
                                         int32_t path_app, int32_t path_len) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
@@ -285,10 +297,19 @@ static int32_t wasi_fd_fdstat_get(wasm_exec_env_t exec_env, int32_t fd,
 
     fdstat->fs_filetype = stat.filetype;
     fdstat->fs_flags = stat.oflags;
-    fdstat->fs_rights_base = (uint64_t)-1;
-    fdstat->fs_rights_inheriting = fdstat->fs_rights_base;
 
-    /* Make descriptors 0,1,2 look like a TTY */
+    /* A preopen advertises its stored capability grant; any other fd (a file or
+     * subdir opened beneath a preopen) reverts to the full grant. */
+    const wasi_preopen_t *p = WasiCtxFindPreopen(ctx, fd);
+    if (p) {
+        fdstat->fs_rights_base = p->rights_base;
+        fdstat->fs_rights_inheriting = p->rights_inheriting;
+    } else {
+        fdstat->fs_rights_base = WASI_RIGHTS_ALL;
+        fdstat->fs_rights_inheriting = WASI_RIGHTS_ALL;
+    }
+
+    /* stdio streams cannot seek or tell. */
     if (fd <= 2) {
         fdstat->fs_rights_base &=
             ~(__WASI_RIGHTS_FD_SEEK | __WASI_RIGHTS_FD_TELL);
@@ -462,6 +483,17 @@ static int32_t wasi_path_open(wasm_exec_env_t exec_env, int32_t dirfd,
 
     if (path_len < 0 || path_len >= 512)
         return __WASI_ERRNO_INVAL;
+
+    /* Capability gate at the preopen boundary: a request may not exceed the
+     * parent preopen's inheriting rights. wasi-libc caps a request to the
+     * directory fd's advertised set before calling path_open, so a well-behaved
+     * wapp never trips this; it denies a wapp that hand-crafts a path_open with
+     * rights beyond the grant (bypassing libc's capping). The backing driver
+     * backstops writes for fds opened beneath a preopen. */
+    const wasi_preopen_t *parent = WasiCtxFindPreopen(ctx, dirfd);
+    if (parent &&
+        !WasiRightsWithin(parent->rights_inheriting, (uint64_t)fs_rights_base))
+        return __WASI_ERRNO_NOTCAPABLE;
 
     const char *path = vaddr(exec_env, path_app, (uint32_t)path_len);
     if (!path && path_len > 0)
@@ -973,17 +1005,21 @@ wasi_ctx_t *InitWasiContext(void) {
     /* The stdio slots and the root preopen mirror the layout the wapp will see
      * via fd_prestat enumeration. stdio fds 0-2 are registered separately as
      * STREAM slots by VfsRegister — we record them here only so the table is
-     * dense for the resolve_preopen scan. The root preopen at fd=3 is lazy:
-     * the first prestat_get triggers VfsOpen("/") which will succeed once the
-     * wapp setup has called VfsAttachTarfs. */
+     * dense for the resolve_preopen scan, and grant them every right except
+     * SEEK/TELL. The root preopen at fd=3 is lazy: the first prestat_get triggers
+     * VfsOpen("/") which succeeds once wapp setup has called VfsAttachTarfs. The
+     * root advertises the full grant — the TarFS driver enforces its read-only
+     * nature by failing write-opens, and advertising it read-only would only
+     * make libc silently downgrade a write-open under it to a read-open. */
     static const struct {
         const char *path;
         int fd;
+        uint64_t rights;
     } seed[] = {
-        {"<stdin>", 0},
-        {"<stdout>", 1},
-        {"<stderr>", 2},
-        {"/", -1},
+        {"<stdin>", 0, WASI_RIGHTS_STDIO},
+        {"<stdout>", 1, WASI_RIGHTS_STDIO},
+        {"<stderr>", 2, WASI_RIGHTS_STDIO},
+        {"/", -1, WASI_RIGHTS_ALL},
     };
     for (size_t i = 0; i < sizeof(seed) / sizeof(seed[0]); i++) {
         wasi_preopen_t *p = &ctx->preopens[ctx->preopens_cnt++];
@@ -993,6 +1029,8 @@ wasi_ctx_t *InitWasiContext(void) {
         memcpy(p->path, seed[i].path, plen);
         p->path[plen] = '\0';
         p->fd = seed[i].fd;
+        p->rights_base = seed[i].rights;
+        p->rights_inheriting = seed[i].rights;
     }
     return ctx;
 }
@@ -1039,6 +1077,8 @@ int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, const char *hostPath,
     memcpy(p->path, path, plen);
     p->path[plen] = '\0';
     p->fd = fd;
+    p->rights_base = readonly ? WASI_RIGHTS_READONLY : WASI_RIGHTS_ALL;
+    p->rights_inheriting = p->rights_base;
     return 0;
 }
 

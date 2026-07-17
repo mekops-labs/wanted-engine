@@ -76,6 +76,7 @@ typedef uint8_t __wasi_sdflags_t;
 #define __WASI_ERRNO_SRCH 71
 #define __WASI_ERRNO_TXTBSY 74
 #define __WASI_ERRNO_XDEV 75
+#define __WASI_ERRNO_NOTCAPABLE 76
 
 #define __WASI_OFLAGS_CREAT (1 << 0)
 #define __WASI_OFLAGS_DIRECTORY (1 << 1)
@@ -91,9 +92,57 @@ typedef uint8_t __wasi_sdflags_t;
 #define __WASI_RIGHTS_FD_DATASYNC (1ULL << 0)
 #define __WASI_RIGHTS_FD_READ (1ULL << 1)
 #define __WASI_RIGHTS_FD_SEEK (1ULL << 2)
+#define __WASI_RIGHTS_FD_FDSTAT_SET_FLAGS (1ULL << 3)
 #define __WASI_RIGHTS_FD_SYNC (1ULL << 4)
 #define __WASI_RIGHTS_FD_TELL (1ULL << 5)
 #define __WASI_RIGHTS_FD_WRITE (1ULL << 6)
+#define __WASI_RIGHTS_FD_ADVISE (1ULL << 7)
+#define __WASI_RIGHTS_FD_ALLOCATE (1ULL << 8)
+#define __WASI_RIGHTS_PATH_CREATE_DIRECTORY (1ULL << 9)
+#define __WASI_RIGHTS_PATH_CREATE_FILE (1ULL << 10)
+#define __WASI_RIGHTS_PATH_LINK_SOURCE (1ULL << 11)
+#define __WASI_RIGHTS_PATH_LINK_TARGET (1ULL << 12)
+#define __WASI_RIGHTS_PATH_OPEN (1ULL << 13)
+#define __WASI_RIGHTS_FD_READDIR (1ULL << 14)
+#define __WASI_RIGHTS_PATH_READLINK (1ULL << 15)
+#define __WASI_RIGHTS_PATH_RENAME_SOURCE (1ULL << 16)
+#define __WASI_RIGHTS_PATH_RENAME_TARGET (1ULL << 17)
+#define __WASI_RIGHTS_PATH_FILESTAT_GET (1ULL << 18)
+#define __WASI_RIGHTS_PATH_FILESTAT_SET_SIZE (1ULL << 19)
+#define __WASI_RIGHTS_PATH_FILESTAT_SET_TIMES (1ULL << 20)
+#define __WASI_RIGHTS_FD_FILESTAT_GET (1ULL << 21)
+#define __WASI_RIGHTS_FD_FILESTAT_SET_SIZE (1ULL << 22)
+#define __WASI_RIGHTS_FD_FILESTAT_SET_TIMES (1ULL << 23)
+#define __WASI_RIGHTS_PATH_SYMLINK (1ULL << 24)
+#define __WASI_RIGHTS_PATH_REMOVE_DIRECTORY (1ULL << 25)
+#define __WASI_RIGHTS_PATH_UNLINK_FILE (1ULL << 26)
+#define __WASI_RIGHTS_POLL_FD_READWRITE (1ULL << 27)
+#define __WASI_RIGHTS_SOCK_SHUTDOWN (1ULL << 28)
+#define __WASI_RIGHTS_SOCK_ACCEPT (1ULL << 29)
+
+/* Write/mutate class cleared from a read-only grant (READONLY = ALL & ~WRITE).
+ * Deny-by-subtraction: any right outside this set still passes, so broadening
+ * it only tightens. FD_SYNC and FD_FDSTAT_SET_FLAGS stay out — a durability
+ * barrier and an fd-flag toggle, harmless on a read-only fd. */
+#define WASI_RIGHTS_WRITE                                                      \
+    (__WASI_RIGHTS_FD_DATASYNC | __WASI_RIGHTS_FD_WRITE |                      \
+     __WASI_RIGHTS_FD_ALLOCATE | __WASI_RIGHTS_PATH_CREATE_DIRECTORY |         \
+     __WASI_RIGHTS_PATH_CREATE_FILE | __WASI_RIGHTS_PATH_LINK_SOURCE |         \
+     __WASI_RIGHTS_PATH_LINK_TARGET | __WASI_RIGHTS_PATH_RENAME_SOURCE |       \
+     __WASI_RIGHTS_PATH_RENAME_TARGET |                                        \
+     __WASI_RIGHTS_PATH_FILESTAT_SET_SIZE |                                    \
+     __WASI_RIGHTS_PATH_FILESTAT_SET_TIMES |                                   \
+     __WASI_RIGHTS_FD_FILESTAT_SET_SIZE |                                      \
+     __WASI_RIGHTS_FD_FILESTAT_SET_TIMES | __WASI_RIGHTS_PATH_SYMLINK |        \
+     __WASI_RIGHTS_PATH_REMOVE_DIRECTORY | __WASI_RIGHTS_PATH_UNLINK_FILE)
+
+/* Full grant and its read-only derivation. */
+#define WASI_RIGHTS_ALL ((uint64_t)-1)
+#define WASI_RIGHTS_READONLY (WASI_RIGHTS_ALL & ~WASI_RIGHTS_WRITE)
+
+/* stdio grant: every right except the seek/tell a stream cannot honour. */
+#define WASI_RIGHTS_STDIO                                                      \
+    (WASI_RIGHTS_ALL & ~(__WASI_RIGHTS_FD_SEEK | __WASI_RIGHTS_FD_TELL))
 
 #define __WASI_PREOPENTYPE_DIR 0
 #define __WASI_EVENTTYPE_CLOCK 0
