@@ -1,41 +1,41 @@
 Changelog
 =========
 
-0.9.0 (unreleased)
+0.9.0 (2026-07-17)
 ------------------
 
 ### Added
 
-- **ESP-IDF platform port (ESP32-S3).** Re-established after being dropped in the WAMR migration: a native `app_main` port with a flash-backed LittleFS registry, octal PSRAM via `PlatformExtram*`, A/B firmware OTA via `esp_ota_ops` (exposed to wapps as the `/dev/ota` driver), mbedTLS secure sockets using the ESP32-S3 hardware crypto (currently `MBEDTLS_SSL_VERIFY_NONE` — encrypted but unauthenticated), and a `wifi` station driver (`esp_wifi`). Validated on ESP32S3 board with 8MB of PSRAM.
-- **NuttX on RP2350 hardware.** A flash-MTD LittleFS registry on the internal QSPI flash, 8 MB PSRAM merged into one heap, and a real `PlatformEd25519Verify` backend (vendored `orlp/ed25519`, since NuttX's mbedTLS has no Ed25519). Two board configs in the pinned NuttX fork: `adafruit-feather-rp2350:wanted` (the `wsh` debug supervisor) and `pimoroni-pico-2-plus-w:sheriff` (the Sheriff control-plane agent, with the onboard CYW43439 radio). The flash-MTD driver cleans the XIP cache and saves/restores the QMI CS1 registers around every flash op so a write can't corrupt PSRAM.
-- **RP2350 Wi-Fi (CYW43439).** On the Pico Plus 2 W the pinned fork drives the onboard CYW43439 radio: the `wifi` driver is available to wapps, and the `:sheriff` boot path joins Wi-Fi before Sheriff's manager loop starts — SSID and passphrase are read interactively from the console (never baked into firmware), association goes through the NuttX WAPI library with DHCP retry. On a CYW43439 board Sheriff's manager socket is `tcp://`; a board without the radio uses the `serial://` USB-CDC link below.
-- **`serial://` socket scheme.** A device-path socket (in place of `host:port`) that lets a wapp drive a UART or USB-CDC as a byte stream — used for the Sheriff↔Deputy control-plane link on a board with no network stack. Its full reconcile loop (State Report → Ed25519-verified signed Desired State → wapp `RUNNING`, with tampered state rejected) is verified on the RP2350 Feather over USB-CDC.
-- **TLS secure sockets on the NuttX sim.** `tcps://` over the shared raw-mbedTLS layer, on a host-backed usrsock netstack (`CONFIG_NET` + loopback), so the sim's `/net` socket paths are CI-testable; `MBEDTLS_SSL_VERIFY_NONE` (unauthenticated).
-- **Internal & API documentation.** Doc comments on the public engine header, `src/` and `platform/` orientation READMEs, an error-code reference and a troubleshooting guide, and WASI→VFS→driver + wapp-lifecycle diagrams in the architecture doc.
-- `sha256` driver: `/dev/sha256`, a streaming digest device — writes feed message bytes, reads return the digest as 64 hex characters. Two concurrent streams per wapp. Backed by the new `PlatformSha256*` seam (software body in `posix/sha256.c`; ESP32-S3 uses the SHA hardware peripheral; no `-ENOSYS` path).
-- `ed25519` driver: `/dev/ed25519`, a signature-verification device — the wapp writes public key (32 B) + signature (64 B) + message (≤64 KiB) and reads back an `ok`/`fail` verdict. Backed by the new platform seam symbol `PlatformEd25519Verify` (OpenSSL on Linux, `orlp/ed25519` on NuttX; reads fail with `-ENOSYS` on a build without a crypto backend, e.g. the current ESP-IDF port).
-- `inflate` driver: `/dev/inflate`, a streaming gzip decompression device — a 4-byte LE size prefix, then the gzip member in any chunking; reads drain the decompressed output, trailer CRC32/length validated. The 32 KiB DEFLATE window lives in engine memory, not the wapp's. Vendors uzlib 2.9.5 (decompressor + checksums only).
-- `ota` driver: `/dev/ota`, A/B firmware update — `/dev/ota` is the control/status node (`begin`/`commit`/`confirm`/`rollback`), `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. Backed by the new `PlatformOta*` seam (real on ESP-IDF via `esp_ota_ops`, a fixed single-slot stub elsewhere). ESP-IDF only — `-ENODEV` elsewhere.
-- `wifi` driver (ESP-IDF): `/dev/wifi` Wi-Fi station control as a text node — `write "scan"` / `"connect <ssid> <pass>"` / `"disconnect"`; reads stream scan results or a status line. Backed by `esp_wifi` on ESP-IDF and the NuttX WAPI library on the RP2350 CYW43439 board; `-ENODEV` elsewhere.
-- `psram-s3` capacity profile: ESP32-S3 + octal PSRAM, `MAX_WAPPS=20`, 64 KiB stack / 0 heap (app heap off), 16 memory pages.
-- **Sheriff built from source.** The production supervisor is now compiled from the `wapps/sheriff` submodule (Zig) instead of shipping a prebuilt blob; `make -C wasm/supervisor sheriff` builds it.
-- `wifi-connect` boot-time helper: a supervisor variant that brings a board onto Wi-Fi before the main supervisor starts; `make -C wasm/supervisor wifi-connect`.
-- `devcheck` wapp + `test/devcheck.sh`: boots the `devcheck` wapp as supervisor and round-trips the `sha256`/`ed25519`/`inflate` offload devices end to end (WASI → VFS → driver).
-- `configs/sheriff-deputy.json`: plain-TCP Sheriff supervisor config for the local Deputy demo (`manager` at `tcp://localhost:8080`).
+- ESP-IDF platform port (ESP32-S3): native `app_main`, flash-backed LittleFS registry, octal PSRAM, A/B OTA, mbedTLS sockets (unauthenticated), `wifi` driver.
+- NuttX on RP2350: flash-MTD LittleFS registry, 8 MB PSRAM heap, `PlatformEd25519Verify` (vendored `orlp/ed25519`); `wsh` and `sheriff` board configs.
+- RP2350 Wi-Fi (CYW43439): `wifi` driver; `:sheriff` joins Wi-Fi before the manager loop (SSID/passphrase read interactively, never baked in).
+- `serial://` socket scheme: drive a UART/USB-CDC as a byte stream; Sheriff↔Deputy reconcile loop verified over USB-CDC on RP2350.
+- TLS sockets on the NuttX sim: `tcps://` over raw-mbedTLS on a host-backed usrsock netstack (CI-testable, unauthenticated).
+- Internal & API docs: header doc comments, `src/`/`platform/` READMEs, error-code reference, troubleshooting guide, architecture diagrams.
+- `sha256` driver (`/dev/sha256`): streaming digest, 64-hex-char read; two streams per wapp; `PlatformSha256*` seam (ESP32-S3 uses SHA hardware).
+- `ed25519` driver (`/dev/ed25519`): signature verification (pubkey + sig + message → `ok`/`fail`); `PlatformEd25519Verify` seam (`-ENOSYS` without a crypto backend).
+- `inflate` driver (`/dev/inflate`): streaming gzip decompression (4-byte LE size prefix); 32 KiB DEFLATE window in engine memory; vendors uzlib 2.9.5.
+- `ota` driver (`/dev/ota`): A/B firmware update — control/status node + write-only `/dev/ota/slot`; `PlatformOta*` seam (ESP-IDF only, `-ENODEV` elsewhere).
+- `wifi` driver (ESP-IDF): `/dev/wifi` station control — `scan`/`connect`/`disconnect`; `esp_wifi` on ESP-IDF, NuttX WAPI on RP2350.
+- `psram-s3` capacity profile: ESP32-S3 + octal PSRAM, `MAX_WAPPS=20`, 64 KiB stack, 16 memory pages.
+- Sheriff built from source (`wapps/sheriff` submodule, Zig); `make -C wasm/supervisor sheriff`.
+- `wifi-connect` boot-time helper supervisor; `make -C wasm/supervisor wifi-connect`.
+- `devcheck` wapp + `test/devcheck.sh`: end-to-end round-trip of `sha256`/`ed2551919`/`inflate` offload devices.
+- `configs/sheriff-deputy.json`: plain-TCP Sheriff config for the local Deputy demo.
 - RP2350 RISC-V (Hazard3) NuttX cross-build image (`docker/Containerfile.rp2350-riscv`).
-- RP2350 secure boot validation: `picotool seal --sign` (`make rp2350-sign`); the one-way OTP `SECURE_BOOT_ENABLE` fuse is deliberately never burned.
-- `make rp2350-flash-swd` / `rp2350-reset`: flash or reset a running RP2350 board over SWD via a Raspberry Pi Debug Probe (no BOOTSEL).
-- New platform seam symbols: `PlatformSha256New`/`Update`/`Final`/`Free`, `PlatformEd25519Verify`, `PlatformOtaInit`/`Confirm`/`GetBootState`/`BeginWrite`/`Write`/`Commit`/`Rollback`, `PlatformExtramEarlyInit`.
-- **Per-preopen WASI rights.** Each preopen advertises its capability rights through `fd_fdstat_get`; a read-only mount (`ro`) advertises no write rights, so libc caps a write request, and a `path_open` that exceeds a preopen's grant is refused with `ENOTCAPABLE` — defence in depth over the backing driver's `-EROFS`.
+- RP2350 secure boot validation: `picotool seal --sign` (`make rp2350-sign`); `SECURE_BOOT_ENABLE` OTP fuse never burned.
+- `make rp2350-flash-swd` / `rp2350-reset`: SWD flash/reset via a Raspberry Pi Debug Probe.
+- New platform seams: `PlatformSha256*`, `PlatformEd25519Verify`, `PlatformOta*`, `PlatformExtramEarlyInit`.
+- Per-preopen WASI rights: `fd_fdstat_get` advertises capabilities; over-grant `path_open` refused with `ENOTCAPABLE`.
 
 ### Fixed
 
-- `convertVfsFlags`: a read-only VFS open now emits an explicit host access mode instead of relying on `O_RDONLY == 0`, fixing `read()` returning `EACCES` on NuttX (where `O_RDONLY` is `1 << 0`) — which had silently broken every file read through a WASI preopen there.
-- `serial://` sockets: the device is put in raw mode and its RX buffer flushed on open, fixing a request/response framing desync over USB-CDC that made the client read a mid-stream response fragment.
-- Registry install-by-ref: the namespace separator is `:` (not `@`), and the launch-config image ref parses `<name>:<tag>` (was `<name>@<tag>`); registry filenames still use `@`.
-- NuttX `PlatformWappStart`: a `pthread_create` failure is now surfaced instead of proceeding on an invalid handle.
-- ESP-IDF `psram-s3` profile: WAMR host-managed heap disabled (it fragmented octal PSRAM and starved wapp launches).
-- ESP-IDF `esp_partition_mmap`: proxied through an internal-stack helper thread so the mmap call runs on a stack the SPI flash driver accepts.
+- `convertVfsFlags`: explicit read-only host access mode (was relying on `O_RDONLY == 0`), fixing `EACCES` on NuttX reads through WASI preopens.
+- `serial://` sockets: raw mode + RX flush on open, fixing a USB-CDC framing desync.
+- Registry install-by-ref: namespace separator `:` (was `@`); image ref parses `<name>:<tag>` (was `@`); filenames still `@`.
+- NuttX `PlatformWappStart`: `pthread_create` failure surfaced instead of proceeding on an invalid handle.
+- ESP-IDF `psram-s3`: WAMR host-managed heap disabled (fragmented octal PSRAM).
+- ESP-IDF `esp_partition_mmap`: proxied through an internal-stack helper thread.
 
 0.8.0 (2026-06-29)
 ------------------
