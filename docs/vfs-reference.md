@@ -122,6 +122,12 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `log` | console slot | — | Console capture: routes a wapp's stdout/stderr into its per-wapp log slot (read back via a `log` mount). |
 | `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` are lossy writers (drop oldest on a full ring); `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
 
+### Preopen capability rights
+
+Every preopen — the TarFS root, a `platform` bind mount, a `volume`, stdio — advertises WASI capability rights the wapp can read through `fd_fdstat_get`. A read-only grant (`ro`) advertises no write-class rights; libc caps a write request to fit before issuing the `path_open`, and a request that still exceeds a preopen's rights is refused with `ENOTCAPABLE`. This is defence in depth over the backing driver, which independently rejects any write that reaches it with `-EROFS`.
+
+The TarFS root advertises the full right set: its read-only nature is enforced by the driver, so a write-open under `/` fails with `-EROFS`.
+
 ### `sha256` — streaming digest device
 
 Each open of `/dev/sha256` starts a fresh digest stream: `write` feeds message
