@@ -13,9 +13,10 @@ extern "C" {
 
 /* Per-wapp preopen entry. `fd` is the VFS fd assigned at bind time; -1 means
  * the entry is lazy and will be opened on first fd_prestat_get(). The path
- * is what the wapp sees via fd_prestat_dir_name. `rights_base`/`rights_inheriting`
- * are the capability grant advertised for this fd and inherited beneath it; a
- * read-only mount clears WASI_RIGHTS_WRITE. */
+ * is what the wapp sees via fd_prestat_dir_name.
+ * `rights_base`/`rights_inheriting` are the capability grant advertised for
+ * this fd and inherited beneath it; a read-only mount clears WASI_RIGHTS_WRITE.
+ */
 typedef struct wasi_preopen_t {
     char path[64];
     int fd;
