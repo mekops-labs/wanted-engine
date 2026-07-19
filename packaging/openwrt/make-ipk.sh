@@ -24,10 +24,18 @@ isize=$(du -sb "$data" | cut -f1)
 # --- control.tar.gz: metadata + maintainer scripts -----------------------
 ctrl="$work/control"
 mkdir -p "$ctrl"
+
+# Depends follow what the binary actually links.
+needed=$(readelf -d "$BIN" 2>/dev/null | sed -n 's/.*NEEDED.*\[\(.*\)\]/\1/p')
+deps="libc"
+printf '%s\n' "$needed" | grep -q '^libgcc_s'        && deps="$deps, libgcc"
+printf '%s\n' "$needed" | grep -q '^libatomic'       && deps="$deps, libatomic"
+printf '%s\n' "$needed" | grep -qE '^lib(ssl|crypto)' && deps="$deps, libopenssl"
+
 cat > "$ctrl/control" <<EOF
 Package: wanted-engine
 Version: $VER
-Depends: libc, libgcc
+Depends: $deps
 Source: wanted-engine
 Section: utils
 Architecture: $ARCH

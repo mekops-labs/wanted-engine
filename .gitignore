@@ -31,3 +31,7 @@ wasm/registry-seed/
 /keys/
 # OpenWRT .ipk output
 /dist/
+
+# container scratch written into the mounted repo
+.cache/
+.bash_history
