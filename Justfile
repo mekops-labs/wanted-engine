@@ -37,13 +37,6 @@ all: build test
 supervisor:
     make -C wasm/supervisor
 
-# Build the production sheriff supervisor TAR from the wapps/sheriff submodule.
-# Needs zig — run in the wapp-sdk image, with host zig, or override the compiler
-# (ZIG='./scripts/dev zig' uses sheriff's own container). Zig is not in the main
-# build image, so this is intentionally separate from `supervisor`/`build`.
-sheriff:
-    make -C wasm/supervisor sheriff
-
 # Build the wifi-connect boot-time helper TAR from wapps/wifi-connect. Opt-in
 # (not part of `supervisor`) since it's a boot-time helper, not a general
 # supervisor.

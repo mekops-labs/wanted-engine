@@ -8,12 +8,13 @@
 # environment — call `just <recipe>` directly and skip this wrapper entirely.
 #
 # Override the runtime, image, build dir, or profile as needed:
-#   make test RUNNER=docker
+#   make test RUNNER_CMD=docker run
 #   make build IMAGE=localhost/wanted-build:dev
 #   make build BUILD_DIR=build-dbg PROFILE=tiny
 
-RUNNER    ?= podman
+RUNNER_CMD ?= podman run --userns=keep-id
 IMAGE     ?= registry.gitlab.com/mekops/wanted/wanted-engine/build
+WAPP_SDK_IMG ?= registry.gitlab.com/mekops/wanted/wanted-engine/wapp-sdk
 BUILD_DIR ?= build
 PROFILE   ?=
 
@@ -31,11 +32,11 @@ ENVS = -e BUILD_DIR=$(BUILD_DIR) -e PROFILE=$(PROFILE) \
 # Run a `just` recipe inside the build container with the repo mounted at /src.
 # --entrypoint=just bypasses the image's user-remapping entrypoint, as the
 # interactive targets below already do — fine under rootless podman.
-JUST = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" -w /src $(ENVS) --entrypoint=just $(IMAGE)
+JUST = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src $(ENVS) --entrypoint=just $(IMAGE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help shell wsh-shell nuttx-shell esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync FORCE
+.PHONY: help shell wsh-shell nuttx-shell sheriff esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync FORCE
 
 # Catch-all: forward any goal without an explicit rule below to `just` in the
 # container. FORCE defeats make's "up to date" check so a goal that matches an
@@ -52,17 +53,21 @@ Makefile: ;
 # --- host / interactive targets (cannot be a plain in-container `just`) ----
 
 shell: ## open an interactive shell in the build container
-	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint="" $(IMAGE) bash
+	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint="" $(IMAGE) bash
 
 wsh-shell: ## build wsh and open the interactive wsh prompt on Linux (wanted-cli)
 	$(JUST) wsh
-	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh $(IMAGE) -c \
+	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh $(IMAGE) -c \
 	    './$(BUILD_DIR)/cmd/wanted-cli ./configs/example_config_wsh.json'
 
 nuttx-shell: ## build the wsh sim and drop into the interactive wsh prompt
 	$(JUST) nuttx-build
-	$(RUNNER) run --rm -it -v "$(CURDIR):/src:Z" -w /src/build-nuttx/simroot \
+	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src/build-nuttx/simroot \
 	    --entrypoint=/bin/sh $(IMAGE) -c '/src/third_party/nuttx/nuttx'
+
+sheriff: ## build the sheriff supervisor using wapp_sdk image
+	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint="/bin/sh" $(WAPP_SDK_IMG) -c \
+	    'make -C wasm/supervisor sheriff'
 
 # ESP32 cross-build uses a distinct xtensa toolchain image; the supervisor +
 # nuttx-deps stage in the build image, then the firmware links in the xtensa one.
@@ -72,7 +77,7 @@ ESP32_BAUD  ?= 460800
 # As with $(JUST), bypass the xtensa image entrypoint (its build-user remap
 # collides with rootless bind-mount UID mapping); build as container root,
 # mapped back to the invoking host user under rootless podman.
-ESP32_JUST = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=just $(ESP32_IMAGE)
+ESP32_JUST = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=just $(ESP32_IMAGE)
 
 esp32: ## cross-build the ESP32 firmware -> third_party/nuttx/nuttx.bin
 	$(JUST) supervisor
@@ -103,7 +108,7 @@ RP2350_CONFIG ?= raspberrypi-pico-2:usbnsh
 RP2350_BIN    ?= third_party/nuttx/nuttx.uf2
 # The xtensa image bypasses its UID-remap entrypoint under rootless podman; do
 # the same here and build as the container root (mapped back to the host user).
-RP2350_RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(RP2350_IMAGE) -c
+RP2350_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(RP2350_IMAGE) -c
 
 # openocd (RPi fork, shipped in $(RP2350_IMAGE)) driving the board over SWD via a
 # Raspberry Pi Debug Probe (CMSIS-DAP). Needs raw USB access, hence --privileged
@@ -111,7 +116,7 @@ RP2350_RUN = $(RUNNER) run --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(RP2
 # resets a *running* board over SWD, no BOOTSEL needed (the ELF, not the .uf2,
 # is what openocd flashes).
 RP2350_ELF     ?= third_party/nuttx/nuttx
-RP2350_OPENOCD = $(RUNNER) run --rm --privileged -v /dev/bus/usb:/dev/bus/usb \
+RP2350_OPENOCD = $(RUNNER_CMD) --rm --privileged -v /dev/bus/usb:/dev/bus/usb \
     -v "$(CURDIR):/src:Z" --entrypoint=/usr/local/bin/openocd $(RP2350_IMAGE) \
     -f interface/cmsis-dap.cfg -c 'transport select swd' -f target/rp2350.cfg \
     -c 'adapter speed 5000'
