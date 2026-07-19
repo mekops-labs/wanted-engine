@@ -2,6 +2,8 @@
 build
 build-*
 compile_commands.json
+# OpenWRT SDKs (downloaded; see packaging/openwrt)
+.openwrt-sdk/
 wasm/*.wasm*
 wasm/supervisor/*/supervisor.tar
 # Supervisor app.wasm are build outputs: wsh/selftest compiled from wapps/,
