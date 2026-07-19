@@ -931,10 +931,18 @@ wapp_t *WantedGetCurrentSupervisor(void) {
     if (ret < 0)
         return w;
 
+    /* Prefer the configured (e.g. overlay-staged) image; fall back to the
+     * built-in so the engine always boots. */
     const char *img_path = (cfg && cfg->supervisorImagePath[0])
                                ? cfg->supervisorImagePath
                                : SUPERVISOR_IMAGE_PATH;
     int load_ret = PlatformWappLoad(img_path, w);
+    if (load_ret < 0 && strcmp(img_path, SUPERVISOR_IMAGE_PATH) != 0) {
+        DEBUG_TRACE("staged supervisor %s failed (%d); using built-in %s",
+                    img_path, load_ret, SUPERVISOR_IMAGE_PATH);
+        img_path = SUPERVISOR_IMAGE_PATH;
+        load_ret = PlatformWappLoad(SUPERVISOR_IMAGE_PATH, w);
+    }
     if (load_ret < 0) {
         DEBUG_TRACE("failed to load supervisor image from %s: %d", img_path,
                     load_ret);
