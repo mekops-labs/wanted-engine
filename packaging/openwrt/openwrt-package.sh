@@ -55,24 +55,12 @@ if ls "$SDK"/staging_dir/target-*/usr/lib/libssl.so.* >/dev/null 2>&1; then
     log "OpenSSL already staged in SDK"
 else
     log "staging OpenSSL into SDK (one-time per SDK)"
-    # OpenWRT's build system needs host tools the base image lacks: gawk (its
-    # scan.awk uses asort) and a distutils shim for the Python prereq. Install
-    # them when we have the privilege; otherwise say what's missing. (Proper
-    # home for these: the build image itself.)
     if ! awk 'BEGIN { a[1] = 1; asort(a) }' >/dev/null 2>&1; then
-        if [ "$(id -u)" -eq 0 ]; then
-            apt-get update -qq && apt-get install -y -qq \
-                gawk file unzip rsync wget gettext libncurses-dev zlib1g-dev python3-setuptools
-            update-alternatives --set awk /usr/bin/gawk
-        else
-            echo "openwrt-package: missing OpenWRT build prerequisites (gawk with" >&2
-            echo "  asort, python3-setuptools, ...) and not running as root." >&2
-            echo "  Add them to the build image, or run this step as root." >&2
-            exit 1
-        fi
+        echo "openwrt-package: gawk (asort) missing — build image lacks the" >&2
+        echo "  OpenWRT SDK prerequisites; see docker/Dockerfile." >&2
+        exit 1
     fi
-    # OpenWRT refuses to build as root. When we are root, drop to an
-    # unprivileged user; under a keep-id user namespace we already are one.
+    # OpenWRT refuses to build as root; drop privileges when we have them.
     if [ "$(id -u)" -eq 0 ]; then
         id owrt >/dev/null 2>&1 || useradd -m owrt
         chown -R owrt "$SDK"
