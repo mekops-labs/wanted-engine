@@ -31,10 +31,17 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
+# The OpenWRT gcc searches only its own sysroot, so SDK-staged libs (libopenssl)
+# need these explicitly; -isystem keeps their headers out of -Werror.
+set(CMAKE_C_FLAGS_INIT "-isystem ${_owrt_sysroot}/usr/include")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-L${_owrt_sysroot}/usr/lib")
+
 # WAMR defaults 32-bit non-ARM to X86_32, and its mips asm trampoline is
 # hard-float O32 — OpenWRT mips is soft-float, so use the portable C one.
 if(_owrt_arch STREQUAL "mips")
     set(WAMR_BUILD_TARGET "MIPS" CACHE STRING "WAMR build target" FORCE)
     set(WAMR_BUILD_INVOKE_NATIVE_GENERAL 1 CACHE STRING
         "WAMR portable C trampoline" FORCE)
+    # 32-bit MIPS: libcrypto pulls 8-byte atomics from libatomic.
+    string(APPEND CMAKE_EXE_LINKER_FLAGS_INIT " -L${_owrt_toolchain}/lib -latomic")
 endif()
