@@ -62,6 +62,10 @@ wsh: supervisor
     mkdir -p {{build_dir}}
     cd {{build_dir}} && cmake -GNinja {{profile_arg}} {{cmake_extra}} -DWANTED_SUPERVISOR_IMAGE_PATH={{wsh_tar}} .. && ninja
 
+# Build a production OpenWRT .ipk -> dist/. sdk = SDK URL or local SDK dir.
+openwrt-package sdk:
+    packaging/openwrt/openwrt-package.sh "{{sdk}}"
+
 # --- test (run against an already-built {{build_dir}}) ---------------------
 
 # Run the unit + smoke suite via ctest (JUnit report emitted for CI).
@@ -165,7 +169,7 @@ format-fix:
 
 # Lint shell scripts. error severity only for now; ratchet down over time.
 lint-shell:
-    find . -name '*.sh' -not -path './vendor/*' -not -path './third_party/*' -not -path './build*/*' -print0 \
+    find . -name '*.sh' -not -path './vendor/*' -not -path './third_party/*' -not -path './build*/*' -not -path './.openwrt-sdk/*' -print0 \
         | xargs -0 shellcheck --severity=error
 
 # Configure + build the clang build dir clang-tidy reads compile_commands.json

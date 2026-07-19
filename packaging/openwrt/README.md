@@ -26,38 +26,29 @@ supervisor is updated without replacing the package.
 
 ## Building
 
-Prerequisite: the OpenWRT SDK for the target (musl cross toolchain). See
-`cmake/toolchain-openwrt.cmake` for the env vars it expects. All commands run
-inside the standard build container (which provides cmake/ninja); the SDK
-toolchain is self-hosted.
-
-Cross-build the engine, pointing the compiled-in supervisor path at the packaged
-location and disabling OpenSSL (this bring-up package ships the self-contained
-`wsh` supervisor and needs no TLS):
+One command builds a production `.ipk` for any router — pass the target's SDK
+URL from [downloads.openwrt.org](https://downloads.openwrt.org/) (find your
+router's target/subtarget there):
 
 ```sh
-export STAGING_DIR=$SDK/staging_dir
-export OPENWRT_TOOLCHAIN=$STAGING_DIR/toolchain-aarch64_cortex-a53_gcc-13.3.0_musl
-export OPENWRT_CROSS=aarch64-openwrt-linux-musl
-export OPENWRT_SYSROOT=$STAGING_DIR/target-aarch64_cortex-a53_musl
-export OPENWRT_ARCH=aarch64
-cmake -B build-ipk-aarch64 -S . -G Ninja \
-      -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-openwrt.cmake \
-      -DBUILD_TESTING=OFF -C cmake/profiles/small.cmake -DSECURE_SOCKETS=OFF \
-      -DWANTED_SUPERVISOR_IMAGE_PATH=/usr/share/wanted/supervisor.tar
-cmake --build build-ipk-aarch64 -j"$(nproc)"
+make openwrt-package SDK=https://downloads.openwrt.org/releases/24.10.0/targets/mediatek/filogic/openwrt-sdk-24.10.0-mediatek-filogic_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+# inside the devcontainer/CI: just openwrt-package <sdk-url>
 ```
 
-Assemble the ipk:
+The recipe downloads + caches the SDK (under `.openwrt-sdk/`), stages OpenSSL
+into it, auto-detects the arch, cross-builds the engine **with TLS**, and writes
+the `.ipk` to `dist/`. The SDK argument can also be a path to an already-extracted
+SDK directory. Runs inside the standard build container.
 
-```sh
-sh packaging/openwrt/make-ipk.sh aarch64_cortex-a53 \
-   build-ipk-aarch64/cmd/wanted-cli wasm/supervisor/wsh/supervisor.tar \
-   "$(git describe --tags | sed s/^v//)" dist
-```
+**Production / OpenSSL.** The engine links OpenSSL for real TLS sockets and
+Ed25519 signature verification. OpenSSL is not shipped in the SDK, so the recipe
+stages it once per SDK (`scripts/feeds` + `make package/openssl/compile`); the
+result is cached in the SDK. Runtime `Depends` are derived from the binary's
+linked libraries (`libopenssl`, plus `libatomic` on 32-bit MIPS).
 
-Repeat with the mipsel SDK (`OPENWRT_ARCH=mips`, cross prefix
-`mipsel-openwrt-linux-musl`, opkg arch `mipsel_24kc`) for the second target.
+Under the hood the recipe calls `openwrt-package.sh`, which drives
+`cmake/toolchain-openwrt.cmake` and `make-ipk.sh` — use those directly for a
+custom build (e.g. `-DSECURE_SOCKETS=OFF` for a no-TLS bring-up build).
 
 ## Installing on the router
 
@@ -71,8 +62,8 @@ opkg install wanted-engine_<version>_<arch>.ipk
 
 ## Notes
 
-- This package ships the interactive `wsh` supervisor as the built-in default —
-  a self-contained bring-up target. A production control-plane supervisor that
-  needs TLS and signature verification requires an OpenSSL-enabled cross-build
-  (`SECURE_SOCKETS` on, OpenSSL from the SDK target feed).
+- The built-in default supervisor is the self-contained `wsh` shell, which boots
+  standalone. The engine is TLS-capable; to run the control-plane supervisor,
+  stage its image at the overlay path and set the manager/registry `tcps://`
+  endpoints in the config (it expects a reachable control-plane peer).
 - The `.ipk` is a gzipped tar (not a Debian `ar` archive) — the OpenWRT format.
