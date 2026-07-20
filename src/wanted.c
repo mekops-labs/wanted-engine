@@ -437,6 +437,33 @@ static uint32_t wappInitMemoryPages(wasm_module_t module) {
     return pages;
 }
 
+/* The module's own declared max linear pages, or 0 when it declares none. */
+static uint32_t wappMaxMemoryPages(wasm_module_t module) {
+    uint32_t pages = 0, max;
+    int32_t i, n;
+
+    n = wasm_runtime_get_export_count(module);
+    for (i = 0; i < n; i++) {
+        wasm_export_t e;
+        wasm_runtime_get_export_type(module, i, &e);
+        if (e.kind == WASM_IMPORT_EXPORT_KIND_MEMORY) {
+            max = wasm_memory_type_get_max_page_count(e.u.memory_type);
+            if (max > pages)
+                pages = max;
+        }
+    }
+    n = wasm_runtime_get_import_count(module);
+    for (i = 0; i < n; i++) {
+        wasm_import_t im;
+        wasm_runtime_get_import_type(module, i, &im);
+        if (im.kind == WASM_IMPORT_EXPORT_KIND_MEMORY) {
+            max = wasm_memory_type_get_max_page_count(im.u.memory_type);
+            if (max > pages)
+                pages = max;
+        }
+    }
+    return pages;
+}
 #endif
 
 int WantedWappRun(wapp_data_t *ctx) {
@@ -516,6 +543,7 @@ int WantedWappRun(wapp_data_t *ctx) {
         goto _freeWasmBytes;
     }
 
+    uint32_t max_pages = WASM_MAX_MEMORY_PAGES;
 #if WASM_MAX_MEMORY_PAGES > 0
     /* Refuse an image whose declared initial linear memory already exceeds the
      * per-wapp cap (the runtime cap only bounds later growth). */
@@ -528,6 +556,11 @@ int WantedWappRun(wapp_data_t *ctx) {
             ret = -1;
             goto _unloadModule;
         }
+        /* The cap only lowers: the runtime rejects an override above the
+         * module's declared max. */
+        uint32_t mod_max = wappMaxMemoryPages(ctx->wamr->module);
+        if (mod_max > 0 && mod_max < max_pages)
+            max_pages = mod_max;
     }
 #endif
 
@@ -536,7 +569,7 @@ int WantedWappRun(wapp_data_t *ctx) {
     inst_args.default_stack_size = WASM_STACK_SIZE;
     inst_args.host_managed_heap_size = WASM_HEAP_SIZE;
     /* Cap linear-memory growth per wapp (0 = use the module's declared max). */
-    inst_args.max_memory_pages = WASM_MAX_MEMORY_PAGES;
+    inst_args.max_memory_pages = max_pages;
     ctx->wamr->instance = wasm_runtime_instantiate_ex(
         ctx->wamr->module, &inst_args, err_buf, sizeof(err_buf));
     if (!ctx->wamr->instance) {
