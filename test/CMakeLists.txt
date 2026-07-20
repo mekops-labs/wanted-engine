@@ -61,6 +61,8 @@ target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src/include)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/tiny-json)
+# The 9P local-transport test forks the c9 server half as a driver-server stand-in.
+target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/c9)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/ed25519/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/platform/dummy)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/platform/include)
