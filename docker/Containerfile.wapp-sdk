@@ -31,7 +31,7 @@ FROM docker.io/library/debian:trixie-slim
 LABEL maintainer="mek.xgt@gmail.com"
 LABEL org.opencontainers.image.title="wanted-wapp-sdk"
 LABEL org.opencontainers.image.description="Multi-language WebAssembly SDK for building Wanted wapps (C/C++, Zig, TinyGo, Rust)."
-LABEL version="0.1.0"
+LABEL version="0.1.1"
 
 # Pinned toolchain versions. Update the matching SHA-256 args together.
 ARG WASI_SDK_VER=33
