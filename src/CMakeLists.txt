@@ -121,6 +121,13 @@ target_compile_definitions(${project} PRIVATE
 target_compile_definitions(${project} PRIVATE
     WANTED_VERSION="${SEMVER}")
 
+# Local (AF_UNIX) transport for the 9P driver, letting an on-box driver server
+# be reached over a filesystem socket. Hosted targets only — the lwIP-based MCU
+# builds have no local socket family.
+if (WANTED_PLATFORM STREQUAL "linux")
+    target_compile_definitions(${project} PRIVATE WANTED_9P_UNIX_TRANSPORT=1)
+endif()
+
 # Add debug symbols
 target_compile_options(${project} PUBLIC -g)
 

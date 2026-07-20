@@ -15,6 +15,10 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 
+#ifdef WANTED_9P_UNIX_TRANSPORT
+#include <sys/un.h>
+#endif
+
 #include <vfs-drivers.h>
 #include <vfs.h>
 
@@ -60,6 +64,15 @@ enum conn_state {
 
 /* Per-mount open-file table: each 9P mount reserves this many fd slots. */
 #define MAX_OPENED_FILES 10
+
+/*
+ * Mount address grammar: "<scheme>://<rest>". The inet schemes take
+ * "<host>:<port>"; the local scheme takes a filesystem socket path.
+ */
+#define SCHEME_SEP "://"
+#define SCHEME_TCP "tcp"
+#define SCHEME_UDP "udp"
+#define SCHEME_UNIX "unix"
 
 typedef struct C9aux {
     int f;
@@ -209,43 +222,29 @@ __attribute__((format(printf, 1, 2))) static void ctxerror(const char *fmt,
     va_end(ap);
 }
 
-static int dial(char *s) {
+/* Connect to "<host>:<port>" with the socket type/protocol the scheme picked.
+ */
+static int dialInet(const char *hostPort, int socktype, int protocol) {
     struct addrinfo *r, *a,
         hint = {.ai_flags = AI_ADDRCONFIG, .ai_family = AF_UNSPEC, 0};
     char host[64];
-    const char *sep, *hostStart, *colon;
-    size_t schemeLen, hostLen;
+    const char *colon;
+    size_t hostLen;
     int f;
 
-    /* Address is a URL "<scheme>://<host>:<port>", matching the socket driver:
-     * tcp (stream) or udp (datagram). */
-    if ((sep = strstr(s, "://")) == NULL) {
-        DEBUG_TRACE("invalid 9p address (no scheme): %s", s);
-        return -1;
-    }
-    schemeLen = (size_t)(sep - s);
-    if (schemeLen == 3 && strncmp(s, "tcp", 3) == 0) {
-        hint.ai_socktype = SOCK_STREAM;
-        hint.ai_protocol = IPPROTO_TCP;
-    } else if (schemeLen == 3 && strncmp(s, "udp", 3) == 0) {
-        hint.ai_socktype = SOCK_DGRAM;
-        hint.ai_protocol = IPPROTO_UDP;
-    } else {
-        DEBUG_TRACE("invalid 9p address (scheme): %s", s);
-        return -1;
-    }
+    hint.ai_socktype = socktype;
+    hint.ai_protocol = protocol;
 
-    hostStart = sep + 3;
-    if ((colon = strrchr(hostStart, ':')) == NULL || colon == hostStart) {
-        DEBUG_TRACE("invalid 9p address (host/port): %s", s);
+    if ((colon = strrchr(hostPort, ':')) == NULL || colon == hostPort) {
+        DEBUG_TRACE("invalid 9p address (host/port): %s", hostPort);
         return -1;
     }
-    hostLen = (size_t)(colon - hostStart);
+    hostLen = (size_t)(colon - hostPort);
     if (hostLen >= sizeof(host)) {
-        DEBUG_TRACE("host name too large: %s", s);
+        DEBUG_TRACE("host name too large: %s", hostPort);
         return -1;
     }
-    memcpy(host, hostStart, hostLen);
+    memcpy(host, hostPort, hostLen);
     host[hostLen] = '\0';
 
     if (getaddrinfo(host, colon + 1, &hint, &r) != 0) {
@@ -263,6 +262,67 @@ static int dial(char *s) {
     freeaddrinfo(r);
 
     return f;
+}
+
+/*
+ * Connect to a driver server listening on a filesystem socket, so an on-box
+ * server needs no loopback port. Reachability is then the socket's own
+ * filesystem permissions. Compiled in only where the platform offers local
+ * sockets — the lwIP-based targets do not.
+ */
+static int dialLocal(const char *path) {
+#ifdef WANTED_9P_UNIX_TRANSPORT
+    struct sockaddr_un addr;
+    size_t pathLen = strlen(path);
+    int f;
+
+    if (pathLen == 0 || pathLen >= sizeof(addr.sun_path)) {
+        DEBUG_TRACE("invalid 9p address (socket path): %s", path);
+        return -1;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    memcpy(addr.sun_path, path, pathLen + 1);
+
+    if ((f = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
+        return -1;
+    if (connect(f, (const struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        close(f);
+        return -1;
+    }
+
+    return f;
+#else
+    DEBUG_TRACE("9p local transport unavailable on this target: %s", path);
+    (void)path;
+    return -1;
+#endif
+}
+
+static int dial(const char *s) {
+    const char *sep, *rest;
+    size_t schemeLen;
+
+    if ((sep = strstr(s, SCHEME_SEP)) == NULL) {
+        DEBUG_TRACE("invalid 9p address (no scheme): %s", s);
+        return -1;
+    }
+    schemeLen = (size_t)(sep - s);
+    rest = sep + strlen(SCHEME_SEP);
+
+    if (schemeLen == strlen(SCHEME_TCP) &&
+        strncmp(s, SCHEME_TCP, schemeLen) == 0)
+        return dialInet(rest, SOCK_STREAM, IPPROTO_TCP);
+    if (schemeLen == strlen(SCHEME_UDP) &&
+        strncmp(s, SCHEME_UDP, schemeLen) == 0)
+        return dialInet(rest, SOCK_DGRAM, IPPROTO_UDP);
+    if (schemeLen == strlen(SCHEME_UNIX) &&
+        strncmp(s, SCHEME_UNIX, schemeLen) == 0)
+        return dialLocal(rest);
+
+    DEBUG_TRACE("invalid 9p address (scheme): %s", s);
+    return -1;
 }
 
 static void ctxprocR(C9ctx *ctx, C9r *r) {
@@ -325,7 +385,7 @@ static void ctxprocR(C9ctx *ctx, C9r *r) {
     }
 }
 
-static C9aux *srv(char *s, struct vfs_driver_ctx_t *ctx) {
+static C9aux *srv(const char *s, struct vfs_driver_ctx_t *ctx) {
     int f;
     C9aux *c;
 

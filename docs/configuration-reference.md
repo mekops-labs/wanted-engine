@@ -97,7 +97,7 @@ Entry shapes per section:
 | `platform` | console slot / `mounts` | As a console slot: the engine's native stdio (fds 0/1/2). In `mounts[]`: a bind mount of a host directory as a native WASI preopen at `path`; `options` set the host source and access mode. | `src=/etc/app,ro` |
 | `volume` | `mounts` | An engine-managed persistent store mounted at `path`. The engine owns the host location, so the wapp names only a volume — no host path. Private per wapp by default; `shared` makes it a cross-wapp store. Portable across hosts. | `name=cache` |
 | `socket` | `sockets` | TCP/UDP, plain or TLS. The transport is the entry's `address`. | `tcp://localhost:8888` |
-| `9p` | `mounts` | 9P2000 client for an external FS plugin. | `tcp://localhost:5640` |
+| `9p` | `mounts` | 9P2000 client for an external FS plugin. The `options` URL picks the transport: `tcp`/`udp` to reach a server over the network, `unix` to reach one on the same box over a filesystem socket. | `unix:///run/uci-9p.sock` |
 | `config` | `mounts` | Read-only config-file injection (e.g. mounted at `/etc/config`). | `{"config_file":"/config.json"}` |
 | `wanted` | `drivers` | The control-plane namespace at `/dev/wanted` (privileged). | — |
 

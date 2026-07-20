@@ -13,6 +13,9 @@ Unreleased
   the next respawn reads.
 - A staged supervisor image that repeatedly fails to launch is rolled back to
   the compiled-in image and the engine keeps serving, instead of aborting.
+- 9P mounts reach a server on the same box over a filesystem socket:
+  `unix://<socket-path>` alongside `tcp://` and `udp://`. An on-box driver
+  server needs no loopback port.
 
 ### Fixed
 
@@ -37,6 +40,9 @@ Unreleased
 - `live-update` recipe swaps the supervisor image under a running engine and
   asserts child-wapp continuity, that adoption happens only with a reload
   armed, and the rollback path.
+- The 9P driver is tested against a live server: a minimal 9P2000 server is
+  forked onto a local socket and the walk/open/stat/read/write round trips run
+  for real.
 
 0.10.0 (2026-07-20)
 ------------------
