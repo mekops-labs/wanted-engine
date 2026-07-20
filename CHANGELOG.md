@@ -11,6 +11,8 @@ Unreleased
   keep running across the swap. The image must be staged by atomic rename — the
   engine keeps the current one mapped, so an in-place overwrite corrupts what
   the next respawn reads.
+- A staged supervisor image that repeatedly fails to launch is rolled back to
+  the compiled-in image and the engine keeps serving, instead of aborting.
 
 ### Fixed
 
