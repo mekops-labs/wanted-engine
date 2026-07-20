@@ -21,6 +21,8 @@ Unreleased
   Stopping a never-yielding wapp crashed the engine on aarch64.
 - `PlatformClockNanoSleep` on Linux reports `clock_nanosleep`'s error, so an
   interrupted sleep surfaces `EINTR` instead of reporting success.
+- 9P `Stat` copies the parsed stat out of the response callback's frame; it
+  previously read through a pointer into a dead stack frame.
 
 ### Build
 
