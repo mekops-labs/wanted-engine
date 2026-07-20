@@ -431,6 +431,7 @@ int PlatformWappGetState(wapp_state_t *wapps, size_t appsLen) {
     return r;
 }
 
+#if defined(__GLIBC__)
 #include <malloc.h>
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
     struct mallinfo2 mi = mallinfo2();
@@ -439,5 +440,29 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
     if (heap_total)
         *heap_total = mi.arena;
 }
+#else
+/* musl has no mallinfo; fall back to /proc/self/statm (size, resident). */
+void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
+    if (heap_used)
+        *heap_used = 0;
+    if (heap_total)
+        *heap_total = 0;
+
+    FILE *f = fopen("/proc/self/statm", "r");
+    if (!f)
+        return;
+    unsigned long size_pages = 0, resident_pages = 0;
+    if (fscanf(f, "%lu %lu", &size_pages, &resident_pages) == 2) {
+        long page = sysconf(_SC_PAGESIZE);
+        if (page > 0) {
+            if (heap_used)
+                *heap_used = (size_t)resident_pages * (size_t)page;
+            if (heap_total)
+                *heap_total = (size_t)size_pages * (size_t)page;
+        }
+    }
+    fclose(f);
+}
+#endif
 
 const char *PlatformName(void) { return "linux"; }

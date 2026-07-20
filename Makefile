@@ -36,7 +36,7 @@ JUST = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src $(ENVS) --entrypoint=jus
 
 .DEFAULT_GOAL := help
 
-.PHONY: help shell wsh-shell nuttx-shell sheriff esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync FORCE
+.PHONY: help shell wsh-shell nuttx-shell sheriff esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync openwrt-package FORCE
 
 # Catch-all: forward any goal without an explicit rule below to `just` in the
 # container. FORCE defeats make's "up to date" check so a goal that matches an
@@ -54,6 +54,10 @@ Makefile: ;
 
 shell: ## open an interactive shell in the build container
 	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint="" $(IMAGE) bash
+
+openwrt-package: ## build a production OpenWRT .ipk — pass SDK=<url-or-dir>
+	$(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src \
+	    --entrypoint=just $(IMAGE) openwrt-package "$(SDK)"
 
 wsh-shell: ## build wsh and open the interactive wsh prompt on Linux (wanted-cli)
 	$(JUST) wsh
