@@ -20,7 +20,7 @@ recipes — see `README.md` for the authoritative build/test/run instructions an
 same recipe in the container. The short version:
 
 ```bash
-just build         # engine + supervisor images
+just build         # engine + supervisor images (Kconfig defaults; `just menuconfig` to change)
 just test          # unit + smoke suite via ctest
 just smoke-engine  # production supervisor instantiates cleanly
 ```
