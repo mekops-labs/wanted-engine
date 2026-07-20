@@ -14,9 +14,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <platform-config.h>
 #include <platform.h>
 
 /* mkdir -p: walk the path, creating each missing component. Existing
@@ -82,4 +84,21 @@ int PlatformFsRmdir(int fd, const char *path) {
     if (unlinkat(fd, path, AT_REMOVEDIR) < 0)
         return -errno;
     return 0;
+}
+
+void PlatformStorageStats(size_t *free_b, size_t *total_b) {
+    if (free_b)
+        *free_b = 0;
+    if (total_b)
+        *total_b = 0;
+
+    struct statvfs st;
+    if (statvfs(REGISTRY_ROOT, &st) != 0)
+        return;
+
+    /* f_bavail, not f_bfree: reserved blocks are not usable by a wapp. */
+    if (free_b)
+        *free_b = (size_t)st.f_bavail * (size_t)st.f_frsize;
+    if (total_b)
+        *total_b = (size_t)st.f_blocks * (size_t)st.f_frsize;
 }

@@ -101,6 +101,10 @@ void PlatformWappLoop(void);
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total);
 
+/* Free/total bytes of the store backing the registry and volumes — flash on a
+ * board, a filesystem on a host. 0 when the platform cannot report it. */
+void PlatformStorageStats(size_t *free_b, size_t *total_b);
+
 /* External-RAM (PSRAM) allocator for large engine buffers — wapp image cache
  * and WAMR linear memory — so internal RAM is left for task stacks, which on
  * the ESP32 can only live in internal RAM. On targets without external RAM
