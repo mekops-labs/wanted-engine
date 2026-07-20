@@ -11,7 +11,9 @@ WASM = $(NAME).wasm
 CLANG ?= /opt/wasi-sdk/bin/clang
 
 TARGET_FLAGS = --target=wasm32-wasi
-CLANG_FLAGS = -Wl,-export-dynamic -Wl,--initial-memory=262144 -Wl,--max-memory=524288 -z stack-size=4096 -Os -Wl,--strip-all -s $(TARGET_FLAGS)
+# --compress-relocations: without it lld pads call_indirect's table index to
+# 5 bytes, which the engine's WAMR build (reference types off) rejects.
+CLANG_FLAGS = -Wl,-export-dynamic -Wl,--initial-memory=262144 -Wl,--max-memory=524288 -z stack-size=4096 -Os -Wl,--strip-all -Wl,--compress-relocations -s $(TARGET_FLAGS)
 
 SRCS := $(wildcard *.c)
 
