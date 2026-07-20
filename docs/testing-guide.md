@@ -12,6 +12,7 @@ The engine has three test tiers, each catching a different class of failure. All
 |-------|---------|-------|
 | Unit (ctest) | `just test` | C unit tests: VFS, TarFS, WASI, registry, API parsing |
 | In-WASM selftest | `just selftest` / `just nuttx-selftest` | The functional + robustness scenario suite, run from inside WASM; TAP |
+| Cross-arch selftest | `just selftest-qemu-aarch64` / `-mipsel` | The same suite against a cross-built engine under qemu |
 | Smoke | `just smoke-engine` | The production sheriff supervisor instantiates cleanly |
 
 ## Unit suite (ctest)
@@ -48,6 +49,20 @@ Each scenario is a small purpose-built wapp under `wapps/` that the supervisor l
 A companion recipe, `just syscontrol` (Linux) / `just nuttx-syscontrol` (sim), runs `test/syscontrol.sh`, which drives the `wsh` supervisor through poweroff / reboot / exit and asserts the engine-process lifecycle the in-WASM suite cannot observe — including that a respawned supervisor keeps a working console.
 
 A standalone script, `test/devcheck.sh`, boots the `devcheck` wapp as the supervisor and round-trips the `sha256` / `ed25519` / `inflate` offload devices end to end (WASI → VFS → driver), powering the engine off after one pass.
+
+## Cross-architecture selftest (qemu)
+
+```bash
+just selftest-qemu-aarch64    # aarch64 (musl)
+just selftest-qemu-mipsel     # mipsel (musl)
+just selftest-qemu <sdk-url-or-dir>   # any OpenWRT target
+```
+
+`test/selftest-qemu.sh` cross-builds the engine from an OpenWRT SDK — the same toolchain the `.ipk` uses — and runs the selftest suite against it under qemu user-mode emulation, with the SDK's target rootfs as the loader root. The suite itself is unchanged: wapps and the supervisor are WASM loaded by path at runtime, so only the engine binary differs.
+
+This is the lane for faults that are invisible on x86. Engine code that is undefined-behaviour-clean on x86_64 can fault on another architecture's calling convention, alignment rules, or signal handling, and emulation reproduces that faithfully enough to catch it — without a router on the bench. The SDK is downloaded and cached under `.openwrt-sdk/` on first use; TLS is off in this lane, so it skips the SDK's one-time OpenSSL stage.
+
+A faulting guest leaves a `qemu_*.core` dump in the repo root (git-ignored).
 
 ## Smoke test
 
