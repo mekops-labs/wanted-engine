@@ -1,0 +1,32 @@
+# WANTED engine build configuration.
+#
+# This tree is authoritative and HOST-AGNOSTIC. It is read three ways:
+#
+#   * standalone — host and CI builds, via `just menuconfig` / a defconfig;
+#   * sourced into a Kconfig-native host that compiles engine sources into its
+#     own tree (NuttX, ESP-IDF), through that host's glue Kconfig;
+#   * indirectly, by a host that builds the engine as an external package
+#     (OpenWrt), which selects a defconfig and treats the build as a black box.
+#
+# Two rules follow, and both are load-bearing:
+#
+#   1. Every symbol is prefixed CONFIG_WANTED_. Engine and host symbols reach
+#      the same translation unit — NuttX via <nuttx/config.h>, ESP-IDF via
+#      sdkconfig.h — so an unprefixed name is a collision waiting to happen.
+#
+#   2. NEVER reference a host symbol from this file. `depends on NET` here is
+#      undefined in a standalone, OpenWrt, or Buildroot build, and kconfiglib
+#      resolves an undefined symbol to n — silently disabling the feature with
+#      at most a warning. Host-specific edges belong in that host's glue
+#      Kconfig, never here.
+
+mainmenu "WANTED Engine Configuration"
+
+config WANTED_KCONFIG_SELFTEST
+	bool "Kconfig mechanism self-test symbol"
+	default y
+	help
+	  Throwaway symbol that exists only to prove the configuration round trip
+	  — menuconfig, .config, generated header, and the rebuild it triggers —
+	  before any symbol carrying real meaning is migrated. Nothing reads it
+	  except the build's own check. Removed once real symbols land.

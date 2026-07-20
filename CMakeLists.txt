@@ -35,6 +35,10 @@ endif()
 # Engine-only warning guard. The NuttX kbuild already compiles with these.
 set(WANTED_STRICT_WARNINGS -Werror=strict-prototypes -Werror=undef)
 
+# Build configuration: reads Kconfig + this build dir's .config, generates
+# wanted-autoconf.h, and mirrors the symbols into CMake variables.
+include(cmake/Kconfig.cmake)
+
 # Engine resource-limit overrides (see src/include/wanted-config.h). Each limit
 # defaults to the conservative "constrained" value baked into that header;
 # defining the matching CMake variable — on the command line (-DMAX_WAPPS=16) or
