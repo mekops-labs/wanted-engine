@@ -27,6 +27,87 @@ config WANTED_KCONFIG_SELFTEST
 	default y
 	help
 	  Throwaway symbol that exists only to prove the configuration round trip
-	  — menuconfig, .config, generated header, and the rebuild it triggers —
-	  before any symbol carrying real meaning is migrated. Nothing reads it
-	  except the build's own check. Removed once real symbols land.
+	  — menuconfig, .config, generated header, and the rebuild it triggers.
+	  Nothing reads it except the build's own check. Leaving it enabled costs
+	  one #define.
+
+menu "VFS drivers"
+
+comment "tarfs, devfs, netfs and procfs are mandatory core and have no symbols."
+comment "They own members of struct vfs_ctx_t and are called directly from"
+comment "vfs.c; that coupling is a deliberate property of the VFS core. null,"
+comment "log, pipe, stdio and virtual are likewise always-on: they back the"
+comment "console defaults, the always-present /dev entries, and the wanted"
+comment "namespace. Only the drivers a launch config reaches by name are here."
+
+config WANTED_VFS_9P
+	bool "9p — 9P2000 client for an external driver server"
+	default y
+	help
+	  Mounts a filesystem served by an out-of-engine 9P2000 server, reached
+	  over tcp, udp, or a local socket. This is the engine's supported path
+	  for a driver that should run outside the trust boundary.
+
+	  Compiles in the vendored c9 protocol library, so dropping this removes
+	  more than the driver's own object size.
+
+config WANTED_VFS_INFLATE
+	bool "inflate — streaming gzip decompression device"
+	default y
+	help
+	  /dev/inflate: write compressed bytes, read the decompressed stream.
+
+	  Compiles in the vendored uzlib decompressor and a 32 KiB DEFLATE window
+	  in engine memory, so dropping this removes more than the driver's own
+	  object size.
+
+config WANTED_VFS_SOCKET
+	bool "socket — TCP/UDP and TLS network connections"
+	default y
+	help
+	  Backs the launch config's sockets[] section at /net/<name>. Without it
+	  a config naming a socket fails its launch with -ENODEV rather than
+	  silently starting without network access.
+
+config WANTED_VFS_SHA256
+	bool "sha256 — streaming digest device"
+	default y
+	help
+	  /dev/sha256: write message bytes, read the hex digest. Offloads hashing
+	  to the platform, which may use a hardware engine.
+
+config WANTED_VFS_ED25519
+	bool "ed25519 — signature verification device"
+	default y
+	help
+	  /dev/ed25519: write public key, signature and message, read the verdict.
+	  Needed by any wapp that verifies signed payloads itself; the engine's
+	  own image verification does not go through this driver.
+
+config WANTED_VFS_CONFIG
+	bool "config — read-only config-file injection"
+	default y
+	help
+	  Mounts a config file into the wapp namespace at a chosen path.
+
+config WANTED_VFS_LOGMOUNT
+	bool "logmount — read-only view of captured wapp logs"
+	default y
+	help
+	  Backs a mounts[] entry named `log`, exposing the per-wapp log rings as a
+	  readable directory. This is the read side; the console `log` driver that
+	  captures the output is always compiled in.
+
+config WANTED_VFS_WANTED
+	bool "wanted — the control-plane namespace"
+	default y
+	help
+	  /dev/wanted: the privileged namespace a supervisor uses to observe and
+	  drive wapp lifecycle, including the registry and the engine's own
+	  power verbs.
+
+	  Deselect only for a fixed-function node that runs its wapps from the
+	  boot config and has no supervisor. Without it nothing can start, stop,
+	  or install a wapp at runtime.
+
+endmenu
