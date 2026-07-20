@@ -208,7 +208,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 
 static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
-    char normalized[MAX_PATH_LEN];
+    char normalized[CONFIG_WANTED_MAX_PATH_LEN];
     const char *pathLeft;
     int f, newFd;
 
@@ -222,7 +222,8 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
         return -EINVAL;
     }
 
-    if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
+    if (cwk_path_normalize(path, normalized, CONFIG_WANTED_MAX_PATH_LEN) >=
+        CONFIG_WANTED_MAX_PATH_LEN) {
         return -ENAMETOOLONG;
     }
 
@@ -402,7 +403,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
 }
 
 static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
-    char normalized[MAX_PATH_LEN];
+    char normalized[CONFIG_WANTED_MAX_PATH_LEN];
     const char *pathLeft;
     int f;
 
@@ -410,7 +411,8 @@ static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
         return -EINVAL;
     }
 
-    if (cwk_path_normalize(path, normalized, MAX_PATH_LEN) >= MAX_PATH_LEN) {
+    if (cwk_path_normalize(path, normalized, CONFIG_WANTED_MAX_PATH_LEN) >=
+        CONFIG_WANTED_MAX_PATH_LEN) {
         return -ENAMETOOLONG;
     }
 

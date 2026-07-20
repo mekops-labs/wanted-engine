@@ -15,8 +15,15 @@
 
 find_program(WANTED_PYTHON NAMES python3 python REQUIRED)
 
-set(WANTED_KCONFIG_DIR ${CMAKE_SOURCE_DIR}/tools/kconfiglib)
-set(WANTED_KCONFIG_ROOT ${CMAKE_SOURCE_DIR}/Kconfig)
+# The engine checkout root. Defaults to this project's source dir, and is set
+# explicitly by a host build that compiles engine sources into its own tree
+# (the ESP-IDF component), where the engine is not the top-level project.
+if(NOT WANTED_ENGINE_ROOT)
+    set(WANTED_ENGINE_ROOT ${CMAKE_SOURCE_DIR})
+endif()
+
+set(WANTED_KCONFIG_DIR ${WANTED_ENGINE_ROOT}/tools/kconfiglib)
+set(WANTED_KCONFIG_ROOT ${WANTED_ENGINE_ROOT}/Kconfig)
 set(WANTED_DOTCONFIG ${CMAKE_BINARY_DIR}/.config)
 set(WANTED_AUTOCONF_DIR ${CMAKE_BINARY_DIR}/include)
 set(WANTED_AUTOCONF ${WANTED_AUTOCONF_DIR}/wanted-autoconf.h)
@@ -34,7 +41,7 @@ function(_wanted_kconfig_run script)
                 "PYTHONPATH=${WANTED_KCONFIG_DIR}"
                 "KCONFIG_CONFIG=${WANTED_DOTCONFIG}"
                 ${WANTED_PYTHON} ${WANTED_KCONFIG_DIR}/${script} ${ARGN}
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${WANTED_ENGINE_ROOT}
         RESULT_VARIABLE _rc
         OUTPUT_VARIABLE _out
         ERROR_VARIABLE _err)
@@ -48,7 +55,7 @@ endfunction()
 # a reconfigure must not silently discard a configuration.
 if(NOT EXISTS ${WANTED_DOTCONFIG})
     if(WANTED_DEFCONFIG)
-        set(_defconfig ${CMAKE_SOURCE_DIR}/configs/${WANTED_DEFCONFIG})
+        set(_defconfig ${WANTED_ENGINE_ROOT}/configs/${WANTED_DEFCONFIG})
         if(NOT EXISTS ${_defconfig})
             message(FATAL_ERROR
                 "kconfig: defconfig not found: ${_defconfig}")

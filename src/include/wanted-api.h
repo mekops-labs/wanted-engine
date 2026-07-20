@@ -7,14 +7,19 @@
 #include <stdint.h>
 #include <vfs-tarfs.h>
 #include <vfs.h>
-#include <wanted-config.h>
+#include <wanted-autoconf.h>
 #include <wanted.h>
+
+/* Per-wapp log ring slots. Derived rather than configured: a slot exists for
+ * each wapp the engine can run, so the two counts cannot disagree. */
+#define CONFIG_WANTED_LOG_SLOTS CONFIG_WANTED_MAX_WAPPS
 
 #define WAPP_MAX_NAME_LEN 15
 #define WAPP_MAX_VERSION_LEN 15
 #define MAX_DRIVER_NAME 15
-/* MAX_DRIVERS_CNT and MAX_OPTIONS_SIZE are profile-tunable footprint knobs and
- * live with the other resource limits in wanted-config.h (included above). */
+/* CONFIG_WANTED_MAX_DRIVERS_CNT and CONFIG_WANTED_MAX_OPTIONS_SIZE are
+ * profile-tunable footprint knobs and live with the other resource limits in
+ * the Kconfig tree. */
 
 /* An image reference is "<name>:<tag>" — an image name plus an optional version
  * tag. It bounds the config `image` field, which may carry a pinned tag. */
@@ -51,8 +56,8 @@ struct wamrData_t;
  * time. */
 typedef struct wapp_driver_t {
     char name[WAPP_MAX_NAME_LEN];
-    char path[MAX_PATH_LEN];
-    char options[MAX_OPTIONS_SIZE];
+    char path[CONFIG_WANTED_MAX_PATH_LEN];
+    char options[CONFIG_WANTED_MAX_OPTIONS_SIZE];
 } wapp_driver_t;
 
 typedef struct wapp_config_t {
@@ -65,13 +70,13 @@ typedef struct wapp_config_t {
     wapp_driver_t console[3];
     /* Device singletons, mounted at "/dev/<name>". */
     size_t driversCnt;
-    wapp_driver_t drivers[MAX_DRIVERS_CNT];
+    wapp_driver_t drivers[CONFIG_WANTED_MAX_DRIVERS_CNT];
     /* File/backend drivers bound at an arbitrary absolute path. */
     size_t mountsCnt;
-    wapp_driver_t mounts[MAX_DRIVERS_CNT];
+    wapp_driver_t mounts[CONFIG_WANTED_MAX_DRIVERS_CNT];
     /* Named connections created at "/net/<name>". */
     size_t socketsCnt;
-    wapp_driver_t sockets[MAX_DRIVERS_CNT];
+    wapp_driver_t sockets[CONFIG_WANTED_MAX_DRIVERS_CNT];
     char args[WAPP_MAX_ARGS][WAPP_MAX_ARG_LEN];
     size_t argsCnt;
     char envs[WAPP_MAX_ENVS][WAPP_MAX_ENV_LEN];
@@ -151,8 +156,8 @@ typedef struct reg_entry_t {
 
 typedef struct wantedConfig_t {
     wapp_config_t supervisorCfg;
-    char
-        supervisorImagePath[MAX_PATH_LEN]; /* empty = use compiled-in default */
+    char supervisorImagePath
+        [CONFIG_WANTED_MAX_PATH_LEN]; /* empty = use compiled-in default */
     bool privileged; /* enables privileged /proc entries when true */
 } wantedConfig_t;
 

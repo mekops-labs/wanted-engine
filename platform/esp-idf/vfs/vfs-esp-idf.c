@@ -36,7 +36,7 @@ typedef struct {
     bool canRead;
     bool canWrite;
     int fd;
-    char path[MAX_PATH_LEN];
+    char path[CONFIG_WANTED_MAX_PATH_LEN];
 } esp_vfs_open_t;
 
 static esp_vfs_open_t g_open[ESP_IDF_VFS_MAX_OPEN];
@@ -55,7 +55,7 @@ static int recordOpenLocked(const char *path, bool isDir, int fdIn,
     if (slot < 0)
         return -EMFILE;
 
-    size_t plen = strnlen(path, MAX_PATH_LEN - 1);
+    size_t plen = strnlen(path, CONFIG_WANTED_MAX_PATH_LEN - 1);
     memcpy(g_open[slot].path, path, plen);
     g_open[slot].path[plen] = '\0';
     g_open[slot].isDir = isDir;
@@ -79,7 +79,7 @@ static esp_vfs_open_t *findByFdLocked(int fd) {
 static int joinFromFd(int fd, const char *relPath, char *out, size_t outLen) {
     pthread_mutex_lock(&g_openLock);
     const esp_vfs_open_t *e = findByFdLocked(fd);
-    char base[MAX_PATH_LEN];
+    char base[CONFIG_WANTED_MAX_PATH_LEN];
     if (e != NULL)
         memcpy(base, e->path, sizeof(base));
     pthread_mutex_unlock(&g_openLock);
@@ -97,7 +97,7 @@ static int joinFromFd(int fd, const char *relPath, char *out, size_t outLen) {
 static int mkdirP(const char *path, mode_t mode) {
     if (path == NULL || *path == '\0')
         return -EINVAL;
-    char buf[MAX_PATH_LEN];
+    char buf[CONFIG_WANTED_MAX_PATH_LEN];
     size_t plen = strnlen(path, sizeof(buf));
     if (plen >= sizeof(buf))
         return -ENAMETOOLONG;
@@ -141,7 +141,7 @@ int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
                      const char *new_path) {
     if (old_path == NULL || new_path == NULL)
         return -EINVAL;
-    char oldAbs[MAX_PATH_LEN], newAbs[MAX_PATH_LEN];
+    char oldAbs[CONFIG_WANTED_MAX_PATH_LEN], newAbs[CONFIG_WANTED_MAX_PATH_LEN];
     int rc = joinFromFd(old_fd, old_path, oldAbs, sizeof(oldAbs));
     if (rc < 0)
         return rc;
@@ -156,7 +156,7 @@ int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
 int PlatformFsMkdir(int fd, const char *path) {
     if (path == NULL)
         return -EINVAL;
-    char abs[MAX_PATH_LEN];
+    char abs[CONFIG_WANTED_MAX_PATH_LEN];
     int rc = joinFromFd(fd, path, abs, sizeof(abs));
     if (rc < 0)
         return rc;
@@ -168,7 +168,7 @@ int PlatformFsMkdir(int fd, const char *path) {
 int PlatformFsRmdir(int fd, const char *path) {
     if (path == NULL)
         return -EINVAL;
-    char abs[MAX_PATH_LEN];
+    char abs[CONFIG_WANTED_MAX_PATH_LEN];
     int rc = joinFromFd(fd, path, abs, sizeof(abs));
     if (rc < 0)
         return rc;
@@ -227,7 +227,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
         return NULL;
     }
 
-    size_t rootLen = strnlen(root, MAX_PATH_LEN);
+    size_t rootLen = strnlen(root, CONFIG_WANTED_MAX_PATH_LEN);
     driver->ctx->rootPath = (char *)WantedMalloc(rootLen + 1);
     if (driver->ctx->rootPath == NULL) {
         DEBUG_TRACE("can't allocate memory");
@@ -326,7 +326,7 @@ static int espOpen(const char *path, vfs_oflags_t flags) {
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
-    char joined[MAX_PATH_LEN];
+    char joined[CONFIG_WANTED_MAX_PATH_LEN];
     cwk_path_change_root(path, d->rootPath, joined, sizeof(joined));
     return espOpen(joined, flags);
 }
@@ -336,7 +336,7 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
     if (d->readonly && VFS_O_IS_WRITE(flags))
         return -EROFS;
 
-    char joined[MAX_PATH_LEN];
+    char joined[CONFIG_WANTED_MAX_PATH_LEN];
     int rc = joinFromFd(fd, path, joined, sizeof(joined));
     if (rc < 0)
         return rc;
@@ -378,7 +378,7 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
     (void)d;
     bool isDir = false;
-    char path[MAX_PATH_LEN];
+    char path[CONFIG_WANTED_MAX_PATH_LEN];
 
     if (fd >= ESP_IDF_VFS_STDIO_FD_MAX) {
         pthread_mutex_lock(&g_openLock);
@@ -515,7 +515,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     (void)d;
     pthread_mutex_lock(&g_openLock);
     const esp_vfs_open_t *e = findByFdLocked(fd);
-    char path[MAX_PATH_LEN];
+    char path[CONFIG_WANTED_MAX_PATH_LEN];
     if (e != NULL)
         memcpy(path, e->path, sizeof(path));
     pthread_mutex_unlock(&g_openLock);
