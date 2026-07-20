@@ -111,3 +111,134 @@ config WANTED_VFS_WANTED
 	  or install a wapp at runtime.
 
 endmenu
+
+menu "Resource limits"
+
+comment "These size statically allocated tables and per-instance WAMR"
+comment "allocations. There is no heap budget to defer them to at runtime on a"
+comment "constrained target, and the right value differs by two orders of"
+comment "magnitude across the target matrix. Changing one resizes static"
+comment "structures — audit every array dimensioned by it."
+
+config WANTED_MAX_WAPPS
+	int "Maximum concurrent wapp instances"
+	default 3
+	range 1 64
+	help
+	  Dimensions the per-platform static slot tables and, through the log
+	  store, the per-wapp log rings. This is the dominant term in the engine's
+	  static footprint: each slot reserves a wapp descriptor plus its log ring,
+	  and the per-instance WASM stack and heap below are multiplied by the
+	  running count.
+
+	  The supervisor occupies one slot, so a value of 1 leaves room for no
+	  child wapps at all.
+
+config WANTED_WASM_STACK_SIZE
+	int "WASM operand stack per instance (bytes)"
+	default 8192
+	range 1024 1048576
+	help
+	  The interpreter's own evaluation stack, host memory outside the wapp's
+	  linear memory. Deep call graphs and recursion need more; a wapp that
+	  exhausts it traps rather than corrupting anything.
+
+config WANTED_WASM_HEAP_SIZE
+	int "WASM app heap per instance (bytes)"
+	default 8192
+	range 0 1048576
+	help
+	  Host-managed allocator the runtime hands out to the module, outside
+	  linear memory. Zero disables it for modules that never call it.
+
+config WANTED_WASM_MAX_MEMORY_PAGES
+	int "Linear-memory cap per wapp (64 KiB pages, 0 = unbounded)"
+	default 1
+	range 0 512
+	help
+	  The wapp's own addressable memory — the only region the module can load
+	  and store. An image whose declared initial memory exceeds this is refused
+	  at load rather than failing later.
+
+	  Zero lifts the cap, which is only appropriate where the host has a real
+	  memory manager behind it; on a static-allocation target it removes the
+	  engine's only bound on what one wapp can take.
+
+config WANTED_WASM_WORKER_STACK_SIZE
+	int "Worker thread native C stack (bytes)"
+	default 65536
+	range 16384 1048576
+	help
+	  Native stack for the thread a wapp runs on, floored by the platform's own
+	  minimum. This is host stack, distinct from the WASM operand stack above.
+
+config WANTED_MAX_PATH_LEN
+	int "Maximum VFS path length (bytes)"
+	default 256
+	range 64 4096
+	help
+	  Bounds every path buffer in the router and the drivers. Paths are
+	  composed, not just parsed, so a value tight enough to truncate a mount
+	  path plus a file name surfaces as failed opens.
+
+config WANTED_MAX_DRIVERS_CNT
+	int "Launch-config entries per resource section"
+	default 6
+	range 1 32
+	help
+	  Sizes each of the drivers[], mounts[] and sockets[] slot tables in a
+	  wapp's launch config — the cost is paid three times per configured wapp.
+
+config WANTED_MAX_OPTIONS_SIZE
+	int "Launch-config options string (bytes)"
+	default 128
+	range 32 1024
+	help
+	  Per-entry options blob in the sections above. A 9P address or a bind
+	  mount's src= path has to fit here.
+
+menu "Driver limits"
+
+comment "Sizes of driver-private static allocations. Behavioural knobs (poll"
+comment "intervals and the like) stay local to their driver: the criterion for"
+comment "appearing here is whether the value sizes an allocation."
+
+config WANTED_PIPE_BUF_SIZE
+	int "Bytes per named pipe"
+	default 4096
+	range 256 65536
+	help
+	  Ring buffer for one /dev/pipe channel.
+
+config WANTED_PIPE_MAX_PIPES
+	int "Concurrent named pipes"
+	default 8
+	range 1 64
+	help
+	  The pipe store is ONE engine-wide instance of this many buffers, i.e.
+	  WANTED_PIPE_MAX_PIPES * WANTED_PIPE_BUF_SIZE, allocated whether or not
+	  any wapp ever opens /dev/pipe. At the defaults that is 32 KiB — around
+	  6 % of a 512 KiB part.
+
+	  Raising it also grows a stack frame: the pipe driver's directory
+	  enumeration sizes a local array by this value, on targets where stack is
+	  the scarce resource.
+
+config WANTED_LOG_CAP
+	int "Bytes retained per wapp log"
+	default 2048
+	range 256 65536
+	help
+	  Most-recent output kept per wapp, multiplied by WANTED_MAX_WAPPS.
+
+config WANTED_LOGMOUNT_MAX_OPEN
+	int "Concurrent open handles on a log mount"
+	depends on WANTED_VFS_LOGMOUNT
+	default 8
+	range 1 64
+	help
+	  Reader slots in the log mount's fd table.
+
+endmenu
+
+endmenu

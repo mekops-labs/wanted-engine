@@ -2,29 +2,21 @@
 #
 # Every build/test/lint recipe lives here and assumes it runs *inside* the
 # standardized build container (toolchain on PATH, repo at the working dir).
-# That is how CI and the devcontainer invoke them. On a bare host, the root
-# `Makefile` is a thin wrapper that runs these same recipes in the container
-# (`make build` == `just build` in the image) — see Makefile.
-#
-# Two images: this build image runs everything below except the wasm recipes,
-# which need the wapp-sdk image and are absent here — see "--- wasm" below.
+# That is how CI and the devcontainer invoke them.
 #
 # Overrides are read from the environment so one recipe serves local + CI:
-#   BUILD_DIR (default build) · PROFILE (tiny|constrained|small|big)
+#   BUILD_DIR (default build) · DEFCONFIG (tiny|constrained|small|big|psram-s3)
 #   CC · CMAKE_EXTRA_ARGS · NUTTX_SKIP_BUILD · NUTTX_CLEAN
 
 build_dir := env_var_or_default("BUILD_DIR", "build")
-profile   := env_var_or_default("PROFILE", "")
+defconfig := env_var_or_default("DEFCONFIG", "")
 cmake_extra := env_var_or_default("CMAKE_EXTRA_ARGS", "")
 wsh_tar   := "./wasm/supervisor/wsh/supervisor.tar"
 
-# OpenWRT SDKs for the qemu selftest lanes, matching the reference routers.
-sdk_aarch64 := "https://downloads.openwrt.org/releases/24.10.0/targets/mediatek/filogic/openwrt-sdk-24.10.0-mediatek-filogic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
-sdk_mipsel  := "https://downloads.openwrt.org/releases/23.05.5/targets/ramips/mt7621/openwrt-sdk-23.05.5-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
-
-# Optional resource-limit profile (cmake/profiles/<name>.cmake). Absolute: the
-# build recipes cd into {{build_dir}} before invoking cmake.
-profile_arg := if profile != "" { "-C " + justfile_directory() + "/cmake/profiles/" + profile + ".cmake" } else { "" }
+# Optional board defconfig (configs/<name>_defconfig), used only when this build
+# dir has no .config yet — an existing configuration is never overwritten by a
+# build. Change one afterwards with `just menuconfig` or `just defconfig <name>`.
+defconfig_arg := if defconfig != "" { "-DWANTED_DEFCONFIG=" + defconfig } else { "" }
 
 # First-party C/H sources (vendored deps and generated trees are excluded).
 src_dirs := "src platform cmd include"
@@ -37,11 +29,6 @@ default:
 
 # Build the engine + CLI and run the unit suite.
 all: build test
-
-# --- wasm -----------------------------------------------------------------
-# Deliberately no wasm recipes here — the wapp-sdk image has no `just`, so those
-# builds run through plain Makefiles (wasm/supervisor/Makefile, wapps/Makefile)
-# instead. From a host: `make wasm` / `supervisor` / `wapps` / `sheriff`.
 
 # --- build ----------------------------------------------------------------
 # No dependency on the wasm recipes: the supervisor TAR is loaded by path at
@@ -76,15 +63,15 @@ defconfig name:
 olddefconfig:
     {{kconfig}} python3 {{kcl}}/olddefconfig.py Kconfig
 
-# Build the engine + CLI with the production (sheriff) supervisor [PROFILE=...].
+# Build the engine + CLI with the production (sheriff) supervisor [DEFCONFIG=...].
 build:
     mkdir -p {{build_dir}}
-    cd {{build_dir}} && cmake -GNinja {{profile_arg}} {{cmake_extra}} .. && ninja
+    cd {{build_dir}} && cmake -GNinja {{defconfig_arg}} {{cmake_extra}} .. && ninja
 
-# Build the engine + CLI with the wsh debug supervisor compiled in [PROFILE=...].
+# Build the engine + CLI with the wsh debug supervisor compiled in [DEFCONFIG=...].
 wsh:
     mkdir -p {{build_dir}}
-    cd {{build_dir}} && cmake -GNinja {{profile_arg}} {{cmake_extra}} -DWANTED_SUPERVISOR_IMAGE_PATH={{wsh_tar}} .. && ninja
+    cd {{build_dir}} && cmake -GNinja {{defconfig_arg}} {{cmake_extra}} -DWANTED_SUPERVISOR_IMAGE_PATH={{wsh_tar}} .. && ninja
 
 # Build a production OpenWRT .ipk -> dist/. sdk = SDK URL or local SDK dir.
 openwrt-package sdk:
@@ -100,7 +87,7 @@ test:
 # drivers resolve and that one claiming a core name still loses to core.
 test-extra-drivers:
     mkdir -p build-extra-drivers
-    cd build-extra-drivers && cmake -GNinja {{profile_arg}} {{cmake_extra}} \
+    cd build-extra-drivers && cmake -GNinja {{defconfig_arg}} {{cmake_extra}} \
         -DWANTED_EXTRA_DRIVERS_DIR={{justfile_directory()}}/test/extra-drivers .. && ninja
     cd build-extra-drivers && ctest -j"$(nproc)" --output-on-failure -R driver_tables
 
@@ -121,12 +108,6 @@ selftest:
 # pin the SDKs the reference routers run.
 selftest-qemu sdk:
     ./test/selftest-qemu.sh "{{sdk}}"
-
-selftest-qemu-aarch64:
-    ./test/selftest-qemu.sh "{{sdk_aarch64}}"
-
-selftest-qemu-mipsel:
-    ./test/selftest-qemu.sh "{{sdk_mipsel}}"
 
 # Run the system-control (poweroff/reboot/exit) checks on Linux.
 syscontrol:
@@ -166,14 +147,14 @@ sizes:
 
 # --- NuttX simulator ------------------------------------------------------
 # The build/test recipe lives in test/nuttx-sim.sh (shared with CI); these
-# recipes just dispatch to it. PROFILE / NUTTX_SKIP_BUILD / NUTTX_CLEAN are read
+# recipes just dispatch to it. DEFCONFIG / NUTTX_SKIP_BUILD / NUTTX_CLEAN are read
 # from the environment by the script.
 
 # Link the engine app package into the checked-out nuttx-apps submodule.
 nuttx-deps:
     ./test/nuttx-sim.sh deps
 
-# Configure + build the NuttX sim (wsh as init over hostfs) [PROFILE=...].
+# Configure + build the NuttX sim (wsh as init over hostfs) [DEFCONFIG=...].
 nuttx-build:
     ./test/nuttx-sim.sh deps build
 
@@ -201,7 +182,7 @@ nuttx-clean:
 esp32-build:
     cd third_party/nuttx && \
         { [ -f .config ] || ./tools/configure.sh -a ../nuttx-apps esp32-devkitc:wanted; } && \
-        make -j"$(nproc)"
+        make -j"$(nproc)" WANTED_DEFCONFIG=esp32-nuttx_defconfig
 
 # --- clean ----------------------------------------------------------------
 

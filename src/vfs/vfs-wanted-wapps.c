@@ -59,10 +59,11 @@ typedef struct {
 } wapps_fd_t;
 
 /* Config written to wapps/<name>/config is buffered here until the matching
- * "start" verb is written to wapps/<name>/ctl. Bounded by MAX_WAPPS — the same
- * ceiling the runtime imposes on live wapps. `configured` distinguishes a bare
- * `create` reservation (slot exists, no config yet → state `created`) from one
- * whose config has been written (→ state `not_started`, ready to start). */
+ * "start" verb is written to wapps/<name>/ctl. Bounded by
+ * CONFIG_WANTED_MAX_WAPPS — the same ceiling the runtime imposes on live wapps.
+ * `configured` distinguishes a bare `create` reservation (slot exists, no
+ * config yet → state `created`) from one whose config has been written (→ state
+ * `not_started`, ready to start). */
 typedef struct {
     bool valid;
     bool configured;
@@ -72,10 +73,11 @@ typedef struct {
 
 static struct vfs_driver_ctx_t {
     wapps_fd_t fds[WAPPS_MAX_OPEN];
-    /* MAX_WAPPS launch-config slots, lazily heap-allocated on first `create`.
-     * wapp_config_t is large (driver/mount/socket slot tables), so this is kept
-     * off static .bss to spare internal RAM on constrained targets; the engine
-     * heap may extend into PSRAM. NULL means no slot has been reserved yet. */
+    /* CONFIG_WANTED_MAX_WAPPS launch-config slots, lazily heap-allocated on
+     * first `create`. wapp_config_t is large (driver/mount/socket slot tables),
+     * so this is kept off static .bss to spare internal RAM on constrained
+     * targets; the engine heap may extend into PSRAM. NULL means no slot has
+     * been reserved yet. */
     wapps_pending_t *pending;
 } ctx;
 
@@ -169,7 +171,7 @@ static wapps_pending_t *pending_find(struct vfs_driver_ctx_t *d,
                                      const char *name) {
     if (d->pending == NULL)
         return NULL;
-    for (int i = 0; i < MAX_WAPPS; i++) {
+    for (int i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
         if (d->pending[i].valid &&
             strncmp(d->pending[i].name, name, WAPP_MAX_NAME_LEN) == 0)
             return &d->pending[i];
@@ -183,12 +185,14 @@ static wapps_pending_t *pending_slot(struct vfs_driver_ctx_t *d,
     if (p != NULL)
         return p;
     if (d->pending == NULL) {
-        d->pending = WantedMalloc(MAX_WAPPS * sizeof(wapps_pending_t));
+        d->pending =
+            WantedMalloc(CONFIG_WANTED_MAX_WAPPS * sizeof(wapps_pending_t));
         if (d->pending == NULL)
             return NULL;
-        memset(d->pending, 0, MAX_WAPPS * sizeof(wapps_pending_t));
+        memset(d->pending, 0,
+               CONFIG_WANTED_MAX_WAPPS * sizeof(wapps_pending_t));
     }
-    for (int i = 0; i < MAX_WAPPS; i++) {
+    for (int i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
         if (!d->pending[i].valid)
             return &d->pending[i];
     }
@@ -201,8 +205,8 @@ static wapps_pending_t *pending_slot(struct vfs_driver_ctx_t *d,
  * platform reports a slot for it; false otherwise (caller treats absence as
  * not_started). */
 static bool lookupState(const char *name, wapp_state_t *out) {
-    wapp_state_t states[MAX_WAPPS];
-    int n = PlatformWappGetState(states, MAX_WAPPS);
+    wapp_state_t states[CONFIG_WANTED_MAX_WAPPS];
+    int n = PlatformWappGetState(states, CONFIG_WANTED_MAX_WAPPS);
     for (int i = 0; i < n; i++) {
         if (strncmp(states[i].name, name, WAPP_MAX_NAME_LEN) == 0) {
             *out = states[i];
@@ -522,22 +526,23 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     size_t used = 0;
 
     if (node == NODE_ROOT) {
-        wapp_state_t states[MAX_WAPPS];
-        int n = PlatformWappGetState(states, MAX_WAPPS);
+        wapp_state_t states[CONFIG_WANTED_MAX_WAPPS];
+        int n = PlatformWappGetState(states, CONFIG_WANTED_MAX_WAPPS);
         if (n < 0)
             return n;
 
         /* Enumerate the live wapps plus any `create`d-but-not-running ones
          * (reserved pending slots), de-duplicated by name, into one list so the
          * cookie can page over a stable index space. */
-        char names[2 * MAX_WAPPS][WAPP_MAX_NAME_LEN];
+        char names[2 * CONFIG_WANTED_MAX_WAPPS][WAPP_MAX_NAME_LEN];
         int total = 0;
         for (int k = 0; k < n; k++) {
             strncpy(names[total], states[k].name, WAPP_MAX_NAME_LEN - 1);
             names[total][WAPP_MAX_NAME_LEN - 1] = '\0';
             total++;
         }
-        for (int k = 0; d->pending != NULL && k < MAX_WAPPS; k++) {
+        for (int k = 0; d->pending != NULL && k < CONFIG_WANTED_MAX_WAPPS;
+             k++) {
             if (!d->pending[k].valid)
                 continue;
             bool dup = false;

@@ -1,0 +1,16 @@
+# tiny resource envelope.
+#
+# Smallest envelope the engine runs in: ~512 KiB-class parts. Two wapp
+# slots means a supervisor plus exactly one child.
+#
+# Values are written out in full rather than minimised against the defaults,
+# so a board's envelope is readable here without cross-referencing Kconfig.
+
+CONFIG_WANTED_MAX_WAPPS=2
+CONFIG_WANTED_WASM_STACK_SIZE=4096
+CONFIG_WANTED_WASM_HEAP_SIZE=4096
+CONFIG_WANTED_WASM_WORKER_STACK_SIZE=16384
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=1
+CONFIG_WANTED_MAX_PATH_LEN=128
+CONFIG_WANTED_MAX_DRIVERS_CNT=4
+CONFIG_WANTED_MAX_OPTIONS_SIZE=64

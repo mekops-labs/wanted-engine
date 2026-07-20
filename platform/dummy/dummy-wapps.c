@@ -15,7 +15,7 @@
  * DummyWappStateReset.
  * ───────────────────────────────────────────────────────────────────────── */
 
-#define DUMMY_WAPP_MAX_ENTRIES MAX_WAPPS
+#define DUMMY_WAPP_MAX_ENTRIES CONFIG_WANTED_MAX_WAPPS
 
 static wapp_state_t g_state[DUMMY_WAPP_MAX_ENTRIES];
 static int g_used[DUMMY_WAPP_MAX_ENTRIES];
@@ -75,7 +75,9 @@ int PlatformWappUnload(const wapp_t *wapp) {
     return 0;
 }
 
-size_t PlatformWorkerStackSize(void) { return WASM_WORKER_STACK_SIZE; }
+size_t PlatformWorkerStackSize(void) {
+    return CONFIG_WANTED_WASM_WORKER_STACK_SIZE;
+}
 
 /* Signature fixed by the platform.h PlatformWappStart contract. */
 /* cppcheck-suppress constParameterPointer */

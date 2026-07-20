@@ -2,5 +2,5 @@
 # "persist" partition (logs, small per-wapp DBs). Select with
 # -DOTA_PROFILE=s3-storage (idf.py build).
 #
-# See s3-wapps.cmake for how MAX_WAPPS drives the rest of the layout.
-set(MAX_WAPPS 10 CACHE STRING "Max concurrent wapp instances" FORCE)
+# See s3-wapps.cmake for how the named defconfig drives the rest of the layout.
+set(WANTED_DEFCONFIG "psram-s3-storage_defconfig" CACHE STRING "Engine defconfig" FORCE)

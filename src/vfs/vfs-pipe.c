@@ -26,8 +26,8 @@
  * by store->lock. The per-wapp handle table (in bridge_state_t) is touched only
  * by its own wapp's thread and needs no lock. */
 
-#define PIPE_BUF_SIZE 4096
-#define PIPE_MAX_PIPES 8
+#define CONFIG_WANTED_PIPE_BUF_SIZE 4096
+#define CONFIG_WANTED_PIPE_MAX_PIPES 8
 
 /* Blocking-read poll cadence. A read with no data sleeps unlocked between
  * rechecks (cancellation-safe, unlike a cond_wait that could be cancelled while
@@ -38,7 +38,7 @@
 
 typedef struct named_pipe_t {
     char name[MAX_ENTRY_NAME_LEN];
-    uint8_t buf[PIPE_BUF_SIZE];
+    uint8_t buf[CONFIG_WANTED_PIPE_BUF_SIZE];
     size_t rpos;
     size_t data_len;
     int writers;
@@ -49,7 +49,7 @@ typedef struct named_pipe_t {
 
 /* Shared, engine-owned storage. One instance backs every wapp's /dev/pipe. */
 struct pipe_store_t {
-    named_pipe_t pipes[PIPE_MAX_PIPES];
+    named_pipe_t pipes[CONFIG_WANTED_PIPE_MAX_PIPES];
     platform_mutex_t *lock;
 };
 
@@ -82,7 +82,7 @@ void PipeStoreFree(pipe_store_t *store) {
  */
 
 static named_pipe_t *findPipe(pipe_store_t *store, const char *name) {
-    for (int i = 0; i < PIPE_MAX_PIPES; i++) {
+    for (int i = 0; i < CONFIG_WANTED_PIPE_MAX_PIPES; i++) {
         if (store->pipes[i].active &&
             strncmp(store->pipes[i].name, name, MAX_ENTRY_NAME_LEN) == 0)
             return &store->pipes[i];
@@ -91,7 +91,7 @@ static named_pipe_t *findPipe(pipe_store_t *store, const char *name) {
 }
 
 static named_pipe_t *allocPipe(pipe_store_t *store, const char *name) {
-    for (int i = 0; i < PIPE_MAX_PIPES; i++) {
+    for (int i = 0; i < CONFIG_WANTED_PIPE_MAX_PIPES; i++) {
         if (!store->pipes[i].active) {
             named_pipe_t *p = &store->pipes[i];
             memset(p, 0, sizeof(*p));
@@ -106,26 +106,26 @@ static named_pipe_t *allocPipe(pipe_store_t *store, const char *name) {
 
 static int ringRead(named_pipe_t *p, void *buf, size_t nbyte) {
     size_t n = nbyte < p->data_len ? nbyte : p->data_len;
-    size_t first = PIPE_BUF_SIZE - p->rpos;
+    size_t first = CONFIG_WANTED_PIPE_BUF_SIZE - p->rpos;
     if (n <= first) {
         memcpy(buf, p->buf + p->rpos, n);
     } else {
         memcpy(buf, p->buf + p->rpos, first);
         memcpy((uint8_t *)buf + first, p->buf, n - first);
     }
-    p->rpos = (p->rpos + n) % PIPE_BUF_SIZE;
+    p->rpos = (p->rpos + n) % CONFIG_WANTED_PIPE_BUF_SIZE;
     p->data_len -= n;
     return (int)n;
 }
 
 static int ringWrite(named_pipe_t *p, const void *buf, size_t nbyte) {
-    size_t space = PIPE_BUF_SIZE - p->data_len;
+    size_t space = CONFIG_WANTED_PIPE_BUF_SIZE - p->data_len;
     size_t n = nbyte < space ? nbyte : space;
     if (n == 0)
         return -EAGAIN;
 
-    size_t wpos = (p->rpos + p->data_len) % PIPE_BUF_SIZE;
-    size_t first = PIPE_BUF_SIZE - wpos;
+    size_t wpos = (p->rpos + p->data_len) % CONFIG_WANTED_PIPE_BUF_SIZE;
+    size_t first = CONFIG_WANTED_PIPE_BUF_SIZE - wpos;
     if (n <= first) {
         memcpy(p->buf + wpos, buf, n);
     } else {
@@ -309,12 +309,12 @@ int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
         return -EBADF;
 
     pipe_store_t *store = (pipe_store_t *)drv->ctx;
-    vfs_dir_entry_t entries[PIPE_MAX_PIPES];
+    vfs_dir_entry_t entries[CONFIG_WANTED_PIPE_MAX_PIPES];
     size_t count = 0;
     /* Hold the lock across the snapshot AND the serialisation: entries[].name
      * point into store->pipes[i].name, valid only while locked. */
     PlatformMutexLock(store->lock);
-    for (int i = 0; i < PIPE_MAX_PIPES; i++) {
+    for (int i = 0; i < CONFIG_WANTED_PIPE_MAX_PIPES; i++) {
         if (store->pipes[i].active) {
             entries[count].name = store->pipes[i].name;
             entries[count].type = VFS_FILETYPE_CHARACTER_DEVICE;
@@ -477,14 +477,14 @@ typedef struct {
 static int ringWriteLossy(named_pipe_t *p, const void *buf, size_t nbyte) {
     const uint8_t *src = (const uint8_t *)buf;
     size_t keep = nbyte;
-    if (keep > PIPE_BUF_SIZE) {
-        src += keep - PIPE_BUF_SIZE;
-        keep = PIPE_BUF_SIZE;
+    if (keep > CONFIG_WANTED_PIPE_BUF_SIZE) {
+        src += keep - CONFIG_WANTED_PIPE_BUF_SIZE;
+        keep = CONFIG_WANTED_PIPE_BUF_SIZE;
     }
-    size_t space = PIPE_BUF_SIZE - p->data_len;
+    size_t space = CONFIG_WANTED_PIPE_BUF_SIZE - p->data_len;
     if (keep > space) {
         size_t drop = keep - space;
-        p->rpos = (p->rpos + drop) % PIPE_BUF_SIZE;
+        p->rpos = (p->rpos + drop) % CONFIG_WANTED_PIPE_BUF_SIZE;
         p->data_len -= drop;
     }
     (void)ringWrite(p, src, keep);
