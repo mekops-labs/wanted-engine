@@ -1,7 +1,4 @@
-# GL-iNet Beryl (GL-MT1300, mipsel) under OpenWrt, installed as an .ipk.
 # Router-class: real RAM, no MMU pressure, so the small envelope applies.
-# Class 2 host — OpenWrt builds the engine as an external package with no
-# shared Kconfig namespace; the host-guard catches what a preprocessor can.
 
 CONFIG_WANTED_MAX_WAPPS=16
 CONFIG_WANTED_WASM_STACK_SIZE=65536
