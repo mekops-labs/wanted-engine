@@ -5,9 +5,8 @@ add_subdirectory(unity)
 
 file(GLOB test_src "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 
-# A test whose driver the configuration dropped cannot compile — it calls that
-# driver's init directly. Drop those sources alongside the driver so a minimal
-# build shrinks the suite instead of failing to link it.
+# A test calls its driver's init directly, so a dropped driver drops its tests
+# too — a minimal build shrinks the suite rather than failing to link.
 function(_drop_test_src)
     foreach(_f IN LISTS ARGN)
         list(REMOVE_ITEM test_src "${CMAKE_CURRENT_SOURCE_DIR}/${_f}")
@@ -41,8 +40,7 @@ if(NOT CONFIG_WANTED_VFS_WANTED)
                    test-vfs-wanted-wapps.c)
 endif()
 
-# The runner is generated from the sources this build compiles, so it never
-# calls a group that was dropped above.
+# The runner is generated from the sources actually compiled.
 set(_runner_inputs "")
 foreach(_f IN LISTS test_src)
     get_filename_component(_n ${_f} NAME)
@@ -105,7 +103,7 @@ target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src/include)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/tiny-json)
-# The 9P local-transport test forks the c9 server half as a driver-server stand-in.
+# The 9P local-transport test forks the c9 server half.
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/c9)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/ed25519/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/platform/dummy)

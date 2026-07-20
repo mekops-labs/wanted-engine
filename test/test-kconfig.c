@@ -7,11 +7,9 @@
 /* ═══════════════════════════════════════════════════════════════════════════
  * kconfig — the build-configuration round trip.
  *
- * Guards the mechanism rather than any one symbol: that the Kconfig tree is
- * read, that a header is generated from .config, and that it reaches a
- * translation unit through the include path. A build whose configuration step
- * silently did nothing fails here rather than much later, as a feature that
- * quietly compiled out.
+ * Guards the mechanism, not any one symbol: Kconfig read, header generated,
+ * header reachable. A configure step that silently did nothing fails here
+ * rather than later as a feature that quietly compiled out.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 TEST_GROUP(kconfig);

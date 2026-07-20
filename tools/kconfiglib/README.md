@@ -1,8 +1,7 @@
 # kconfiglib
 
-Build-time configuration front end. The engine's `Kconfig` tree is read by these
-scripts to produce `.config` and the generated `wanted-autoconf.h` that every
-build system consumes.
+Build-time configuration front end: reads the engine's `Kconfig` to produce
+`.config` and the generated `wanted-autoconf.h`.
 
 | | |
 |----------|---
@@ -12,11 +11,8 @@ build system consumes.
 | sha256   | `bed2cc2216f538eca4255a83a4588d8823563cdd50114f86cf1a2674e602c93c`
 | License  | ISC — see `LICENSE.txt` 
 
-Only the entry points the build uses are kept: `kconfiglib.py` (the library),
-`genconfig.py` (config → header), `menuconfig.py` (the TUI), `defconfig.py` and
-`olddefconfig.py` (defconfig → `.config`), and `savedefconfig.py` (the minimal
-diff written back to `configs/`). The Tk GUI and the `all*config` batch scripts
-are not carried.
+Only the entry points the build uses are kept. The Tk GUI and the `all*config`
+batch scripts are not carried.
 
 ## Refreshing
 

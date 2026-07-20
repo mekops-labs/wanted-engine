@@ -8,9 +8,8 @@
 out=$1
 shift
 
-# Scan the sources this build actually compiles, passed by the caller. A driver
-# the configuration dropped takes its test file out of the list, so the runner
-# never calls a group that was not built.
+# Scan only the sources this build compiles, so the runner never calls a group
+# that was dropped with its driver.
 [ "$#" -gt 0 ] || set -- test-*.c
 
 test_groups=$(sed -n -e '/TEST_GROUP_RUNNER/s/TEST_GROUP_RUNNER(\([^)]*\)).*/\1/p' "$@")
