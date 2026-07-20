@@ -14,7 +14,7 @@ Before executing any build or test command, read `README.md`. It is the authorit
 
 ## Build Environment
 
-All builds run inside the standardized build container — do **not** build natively. Commands are `just` recipes (in the `Justfile`) that run inside the container; `just --list` shows them all. The root `Makefile` is a thin wrapper that runs the same recipe in the container, so on a bare host `make <recipe>` == `just <recipe>`. Inside the devcontainer or CI, call `just` directly. The container provides the toolchain (CMake, Ninja, host clang/gcc, and the bundled wasi-sdk for wapps).
+All builds run inside the standardized build container — do **not** build natively. Commands are `just` recipes (in the `Justfile`) that run inside the container; `just --list` shows them all. The root `Makefile` is a thin wrapper that runs the same recipe in the container, so on a bare host `make <recipe>` == `just <recipe>`. Inside the devcontainer or CI, call `just` directly. The container provides the host-engine toolchain (CMake, Ninja, clang/gcc). Building a wapp needs the separate wapp SDK image instead — `make wasm` / `make supervisor` / `make sheriff` dispatch there.
 
 ```bash
 just build         # supervisor TAR images + engine (sheriff supervisor)
@@ -135,7 +135,7 @@ re-tars both variants):
 make -C wasm/supervisor
 ```
 
-`wapps/wsh/` holds the wsh shell source (built with `/opt/wasi-sdk/bin/clang`); its `start`/`stop`/`status` builtins exercise the `/dev/wanted` control plane.
+`wapps/wsh/` holds the wsh shell source (built with `/opt/wasi-sdk/bin/clang` in the wapp SDK image); its `start`/`stop`/`status` builtins exercise the `/dev/wanted` control plane.
 
 ### `test/`
 

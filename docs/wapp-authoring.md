@@ -168,7 +168,7 @@ podman rm "$cid"
 
 Install means placing that TAR in the registry directory under `<name>@<version>-<package>.wapp` — the filename **is** the image's identity (name and version). Launch it through the control plane — `create`, then `set_config`, then `start` from `wsh`; the full run is in the [Quick Start](quickstart.md), and the install/launch verbs are in the [Control Plane Reference](control-plane-reference.md).
 
-The low-level fallback — no container build — is to tar the single file directly, exactly as the test harness does:
+The low-level fallback — no container build — is to tar the single file directly, exactly as the test harness does (run the compile step inside the wapp SDK image, or via `make wapps` from the repo root):
 
 ```bash
 make -C wapps/hello                        # produces hello.wasm

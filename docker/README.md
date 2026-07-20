@@ -9,14 +9,67 @@ Just run it without parameters. Your `$PWD` needs to be set in the root director
 
 ## Building the image for multiple platforms
 
-One of the easiest way to build the image for multiple platfroms is to use `buildx` with `binfmt-qemu-static` and `qemu-user-static` installed.
+Both toolchain images (this one and `wapp-sdk`, below) are built and pushed with
+`docker/publish-images.sh`, which builds a real **manifest list**, verifies each
+platform leg actually runs, and pushes only if given an authfile:
 
 ```sh
-docker buildx build --platform linux/amd64,linux/arm64 -t registry.gitlab.com/mekops/wanted/wanted-engine/build:latest --push .
+docker/publish-images.sh                        # build + verify both, no push
+docker/publish-images.sh -a ~/auth.json          # ... and push both
+docker/publish-images.sh -a ~/auth.json build    # just this image
 ```
 
-Platforms are limited to `amd64` and `arm64` — the bundled wasi-sdk ships host
-binaries for those two Linux arches only.
+The version tag comes from the image's own `LABEL version=`, so it can never
+drift from the Containerfile. Needs `qemu-user-static` + `binfmt-qemu-static`
+installed for the foreign arch.
+
+`-t` instead of `--manifest` is the trap this script exists to avoid: `podman
+build --platform a,b -t NAME` does **not** produce a manifest list — it
+overwrites one leg's tag with the other, silently leaving a single-arch image
+behind. `podman manifest push` without `--all` is the other one: it pushes the
+index but can leave a foreign-arch leg's blobs behind in the registry.
+
+Platforms are limited to `amd64` and `arm64` — the same two Linux arches the
+other MekOps toolchain images publish host binaries for.
+
+Note the base image is referenced fully qualified (`docker.io/library/...`). An
+unqualified short name is resolved against **local storage first**, so an
+explicit `--platform` build can silently pick up a same-named image of the wrong
+architecture.
+
+`semgrep` does not work on the `arm64` leg: the package installs but its CLI
+wrapper falls through to `semgrep-core`'s argument parser. CI runs on amd64 and
+the job is `allow_failure`, so this only affects local scans on arm64 hosts.
+
+## Wapp SDK image (`Containerfile.wapp-sdk`)
+
+The wasm toolchain image — the **only** image that can build a wapp. The main
+build image above carries no wasm toolchain at all, so wapps, the supervisor
+TARs, and sheriff are all built here.
+
+It ships wasi-sdk (C/C++), Zig, TinyGo (+ host Go), Rust, and Wasmtime, each
+pinned by version and per-arch SHA-256. It has `make` but **no `just`**, so its
+builds are driven by the plain Makefiles (`wasm/supervisor/Makefile`,
+`wapps/Makefile`) — that is what CI's `build-wasm` job and the root Makefile's
+`wasm` / `supervisor` / `wapps` / `sheriff` targets invoke.
+
+It is also the published `FROM` base for wapp authors' multi-stage builds (see
+`docs/wapp-authoring.md`) and for `sheriff/Containerfile`.
+
+Built and pushed the same way as the main image, via `docker/publish-images.sh
+-a <authfile> wapp-sdk` (see above). Bump the `LABEL version=` when changing the
+image — `.gitlab-ci.yml` and `sheriff/Containerfile` both reference an explicit
+tag, so a rebuilt tag must never change content.
+
+### Changelog
+
+#### 0.1.1
+
+- publish as a multi-arch manifest (`amd64` + `arm64`); 0.1.0 was amd64-only
+
+#### 0.1.0
+
+- initial image: wasi-sdk 33, Zig 0.14.1, TinyGo 0.41.1 (Go 1.26.4), Rust 1.96.0, Wasmtime v44.0.1, wabt
 
 ## ESP32 cross-build image (`Containerfile.esp32`)
 
@@ -281,6 +334,11 @@ needs either BOOTSEL or a currently-running image that exposes a USB
 PICOBOOT reset endpoint.
 
 ## Changelog
+
+### 0.7.0
+
+- remove the bundled wasi-sdk: wapps (and the supervisor TARs) are built in the wapp SDK image (`Containerfile.wapp-sdk`), leaving this a pure host-engine build image (~400 MB smaller)
+- fully qualify the base as `docker.io/library/debian:trixie-slim`, so an explicit `--platform` build resolves the base from the registry instead of a same-name local image of another arch
 
 ### 0.6.5
 
