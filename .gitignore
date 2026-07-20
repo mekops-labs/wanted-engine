@@ -39,3 +39,6 @@ wasm/registry-seed/
 
 # core dumps from a faulting guest in the qemu selftest lanes
 qemu_*.core
+
+# Python bytecode from the vendored kconfig tooling
+__pycache__/
