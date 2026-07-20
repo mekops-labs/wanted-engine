@@ -1087,3 +1087,29 @@ int VfsMkdir(vfs_ctx_t c, int fd, const char *path) {
         return -ENOTSUP;
     }
 }
+
+int VfsRmdir(vfs_ctx_t c, int fd, const char *path) {
+    DEBUG_TRACE("%d, %s", fd, path);
+
+    if (!checkFd(c, fd))
+        return -EBADF;
+    if (!path)
+        return -EINVAL;
+
+    switch (c->fds[fd].type) {
+    case VFS_TYPE_TARFS:
+    case VFS_TYPE_PROC:
+        return -EROFS;
+    case VFS_TYPE_NET:
+        return -EINVAL;
+    case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER: {
+        const vfs_driver_t *drv = c->fds[fd].driver;
+        if (!drv || !drv->Rmdir)
+            return -ENOSYS;
+        return drv->Rmdir(drv->ctx, c->fds[fd].drv_fd, path);
+    }
+    default:
+        return -ENOTSUP;
+    }
+}
