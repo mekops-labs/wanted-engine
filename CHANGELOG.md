@@ -32,6 +32,9 @@ Unreleased
 - `selftest-qemu` recipes run the selftest suite against a cross-built engine
   under qemu user-mode emulation (aarch64, mipsel), catching architecture-
   specific faults without target hardware.
+- `live-update` recipe swaps the supervisor image under a running engine and
+  asserts child-wapp continuity, that adoption happens only with a reload
+  armed, and the rollback path.
 
 0.10.0 (2026-07-20)
 ------------------
