@@ -68,7 +68,12 @@ typedef struct C9aux {
     size_t rCnt;
     uint8_t wBuf[MSIZE];
     size_t wOff;
-    C9stat *lastStat;
+    /* Copied out of the response callback's frame: c9proc hands the parsed
+     * C9stat by pointer into its own stack, which is gone by the time _Stat
+     * reads it. The string fields still point into rBuf and stay valid until
+     * the next round trip; only the scalars are read here. */
+    C9stat lastStat;
+    uint8_t haveStat;
     C9qid lastQid;
     C9ctx c;
     C9tag tag;
@@ -292,7 +297,8 @@ static void ctxprocR(C9ctx *ctx, C9r *r) {
         break;
     case Rstat:
         DEBUG_TRACE("Rstat");
-        a->lastStat = &r->stat;
+        a->lastStat = r->stat;
+        a->haveStat = 1;
         break;
     case Ropen:
         DEBUG_TRACE("Ropen");
@@ -578,6 +584,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
     if (fd >= MAX_OPENED_FILES || fd < 0)
         return -EBADF;
 
+    a->haveStat = 0;
     if (c9stat(&a->c, &a->tag, fd) != 0 || wrsend(a) != 0 || proc(a) != 0)
         return -EIO;
 
@@ -586,9 +593,9 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
         return -EIO;
     }
 
-    s = a->lastStat;
-    if (s == NULL)
+    if (!a->haveStat)
         return -EIO;
+    s = &a->lastStat;
 
     stat->dev = *(uint32_t *)(id);
     stat->ino = s->qid.path;
