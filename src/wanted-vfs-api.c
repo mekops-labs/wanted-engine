@@ -13,6 +13,7 @@
 #include <wanted-api.h>
 #include <wanted-config.h>
 #include <wanted-vfs-api.h>
+#include <wanted_log.h>
 #include <wanted_malloc.h>
 
 #include <tiny-json.h>
@@ -531,8 +532,11 @@ static void parseWappParams(json_t const *params, wapp_config_t *cfg) {
                 continue;
             const char *v = json_getValue(a);
             size_t vlen = v ? strnlen(v, WAPP_MAX_ARG_LEN) : WAPP_MAX_ARG_LEN;
-            if (!v || vlen >= WAPP_MAX_ARG_LEN)
+            if (!v || vlen >= WAPP_MAX_ARG_LEN) {
+                LOG_ERROR("args[%d] dropped: longer than %d bytes", ai,
+                          WAPP_MAX_ARG_LEN - 1);
                 continue;
+            }
             memcpy(cfg->args[ai], v, vlen);
             cfg->args[ai][vlen] = '\0';
             ai++;
@@ -551,8 +555,11 @@ static void parseWappParams(json_t const *params, wapp_config_t *cfg) {
                 continue;
             const char *v = json_getValue(e);
             size_t vlen = v ? strnlen(v, WAPP_MAX_ENV_LEN) : WAPP_MAX_ENV_LEN;
-            if (!v || vlen >= WAPP_MAX_ENV_LEN)
+            if (!v || vlen >= WAPP_MAX_ENV_LEN) {
+                LOG_ERROR("envs[%d] dropped: longer than %d bytes", ei,
+                          WAPP_MAX_ENV_LEN - 1);
                 continue;
+            }
             memcpy(cfg->envs[ei], v, vlen);
             cfg->envs[ei][vlen] = '\0';
             ei++;
