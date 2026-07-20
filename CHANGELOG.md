@@ -16,6 +16,10 @@ Unreleased
 - 9P mounts reach a server on the same box over a filesystem socket:
   `unix://<socket-path>` alongside `tcp://` and `udp://`. An on-box driver
   server needs no loopback port.
+- Drivers can be linked in from a source tree outside this repo, via
+  `ExtraDriverTable()` and the `WANTED_EXTRA_DRIVERS_DIR` build option. The
+  extra table is searched after the core and platform tables, so it cannot
+  shadow a core driver name; its entries are listed on `/proc/wanted`.
 
 ### Fixed
 
@@ -43,6 +47,9 @@ Unreleased
 - The 9P driver is tested against a live server: a minimal 9P2000 server is
   forked onto a local socket and the walk/open/stat/read/write round trips run
   for real.
+- `test-extra-drivers` builds against a fixture out-of-tree driver tree and
+  asserts an extra driver resolves while one claiming a core name does not
+  shadow it.
 
 0.10.0 (2026-07-20)
 ------------------

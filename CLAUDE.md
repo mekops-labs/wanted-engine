@@ -42,6 +42,7 @@ cd build && ctest -R test-tarfs --output-on-failure
 | `-DENABLE_CODE_COVERAGE=ON` | OFF | Gcovr coverage instrumentation |
 | `-DSECURE_SOCKETS=ON` | auto | OpenSSL TLS support |
 | `-DWANTED_SUPERVISOR_IMAGE_PATH=<path>` | sheriff tar | Compiled-in supervisor image path |
+| `-DWANTED_EXTRA_DRIVERS_DIR=<path>` | unset | Out-of-tree source tree supplying `ExtraDriverTable()` |
 
 ## Running
 
