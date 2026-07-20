@@ -32,6 +32,16 @@ To add a group: drop a `test/test-<thing>.c` using the Unity assertions (see `te
 
 `test-vfs-9p-local` is the one group that talks to a live peer: it forks a minimal 9P2000 server onto a filesystem socket and drives the `9p` driver against it over a `unix://` mount, so the protocol round trips are exercised rather than stubbed.
 
+### Out-of-tree drivers
+
+The driver-table search order is asserted in its own lane, which builds against the fixture tree in `test/extra-drivers/`:
+
+```bash
+just test-extra-drivers
+```
+
+It checks that a driver from the extra tree resolves and that one claiming a core name (`null`) still loses to core. The same `driver_tables` group runs in the default suite, where it asserts the no-extra-tree behaviour instead.
+
 ## Selftest suite
 
 `just selftest` (Linux) and `just nuttx-selftest` (NuttX sim) run an identical suite from **inside WASM**, driven by the `selftest` supervisor variant (`wapps/selftest/`). Because it uses only the WASI and WANTED control-plane ABI, it runs unchanged on both targets — no platform-specific scripting. Results are reported as TAP (_Test Anything Protocol_); the runner asserts a plan line and the absence of `not ok`.

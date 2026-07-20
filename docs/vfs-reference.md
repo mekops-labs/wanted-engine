@@ -80,8 +80,9 @@ configured `WASM_WORKER_STACK_SIZE` after the platform's `PTHREAD_STACK_MIN`
 floor); `max_drivers` / `max_options` size each launch-config drivers/mounts/sockets
 section and the per-entry options blob. `drivers` lists the driver names a launch
 config can request on this build — the platform-agnostic core plus the drivers
-the running platform implements (e.g. `gpio wifi` on NuttX); naming any other
-driver fails the launch with `-ENODEV`.
+the running platform implements (e.g. `gpio wifi` on NuttX) and any linked in
+from an out-of-tree tree (see the [Platform Guide](platform-guide.md)); naming
+any other driver fails the launch with `-ENODEV`.
 
 `platform` is the build target (`linux`, `nuttx`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
 

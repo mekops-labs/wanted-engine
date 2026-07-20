@@ -135,6 +135,19 @@ unit-test-clang:
   variables:
     BUILD_DIR: build-clang
 
+# Validates the out-of-tree driver seam: builds against the fixture tree in
+# test/extra-drivers and asserts an extra driver resolves while one claiming a
+# core name still loses to core. Configures its own build dir, so it consumes
+# no build artifact.
+extra-drivers:
+  stage: test
+  cache:
+    *ccache_cache
+  variables:
+    CC: gcc
+  script:
+    - just test-extra-drivers
+
 coverage:
   stage: test
   variables:

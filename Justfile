@@ -67,6 +67,14 @@ openwrt-package sdk:
 test:
     cd {{build_dir}} && ctest -j"$(nproc)" --output-on-failure --output-junit rspec.xml
 
+# Build and test with an out-of-tree driver tree linked in, asserting extra
+# drivers resolve and that one claiming a core name still loses to core.
+test-extra-drivers:
+    mkdir -p build-extra-drivers
+    cd build-extra-drivers && cmake -GNinja {{profile_arg}} {{cmake_extra}} \
+        -DWANTED_EXTRA_DRIVERS_DIR={{justfile_directory()}}/test/extra-drivers .. && ninja
+    cd build-extra-drivers && ctest -j"$(nproc)" --output-on-failure -R driver_tables
+
 # Cobertura coverage report (build with CMAKE_EXTRA_ARGS=-DENABLE_CODE_COVERAGE=on).
 coverage:
     cd {{build_dir}} && ninja coverage
