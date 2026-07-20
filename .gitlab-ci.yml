@@ -206,6 +206,23 @@ integration-tests:
     - just selftest
     - just syscontrol
 
+# The same in-WASM suite against a cross-built engine under qemu user-mode
+# emulation. Engine faults that depend on the target's calling convention,
+# alignment, or signal handling do not reproduce on x86 — this is the lane that
+# catches them without router hardware. Cross-builds in-job from the OpenWRT SDK
+# (cached under .openwrt-sdk/), so it needs no engine artifact.
+selftest-qemu:
+  stage: integration-tests
+  needs:
+    - build-wasm
+  variables:
+    WAPPS_PREBUILT: "1"
+  parallel:
+    matrix:
+      - ARCH: [aarch64, mipsel]
+  script:
+    - just selftest-qemu-$ARCH
+
 # Boots the sim and runs the in-WASM selftest suite asserts VFS / control
 # plane / sandbox / robustness from inside WASM, identically to Linux. Needs
 # build-gcc for the engine and build-wasm for the supervisor TARs + test wapps.
