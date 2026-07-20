@@ -37,6 +37,7 @@
 #include <wapp-stop.h>
 
 #include <debug_trace.h>
+#include <wanted_log.h>
 
 pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
 
@@ -457,12 +458,10 @@ void PlatformWappLoop(void) {
          * so stop loudly instead of respawning in silence forever. */
         if (supervisorFailed &&
             ++supervisorFailures >= MAX_SUPERVISOR_LAUNCH_FAILURES) {
-            fprintf(
-                stderr,
-                "wanted: supervisor failed to launch %d times in a row "
-                "(error %d: %s); stopping — check the supervisor config\n",
-                supervisorFailures, supervisorErr,
-                strerror(supervisorErr < 0 ? -supervisorErr : supervisorErr));
+            fprintf(stderr,
+                    "wanted: supervisor failed to launch %d times in a row "
+                    "(%s); stopping — check the supervisor config\n",
+                    supervisorFailures, wappErrText(supervisorErr));
             return;
         }
         if (!supervisorFailed)

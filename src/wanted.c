@@ -10,6 +10,7 @@
 #include <wasi.h>
 
 #include <debug_trace.h>
+#include <wanted_log.h>
 #include <wanted_malloc.h>
 
 #include <vfs-devfs.h>
@@ -435,6 +436,7 @@ static uint32_t wappInitMemoryPages(wasm_module_t module) {
     }
     return pages;
 }
+
 #endif
 
 int WantedWappRun(wapp_data_t *ctx) {
@@ -480,7 +482,7 @@ int WantedWappRun(wapp_data_t *ctx) {
 
     wasm = TarFsEntrypointWasm(tarfs, &wasmLen);
     if (!wasm) {
-        DEBUG_TRACE("app.wasm absent from wapp image");
+        LOG_ERROR("wapp '%s': app.wasm absent from the image", wapp->name);
         ret = -1;
         goto _freeTarfs;
     }
@@ -509,7 +511,7 @@ int WantedWappRun(wapp_data_t *ctx) {
     ctx->wamr->module = wasm_runtime_load(
         ctx->wamr->wasm_bytes, (uint32_t)wasmLen, err_buf, sizeof(err_buf));
     if (!ctx->wamr->module) {
-        DEBUG_TRACE("wasm_runtime_load[%d]: %s", ctx->id, err_buf);
+        LOG_ERROR("wapp '%s': cannot load app.wasm: %s", wapp->name, err_buf);
         ret = -1;
         goto _freeWasmBytes;
     }
@@ -520,8 +522,9 @@ int WantedWappRun(wapp_data_t *ctx) {
     {
         uint32_t init_pages = wappInitMemoryPages(ctx->wamr->module);
         if (init_pages > WASM_MAX_MEMORY_PAGES) {
-            DEBUG_TRACE("wapp[%d] initial memory %u pages exceeds cap %u",
-                        ctx->id, init_pages, WASM_MAX_MEMORY_PAGES);
+            LOG_ERROR("wapp '%s': initial memory %u pages exceeds the %u-page "
+                      "cap",
+                      wapp->name, init_pages, WASM_MAX_MEMORY_PAGES);
             ret = -1;
             goto _unloadModule;
         }
@@ -537,7 +540,7 @@ int WantedWappRun(wapp_data_t *ctx) {
     ctx->wamr->instance = wasm_runtime_instantiate_ex(
         ctx->wamr->module, &inst_args, err_buf, sizeof(err_buf));
     if (!ctx->wamr->instance) {
-        DEBUG_TRACE("wasm_runtime_instantiate[%d]: %s", ctx->id, err_buf);
+        LOG_ERROR("wapp '%s': cannot instantiate: %s", wapp->name, err_buf);
         ret = -1;
         goto _unloadModule;
     }
@@ -637,7 +640,7 @@ int WantedWappRun(wapp_data_t *ctx) {
     for (size_t i = 0; i < wapp->cfg.socketsCnt; i++) {
         const wapp_driver_t *s = &wapp->cfg.sockets[i];
         if (s->path[0] != '\0') {
-            DEBUG_TRACE("sockets[%zu] '%s': path not allowed", i, s->name);
+            LOG_ERROR("sockets[%zu] '%s': name not allowed", i, s->name);
             ret += -EINVAL;
             continue;
         }
@@ -657,7 +660,9 @@ int WantedWappRun(wapp_data_t *ctx) {
         if (m->path[0] != '/' || isReservedNamespace(m->path, "/dev") ||
             isReservedNamespace(m->path, "/net") ||
             isReservedNamespace(m->path, "/proc")) {
-            DEBUG_TRACE("mounts[%zu] '%s': bad path '%s'", i, m->name, m->path);
+            LOG_ERROR("mounts[%zu] '%s': path '%s' must be absolute and "
+                      "outside /dev, /net and /proc",
+                      i, m->name, m->path);
             ret += -EINVAL;
             continue;
         }
@@ -671,16 +676,16 @@ int WantedWappRun(wapp_data_t *ctx) {
             int rc = parsePlatformMountOptions(m->options, hostPath,
                                                sizeof(hostPath), &readonly);
             if (rc < 0) {
-                DEBUG_TRACE("mounts[%zu] '%s': bad options '%s'", i, m->name,
-                            m->options);
+                LOG_ERROR("mounts[%zu] '%s': malformed options '%s'", i,
+                          m->name, m->options);
                 ret += rc;
                 continue;
             }
             const char *src = (hostPath[0] != '\0') ? hostPath : m->path;
             int host_fd = PlatformOpenStateDir(src, readonly);
             if (host_fd < 0) {
-                DEBUG_TRACE("PlatformOpenStateDir(%s) failed: %d", src,
-                            host_fd);
+                LOG_ERROR("mounts[%zu] '%s': host dir '%s' unusable: %s", i,
+                          m->name, src, strerror(-host_fd));
                 /* A read-only mount names host state the wapp must read; a
                  * missing backing dir is a deployment error, surfaced loudly. A
                  * read-write mount creates its dir, so an open failure is
@@ -707,8 +712,8 @@ int WantedWappRun(wapp_data_t *ctx) {
             int rc = parseVolumeMountOptions(
                 m->options, volName, sizeof(volName), &readonly, &shared);
             if (rc < 0) {
-                DEBUG_TRACE("mounts[%zu] '%s': bad options '%s'", i, m->name,
-                            m->options);
+                LOG_ERROR("mounts[%zu] '%s': malformed options '%s'", i,
+                          m->name, m->options);
                 ret += rc;
                 continue;
             }
@@ -733,8 +738,8 @@ int WantedWappRun(wapp_data_t *ctx) {
              */
             int host_fd = PlatformOpenStateDir(hostPath, false);
             if (host_fd < 0) {
-                DEBUG_TRACE("PlatformOpenStateDir(%s) failed: %d", hostPath,
-                            host_fd);
+                LOG_ERROR("mounts[%zu] '%s': volume dir '%s' unusable: %s", i,
+                          m->name, hostPath, strerror(-host_fd));
                 ret += host_fd;
                 continue;
             }
@@ -751,8 +756,8 @@ int WantedWappRun(wapp_data_t *ctx) {
              * (the write/capture side selected via console:{}). */
             vfs_driver_t *drv = VfsLogMountInit(wapp, m->options);
             if (drv == NULL) {
-                DEBUG_TRACE("mounts[%zu] '%s': can't create log mount", i,
-                            m->name);
+                LOG_ERROR("mounts[%zu] '%s': can't create log mount", i,
+                          m->name);
                 ret += -EINVAL;
                 continue;
             }
@@ -807,8 +812,8 @@ int WantedWappRun(wapp_data_t *ctx) {
         } else {
             /* Genuine trap: no WASI exit code exists. Leave the sentinel and
              * report failure so the slot transitions RUNNING -> FAILURE. */
-            DEBUG_TRACE("wasm_runtime_call_wasm[%d]: %s", ctx->id,
-                        exc ? exc : "(no exception)");
+            LOG_ERROR("wapp '%s' trapped: %s", wapp->name,
+                      exc ? exc : "(no exception)");
             ret = -1;
             goto _freeVfs;
         }
