@@ -591,6 +591,9 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
  *   write /dev/wanted/ctl delete <name>   release a wapp slot (→ -ENOENT again)
  *   write /dev/wanted/ctl poweroff        stop the engine (no respawn)
  *   write /dev/wanted/ctl reboot          restart the engine / reset the board
+ *   write /dev/wanted/ctl reload-supervisor
+ *                                         adopt a newly staged supervisor
+ *                                         image at the next respawn
  *
  * (wsh has no shell redirection; its `write` builtin joins its trailing tokens
  * with single spaces and writes them to the node in one write().)
@@ -669,6 +672,12 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
     }
     if (strncmp(line, "reboot", sizeof("reboot")) == 0) {
         PlatformRequestReboot();
+        return (int)nbyte;
+    }
+
+    /* Arm a supervisor image reload — applied at the next respawn. */
+    if (strncmp(line, "reload-supervisor", sizeof("reload-supervisor")) == 0) {
+        WantedSupervisorReload();
         return (int)nbyte;
     }
 

@@ -4,6 +4,14 @@ Changelog
 Unreleased
 ----------
 
+### Added
+
+- Supervisor live update: `reload-supervisor` on the root `ctl` arms a
+  supervisor image reload, applied when the supervisor next exits. Child wapps
+  keep running across the swap. The image must be staged by atomic rename — the
+  engine keeps the current one mapped, so an in-place overwrite corrupts what
+  the next respawn reads.
+
 ### Fixed
 
 - Linux wapp stop is cooperative: `PlatformWappStop` sets the WAMR terminate
