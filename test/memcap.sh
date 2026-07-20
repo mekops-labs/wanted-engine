@@ -15,6 +15,8 @@ set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
+# shellcheck source=test/lib-wapp.sh
+. "$ROOT/test/lib-wapp.sh"
 WSH_TAR=./wasm/supervisor/wsh/supervisor.tar
 CONFIG=./configs/example_config_wsh.json
 REG=${REGISTRY_ROOT:-./registry}
@@ -24,7 +26,7 @@ WAPPS="bigmem biginit"
 
 mkdir -p "$REG"
 for w in $WAPPS; do
-    make -C "wapps/$w" >/dev/null 2>&1 || { echo "FAIL: build wapps/$w"; exit 1; }
+    wapp_build "$w"
     s=$(mktemp -d)
     cp "wapps/$w/$w.wasm" "$s/app.wasm"
     tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \

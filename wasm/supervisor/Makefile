@@ -4,22 +4,25 @@
 # archive consumed at runtime via PlatformWappLoad — a supervisor image is just
 # `app.wasm`.
 #
-#   wsh, selftest  — compiled from C under wapps/ with the wasi-sdk clang that
-#                    ships in the main build image; built by the default `all`.
+# Every target here needs the wapp-sdk image — the engine build image carries no
+# wasm toolchain. From a host, `make wasm` / `make supervisor` / `make sheriff`
+# dispatch there for you.
+#
+#   wsh, selftest  — compiled from C under wapps/ with the wasi-sdk clang;
+#                    built by the default `all`.
 #   sheriff        — the production supervisor, a Zig wapp built from the
-#                    wapps/sheriff submodule. Zig is NOT in the main build image,
-#                    so sheriff is a SEPARATE target (the engine build does not
-#                    build it):
+#                    wapps/sheriff submodule. A SEPARATE target, since the engine
+#                    build does not build it:
 #                        make -C wasm/supervisor sheriff
-#                    ZIG is overridable — build with host zig / the wapp-sdk
-#                    image (default), or via sheriff's own toolchain container:
+#                    ZIG is overridable — the wapp-sdk image's zig (default), or
+#                    sheriff's own toolchain container:
 #                        make -C wasm/supervisor sheriff ZIG='./scripts/dev zig'
 #
 #   make -C wasm/supervisor                  # wsh + selftest (default)
 #   make -C wasm/supervisor sheriff          # the sheriff supervisor (needs zig)
 #   make -C wasm/supervisor VARIANT=wsh build
 
-# Default build is the C supervisors (wasi-sdk clang, in the main build image).
+# Default build is the C supervisors (wasi-sdk clang, in the wapp-sdk image).
 # sheriff (Zig, from the submodule) and wifi-connect (a boot-time helper, not
 # a general-purpose supervisor) are opt-in so the default build stays minimal.
 VARIANTS     ?= wsh selftest

@@ -58,8 +58,9 @@ add_custom_target(wasm
 #add_dependencies(${CMAKE_PROJECT_NAME} compile_wasm)
 
 # Rebuilds wasm/supervisor/<variant>/supervisor.tar (a TAR layer) from app.wasm.
-# Not wired as a build dependency: the archive is checked in and only refreshed
-# when the supervisor sources change.
+# Not wired as a build dependency: the wasm toolchain lives in the wapp-sdk
+# image, not this build environment, and the engine only opens the archive by
+# path at boot. Build it with `make wasm` (or CI's build-wasm job) instead.
 add_custom_target(supervisor
     COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm/supervisor
     )

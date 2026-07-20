@@ -6,6 +6,9 @@
 # `Makefile` is a thin wrapper that runs these same recipes in the container
 # (`make build` == `just build` in the image) — see Makefile.
 #
+# Two images: this build image runs everything below except the wasm recipes,
+# which need the wapp-sdk image and are absent here — see "--- wasm" below.
+#
 # Overrides are read from the environment so one recipe serves local + CI:
 #   BUILD_DIR (default build) · PROFILE (tiny|constrained|small|big)
 #   CC · CMAKE_EXTRA_ARGS · NUTTX_SKIP_BUILD · NUTTX_CLEAN
@@ -28,38 +31,25 @@ tidy_build_dir := env_var_or_default("TIDY_BUILD_DIR", "build-clang")
 default:
     @just --list
 
-# --- build ----------------------------------------------------------------
-
 # Build the engine + CLI and run the unit suite.
 all: build test
 
-# Compile the C supervisor TARs: wsh/selftest from wapps/ via wasi-sdk clang.
-# sheriff (Zig, from the wapps/sheriff submodule) is built separately — `sheriff`.
-supervisor:
-    make -C wasm/supervisor
+# --- wasm -----------------------------------------------------------------
+# Deliberately no wasm recipes here — the wapp-sdk image has no `just`, so those
+# builds run through plain Makefiles (wasm/supervisor/Makefile, wapps/Makefile)
+# instead. From a host: `make wasm` / `supervisor` / `wapps` / `sheriff`.
 
-# Build the wifi-connect boot-time helper TAR from wapps/wifi-connect. Opt-in
-# (not part of `supervisor`) since it's a boot-time helper, not a general
-# supervisor.
-wifi-connect:
-    make -C wasm/supervisor wifi-connect
-
-# Compile the sample wapp images under wapps/ (excludes the wsh supervisor).
-wapps:
-    #!/bin/sh
-    set -e
-    for d in wapps/*/; do
-        [ "$d" = wapps/wsh/ ] && continue
-        [ -f "${d}Makefile" ] && make -C "$d"
-    done
+# --- build ----------------------------------------------------------------
+# No dependency on the wasm recipes: the supervisor TAR is loaded by path at
+# runtime, so it only has to exist (built separately via `make wasm`) by boot.
 
 # Build the engine + CLI with the production (sheriff) supervisor [PROFILE=...].
-build: supervisor
+build:
     mkdir -p {{build_dir}}
     cd {{build_dir}} && cmake -GNinja {{profile_arg}} {{cmake_extra}} .. && ninja
 
 # Build the engine + CLI with the wsh debug supervisor compiled in [PROFILE=...].
-wsh: supervisor
+wsh:
     mkdir -p {{build_dir}}
     cd {{build_dir}} && cmake -GNinja {{profile_arg}} {{cmake_extra}} -DWANTED_SUPERVISOR_IMAGE_PATH={{wsh_tar}} .. && ninja
 
@@ -90,7 +80,7 @@ syscontrol:
     ./test/syscontrol.sh ./{{build_dir}}/cmd/wanted-cli
 
 # Negative test: WASM_MAX_MEMORY_PAGES bounds a wapp's linear-memory growth.
-memcap: supervisor
+memcap:
     ./test/memcap.sh
 
 # Report per-wapp + engine memory footprint per profile (linux + nuttx ABIs).
@@ -107,7 +97,7 @@ nuttx-deps:
     ./test/nuttx-sim.sh deps
 
 # Configure + build the NuttX sim (wsh as init over hostfs) [PROFILE=...].
-nuttx-build: supervisor
+nuttx-build:
     ./test/nuttx-sim.sh deps build
 
 # Build just the sim kernel binary (no hostfs staging) — the split-CI artifact.
@@ -115,11 +105,11 @@ nuttx-kernel:
     ./test/nuttx-sim.sh kernel
 
 # Run the in-WASM selftest suite on the NuttX sim.
-nuttx-selftest: supervisor
+nuttx-selftest:
     ./test/nuttx-sim.sh selftest
 
 # Run the system-control (poweroff/reboot/exit) checks on the NuttX sim.
-nuttx-syscontrol: supervisor
+nuttx-syscontrol:
     ./test/nuttx-sim.sh syscontrol
 
 # Distclean the NuttX submodule tree.
@@ -141,10 +131,8 @@ esp32-build:
 # Remove every build artifact (Linux + NuttX sim + wasm/wapps + submodule objects).
 clean:
     rm -rf {{build_dir}} build-nuttx registry
-    # Only wsh/selftest app.wasm are generated from wapps/ source; sheriff's is a
-    # committed blob, so never delete it.
-    rm -f wasm/*.wasm* wasm/supervisor/*/supervisor.tar \
-          wasm/supervisor/wsh/app.wasm wasm/supervisor/selftest/app.wasm
+    # Every supervisor app.wasm is a gitignored build output, sheriff's included.
+    rm -f wasm/*.wasm* wasm/supervisor/*/supervisor.tar wasm/supervisor/*/app.wasm
     rm -f wapps/*/*.wasm wapps/*/*.wasm.h wapps/*/*.o
     # NuttX kernel objects + .config live in the submodule tree; an incremental
     # rebuild over a stale tree silently runs old code, so distclean it too.
