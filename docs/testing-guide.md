@@ -73,7 +73,7 @@ The suite is the reference for how to drive the control plane from a wapp; new p
 
 GitLab CI (`.gitlab-ci.yml`) runs the same `just` recipes you run locally:
 
-- **`build-gcc` / `build-clang`** — the engine under both compilers; **`build-wsh`** the debug-supervisor build; **`build-sheriff`** the production supervisor from the `wapps/sheriff` submodule; **`build-nuttx`** the sim build.
+- **`build-gcc` / `build-clang`** — the engine under both compilers; **`build-wsh`** the debug-supervisor build; **`build-wasm`** every wasm artifact (supervisor TARs, sheriff, and the test wapps) in the wapp SDK image; **`build-nuttx`** the sim build.
 - **`unit-test-gcc` / `unit-test-clang`** — the ctest suite under each; **`coverage`** the instrumented build + report.
 - **`integration-tests`** — `smoke-engine` + `selftest` + `syscontrol` on Linux.
 - **`nuttx-selftest` / `nuttx-syscontrol`** — the same selftest and system-control suites on the NuttX sim, built in-job from a clean tree.
