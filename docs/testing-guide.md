@@ -14,6 +14,7 @@ The engine has three test tiers, each catching a different class of failure. All
 | In-WASM selftest | `just selftest` / `just nuttx-selftest` | The functional + robustness scenario suite, run from inside WASM; TAP |
 | Cross-arch selftest | `just selftest-qemu-aarch64` / `-mipsel` | The same suite against a cross-built engine under qemu |
 | Smoke | `just smoke-engine` | The production sheriff supervisor instantiates cleanly |
+| Live update | `just live-update` | The supervisor image is swapped under a running engine |
 
 ## Unit suite (ctest)
 
@@ -71,6 +72,18 @@ just smoke-engine
 ```
 
 `test/smoke-engine.sh` boots the real production sheriff supervisor and asserts it instantiates cleanly — the regression guard for the out-of-repo supervisor blob. It can fail on a corrupt or missing supervisor image, or a WAMR opcode mismatch between the blob and the bundled runtime.
+
+## Supervisor live update
+
+```bash
+just live-update
+```
+
+`test/live-update.sh` swaps the supervisor image under a running engine: a child wapp started beforehand is still running afterwards, an image staged while the engine runs is adopted only once `reload-supervisor` is armed, and an image that cannot launch is rolled back to the compiled-in one with the engine still serving.
+
+The armed and unarmed cases are both checked on purpose — a respawn with no reload armed must keep the image in use, which is what proves adoption is caused by the reload rather than by the respawn.
+
+It builds its own engine (`build-wsh`) because the supervisor image path is compiled in, and uses a config whose staged image path differs from the compiled-in one, which is what makes the rollback observable.
 
 ## Writing a test wapp
 
