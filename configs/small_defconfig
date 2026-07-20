@@ -2,8 +2,6 @@
 #
 # Router-class and small-SBC targets with real RAM but no MMU pressure.
 #
-# Values are written out in full rather than minimised against the defaults,
-# so a board's envelope is readable here without cross-referencing Kconfig.
 
 CONFIG_WANTED_MAX_WAPPS=16
 CONFIG_WANTED_WASM_STACK_SIZE=65536

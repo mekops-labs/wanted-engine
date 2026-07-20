@@ -3,8 +3,6 @@
 # Linux hosts and cloud. WASM_MAX_MEMORY_PAGES=0 lifts the per-wapp linear
 # memory cap, which is only safe behind a real memory manager.
 #
-# Values are written out in full rather than minimised against the defaults,
-# so a board's envelope is readable here without cross-referencing Kconfig.
 
 CONFIG_WANTED_MAX_WAPPS=64
 CONFIG_WANTED_WASM_STACK_SIZE=131072
