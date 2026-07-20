@@ -199,10 +199,30 @@ void WantedWappTerminate(wapp_data_t *ctx);
  * Return the process-wide supervisor wapp descriptor.
  *
  * Lazily constructs the descriptor on first call from the operator config, or
- * the compiled-in default config when none is valid; the supervisor always
- * runs the factory image (a downloaded newer version is not adopted).
+ * the compiled-in default config when none is valid. With a reload armed, the
+ * image is re-read from the configured path before the descriptor is returned.
  *
  * @return The cached supervisor descriptor, or NULL if the config cannot be
  *         parsed.
  */
 wapp_t *WantedGetCurrentSupervisor(void);
+
+/**
+ * Arm a supervisor image reload, applied at the next respawn. Nothing is
+ * stopped: the running supervisor decides when to exit, child wapps keep
+ * running across the swap. Stage the new image by atomic rename — the engine
+ * holds the current one mapped, so an in-place overwrite changes what the
+ * next respawn reads.
+ *
+ * @return 0.
+ */
+int WantedSupervisorReload(void);
+
+/**
+ * Fall back to the compiled-in supervisor image after a staged one fails.
+ * Pins the built-in image for the rest of the run and arms a reload.
+ *
+ * @return 0 when a fallback is available, -1 when the engine already runs the
+ *         built-in image and the caller must report the failure itself.
+ */
+int WantedSupervisorRollback(void);
