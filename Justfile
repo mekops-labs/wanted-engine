@@ -15,8 +15,9 @@ profile   := env_var_or_default("PROFILE", "")
 cmake_extra := env_var_or_default("CMAKE_EXTRA_ARGS", "")
 wsh_tar   := "./wasm/supervisor/wsh/supervisor.tar"
 
-# Optional resource-limit profile (cmake/profiles/<name>.cmake).
-profile_arg := if profile != "" { "-C cmake/profiles/" + profile + ".cmake" } else { "" }
+# Optional resource-limit profile (cmake/profiles/<name>.cmake). Absolute: the
+# build recipes cd into {{build_dir}} before invoking cmake.
+profile_arg := if profile != "" { "-C " + justfile_directory() + "/cmake/profiles/" + profile + ".cmake" } else { "" }
 
 # First-party C/H sources (vendored deps and generated trees are excluded).
 src_dirs := "src platform cmd include"
