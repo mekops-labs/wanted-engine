@@ -79,7 +79,7 @@ on an RTOS, a hard fault instead of a clean trap.
   [`ENOMEM`](error-reference.md) on `malloc`/`memory.grow`. Raise the cap via a
   profile (`constrained`/`small`/`big`) and rebuild.
 
-All three live in `src/include/wanted-config.h`; changing one resizes static
+All three are Kconfig symbols (`just menuconfig`); changing one resizes static
 structures, so re-audit after any change.
 
 ## Volume/preopen read returns nothing on the NuttX sim

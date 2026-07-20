@@ -1,0 +1,23 @@
+# WANTED engine — ESP-IDF component glue. Host-edge only: the engine's own
+# Kconfig tree (repository root) is read standalone, and any CONFIG_WANTED_*
+# declared here would shadow the engine's value.
+#
+# What belongs here is what crosses into ESP-IDF's own symbols — the engine
+# tree must never reference a host symbol because kconfiglib resolves an
+# unknown one to n without stopping.
+
+menu "WANTED engine"
+
+config WANTED_ESP_TLS
+    bool "TLS secure sockets (mbedTLS)"
+    default n
+    select MBEDTLS_TLS_ENABLED
+    help
+        Backs the engine's secure socket types (tcps://, udps://) with the
+        mbedTLS ESP-IDF ships, and builds the engine with SECURE_SOCKETS=1.
+        Mirrors the NuttX app's SYSTEM_WANTED_TLS — the engine says "I want
+        TLS" through its socket driver, each host says "and here is the stack"
+        through its own symbol. Without this the engine still builds; secure
+        socket entries are rejected when a wapp launches.
+
+endmenu

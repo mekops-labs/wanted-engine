@@ -11,7 +11,6 @@
 build_dir := env_var_or_default("BUILD_DIR", "build")
 defconfig := env_var_or_default("DEFCONFIG", "")
 cmake_extra := env_var_or_default("CMAKE_EXTRA_ARGS", "")
-wsh_tar   := "./wasm/supervisor/wsh/supervisor.tar"
 
 # Optional board defconfig (configs/<name>_defconfig), used only when this build
 # dir has no .config yet — an existing configuration is never overwritten by a
@@ -63,15 +62,24 @@ defconfig name:
 olddefconfig:
     {{kconfig}} python3 {{kcl}}/olddefconfig.py Kconfig
 
+# Select the supervisor image for this build dir (sheriff | wsh | selftest)
+# without disturbing the rest of its configuration.
+supervisor-variant name:
+    mkdir -p {{build_dir}}
+    {{kconfig}} python3 {{kcl}}/setconfig.py --kconfig Kconfig \
+        WANTED_SUPERVISOR_$(echo {{name}} | tr a-z A-Z)=y
+
 # Build the engine + CLI with the production (sheriff) supervisor [DEFCONFIG=...].
 build:
     mkdir -p {{build_dir}}
     cd {{build_dir}} && cmake -GNinja {{defconfig_arg}} {{cmake_extra}} .. && ninja
 
-# Build the engine + CLI with the wsh debug supervisor compiled in [DEFCONFIG=...].
+# Build the engine + CLI with the wsh debug supervisor selected [DEFCONFIG=...].
 wsh:
     mkdir -p {{build_dir}}
-    cd {{build_dir}} && cmake -GNinja {{defconfig_arg}} {{cmake_extra}} -DWANTED_SUPERVISOR_IMAGE_PATH={{wsh_tar}} .. && ninja
+    cd {{build_dir}} && cmake -GNinja {{defconfig_arg}} {{cmake_extra}} .. >/dev/null
+    just supervisor-variant wsh
+    cd {{build_dir}} && cmake -GNinja {{cmake_extra}} .. && ninja
 
 # Build a production OpenWRT .ipk -> dist/. sdk = SDK URL or local SDK dir.
 openwrt-package sdk:
