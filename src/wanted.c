@@ -982,7 +982,7 @@ wapp_t *WantedGetCurrentSupervisor(void) {
         DEBUG_TRACE("staged supervisor %s failed (%d); using built-in %s",
                     img_path, load_ret, SUPERVISOR_IMAGE_PATH);
         img_path = SUPERVISOR_IMAGE_PATH;
-        load_ret = PlatformWappLoad(SUPERVISOR_IMAGE_PATH, w);
+        load_ret = PlatformWappLoad(img_path, w);
     }
     if (load_ret < 0) {
         DEBUG_TRACE("failed to load supervisor image from %s: %d", img_path,
