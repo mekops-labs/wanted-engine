@@ -1,9 +1,22 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+/* Linux platform wapp lifecycle.
+ *
+ * A stopped wapp is terminated cooperatively. PlatformWappStop sets the
+ * per-instruction terminate flag (WantedWappTerminate) and sends the worker a
+ * signal (WAPP_STOP_SIGNAL) to wake any host call it is blocked in; the
+ * interrupted call returns EINTR and unwinds to the interpreter, which sees the
+ * terminate flag, aborts the in-flight WASM call, and lets the worker unwind
+ * via WA_threadEnd. This terminates a wapp busy in a pure compute loop and one
+ * parked indefinitely in I/O alike, and every teardown runs on the worker's own
+ * stack at a point the runtime chose.
+ */
+
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,12 +32,12 @@
 #include <debug_trace.h>
 #include <wanted_log.h>
 
-#ifdef __ANDROID__
-#define GNU_SOURCE
-#include <signal.h>
-#endif
-
 pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+/* Signal used to interrupt a worker blocked in a host syscall so the
+ * cooperative stop can take effect. SIGUSR2, because WAMR reserves SIGUSR1 for
+ * its own blocking-op wakeup and installs a process-wide handler for it. */
+#define WAPP_STOP_SIGNAL SIGUSR2
 
 #define FATAL(err, msg, ...)                                                   \
     {                                                                          \
@@ -75,46 +88,31 @@ void WA_threadEnd(void *ptr) {
     updateState(d->id, d->lastStatus);
 }
 
-#ifdef __ANDROID__
-static void thread_sigHandler(int sig) {
-    int i;
-    if (sig != SIGUSR1) {
-        return;
-    }
-
-    pthread_t t = pthread_self();
-
-    for (i = 0; i < MAX_WAPPS; i++) {
-        if (state.threads[i].t == t)
-            break;
-    }
-    if (i == MAX_WAPPS)
-        return;
-
-    WA_threadEnd((void *)&state.threads[i].data);
-
-    pthread_exit(NULL);
-}
-#endif
+/* Stop signal handler. Its only job is to interrupt the worker's in-flight
+ * blocking host call so it returns EINTR; the thread then unwinds normally
+ * through WA_threadEnd, honouring the terminate flag. It deliberately runs no
+ * engine or WAMR code — none of it is async-signal-safe. */
+static void stopSigHandler(int sig) { (void)sig; }
 
 void *WA_thread(void *ptr) {
     wapp_data_t *d = (wapp_data_t *)ptr;
 
-#ifndef __ANDROID__
-    /* Async cancellation is required: a wapp thread may be spinning in
-     * interpreter code with no deferred cancellation point to reach. */
-    /* NOLINTNEXTLINE(cert-pos47-c) */
-    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-#else
-    struct sigaction actions;
-    memset(&actions, 0, sizeof(actions));
-    sigemptyset(&actions.sa_mask);
-    actions.sa_flags = 0;
-    actions.sa_handler = thread_sigHandler;
-    sigaction(SIGUSR1, &actions, NULL);
-#endif
+    /* Install the stop handler (SA_RESTART cleared) and unblock the stop signal
+     * on this worker so PlatformWappStop's pthread_kill can interrupt a blocked
+     * host call. The disposition is process-wide and idempotent; the mask is
+     * per-thread. */
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags =
+        0; /* no SA_RESTART → the blocked call returns, not restarts */
+    sa.sa_handler = stopSigHandler;
+    sigaction(WAPP_STOP_SIGNAL, &sa, NULL);
 
-    pthread_cleanup_push(WA_threadEnd, ptr);
+    sigset_t unblock;
+    sigemptyset(&unblock);
+    sigaddset(&unblock, WAPP_STOP_SIGNAL);
+    pthread_sigmask(SIG_UNBLOCK, &unblock, NULL);
 
     pthread_mutex_lock(&state_mtx);
     state.threads[d->id].status = RUNNING;
@@ -123,7 +121,9 @@ void *WA_thread(void *ptr) {
     d->lastStatus = 0;
     d->lastStatus = WantedWappRun(d);
 
-    pthread_cleanup_pop(1);
+    /* The stop path is cooperative, so the worker always reaches here on a
+     * normal return — call the teardown directly. */
+    WA_threadEnd(d);
 
     pthread_exit(NULL);
 }
@@ -240,6 +240,11 @@ int PlatformWappStart(wapp_t *wapp) {
 
 int PlatformWappStop(const char *name) {
     int slot;
+    pthread_t worker;
+
+    /* Hold state_mtx across the match, terminate, and signal so the worker
+     * cannot be reaped (status flipped, slot reused) out from under us. */
+    pthread_mutex_lock(&state_mtx);
 
     for (slot = 0; slot < MAX_WAPPS; slot++) {
         if (state.threads[slot].data.wapp == NULL)
@@ -250,14 +255,26 @@ int PlatformWappStop(const char *name) {
     }
 
     if (slot == MAX_WAPPS) {
+        pthread_mutex_unlock(&state_mtx);
         return -ENOENT;
     }
 
-#ifndef __ANDROID__
-    return -pthread_cancel(state.threads[slot].t);
-#else
-    return -pthread_kill(state.threads[slot].t, SIGUSR1);
-#endif
+    /* Cooperative stop. Set the terminate flag so wasm_runtime_call_wasm
+     * returns false at the next instruction boundary, then signal the worker to
+     * EINTR any host call it is currently blocked in so that boundary is
+     * reached promptly. The thread unwinds through WA_threadEnd. */
+    WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
+    worker = state.threads[slot].t;
+
+    pthread_mutex_unlock(&state_mtx);
+
+    /* ESRCH: the worker already exited between the flag set and here — the stop
+     * still took effect, so treat it as success. */
+    int rc = pthread_kill(worker, WAPP_STOP_SIGNAL);
+    if (rc != 0 && rc != ESRCH)
+        return -rc;
+
+    return 0;
 }
 
 int PlatformWappRelease(const char *name) {

@@ -140,7 +140,7 @@ Embedded targets have a fixed memory budget, so the engine treats resource exhau
 - Console pipes are **lossy** (`out`/`err` drop oldest on a full ring) so an unread peer console cannot wedge the writer — a wapp cannot DoS the engine by spamming stdout.
 - The launch-config parser uses a bounded token pool and a 2048-byte stack buffer; an oversized config returns `-EMSGSIZE` rather than overflowing.
 
-What this layer guarantees: a single wapp cannot exhaust engine memory or wedge the run loop by resource abuse. What it does not: it does not bound CPU — a wapp that busy-loops holds its thread until `stop`; the platform's stop mechanism (async `pthread_cancel` on Linux, cooperative `SIGUSR2` on NuttX) is the recourse.
+What this layer guarantees: a single wapp cannot exhaust engine memory or wedge the run loop by resource abuse. What it does not: it does not bound CPU — a wapp that busy-loops holds its thread until `stop`; the platform's stop mechanism (a cooperative `SIGUSR2` plus the WAMR terminate flag) is the recourse.
 
 ### 8. Firmware update and rollback (ESP-IDF)
 
