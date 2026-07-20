@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* Shared registry install/remove. The writer stages incoming bytes to a temp
- * file then renames it into place under the install ref ("<name>:<ver>") once
- * the stream completes; remove deletes a stored image by ref. Registry
- * enumeration (PlatformRegistryRead) is platform-specific. */
+ * file then renames it into place once the stream completes, naming it from the
+ * install ref ("<name>:<ver>") with the version separator mapped to the stored
+ * form; remove deletes a stored image by ref. Registry enumeration
+ * (PlatformRegistryRead) is platform-specific. */
 
 #include <errno.h>
 #include <limits.h>
@@ -55,6 +56,12 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
             remove(tempName);
             return -EINVAL;
         }
+
+        /* The ref uses ':'; stored files use REGISTRY_VERSION_SEPARATOR, which
+         * is what the loader and enumerator look for. */
+        char *sep = strchr(targetRef, ':');
+        if (sep != NULL)
+            *sep = REGISTRY_VERSION_SEPARATOR;
 
         int n = snprintf(targetName, sizeof(targetName), "%s/%s%s",
                          REGISTRY_ROOT, targetRef, REGISTRY_EXT);
