@@ -124,6 +124,7 @@ add_library(${project} STATIC
 
 target_include_directories(${project}
     PUBLIC ${CMAKE_SOURCE_DIR}/include
+    PUBLIC ${WANTED_AUTOCONF_DIR}
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
