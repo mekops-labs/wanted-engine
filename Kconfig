@@ -83,113 +83,50 @@ config WANTED_VFS_WANTED
 
 endmenu
 
-menu "Resource limits"
+menu "Supervisor"
 
-comment "These size static tables and per-instance WAMR allocations. Changing"
-comment "one resizes static structures — audit every array dimensioned by it."
-
-config WANTED_MAX_WAPPS
-	int "Maximum concurrent wapp instances"
-	default 3
-	range 1 64
+choice
+	prompt "Supervisor image"
+	default WANTED_SUPERVISOR_SHERIFF
 	help
-	  Dimensions the per-platform slot tables and the per-wapp log rings — the
-	  dominant term in the engine's static footprint. The supervisor occupies
-	  one slot, so 1 leaves room for no child wapps.
+	  Which supervisor TAR the engine boots. Read by path, not compiled in;
+	  the choice selects the path, the image is built separately.
 
-config WANTED_WASM_STACK_SIZE
-	int "WASM operand stack per instance (bytes)"
-	default 8192
-	range 1024 1048576
+config WANTED_SUPERVISOR_SHERIFF
+	bool "sheriff — production control-plane agent"
 	help
-	  The interpreter's evaluation stack, in host memory outside linear
-	  memory. A wapp that exhausts it traps.
+	  Reconciles against a control plane and manages wapp lifecycle. Built
+	  from its own repository.
 
-config WANTED_WASM_HEAP_SIZE
-	int "WASM app heap per instance (bytes)"
-	default 8192
-	range 0 1048576
+config WANTED_SUPERVISOR_WSH
+	bool "wsh — interactive debug shell"
 	help
-	  Host-managed allocator outside linear memory. Zero disables it.
+	  Console shell for driving the control plane by hand. Development and
+	  the system-control tests, not for a deployed node.
 
-config WANTED_WASM_MAX_MEMORY_PAGES
-	int "Linear-memory cap per wapp (64 KiB pages, 0 = unbounded)"
-	default 1
-	range 0 512
+config WANTED_SUPERVISOR_SELFTEST
+	bool "selftest — in-WASM test orchestrator"
 	help
-	  The only region the module can load and store. An image declaring more
-	  initial memory than this is refused at load. Zero lifts the cap — safe
-	  only behind a real memory manager.
+	  Runs the functional suite from inside WASM and reports TAP. A node
+	  configured with it runs tests and exits.
 
-config WANTED_WASM_WORKER_STACK_SIZE
-	int "Worker thread native C stack (bytes)"
-	default 65536
-	range 16384 1048576
+endchoice
+
+# Derived from the choice, no prompt: a prompted string freezes at its user
+# value, so switching the choice would leave the path stale.
+config WANTED_SUPERVISOR_IMAGE
+	string
+	default "./wasm/supervisor/sheriff/supervisor.tar" if WANTED_SUPERVISOR_SHERIFF
+	default "./wasm/supervisor/wsh/supervisor.tar" if WANTED_SUPERVISOR_WSH
+	default "./wasm/supervisor/selftest/supervisor.tar" if WANTED_SUPERVISOR_SELFTEST
+
+config WANTED_SUPERVISOR_IMAGE_PATH
+	string "Supervisor image path override"
+	default ""
 	help
-	  Native stack for a wapp's thread, floored by the platform minimum.
-	  Distinct from the WASM operand stack above.
-
-config WANTED_MAX_PATH_LEN
-	int "Maximum VFS path length (bytes)"
-	default 256
-	range 64 4096
-	help
-	  Bounds every path buffer. Paths are composed, so a value tight enough to
-	  truncate a mount path plus a file name surfaces as failed opens.
-
-config WANTED_MAX_DRIVERS_CNT
-	int "Launch-config entries per resource section"
-	default 6
-	range 1 32
-	help
-	  Sizes drivers[], mounts[] and sockets[] each — paid three times per
-	  configured wapp.
-
-config WANTED_MAX_OPTIONS_SIZE
-	int "Launch-config options string (bytes)"
-	default 128
-	range 32 1024
-	help
-	  Per-entry options blob. A 9P address or a bind mount's src= must fit.
-
-menu "Driver limits"
-
-comment "Driver-private static allocation sizes. Behavioural knobs stay local"
-comment "to their driver — the criterion here is whether it sizes an allocation."
-
-config WANTED_PIPE_BUF_SIZE
-	int "Bytes per named pipe"
-	default 4096
-	range 256 65536
-	help
-	  Ring buffer for one /dev/pipe channel.
-
-config WANTED_PIPE_MAX_PIPES
-	int "Concurrent named pipes"
-	default 8
-	range 1 64
-	help
-	  The pipe store is ONE engine-wide instance of count * buf bytes,
-	  allocated whether or not any wapp opens /dev/pipe — 32 KiB at the
-	  defaults, ~6 % of a 512 KiB part. Raising it also grows a stack frame:
-	  the driver's readdir sizes a local array by this.
-
-config WANTED_LOG_CAP
-	int "Bytes retained per wapp log"
-	default 2048
-	range 256 65536
-	help
-	  Most-recent output kept per wapp, times WANTED_MAX_WAPPS.
-
-config WANTED_LOGMOUNT_MAX_OPEN
-	int "Concurrent open handles on a log mount"
-	depends on WANTED_VFS_LOGMOUNT
-	default 8
-	range 1 64
-	help
-	  Reader slots in the log mount's fd table.
-
-endmenu
+	  Absolute path to a packaged supervisor image (e.g.
+	  /usr/share/wanted/supervisor.tar). Empty means the choice above decides;
+	  this is for where the image *lives*, not which variant it is.
 
 endmenu
 

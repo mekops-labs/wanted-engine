@@ -108,9 +108,6 @@ target_include_directories(vmlib INTERFACE
     ${WAMR_ROOT_DIR}/core/iwasm/include
 )
 
-set(WANTED_SUPERVISOR_IMAGE_PATH "./wasm/supervisor/sheriff/supervisor.tar" CACHE STRING
-    "Supervisor TAR image path loaded at boot")
-
 # Out-of-tree driver tree. Keeps a use-case-specific driver out of this repo
 # while still linking it statically into a target: the tree is compiled as part
 # of this build (source-level coupling, no binary ABI) and supplies
@@ -170,9 +167,16 @@ if (WANTED_EXTRA_DRIVERS_DIR)
     target_link_libraries(${project} PRIVATE wanted_extra_drivers)
 endif()
 
-message("-- Supervisor image: ${WANTED_SUPERVISOR_IMAGE_PATH}")
+# Supervisor image: the Kconfig choice decides which variant, and an explicit
+# path override wins when a package installs the image somewhere else.
+if(CONFIG_WANTED_SUPERVISOR_IMAGE_PATH)
+    set(_supervisor_image ${CONFIG_WANTED_SUPERVISOR_IMAGE_PATH})
+else()
+    set(_supervisor_image ${CONFIG_WANTED_SUPERVISOR_IMAGE})
+endif()
+message("-- Supervisor image: ${_supervisor_image}")
 target_compile_definitions(${project} PRIVATE
-    SUPERVISOR_IMAGE_PATH="${WANTED_SUPERVISOR_IMAGE_PATH}")
+    SUPERVISOR_IMAGE_PATH="${_supervisor_image}")
 
 # Engine version string (git-derived SemVer), surfaced at /proc/wanted.
 target_compile_definitions(${project} PRIVATE
