@@ -1,6 +1,30 @@
 Changelog
 =========
 
+0.10.0 (2026-07-20)
+------------------
+
+### Added
+
+- Persistent-store free space reported at `/proc/memory` (`store_free`/`store_total`).
+- Config and launch faults surfaced in production builds (always-on error log; mount, socket, image-load, trap, dropped args/envs).
+- WASI `path_remove_directory` implemented (`VfsRmdir` + driver `Rmdir` slot).
+- Engine prefers an overlay-staged supervisor image, falling back to the built-in.
+- Sheriff v0.3.1.
+
+### Fixed
+
+- Launch-config env buffer sized for full key+value material (provisioning values were silently dropped).
+- Stored registry images named with `REGISTRY_VERSION_SEPARATOR` (writer used raw `<name>:<ver>`; registry-installed images could not be started).
+- Per-wapp linear-memory cap clamped to the module's declared max.
+
+### Build
+
+- OpenWRT cross-build: musl toolchain, OpenSSL linking (TLS + Ed25519), `.ipk` packaging with procd service, `openwrt-package` recipe, SDK-prerequisite image.
+- Linux platform builds against musl (`<limits.h>`, `mallinfo2` gated).
+- `PROFILE` resolution and `CMAKE_EXTRA_ARGS` quoting fixed in the build container.
+- Sheriff build moved to a host `make` target (needs the Zig `wapp-sdk` image).
+
 0.9.0 (2026-07-17)
 ------------------
 
