@@ -2,6 +2,8 @@
 build
 build-*
 compile_commands.json
+# OpenWRT SDKs (downloaded; see packaging/openwrt)
+.openwrt-sdk/
 wasm/*.wasm*
 wasm/supervisor/*/supervisor.tar
 # Supervisor app.wasm are build outputs: wsh/selftest compiled from wapps/,
@@ -27,3 +29,9 @@ wasm/registry-seed/
 # RP2350 dev signing key (test/rp2350-sign-verify.sh) - generated locally,
 # never committed. A real production key would live outside this repo entirely.
 /keys/
+# OpenWRT .ipk output
+/dist/
+
+# container scratch written into the mounted repo
+.cache/
+.bash_history

@@ -1,7 +1,7 @@
 FROM debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.6.5"
+LABEL version="0.6.6"
 
 # Unversioned LLVM packages track the distro default (clang/lld/lldb 19 on
 # trixie). The host engine builds with gcc (build-essential) and this clang;
@@ -61,6 +61,13 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     # apps/crypto/mbedtls fetches its source as a GitHub zip and unpacks it
     # with unzip at build time (sim TLS build).
     unzip \
+    # OpenWRT SDK build prerequisites (packaging/openwrt); gawk for asort(),
+    # python3-setuptools for the distutils shim.
+    gawk \
+    python3-setuptools \
+    file \
+    rsync \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Route every host compile through ccache via the masquerade dir on PATH. The
