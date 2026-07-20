@@ -20,7 +20,7 @@ PROFILE   ?=
 
 # Forward an override into the container only when the user actually set it (env
 # or command line) — never make's built-in default (e.g. CC defaults to `cc`).
-fwd = $(if $(filter-out undefined default,$(origin $(1))),-e $(1)=$($(1)))
+fwd = $(if $(filter-out undefined default,$(origin $(1))),-e $(1)="$($(1))")
 
 # Env handed to the in-container `just` so recipes pick up overrides. BUILD_DIR
 # and PROFILE always flow; the rest only when explicitly set (mirrors the

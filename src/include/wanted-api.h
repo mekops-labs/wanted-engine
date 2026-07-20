@@ -25,8 +25,14 @@
  * these arrays hold argv[1..] and the POSIX "KEY=VALUE" environ entries. */
 #define WAPP_MAX_ARGS 8
 #define WAPP_MAX_ARG_LEN 64
+#ifndef WAPP_MAX_ENVS
 #define WAPP_MAX_ENVS 8
-#define WAPP_MAX_ENV_LEN 64
+#endif
+/* Sized to carry a "KEY=<64 hex chars>" entry (provisioning passes key material
+ * through the environment). Cost is WAPP_MAX_ENVS * this, per wapp. */
+#ifndef WAPP_MAX_ENV_LEN
+#define WAPP_MAX_ENV_LEN 128
+#endif
 
 /* Sentinel exit code for a wapp that has no WASI exit code: a wapp that traps
  * never reaches proc_exit, and a wapp that has not exited yet has no code. The

@@ -123,6 +123,7 @@ typedef struct vfs_driver_t {
     int (*Rename)(vfs_driver_ctx_t d, int old_fd, const char *old_path,
                   int new_fd, const char *new_path);
     int (*Mkdir)(vfs_driver_ctx_t d, int fd, const char *path);
+    int (*Rmdir)(vfs_driver_ctx_t d, int fd, const char *path);
 
     /* Network operations */
 
@@ -169,6 +170,7 @@ int VfsSockShutdown(vfs_ctx_t c, int fd, vfs_sdflags_t flags);
 int VfsRename(vfs_ctx_t c, int old_fd, const char *old_path, int new_fd,
               const char *new_path);
 int VfsMkdir(vfs_ctx_t c, int fd, const char *path);
+int VfsRmdir(vfs_ctx_t c, int fd, const char *path);
 
 /* Bind a pre-opened host directory fd into the VFS table as a PLATFORM fd.
  * `driver` provides the dispatch surface (OpenAt/Read/Write/...). `host_fd`
