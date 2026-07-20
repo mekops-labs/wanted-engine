@@ -164,12 +164,13 @@ int PlatformOpenStateDir(const char *path, bool readonly);
  * mountpoint (e.g. LittleFS). Returns a stable, non-NULL absolute path. */
 const char *PlatformVolumeRoot(void);
 
-/* Thin wrappers over native fs primitives, used by VFS path_rename and
- * path_create_directory to operate on preopen-rooted directories. Both fds
- * are native (openat-class) directory descriptors. */
+/* Thin wrappers over native fs primitives, used by VFS path_rename,
+ * path_create_directory and path_remove_directory to operate on preopen-rooted
+ * directories. Both fds are native (openat-class) directory descriptors. */
 int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
                      const char *new_path);
 int PlatformFsMkdir(int fd, const char *path);
+int PlatformFsRmdir(int fd, const char *path);
 
 void *PlatformNetOpen(int socket_type);
 int PlatformNetConnect(void *ctx, const char *hostname, uint16_t port);

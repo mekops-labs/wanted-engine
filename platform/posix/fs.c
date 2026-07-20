@@ -75,3 +75,11 @@ int PlatformFsMkdir(int fd, const char *path) {
         return -errno;
     return 0;
 }
+
+int PlatformFsRmdir(int fd, const char *path) {
+    if (!path)
+        return -EINVAL;
+    if (unlinkat(fd, path, AT_REMOVEDIR) < 0)
+        return -errno;
+    return 0;
+}

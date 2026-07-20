@@ -59,6 +59,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
 static int _Rename(vfs_driver_ctx_t d, int old_fd, const char *old_path,
                    int new_fd, const char *new_path);
 static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path);
+static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path);
 
 struct vfs_driver_ctx_t {
     const char *rootPath;
@@ -119,6 +120,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
     driver->ReadDir = _ReadDir;
     driver->Rename = _Rename;
     driver->Mkdir = _Mkdir;
+    driver->Rmdir = _Rmdir;
 
     return driver;
 }
@@ -270,6 +272,12 @@ static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path) {
     if (d->readonly)
         return -EROFS;
     return PlatformFsMkdir(fd, path);
+}
+
+static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path) {
+    if (d->readonly)
+        return -EROFS;
+    return PlatformFsRmdir(fd, path);
 }
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
