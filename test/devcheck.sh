@@ -13,6 +13,8 @@ set -u
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 cd "$ROOT"
+# shellcheck source=test/lib-wapp.sh
+. "$SCRIPT_DIR/lib-wapp.sh"
 
 WANTED=${1:-./build/cmd/wanted-cli}
 CONFIG=./test/devcheck-config.json
@@ -24,7 +26,7 @@ if [ ! -x "$WANTED" ]; then
 fi
 
 # Build the wapp and package it as a supervisor image (a ustar of app.wasm).
-make -C wapps/devcheck >/dev/null 2>&1 || { echo "FAIL: build wapps/devcheck"; exit 1; }
+wapp_build devcheck
 mkdir -p "$SUP_DIR"
 cp wapps/devcheck/devcheck.wasm "$SUP_DIR/app.wasm"
 tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \

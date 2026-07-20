@@ -1,11 +1,11 @@
-FROM debian:trixie-slim
+FROM docker.io/library/debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.6.6"
+LABEL version="0.7.0"
 
 # Unversioned LLVM packages track the distro default (clang/lld/lldb 19 on
 # trixie). The host engine builds with gcc (build-essential) and this clang;
-# the wapp toolchain is the separate bundled wasi-sdk installed below.
+# the wapp toolchain lives in the separate wapp-sdk image.
 RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update \
     && export DEBIAN_FRONTEND=noninteractive \
     && apt-get install -y --no-install-recommends \
@@ -98,28 +98,8 @@ RUN set -eux; \
     curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VER}/trivy_${TRIVY_VER}_Linux-${trivy_arch}.tar.gz" \
         | tar xz -C /usr/local/bin trivy
 
-# Wapp (WebAssembly) toolchain: the full wasi-sdk bundle ships its own clang
-# and lld plus the wasi-sysroot. wapps are built with /opt/wasi-sdk/bin/clang
-# (see wasm/Makefile, wapps/*/Makefile); the host engine builds with the system
-# clang above. The bundled lld defines __heap_end, which wasi-libc's allocator
-# requires, so wapps that use malloc link against this toolchain.
-#
-# The bundle ships a host-arch clang binary, so the right one is selected per
-# build platform. wasi-sdk publishes x86_64 and arm64 Linux builds only.
-ARG WASI_SDK_VER=24
-ARG TARGETARCH=amd64
-RUN set -eux; \
-    case "${TARGETARCH}" in \
-      amd64) wasi_arch=x86_64 ;; \
-      arm64) wasi_arch=arm64 ;; \
-      *) echo "no wasi-sdk build for TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
-    esac; \
-    dir="wasi-sdk-${WASI_SDK_VER}.0-${wasi_arch}-linux"; \
-    curl -fsSL "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VER}/${dir}.tar.gz" \
-        -o /tmp/wasi-sdk.tar.gz; \
-    tar xzf /tmp/wasi-sdk.tar.gz -C /opt/; \
-    ln -s "/opt/${dir}" /opt/wasi-sdk; \
-    rm -f /tmp/wasi-sdk.tar.gz
+# NOTE: no wasm toolchain here. wapps and the supervisor TARs build in
+# docker/Containerfile.wapp-sdk instead — see `make wasm`.
 
 RUN echo "[safe]\n\tdirectory = /src" > /root/.gitconfig
 

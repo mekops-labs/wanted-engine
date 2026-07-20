@@ -34,9 +34,13 @@ ENVS = -e BUILD_DIR=$(BUILD_DIR) -e PROFILE=$(PROFILE) \
 # interactive targets below already do — fine under rootless podman.
 JUST = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src $(ENVS) --entrypoint=just $(IMAGE)
 
+# Wasm targets dispatch to the wapp-sdk image, not $(IMAGE); it has no `just`,
+# so they run its plain Makefiles directly.
+WAPP_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh $(WAPP_SDK_IMG) -c
+
 .DEFAULT_GOAL := help
 
-.PHONY: help shell wsh-shell nuttx-shell sheriff esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync openwrt-package FORCE
+.PHONY: help shell wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync openwrt-package FORCE
 
 # Catch-all: forward any goal without an explicit rule below to `just` in the
 # container. FORCE defeats make's "up to date" check so a goal that matches an
@@ -59,7 +63,7 @@ openwrt-package: ## build a production OpenWRT .ipk — pass SDK=<url-or-dir>
 	$(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src \
 	    --entrypoint=just $(IMAGE) openwrt-package "$(SDK)"
 
-wsh-shell: ## build wsh and open the interactive wsh prompt on Linux (wanted-cli)
+wsh-shell: supervisor ## build wsh and open the interactive wsh prompt on Linux (wanted-cli)
 	$(JUST) wsh
 	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh $(IMAGE) -c \
 	    './$(BUILD_DIR)/cmd/wanted-cli ./configs/example_config_wsh.json'
@@ -69,9 +73,26 @@ nuttx-shell: ## build the wsh sim and drop into the interactive wsh prompt
 	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src/build-nuttx/simroot \
 	    --entrypoint=/bin/sh $(IMAGE) -c '/src/third_party/nuttx/nuttx'
 
-sheriff: ## build the sheriff supervisor using wapp_sdk image
-	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint="/bin/sh" $(WAPP_SDK_IMG) -c \
-	    'make -C wasm/supervisor sheriff'
+# --- wasm targets (wapp-sdk image) ----------------------------------------
+# Explicit rules so these override the catch-all above.
+
+wasm: ## build every wasm artifact: supervisor TARs + the sample wapps
+	$(WAPP_RUN) 'make -C wasm/supervisor && make -C wapps'
+
+supervisor: ## build the wsh + selftest supervisor TARs
+	$(WAPP_RUN) 'make -C wasm/supervisor'
+
+wapps: ## build the sample wapp images under wapps/
+	$(WAPP_RUN) 'make -C wapps'
+
+wifi-connect: ## build the wifi-connect boot-time helper TAR
+	$(WAPP_RUN) 'make -C wasm/supervisor wifi-connect'
+
+sheriff: ## build the sheriff (production) supervisor TAR
+	$(WAPP_RUN) 'make -C wasm/supervisor sheriff'
+
+wapp-shell: ## open an interactive shell in the wapp-sdk container
+	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint="" $(WAPP_SDK_IMG) bash
 
 # ESP32 cross-build uses a distinct xtensa toolchain image; the supervisor +
 # nuttx-deps stage in the build image, then the firmware links in the xtensa one.
@@ -83,8 +104,7 @@ ESP32_BAUD  ?= 460800
 # mapped back to the invoking host user under rootless podman.
 ESP32_JUST = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=just $(ESP32_IMAGE)
 
-esp32: ## cross-build the ESP32 firmware -> third_party/nuttx/nuttx.bin
-	$(JUST) supervisor
+esp32: supervisor ## cross-build the ESP32 firmware -> third_party/nuttx/nuttx.bin
 	$(JUST) nuttx-deps
 	$(ESP32_JUST) esp32-build
 

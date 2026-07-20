@@ -13,6 +13,8 @@ set -u
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 cd "$ROOT"
+# shellcheck source=test/lib-wapp.sh
+. "$SCRIPT_DIR/lib-wapp.sh"
 
 WANTED=${1:-./build/cmd/wanted-cli}
 CONFIG=${2:-./test/selftest-config.json}
@@ -45,7 +47,7 @@ staged=""
 # from the registry filename.
 stage() {
     local name=${1%%:*} ver=${1#*:}
-    make -C "wapps/$name" >/dev/null 2>&1 || { echo "FAIL: build wapps/$name"; exit 1; }
+    wapp_build "$name"
     local s img
     s=$(mktemp -d)
     img="$REGISTRY_ROOT/$name@$ver.wapp"

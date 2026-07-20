@@ -23,7 +23,7 @@ default:
       - stuck_or_timeout_failure
 
 image:
-  name: registry.gitlab.com/mekops/wanted/wanted-engine/build:0.6.5
+  name: registry.gitlab.com/mekops/wanted/wanted-engine/build:0.7.0
   entrypoint: [""]
 
 stages:
@@ -52,7 +52,6 @@ stages:
   artifacts:
     paths:
     - $BUILD_DIR
-    - wasm/supervisor
     expire_in: 20 minutes
   script:
     - just build
@@ -162,16 +161,19 @@ coverage:
 # production (sheriff) supervisor image instantiates cleanly. syscontrol.sh
 # covers the engine-process lifecycle the in-WASM suite cannot observe —
 # poweroff/reboot/exit and that a respawned supervisor keeps a working console.
-# The CLI and supervisor TARs come from build-gcc (`ninja supervisor`). Scripts
-# assume the repo CWD is the project root, which is the CI default.
-# sheriff is a Zig wapp built from the wapps/sheriff submodule; the main build
-# image has no Zig, so build the supervisor TAR in the wapp-sdk image (Zig + make)
-# and hand it to integration-tests. The submodule's relative URL resolves to
-# HTTPS + the job token in CI (SSH locally), so the recursive fetch needs no key.
-build-sheriff:
+# The CLI comes from build-gcc, the supervisor TARs + test wapps from build-wasm.
+# Scripts assume the repo CWD is the project root, which is the CI default.
+
+# Every wasm artifact is built here, in the wapp-sdk image — the only image with
+# a wasm toolchain (wasi-sdk for the C wapps, Zig for sheriff). The engine build
+# image carries none, so the jobs below consume these artifacts instead of
+# compiling wasm themselves (WAPPS_PREBUILT=1). sheriff's submodule uses a
+# relative URL, which resolves to HTTPS + the job token in CI (SSH locally), so
+# the recursive fetch needs no key.
+build-wasm:
   stage: build
   image:
-    name: registry.gitlab.com/mekops/wanted/wanted-engine/wapp-sdk:0.1.0
+    name: registry.gitlab.com/mekops/wanted/wanted-engine/wapp-sdk:0.1.1
     entrypoint: [""]
   variables:
     ZIG_GLOBAL_CACHE_DIR: $CI_PROJECT_DIR/.zig-cache
@@ -179,20 +181,26 @@ build-sheriff:
     key: zig-sheriff
     paths:
       - .zig-cache
+  # The wapp-sdk image has make but no just, so drive the Makefiles directly
+  # (same targets the `wasm` / `sheriff` just recipes wrap).
   script:
+    - make -C wasm/supervisor
+    - make -C wapps
     - make -C wasm/supervisor sheriff
   artifacts:
     paths:
-      - wasm/supervisor/sheriff
+      - wasm/supervisor
+      - wapps
     expire_in: 20 minutes
 
 integration-tests:
   stage: integration-tests
   needs:
     - build-gcc
-    - build-sheriff
+    - build-wasm
   variables:
     BUILD_DIR: build-gcc
+    WAPPS_PREBUILT: "1"
   script:
     - just smoke-engine
     - just selftest
@@ -200,14 +208,16 @@ integration-tests:
 
 # Boots the sim and runs the in-WASM selftest suite asserts VFS / control
 # plane / sandbox / robustness from inside WASM, identically to Linux. Needs
-# build-gcc for the supervisor TARs (wasm/supervisor, from `ninja supervisor`).
+# build-gcc for the engine and build-wasm for the supervisor TARs + test wapps.
 nuttx-selftest:
   stage: integration-tests
   needs:
     - build-nuttx
     - build-gcc
+    - build-wasm
   variables:
     NUTTX_SKIP_BUILD: "1"
+    WAPPS_PREBUILT: "1"
   script:
     - just nuttx-selftest
 
@@ -220,7 +230,9 @@ nuttx-syscontrol:
     - job: build-nuttx
       artifacts: false
     - build-gcc
+    - build-wasm
   variables:
+    WAPPS_PREBUILT: "1"
     # Build the sim in-job from a forced clean tree. An incremental NuttX build
     # on a reused runner workspace can run a stale engine ELF (the kbuild does
     # not track the engine objects), which silently tests an old binary and

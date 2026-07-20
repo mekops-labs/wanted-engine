@@ -17,6 +17,9 @@
 set -euo pipefail
 
 ENGINE_DIR=${ENGINE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
+# shellcheck source=test/lib-wapp.sh
+. "$ENGINE_DIR/test/lib-wapp.sh"
+WAPP_ROOT=$ENGINE_DIR
 NUTTX_DIR=${NUTTX_DIR:-$ENGINE_DIR/third_party/nuttx}
 APPS_DIR=${APPS_DIR:-$ENGINE_DIR/third_party/nuttx-apps}
 SIMROOT=${SIMROOT:-$ENGINE_DIR/build-nuttx/simroot}
@@ -159,7 +162,7 @@ kernel() {
 # in test/selftest.sh.
 stage_test_wapp() {
     local name=${1%%:*} ver=${1#*:} s
-    make -C "$ENGINE_DIR/wapps/$name" >/dev/null 2>&1
+    wapp_build "$name"
     mkdir -p "$SIMROOT/registry"
     s=$(mktemp -d)
     cp "$ENGINE_DIR/wapps/$name/$name.wasm" "$s/app.wasm"
