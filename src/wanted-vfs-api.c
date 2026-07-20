@@ -11,6 +11,7 @@
 #include <vfs-drivers.h>
 #include <vfs-netfs.h>
 #include <wanted-api.h>
+#include <wanted-autoconf.h>
 #include <wanted-config.h>
 #include <wanted-vfs-api.h>
 #include <wanted_log.h>
@@ -330,14 +331,28 @@ static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
 static const vfs_driver_table_t core_driver_table[] = {
     {"null", VfsNullInit},
     {"log", VfsLogInit},
-    {"9p", Vfs9PInit},
-    {"config", VfsConfigInit},
     {"platform", platformFsInitRW},
+#ifdef CONFIG_WANTED_VFS_9P
+    {"9p", Vfs9PInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_CONFIG
+    {"config", VfsConfigInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_SOCKET
     {"socket", VfsSocketInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_SHA256
     {"sha256", VfsSha256Init},
+#endif
+#ifdef CONFIG_WANTED_VFS_ED25519
     {"ed25519", VfsEd25519Init},
+#endif
+#ifdef CONFIG_WANTED_VFS_INFLATE
     {"inflate", VfsInflateInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_WANTED
     {"wanted", VfsWantedInit},
+#endif
     {NULL, NULL},
 };
 

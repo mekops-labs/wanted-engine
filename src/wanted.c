@@ -10,6 +10,7 @@
 #include <wasi.h>
 
 #include <debug_trace.h>
+#include <wanted-autoconf.h>
 #include <wanted_log.h>
 #include <wanted_malloc.h>
 
@@ -784,6 +785,7 @@ int WantedWappRun(wapp_data_t *ctx) {
             if (rc < 0) {
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
             }
+#ifdef CONFIG_WANTED_VFS_LOGMOUNT
         } else if (strcmp(m->name, "log") == 0) {
             /* A `log` mount is the read-only directory view over the per-wapp
              * LogStore, bound at the wapp-visible m->path. `options` may carry
@@ -804,6 +806,7 @@ int WantedWappRun(wapp_data_t *ctx) {
                     drv->Destroy(drv);
                 ret += rc;
             }
+#endif /* CONFIG_WANTED_VFS_LOGMOUNT */
         } else {
             ret += WantedInstallDriver(ctx->vfs, wapp, m->name, m->path,
                                        m->options);
