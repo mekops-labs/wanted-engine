@@ -1,0 +1,18 @@
+{
+    "system": {
+        "privileged": true
+    },
+    "supervisor": {
+        "imagePath": "./build-live-update/staged-supervisor.tar",
+        "params": {
+            "console": {
+                "in":  {"name": "platform"},
+                "out": {"name": "platform"},
+                "err": {"name": "platform"}
+            },
+            "drivers": [
+                {"name": "wanted"}
+            ]
+        }
+    }
+}

@@ -95,6 +95,12 @@ selftest-qemu-mipsel:
 syscontrol:
     ./test/syscontrol.sh ./{{build_dir}}/cmd/wanted-cli
 
+# Swap the supervisor image under a running engine: child wapps keep running,
+# an armed reload adopts the staged image, a bad one rolls back.
+live-update:
+    BUILD_DIR=build-wsh just wsh
+    ./test/live-update.sh ./build-wsh/cmd/wanted-cli
+
 # Negative test: WASM_MAX_MEMORY_PAGES bounds a wapp's linear-memory growth.
 memcap:
     ./test/memcap.sh
