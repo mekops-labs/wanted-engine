@@ -336,11 +336,14 @@ static pipe_store_t *wantedPipeStore(void) {
 static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
     size_t heap_used = 0, heap_total = 0;
+    size_t store_free = 0, store_total = 0;
     PlatformMemoryStats(&heap_used, &heap_total);
-    int w =
-        snprintf((char *)buf, bufLen,
-                 "stack_size:\t%d B\nheap_used:\t%zu B\nheap_total:\t%zu B\n",
-                 WASM_STACK_SIZE, heap_used, heap_total);
+    PlatformStorageStats(&store_free, &store_total);
+    int w = snprintf(
+        (char *)buf, bufLen,
+        "stack_size:\t%d B\nheap_used:\t%zu B\nheap_total:\t%zu B\n"
+        "store_free:\t%zu B\nstore_total:\t%zu B\n",
+        WASM_STACK_SIZE, heap_used, heap_total, store_free, store_total);
     if (w < 0)
         return -EIO;
     return w < (int)bufLen ? w : (int)bufLen;

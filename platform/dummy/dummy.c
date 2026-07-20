@@ -48,6 +48,13 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
         *heap_total = 0;
 }
 
+void PlatformStorageStats(size_t *free_b, size_t *total_b) {
+    if (free_b)
+        *free_b = 0;
+    if (total_b)
+        *total_b = 0;
+}
+
 const char *PlatformName(void) { return "dummy"; }
 
 /* The dummy platform is single-threaded (unit tests), so the mutex is a no-op.
