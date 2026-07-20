@@ -7,10 +7,7 @@ set(sources
     "default_supervisor_cfg.json.h"
 )
 
-# Mandatory core. tarfs/devfs/netfs/procfs own members of struct vfs_ctx_t and
-# are called directly from vfs.c; null/log/pipe back the console defaults;
-# stdio registers the always-present /dev/std* aliases; virtual backs the
-# wanted namespace. None of these are configurable — see the Kconfig comment.
+# Mandatory core — not configurable; see the Kconfig comment for why.
 set(vfs-srcs
     "vfs/vfs.c"
     "vfs/vfs-devfs.c"
@@ -25,8 +22,7 @@ set(vfs-srcs
     "vfs/vfs-virtual.c"
     )
 
-# Configurable drivers — a launch config reaches each by name, so dropping one
-# drops its source and its factory-table row together.
+# Configurable drivers: dropping one drops its source and its table row.
 if(CONFIG_WANTED_VFS_9P)
     list(APPEND vfs-srcs "vfs/vfs-9p.c")
 endif()
@@ -66,8 +62,7 @@ set(tiny-json-src
     ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c
 )
 
-# c9 exists only for the 9p driver; uzlib only for inflate. Each follows its
-# consumer out of the build, which is where most of those drivers' footprint is.
+# c9 serves only 9p, uzlib only inflate; each follows its consumer out.
 set(c9-src "")
 if(CONFIG_WANTED_VFS_9P)
     set(c9-src ${CMAKE_SOURCE_DIR}/vendor/c9/c9.c)
