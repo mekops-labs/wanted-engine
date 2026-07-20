@@ -370,6 +370,43 @@ static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path) {
     return ni < 0 ? -ENOSPC : 0;
 }
 
+/* Paths are flat strings, so "empty" means no live node is prefixed "<dir>/".
+ */
+static int dummy_rmdir(dummy_fs_t *fs, int fd, const char *path) {
+    const dummy_fd_slot_t *dfd = fd_get(fs, fd);
+    if (!dfd)
+        return -EBADF;
+
+    char abs_path[DUMMY_FS_PATH_LEN];
+    path_join(fs->nodes[dfd->node_idx].path, path, abs_path, sizeof(abs_path));
+
+    int ni = node_find(fs, abs_path);
+    if (ni < 0)
+        return -ENOENT;
+    if (fs->nodes[ni].type != DUMMY_NODE_DIR)
+        return -ENOTDIR;
+
+    size_t plen = strnlen(abs_path, DUMMY_FS_PATH_LEN);
+    for (int i = 0; i < DUMMY_FS_MAX_NODES; i++) {
+        if (i == ni || fs->nodes[i].type == DUMMY_NODE_NONE)
+            continue;
+        if (strncmp(fs->nodes[i].path, abs_path, plen) == 0 &&
+            fs->nodes[i].path[plen] == '/')
+            return -ENOTEMPTY;
+    }
+
+    fs->nodes[ni].type = DUMMY_NODE_NONE;
+    fs->nodes[ni].path[0] = '\0';
+    fs->nodes[ni].size = 0;
+    return 0;
+}
+
+static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path) {
+    if (d->readonly)
+        return -EROFS;
+    return dummy_rmdir(d->fs, fd, path);
+}
+
 /* ── VfsPlatformFsInit ──────────────────────────────────────────────────── */
 
 static const char id[] = {'D', 'u', 'm', 'y'};
@@ -407,6 +444,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt,
     drv->ReadDir = _ReadDir;
     drv->Rename = _Rename;
     drv->Mkdir = _Mkdir;
+    drv->Rmdir = _Rmdir;
     return drv;
 }
 
@@ -432,6 +470,10 @@ const char *PlatformVolumeRoot(void) { return "/data"; }
 int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
                      const char *new_path) {
     return dummy_rename(&g_dummy_fs, old_fd, old_path, new_fd, new_path);
+}
+
+int PlatformFsRmdir(int fd, const char *path) {
+    return dummy_rmdir(&g_dummy_fs, fd, path);
 }
 
 int PlatformFsMkdir(int fd, const char *path) {

@@ -278,6 +278,41 @@ TEST(wasi_preopen_fs, Mkdir_CreatesDirectory) {
     VfsClose(vfs, sub);
 }
 
+TEST(wasi_preopen_fs, Rmdir_RemovesDirectory) {
+    int host_fd = PlatformOpenStateDir("/var/lib/rmdir", false);
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/var/lib/rmdir", NULL, host_fd, false));
+    int vfs_fd = wctx->preopens[wctx->preopens_cnt - 1].fd;
+    TEST_ASSERT_TRUE(vfs_fd >= 0);
+
+    TEST_ASSERT_EQUAL_INT(0, VfsMkdir(vfs, vfs_fd, "stale"));
+    TEST_ASSERT_EQUAL_INT(0, VfsRmdir(vfs, vfs_fd, "stale"));
+
+    TEST_ASSERT_EQUAL_INT(-ENOENT, VfsOpenAt(vfs, vfs_fd, "stale",
+                                             VFS_O_RDONLY | VFS_O_DIRECTORY));
+    /* Removing it twice reports the absence rather than succeeding. */
+    TEST_ASSERT_EQUAL_INT(-ENOENT, VfsRmdir(vfs, vfs_fd, "stale"));
+}
+
+TEST(wasi_preopen_fs, Rmdir_NonEmptyDirectoryRejected) {
+    int host_fd = PlatformOpenStateDir("/var/lib/rmdir-full", false);
+    TEST_ASSERT_EQUAL_INT(
+        0,
+        WasiCtxAddPreopen(wctx, "/var/lib/rmdir-full", NULL, host_fd, false));
+    int vfs_fd = wctx->preopens[wctx->preopens_cnt - 1].fd;
+    TEST_ASSERT_TRUE(vfs_fd >= 0);
+
+    TEST_ASSERT_EQUAL_INT(0, VfsMkdir(vfs, vfs_fd, "layers"));
+    int sub = VfsOpenAt(vfs, vfs_fd, "layers", VFS_O_RDONLY | VFS_O_DIRECTORY);
+    TEST_ASSERT_TRUE(sub >= 0);
+    int f = VfsOpenAt(vfs, sub, "blob", VFS_O_CREAT | VFS_O_RDWR);
+    TEST_ASSERT_TRUE(f >= 0);
+    VfsClose(vfs, f);
+    VfsClose(vfs, sub);
+
+    TEST_ASSERT_EQUAL_INT(-ENOTEMPTY, VfsRmdir(vfs, vfs_fd, "layers"));
+}
+
 TEST(wasi_preopen_fs, Rename_MovesFileInPreopen) {
     int host_fd = PlatformOpenStateDir("/var/lib/rename", false);
     TEST_ASSERT_EQUAL_INT(
@@ -342,6 +377,7 @@ TEST(wasi_preopen_fs, ReadOnlyMount_RejectsWrites) {
     TEST_ASSERT_EQUAL_INT(
         -EROFS, VfsOpenAt(vfs, ro_vfs, "new.txt", VFS_O_CREAT | VFS_O_RDWR));
     TEST_ASSERT_EQUAL_INT(-EROFS, VfsMkdir(vfs, ro_vfs, "sub"));
+    TEST_ASSERT_EQUAL_INT(-EROFS, VfsRmdir(vfs, ro_vfs, "sub"));
     TEST_ASSERT_EQUAL_INT(
         -EROFS, VfsRename(vfs, ro_vfs, "data.txt", ro_vfs, "moved.txt"));
 }
@@ -370,6 +406,8 @@ TEST_GROUP_RUNNER(wasi_preopen_fs) {
     RUN_TEST_CASE(wasi_preopen_fs, AddPreopen_BindsToVfs);
     RUN_TEST_CASE(wasi_preopen_fs, OpenAt_CreateAndRead);
     RUN_TEST_CASE(wasi_preopen_fs, Mkdir_CreatesDirectory);
+    RUN_TEST_CASE(wasi_preopen_fs, Rmdir_RemovesDirectory);
+    RUN_TEST_CASE(wasi_preopen_fs, Rmdir_NonEmptyDirectoryRejected);
     RUN_TEST_CASE(wasi_preopen_fs, Rename_MovesFileInPreopen);
     RUN_TEST_CASE(wasi_preopen_fs, ReadOnlyMount_RejectsWrites);
     RUN_TEST_CASE(wasi_preopen_fs, ReadOnlyMount_MissingHostDirRejected);

@@ -615,6 +615,30 @@ static int32_t wasi_path_create_directory(wasm_exec_env_t exec_env, int32_t fd,
     return __WASI_ERRNO_SUCCESS;
 }
 
+static int32_t wasi_path_remove_directory(wasm_exec_env_t exec_env, int32_t fd,
+                                          int32_t path_app, int32_t path_len) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+
+    if (path_len < 0 || path_len >= 512)
+        return __WASI_ERRNO_INVAL;
+
+    const char *p = vaddr(exec_env, path_app, (uint32_t)path_len);
+    if (!p && path_len > 0)
+        return __WASI_ERRNO_FAULT;
+
+    char host_path[513];
+    if (path_len > 0)
+        memcpy(host_path, p, (size_t)path_len);
+    host_path[path_len] = '\0';
+
+    int ret = VfsRmdir(ctx->vfsCtx, fd, host_path);
+    if (ret < 0)
+        return errno_to_wasi(ret);
+    return __WASI_ERRNO_SUCCESS;
+}
+
 static int32_t wasi_fd_read(wasm_exec_env_t exec_env, int32_t fd,
                             int32_t iovs_app, int32_t iovs_len,
                             int32_t nread_app) {
@@ -966,6 +990,7 @@ static int32_t wasi_sock_shutdown(wasm_exec_env_t exec_env, int32_t fd,
         {"path_unlink_file", wasi_path_unlink_file, "(iii)i", NULL},           \
         {"path_rename", wasi_path_rename, "(iiiiii)i", NULL},                  \
         {"path_create_directory", wasi_path_create_directory, "(iii)i", NULL}, \
+        {"path_remove_directory", wasi_path_remove_directory, "(iii)i", NULL}, \
         {"fd_read", wasi_fd_read, "(iiii)i", NULL},                            \
         {"fd_write", wasi_fd_write, "(iiii)i", NULL},                          \
         {"fd_readdir", wasi_fd_readdir, "(iiiIi)i", NULL},                     \

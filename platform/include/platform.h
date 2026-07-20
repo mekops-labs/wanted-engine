@@ -101,6 +101,10 @@ void PlatformWappLoop(void);
 int PlatformWappGetState(wapp_state_t *apps, size_t appsLen);
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total);
 
+/* Free/total bytes of the store backing the registry and volumes — flash on a
+ * board, a filesystem on a host. 0 when the platform cannot report it. */
+void PlatformStorageStats(size_t *free_b, size_t *total_b);
+
 /* External-RAM (PSRAM) allocator for large engine buffers — wapp image cache
  * and WAMR linear memory — so internal RAM is left for task stacks, which on
  * the ESP32 can only live in internal RAM. On targets without external RAM
@@ -164,12 +168,13 @@ int PlatformOpenStateDir(const char *path, bool readonly);
  * mountpoint (e.g. LittleFS). Returns a stable, non-NULL absolute path. */
 const char *PlatformVolumeRoot(void);
 
-/* Thin wrappers over native fs primitives, used by VFS path_rename and
- * path_create_directory to operate on preopen-rooted directories. Both fds
- * are native (openat-class) directory descriptors. */
+/* Thin wrappers over native fs primitives, used by VFS path_rename,
+ * path_create_directory and path_remove_directory to operate on preopen-rooted
+ * directories. Both fds are native (openat-class) directory descriptors. */
 int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
                      const char *new_path);
 int PlatformFsMkdir(int fd, const char *path);
+int PlatformFsRmdir(int fd, const char *path);
 
 void *PlatformNetOpen(int socket_type);
 int PlatformNetConnect(void *ctx, const char *hostname, uint16_t port);
