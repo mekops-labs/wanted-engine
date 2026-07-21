@@ -204,7 +204,4 @@ if (WANTED_DEBUG_TRACES)
 endif()
 
 
-if (SECURE_SOCKETS)
-    message("-- Building with support for secure sockets")
-    target_compile_definitions(${project} PUBLIC SECURE_SOCKETS=1)
-endif()
+
