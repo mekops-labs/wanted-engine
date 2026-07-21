@@ -32,7 +32,6 @@ target_link_libraries(platform_nuttx
 
 target_compile_definitions(platform_nuttx PRIVATE
     PLATFORM_NUTTX=1
-    SECURE_SOCKETS=0
 )
 
 target_include_directories(platform_nuttx

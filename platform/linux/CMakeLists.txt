@@ -1,6 +1,12 @@
-find_package(OpenSSL)
-if(OPENSSL_FOUND)
-    option(SECURE_SOCKETS "Build with OpenSSL based secure sockets" TRUE)
+# TLS backend for this platform. The engine asks for secure sockets through
+# Kconfig; Linux answers with OpenSSL. REQUIRED on purpose: a configuration
+# that asked for TLS must not quietly produce a binary without it, which is
+# what auto-detection here used to do.
+if(CONFIG_WANTED_VFS_SOCKET_TLS)
+    find_package(OpenSSL REQUIRED)
+    set(SECURE_SOCKETS TRUE)
+else()
+    set(SECURE_SOCKETS FALSE)
 endif()
 
 set(sources
@@ -44,9 +50,6 @@ if (SECURE_SOCKETS)
     target_link_libraries(platform_linux
         PRIVATE ${OPENSSL_LIBRARIES}
     )
-    target_compile_definitions(platform_linux PRIVATE SECURE_SOCKETS=1)
-else()
-    target_compile_definitions(platform_linux PRIVATE SECURE_SOCKETS=0)
 endif ()
 
 target_include_directories(platform_linux

@@ -43,6 +43,15 @@ include(cmake/Kconfig.cmake)
 # header: engine core, platform layers, and tests all compile against it.
 include_directories(${WANTED_AUTOCONF_DIR})
 
+# Secure sockets, defined build-wide rather than per target: the configuration
+# symbol is global, so a per-target define made translation units disagree about
+# whether the build has TLS — and the host guard rightly failed them.
+if(CONFIG_WANTED_VFS_SOCKET_TLS)
+    add_compile_definitions(SECURE_SOCKETS=1)
+else()
+    add_compile_definitions(SECURE_SOCKETS=0)
+endif()
+
 # Build Wanted static library
 add_subdirectory(${CMAKE_SOURCE_DIR}/src)
 

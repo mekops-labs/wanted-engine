@@ -65,10 +65,9 @@ set(platform_srcs
     ${ENGINE}/platform/posix/clock.c
     ${ENGINE}/platform/posix/mutex.c
     # lwIP exposes the same BSD socket API this file already targets (it is
-    # also the NuttX platform's socket.c, unmodified); SECURE_SOCKETS=1 below
-    # turns on its TLS branches, backed by the shared raw-mbedTLS layer.
+    # also the NuttX platform's socket.c, unmodified); its TLS branches turn on
+    # with SECURE_SOCKETS, set below from the engine's configuration.
     ${ENGINE}/platform/posix/socket.c
-    ${ENGINE}/platform/posix/ssocket-mbedtls.c
     # PlatformSha256* backed by mbedtls_sha256_context, which the ESP32-S3
     # SHA hardware peripheral transparently accelerates (MBEDTLS_HARDWARE_SHA
     # is on by default for this SoC) -- unlike ECC/ECDSA, this chip has no
@@ -137,14 +136,6 @@ configure_file(
     @ONLY
 )
 
-set(_limit_defs "")
-foreach(_limit MAX_WAPPS WASM_STACK_SIZE WASM_HEAP_SIZE WASM_MAX_MEMORY_PAGES
-               WASM_WORKER_STACK_SIZE MAX_PATH_LEN MAX_DRIVERS_CNT MAX_OPTIONS_SIZE)
-    if(DEFINED ${_limit})
-        list(APPEND _limit_defs ${_limit}=${${_limit}})
-    endif()
-endforeach()
-
 # EMBED_FILES links the compiled-in default supervisor (wsh) straight into the
 # app binary as a linker section (`_binary_supervisor_tar_{start,end}`) —
 # platform.c's PlatformWappLoad reads it directly, zero-copy. The ESP-IDF
@@ -172,9 +163,23 @@ idf_component_register(
     EMBED_FILES ${ENGINE}/wasm/supervisor/wsh/supervisor.tar
 )
 
+# TLS backend for this platform: the engine asks through its own Kconfig, and
+# ESP-IDF answers with the mbedTLS it already ships. Previously pinned on here,
+# which meant a configuration that deselected secure sockets still built and
+# linked them.
+if(CONFIG_WANTED_VFS_SOCKET_TLS)
+    set(_secure_sockets 1)
+    target_sources(${COMPONENT_LIB} PRIVATE ${ENGINE}/platform/posix/ssocket-mbedtls.c)
+else()
+    set(_secure_sockets 0)
+endif()
+
+# Build-wide, not component-private: the host guard is reached from any source
+# including wanted-api.h — app_main.c among them — and a component that saw the
+# configuration symbol but not this define would fail the guard for no reason.
+idf_build_set_property(COMPILE_DEFINITIONS "SECURE_SOCKETS=${_secure_sockets}" APPEND)
+
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PLATFORM_ESP_IDF=1
-    SECURE_SOCKETS=1
     SUPERVISOR_IMAGE_PATH="embedded:supervisor.tar"
-    ${_limit_defs}
 )

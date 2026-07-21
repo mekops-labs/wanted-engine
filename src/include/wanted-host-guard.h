@@ -29,6 +29,16 @@
 #endif
 #endif
 
+/* The other direction, and the one that fails quietly: the configuration asked
+ * for secure sockets but this host supplied no backend, so tcps:// and udps://
+ * would be rejected at wapp launch on a build that believes it has TLS. */
+#ifdef CONFIG_WANTED_VFS_SOCKET_TLS
+#if !defined(SECURE_SOCKETS) || SECURE_SOCKETS == 0
+#error                                                                         \
+    "CONFIG_WANTED_VFS_SOCKET_TLS is set but this build has no TLS backend. Linux needs OpenSSL; NuttX and ESP-IDF need their host's mbedTLS enabled. Deselect it to build without secure sockets."
+#endif
+#endif
+
 /* The supervisor occupies a slot. */
 #if CONFIG_WANTED_MAX_WAPPS < 1
 #error                                                                         \
