@@ -189,7 +189,7 @@ Three engine-controlled regions are passed to WAMR per instance:
 
 | Board | Host | Notes |
 |---|---|---|
-| `xiao_esp32s3` | ESP-IDF | octal PSRAM, app heap off; `-storage` variant trades wapp slots for persist space |
+| `xiao_esp32s3` | ESP-IDF | octal PSRAM, app heap off, linear memory capped at 2 pages so a full house fits the 8 MB part; `-storage` variant trades wapp slots for persist space |
 | `esp32-nuttx` | NuttX | classic ESP32; 24 KiB worker stacks, which must fit scarce internal DRAM |
 | `openwrt` | OpenWrt | packaged `.ipk`; supervisor read from its install path |
 
