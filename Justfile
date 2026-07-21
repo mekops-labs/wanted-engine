@@ -83,6 +83,24 @@ syscontrol:
 memcap:
     ./test/memcap.sh
 
+# Package the ESP-IDF factory-seed images from built wapps. The firmware embeds
+# these into the app binary, so they must exist before `idf.py build`; they are
+# gitignored artifacts, like every other packaged .wapp. Needs `just wapps`
+# (wapp SDK image) to have produced the .wasm files first.
+registry-seed:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p wasm/registry-seed
+    for n in looper wifi-connect devcheck; do
+        src="wapps/$n/$n.wasm"
+        [ -f "$src" ] || { echo "registry-seed: $src missing — run 'make wapps' first" >&2; exit 1; }
+        s=$(mktemp -d); cp "$src" "$s/app.wasm"
+        tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
+            -C "$s" -cf "wasm/registry-seed/$n.wapp" app.wasm
+        rm -rf "$s"
+        echo "registry-seed: wasm/registry-seed/$n.wapp"
+    done
+
 # Report per-wapp + engine memory footprint per profile (linux + nuttx ABIs).
 sizes:
     ./utils/measure-sizes.sh
