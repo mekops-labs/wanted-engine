@@ -31,7 +31,11 @@ URL from [downloads.openwrt.org](https://downloads.openwrt.org/) (find your
 router's target/subtarget there):
 
 ```sh
-make openwrt-package SDK=https://downloads.openwrt.org/releases/24.10.0/targets/mediatek/filogic/openwrt-sdk-24.10.0-mediatek-filogic_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+make openwrt-package-aarch64      # generic 64-bit ARM (armsr/armv8)
+make openwrt-package-mipsel       # generic 32-bit MIPS (malta/le)
+
+# or point it at the SDK for whichever target the deployment runs:
+make openwrt-package SDK=<sdk-url-or-dir>
 # inside the devcontainer/CI: just openwrt-package <sdk-url>
 ```
 
