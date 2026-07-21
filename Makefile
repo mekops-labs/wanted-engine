@@ -40,13 +40,35 @@ WAPP_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help shell menuconfig wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync openwrt-package FORCE
+.PHONY: help shell menuconfig setconfig wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync openwrt-package FORCE
+
+# make reads every word as its own goal, so `make defconfig openwrt` reaches just
+# as two recipes. Forward trailing goals as arguments and neutralise them as
+# targets. setconfig is absent: its `=` is read as a variable assignment first.
+ARG_RECIPES := analyze defconfig savedefconfig selftest-qemu sizes \
+               supervisor-variant target
+ifneq ($(filter $(ARG_RECIPES),$(firstword $(MAKECMDGOALS))),)
+JUST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+ifneq ($(JUST_ARGS),)
+$(eval $(JUST_ARGS):;@:)
+endif
+$(firstword $(MAKECMDGOALS)):
+	@$(JUST) $@ $(JUST_ARGS)
+endif
 
 # Catch-all: forward any goal without an explicit rule below to `just` in the
 # container. FORCE defeats make's "up to date" check so a goal that matches an
 # existing path (e.g. the build/ dir) still runs.
 %: FORCE
 	@$(JUST) $@
+
+# The assignment is already swallowed by the time we get here; say why.
+setconfig:
+	@echo "make cannot forward NAME=value: it reads that word as a variable" >&2
+	@echo "assignment, not as an argument. Run it in the container instead:" >&2
+	@echo "  make shell" >&2
+	@echo "  just setconfig 'WANTED_TARGET_OPENWRT_SDK=\"aarch64\"'" >&2
+	@exit 1
 
 FORCE:
 
@@ -66,9 +88,8 @@ menuconfig: ## edit the build configuration in the terminal UI [BUILD_DIR=...]
 	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src $(ENVS) \
 	    -e TERM="$${TERM:-xterm}" --entrypoint=just $(IMAGE) menuconfig
 
-# Target-specific BUILD_DIR: $(ENVS) is lazily expanded, so each of these gets
-# its own .config and none of them disturbs the default (linux) build dir.
-openwrt-package: BUILD_DIR = build-openwrt
+# Builds from $(BUILD_DIR)'s .config — the one `make menuconfig` edits. The cross
+# build lands in a per-architecture dir, leaving the host build alone.
 openwrt-package: ## build a production OpenWRT .ipk [SDK=aarch64|mipsel|url|dir]
 	$(JUST) target openwrt
 	$(if $(SDK),$(JUST) setconfig 'WANTED_TARGET_OPENWRT_SDK="$(SDK)"',)
