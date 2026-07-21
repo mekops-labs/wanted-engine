@@ -78,6 +78,21 @@ deps() {
         done
     fi
     echo "linked engine sources into $appdir"
+    default_config_header
+}
+
+# Compile the configured JSON in as bytes — NuttX has no filesystem holding a
+# config at first boot. Lands in src/include, which is on both this build's and
+# CMake's include path. Here rather than in the fork's app Makefile; every NuttX
+# entry point runs deps.
+default_config_header() {
+    local cfg
+    cfg=$(sed -nE 's/^CONFIG_WANTED_DEFAULT_CONFIG="(.*)"$/\1/p' \
+        "$ENGINE_DIR/${BUILD_DIR:-build}/.config" 2>/dev/null || true)
+    "$ENGINE_DIR/utils/default-config-header.sh" "$ENGINE_DIR" \
+        "${cfg:-configs/example_config.json}" \
+        "$ENGINE_DIR/src/include/wanted-config.h"
+    echo "generated wanted-config.h from ${cfg:-configs/example_config.json}"
 }
 
 # Stage the supervisor image + engine config into the sim's hostfs root (/data).

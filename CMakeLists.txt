@@ -29,6 +29,20 @@ message("Building ${project} v${SEMVER}")
 # step below reads .config — hence the include, then this block.
 include(cmake/Kconfig.cmake)
 
+# The configured launch config, compiled in as the CLI's default. Same generated
+# header the NuttX builds get (test/nuttx-sim.sh), in a directory both include.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/${CONFIG_WANTED_DEFAULT_CONFIG})
+execute_process(
+    COMMAND ${CMAKE_SOURCE_DIR}/utils/default-config-header.sh
+            ${CMAKE_SOURCE_DIR} ${CONFIG_WANTED_DEFAULT_CONFIG}
+            ${CMAKE_SOURCE_DIR}/src/include/wanted-config.h
+    RESULT_VARIABLE _cfg_rc OUTPUT_VARIABLE _cfg_out ERROR_VARIABLE _cfg_err)
+if(NOT _cfg_rc EQUAL 0)
+    message(FATAL_ERROR "default configuration: ${_cfg_out}${_cfg_err}")
+endif()
+message("-- Default configuration: ${CONFIG_WANTED_DEFAULT_CONFIG}")
+
 if(CONFIG_WANTED_BUILD_COVERAGE)
     message("-- Code coverage build enabled")
     add_compile_options(--coverage -O0 -g)

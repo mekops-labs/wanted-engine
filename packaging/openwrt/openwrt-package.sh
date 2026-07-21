@@ -9,7 +9,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 SDK_ARG="${1:?usage: openwrt-package.sh <sdk-url-or-dir> [supervisor.tar]}"
-OUT="$REPO/dist"
+OUT="$REPO/dist/openwrt"
 
 # Where the .ipk installs it; the engine must be compiled to read it there.
 PACKAGED_IMAGE="/usr/share/wanted/supervisor.tar"
@@ -100,6 +100,10 @@ cmake --build "$bdir" -j"$(nproc)"
 
 # --- assemble the .ipk ----------------------------------------------------
 log "packaging .ipk"
+# Becomes the package's /etc/wanted/config.json; validated before packaging.
+cfg_sym=$(sed -nE 's/^CONFIG_WANTED_DEFAULT_CONFIG="(.*)"$/\1/p' "$DOTCONFIG")
+CONFIG_JSON="$("$REPO/utils/default-config.sh" "$REPO" "${cfg_sym:-configs/example_config.json}")"
+log "default configuration: ${cfg_sym:-configs/example_config.json}"
 ver="$(cd "$REPO" && git describe --tags 2>/dev/null | sed 's/^v//' || echo 0.0.0)"
 sh "$REPO/packaging/openwrt/make-ipk.sh" "$OPKG_ARCH" "$bdir/cmd/wanted-cli" \
-   "$SUPERVISOR" "$ver" "$OUT"
+   "$SUPERVISOR" "$ver" "$OUT" "$CONFIG_JSON"

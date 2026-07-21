@@ -172,3 +172,26 @@ config WANTED_EXTRA_DRIVERS_DIR
 endmenu
 
 endmenu
+
+# The launch config the build ships: a file beside the binary (linux), a package
+# conffile (openwrt), or a blob in the image (esp-idf, nuttx). A build-host path,
+# so it belongs here — only the file's content crosses to the device.
+#
+# A path rather than a menu of the files under configs/, for the reason boards
+# and SDKs are pass-through strings: enumerating them here is a second list to
+# keep in step with the directory. A board defconfig sets it, alongside that
+# board's supervisor and limits.
+menu "Default configuration"
+
+config WANTED_DEFAULT_CONFIG
+	string "Default configuration file"
+	default "configs/example_config.json"
+	help
+	  JSON to ship as the engine's launch config, relative to the repository
+	  root or absolute. It names the supervisor's drivers, mounts and sockets,
+	  so it decides what the node can reach — see configs/example_config.json
+	  for the schema, and the other configs/*.json for board variants.
+
+	  Parsed at build time; one that does not parse fails the build.
+
+endmenu

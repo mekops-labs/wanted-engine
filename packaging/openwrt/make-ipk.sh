@@ -7,6 +7,9 @@ set -eu
 ARCH="$1"; BIN="$2"; SUP="$3"; VER="$4"; OUT="$5"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
+# The launch config the package installs; the router one by default, so a direct
+# invocation still produces a working package.
+CFG="${6:-$HERE/../../configs/openwrt.json}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -15,7 +18,7 @@ data="$work/data"
 mkdir -p "$data/usr/bin" "$data/usr/share/wanted" "$data/etc/wanted" "$data/etc/init.d"
 install -m 0755 "$BIN" "$data/usr/bin/wanted-cli"
 install -m 0644 "$SUP" "$data/usr/share/wanted/supervisor.tar"
-install -m 0644 "$HERE/files/etc/wanted/config.json" "$data/etc/wanted/config.json"
+install -m 0644 "$CFG" "$data/etc/wanted/config.json"
 install -m 0755 "$HERE/files/etc/init.d/wanted" "$data/etc/init.d/wanted"
 
 isize=$(du -sb "$data" | cut -f1)

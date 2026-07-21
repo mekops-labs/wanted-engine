@@ -1,0 +1,17 @@
+{
+    "system": {
+        "privileged": true
+    },
+    "supervisor": {
+        "params": {
+            "console": {
+                "in":  {"name": "platform"},
+                "out": {"name": "platform"},
+                "err": {"name": "platform"}
+            },
+            "drivers": [
+                {"name": "wanted"}
+            ]
+        }
+    }
+}
