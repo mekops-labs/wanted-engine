@@ -16,19 +16,19 @@
 #include <wanted-api.h>
 #include <wanted_malloc.h>
 
-#define LOG_CAP 2048 /* bytes retained per wapp (most recent) */
+#define CONFIG_WANTED_LOG_CAP 2048 /* bytes retained per wapp (most recent) */
 
 typedef struct {
     char name[WAPP_MAX_NAME_LEN];
-    char buf[LOG_CAP];
+    char buf[CONFIG_WANTED_LOG_CAP];
     size_t start;  /* index of the oldest byte */
-    size_t len;    /* bytes stored, <= LOG_CAP */
+    size_t len;    /* bytes stored, <= CONFIG_WANTED_LOG_CAP */
     uint64_t tick; /* last-access counter, for LRU eviction */
     bool used;
 } log_slot_t;
 
 struct log_store_t {
-    log_slot_t slots[LOG_SLOTS];
+    log_slot_t slots[CONFIG_WANTED_LOG_SLOTS];
     uint64_t clock; /* monotonic; stamped on each slot access */
     platform_mutex_t *lock;
 };
@@ -52,7 +52,7 @@ log_store_t *LogStore(void) {
  * log promptly after launching it, so the live wapps are always retained. */
 static log_slot_t *slot_for(log_store_t *s, const char *name) {
     int free_idx = -1, lru_idx = 0;
-    for (int i = 0; i < LOG_SLOTS; i++) {
+    for (int i = 0; i < CONFIG_WANTED_LOG_SLOTS; i++) {
         if (s->slots[i].used) {
             if (strncmp(s->slots[i].name, name, WAPP_MAX_NAME_LEN) == 0) {
                 s->slots[i].tick = ++s->clock;
@@ -82,17 +82,18 @@ void LogStoreAppend(log_store_t *s, const char *name, const void *buf,
     log_slot_t *sl = slot_for(s, name);
     if (sl) {
         const char *p = (const char *)buf;
-        /* Only the last LOG_CAP bytes can survive. */
-        if (n >= LOG_CAP) {
-            p += n - LOG_CAP;
-            n = LOG_CAP;
+        /* Only the last CONFIG_WANTED_LOG_CAP bytes can survive. */
+        if (n >= CONFIG_WANTED_LOG_CAP) {
+            p += n - CONFIG_WANTED_LOG_CAP;
+            n = CONFIG_WANTED_LOG_CAP;
         }
         for (size_t i = 0; i < n; i++) {
-            sl->buf[(sl->start + sl->len) % LOG_CAP] = p[i];
-            if (sl->len < LOG_CAP)
+            sl->buf[(sl->start + sl->len) % CONFIG_WANTED_LOG_CAP] = p[i];
+            if (sl->len < CONFIG_WANTED_LOG_CAP)
                 sl->len++;
             else
-                sl->start = (sl->start + 1) % LOG_CAP; /* overwrite oldest */
+                sl->start = (sl->start + 1) %
+                            CONFIG_WANTED_LOG_CAP; /* overwrite oldest */
         }
     }
     PlatformMutexUnlock(s->lock);
@@ -104,14 +105,14 @@ size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap) {
 
     PlatformMutexLock(s->lock);
     size_t copied = 0;
-    for (int i = 0; i < LOG_SLOTS; i++) {
+    for (int i = 0; i < CONFIG_WANTED_LOG_SLOTS; i++) {
         if (s->slots[i].used &&
             strncmp(s->slots[i].name, name, WAPP_MAX_NAME_LEN) == 0) {
             log_slot_t *sl = &s->slots[i];
             sl->tick = ++s->clock; /* a read counts as recent use */
             size_t m = sl->len < cap ? sl->len : cap;
             for (size_t j = 0; j < m; j++)
-                out[j] = sl->buf[(sl->start + j) % LOG_CAP];
+                out[j] = sl->buf[(sl->start + j) % CONFIG_WANTED_LOG_CAP];
             copied = m;
             break;
         }
@@ -126,7 +127,7 @@ bool LogStoreHas(log_store_t *s, const char *name) {
 
     PlatformMutexLock(s->lock);
     bool found = false;
-    for (int i = 0; i < LOG_SLOTS; i++) {
+    for (int i = 0; i < CONFIG_WANTED_LOG_SLOTS; i++) {
         if (s->slots[i].used &&
             strncmp(s->slots[i].name, name, WAPP_MAX_NAME_LEN) == 0) {
             found = true;
@@ -144,7 +145,7 @@ size_t LogStoreList(log_store_t *s, char names[][WAPP_MAX_NAME_LEN],
 
     PlatformMutexLock(s->lock);
     size_t n = 0;
-    for (int i = 0; i < LOG_SLOTS && n < max; i++) {
+    for (int i = 0; i < CONFIG_WANTED_LOG_SLOTS && n < max; i++) {
         if (!s->slots[i].used)
             continue;
         strncpy(names[n], s->slots[i].name, WAPP_MAX_NAME_LEN - 1);

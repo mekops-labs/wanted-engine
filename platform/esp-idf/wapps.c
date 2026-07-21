@@ -31,7 +31,7 @@ typedef struct {
 
 volatile struct {
     size_t n;
-    thread_data_t threads[MAX_WAPPS];
+    thread_data_t threads[CONFIG_WANTED_MAX_WAPPS];
 } state;
 
 /* System-control requests, raised by a privileged wapp and consumed by
@@ -81,7 +81,9 @@ void *WA_thread(void *ptr) {
  * same way — the WAMR classic interpreter is recursive and the WASI/VFS host
  * calls add frames, and the RTOS per-thread default is far too small. Lives in
  * PSRAM (see startWorker). */
-size_t PlatformWorkerStackSize(void) { return WASM_WORKER_STACK_SIZE; }
+size_t PlatformWorkerStackSize(void) {
+    return CONFIG_WANTED_WASM_WORKER_STACK_SIZE;
+}
 
 /* Base FreeRTOS priority, captured from the esp_pthread default. Wapps run at
  * this base; the supervisor one step above so it can always preempt and
@@ -98,7 +100,7 @@ static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
         basePriority = (int)cfg.prio;
     }
 
-    cfg.stack_size = WASM_WORKER_STACK_SIZE;
+    cfg.stack_size = CONFIG_WANTED_WASM_WORKER_STACK_SIZE;
     cfg.prio = (size_t)(basePriority + (isSupervisor ? 1 : 0));
     cfg.thread_name = isSupervisor ? "wapp-super" : "wapp";
     /* Stack in PSRAM instead of internal DRAM. */
@@ -116,18 +118,18 @@ int PlatformWappStart(wapp_t *wapp) {
     }
 
     pthread_mutex_lock(&state_mtx);
-    if (state.n >= MAX_WAPPS) {
+    if (state.n >= CONFIG_WANTED_MAX_WAPPS) {
         pthread_mutex_unlock(&state_mtx);
         return -ENOSPC;
     }
 
-    for (slot = 0; slot < MAX_WAPPS; slot++) {
+    for (slot = 0; slot < CONFIG_WANTED_MAX_WAPPS; slot++) {
         if (state.threads[slot].status == NOT_STARTED ||
             state.threads[slot].status == EXITED ||
             state.threads[slot].status == FAILURE)
             break;
     }
-    if (slot >= MAX_WAPPS) {
+    if (slot >= CONFIG_WANTED_MAX_WAPPS) {
         pthread_mutex_unlock(&state_mtx);
         return -ENOSPC;
     }
@@ -171,7 +173,7 @@ int PlatformWappStop(const char *name) {
      * reaped (status flipped, slot reused) out from under us. */
     pthread_mutex_lock(&state_mtx);
 
-    for (slot = 0; slot < MAX_WAPPS; slot++) {
+    for (slot = 0; slot < CONFIG_WANTED_MAX_WAPPS; slot++) {
         if (state.threads[slot].data.wapp == NULL)
             continue;
         if ((strcmp((char *)state.threads[slot].data.wapp->name, name) == 0) &&
@@ -179,7 +181,7 @@ int PlatformWappStop(const char *name) {
             break;
     }
 
-    if (slot == MAX_WAPPS) {
+    if (slot == CONFIG_WANTED_MAX_WAPPS) {
         pthread_mutex_unlock(&state_mtx);
         return -ENOENT;
     }
@@ -204,14 +206,14 @@ int PlatformWappRelease(const char *name) {
 
     pthread_mutex_lock(&state_mtx);
 
-    for (slot = 0; slot < MAX_WAPPS; slot++) {
+    for (slot = 0; slot < CONFIG_WANTED_MAX_WAPPS; slot++) {
         if (state.threads[slot].data.wapp == NULL)
             continue;
         if (strcmp((char *)state.threads[slot].data.wapp->name, name) == 0)
             break;
     }
 
-    if (slot == MAX_WAPPS) {
+    if (slot == CONFIG_WANTED_MAX_WAPPS) {
         pthread_mutex_unlock(&state_mtx);
         return -ENOENT;
     }
@@ -291,7 +293,7 @@ void PlatformWappLoop(void) {
         uint8_t supervisorOk = 0;
         int supervisorFailed = 0;
         int supervisorErr = 0;
-        for (int i = 0; i < MAX_WAPPS; i++) {
+        for (int i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
             /* at least 1 supervisor needs to be running */
             if (state.threads[i].data.wapp == NULL)
                 continue;
@@ -347,7 +349,8 @@ void PlatformWappLoop(void) {
 int PlatformWappGetState(wapp_state_t *wapps, size_t appsLen) {
     int i, r;
 
-    for (i = 0, r = 0; i < MAX_WAPPS && (size_t)r < appsLen; i++) {
+    for (i = 0, r = 0; i < CONFIG_WANTED_MAX_WAPPS && (size_t)r < appsLen;
+         i++) {
         if (state.threads[i].data.wapp == NULL)
             continue;
 

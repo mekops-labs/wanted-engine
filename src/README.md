@@ -25,7 +25,7 @@ diagrammed in [`docs/architecture.md`](../docs/architecture.md).
 | `wanted_wasm_api.c` | WAMR `NativeSymbol` registration for the `wanted` host module. |
 | `wanted-vfs-api.c` | The VFS calls exposed to the WASM/WASI layer. |
 | `default_supervisor_cfg.json.h` | Compiled-in default config (generated header). |
-| `include/` | Internal headers; `wanted-api.h` is the primary internal surface, `wanted-config.h` the compile-time resource limits. |
+| `include/` | Internal headers; `wanted-api.h` is the primary internal surface, the Kconfig tree carries the compile-time resource limits. |
 
 ### `vfs/` — the VFS router
 
@@ -58,6 +58,6 @@ boundary).
 
 - **C99, no compiler/GNU extensions, no VLAs.** See `CONTRIBUTING.md`.
 - **Compile-time limits** (`MAX_WAPPS`, stack/heap sizes, `MAX_PATH_LEN`, …) live
-  in `include/wanted-config.h`; changing one resizes static structures — audit
+  in the root `Kconfig`; changing one resizes static structures — audit
   every array dimensioned by it.
 - **No dynamic allocation in wapp context after init** on constrained targets.

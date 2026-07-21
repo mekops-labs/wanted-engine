@@ -35,17 +35,13 @@ endif()
 # Engine-only warning guard. The NuttX kbuild already compiles with these.
 set(WANTED_STRICT_WARNINGS -Werror=strict-prototypes -Werror=undef)
 
-# Engine resource-limit overrides (see src/include/wanted-config.h). Each limit
-# defaults to the conservative "constrained" value baked into that header;
-# defining the matching CMake variable — on the command line (-DMAX_WAPPS=16) or
-# via a profile in cmake/profiles/.
-foreach(_limit MAX_WAPPS WASM_STACK_SIZE WASM_HEAP_SIZE WASM_MAX_MEMORY_PAGES
-               WASM_WORKER_STACK_SIZE MAX_PATH_LEN MAX_DRIVERS_CNT MAX_OPTIONS_SIZE)
-    if(DEFINED ${_limit})
-        add_compile_definitions(${_limit}=${${_limit}})
-        message("-- Resource limit override: ${_limit}=${${_limit}}")
-    endif()
-endforeach()
+# Build configuration: reads Kconfig + this build dir's .config, generates
+# wanted-autoconf.h, and mirrors the symbols into CMake variables.
+include(cmake/Kconfig.cmake)
+
+# The generated header is build-wide configuration, not one target's private
+# header: engine core, platform layers, and tests all compile against it.
+include_directories(${WANTED_AUTOCONF_DIR})
 
 # Build Wanted static library
 add_subdirectory(${CMAKE_SOURCE_DIR}/src)

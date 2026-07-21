@@ -10,7 +10,7 @@
 #include <vfs-drivers.h>
 #include <vfs.h>
 #include <wanted-api.h>
-#include <wanted-config.h>
+#include <wanted-autoconf.h>
 #include <wanted_malloc.h>
 
 /* ── VfsLogMount ─────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 #define ID {'L', 'o', 'g', 'd'}
-#define LOGMOUNT_MAX_OPEN 8
+#define CONFIG_WANTED_LOGMOUNT_MAX_OPEN 8
 
 typedef struct {
     bool in_use;
@@ -43,7 +43,7 @@ typedef struct {
 
 struct vfs_driver_ctx_t {
     char scope[WAPP_MAX_NAME_LEN]; /* "" = all wapps; else only this one */
-    logmount_fd_t fds[LOGMOUNT_MAX_OPEN];
+    logmount_fd_t fds[CONFIG_WANTED_LOGMOUNT_MAX_OPEN];
 };
 
 static const char id[4] = ID;
@@ -117,7 +117,7 @@ static int _Destroy(struct vfs_driver_t *d) {
 }
 
 static int alloc_fd(vfs_driver_ctx_t d) {
-    for (int i = 0; i < LOGMOUNT_MAX_OPEN; i++) {
+    for (int i = 0; i < CONFIG_WANTED_LOGMOUNT_MAX_OPEN; i++) {
         if (!d->fds[i].in_use)
             return i;
     }
@@ -170,14 +170,14 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 }
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
-    if (fd < 0 || fd >= LOGMOUNT_MAX_OPEN)
+    if (fd < 0 || fd >= CONFIG_WANTED_LOGMOUNT_MAX_OPEN)
         return -EBADF;
     memset(&d->fds[fd], 0, sizeof(d->fds[fd]));
     return 0;
 }
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
-    if (fd < 0 || fd >= LOGMOUNT_MAX_OPEN || !d->fds[fd].in_use)
+    if (fd < 0 || fd >= CONFIG_WANTED_LOGMOUNT_MAX_OPEN || !d->fds[fd].in_use)
         return -EBADF;
     memset(stat, 0, sizeof(*stat));
     stat->filetype = d->fds[fd].is_root ? VFS_FILETYPE_DIRECTORY
@@ -188,7 +188,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     if (buf == NULL)
         return -EINVAL;
-    if (fd < 0 || fd >= LOGMOUNT_MAX_OPEN || !d->fds[fd].in_use)
+    if (fd < 0 || fd >= CONFIG_WANTED_LOGMOUNT_MAX_OPEN || !d->fds[fd].in_use)
         return -EBADF;
     if (d->fds[fd].is_root)
         return -EISDIR;
@@ -204,15 +204,15 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed) {
     if (buf == NULL || cookie == NULL || bufUsed == NULL)
         return -EINVAL;
-    if (fd < 0 || fd >= LOGMOUNT_MAX_OPEN || !d->fds[fd].in_use)
+    if (fd < 0 || fd >= CONFIG_WANTED_LOGMOUNT_MAX_OPEN || !d->fds[fd].in_use)
         return -EBADF;
     if (!d->fds[fd].is_root)
         return -ENOTDIR;
 
-    char names[LOG_SLOTS][WAPP_MAX_NAME_LEN];
-    size_t total = LogStoreList(LogStore(), names, LOG_SLOTS);
+    char names[CONFIG_WANTED_LOG_SLOTS][WAPP_MAX_NAME_LEN];
+    size_t total = LogStoreList(LogStore(), names, CONFIG_WANTED_LOG_SLOTS);
 
-    vfs_dir_entry_t entries[LOG_SLOTS];
+    vfs_dir_entry_t entries[CONFIG_WANTED_LOG_SLOTS];
     size_t count = 0;
     for (size_t i = 0; i < total; i++) {
         if (d->scope[0] != '\0' &&

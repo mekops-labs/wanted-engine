@@ -10,6 +10,7 @@
 #include <wasi.h>
 
 #include <debug_trace.h>
+#include <wanted-autoconf.h>
 #include <wanted_log.h>
 #include <wanted_malloc.h>
 
@@ -161,7 +162,7 @@ static int parsePlatformMountOptions(const char *options, char *hostBuf,
     if (options == NULL || options[0] == '\0')
         return 0;
 
-    char buf[MAX_OPTIONS_SIZE];
+    char buf[CONFIG_WANTED_MAX_OPTIONS_SIZE];
     size_t olen = strnlen(options, sizeof(buf));
     if (olen >= sizeof(buf))
         return -EINVAL;
@@ -218,7 +219,7 @@ static int parseVolumeMountOptions(const char *options, char *nameBuf,
     if (options == NULL || options[0] == '\0')
         return 0;
 
-    char buf[MAX_OPTIONS_SIZE];
+    char buf[CONFIG_WANTED_MAX_OPTIONS_SIZE];
     size_t olen = strnlen(options, sizeof(buf));
     if (olen >= sizeof(buf))
         return -EINVAL;
@@ -339,11 +340,12 @@ static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
     size_t store_free = 0, store_total = 0;
     PlatformMemoryStats(&heap_used, &heap_total);
     PlatformStorageStats(&store_free, &store_total);
-    int w = snprintf(
-        (char *)buf, bufLen,
-        "stack_size:\t%d B\nheap_used:\t%zu B\nheap_total:\t%zu B\n"
-        "store_free:\t%zu B\nstore_total:\t%zu B\n",
-        WASM_STACK_SIZE, heap_used, heap_total, store_free, store_total);
+    int w =
+        snprintf((char *)buf, bufLen,
+                 "stack_size:\t%d B\nheap_used:\t%zu B\nheap_total:\t%zu B\n"
+                 "store_free:\t%zu B\nstore_total:\t%zu B\n",
+                 CONFIG_WANTED_WASM_STACK_SIZE, heap_used, heap_total,
+                 store_free, store_total);
     if (w < 0)
         return -EIO;
     return w < (int)bufLen ? w : (int)bufLen;
@@ -371,10 +373,12 @@ static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
                  "max_drivers:\t%d\n"
                  "max_options:\t%d B\n"
                  "log_slots:\t%d\n",
-                 PlatformName(), WANTED_VERSION, MAX_WAPPS, WAPP_MAX_NAME_LEN,
-                 MAX_PATH_LEN, WASM_STACK_SIZE, WASM_HEAP_SIZE,
-                 PlatformWorkerStackSize(), WASM_MAX_MEMORY_PAGES,
-                 MAX_DRIVERS_CNT, MAX_OPTIONS_SIZE, LOG_SLOTS);
+                 PlatformName(), WANTED_VERSION, CONFIG_WANTED_MAX_WAPPS,
+                 WAPP_MAX_NAME_LEN, CONFIG_WANTED_MAX_PATH_LEN,
+                 CONFIG_WANTED_WASM_STACK_SIZE, CONFIG_WANTED_WASM_HEAP_SIZE,
+                 PlatformWorkerStackSize(), CONFIG_WANTED_WASM_MAX_MEMORY_PAGES,
+                 CONFIG_WANTED_MAX_DRIVERS_CNT, CONFIG_WANTED_MAX_OPTIONS_SIZE,
+                 CONFIG_WANTED_LOG_SLOTS);
     if (w < 0)
         return -EIO;
 
@@ -407,7 +411,7 @@ static vfs_tarfs_ctx_t *wappTarfsInit(const wapp_t *w) {
     return TarFsInit((uint8_t *const *)w->layers, w->layer_lens, w->layer_cnt);
 }
 
-#if WASM_MAX_MEMORY_PAGES > 0
+#if CONFIG_WANTED_WASM_MAX_MEMORY_PAGES > 0
 /* Largest declared initial linear-memory page count among a module's memories,
  * or 0 if none. WAMR's max_memory_pages only bounds memory.grow and is clamped
  * up to a module's initial pages, so a wapp could otherwise sidestep the cap by
@@ -546,16 +550,17 @@ int WantedWappRun(wapp_data_t *ctx) {
         goto _freeWasmBytes;
     }
 
-    uint32_t max_pages = WASM_MAX_MEMORY_PAGES;
-#if WASM_MAX_MEMORY_PAGES > 0
+    uint32_t max_pages = CONFIG_WANTED_WASM_MAX_MEMORY_PAGES;
+#if CONFIG_WANTED_WASM_MAX_MEMORY_PAGES > 0
     /* Refuse an image whose declared initial linear memory already exceeds the
      * per-wapp cap (the runtime cap only bounds later growth). */
     {
         uint32_t init_pages = wappInitMemoryPages(ctx->wamr->module);
-        if (init_pages > WASM_MAX_MEMORY_PAGES) {
+        if (init_pages > CONFIG_WANTED_WASM_MAX_MEMORY_PAGES) {
             LOG_ERROR("wapp '%s': initial memory %u pages exceeds the %u-page "
                       "cap",
-                      wapp->name, init_pages, WASM_MAX_MEMORY_PAGES);
+                      wapp->name, init_pages,
+                      CONFIG_WANTED_WASM_MAX_MEMORY_PAGES);
             ret = -1;
             goto _unloadModule;
         }
@@ -569,8 +574,8 @@ int WantedWappRun(wapp_data_t *ctx) {
 
     InstantiationArgs inst_args;
     memset(&inst_args, 0, sizeof(inst_args));
-    inst_args.default_stack_size = WASM_STACK_SIZE;
-    inst_args.host_managed_heap_size = WASM_HEAP_SIZE;
+    inst_args.default_stack_size = CONFIG_WANTED_WASM_STACK_SIZE;
+    inst_args.host_managed_heap_size = CONFIG_WANTED_WASM_HEAP_SIZE;
     /* Cap linear-memory growth per wapp (0 = use the module's declared max). */
     inst_args.max_memory_pages = max_pages;
     ctx->wamr->instance = wasm_runtime_instantiate_ex(
@@ -581,8 +586,8 @@ int WantedWappRun(wapp_data_t *ctx) {
         goto _unloadModule;
     }
 
-    ctx->wamr->exec_env =
-        wasm_runtime_create_exec_env(ctx->wamr->instance, WASM_STACK_SIZE);
+    ctx->wamr->exec_env = wasm_runtime_create_exec_env(
+        ctx->wamr->instance, CONFIG_WANTED_WASM_STACK_SIZE);
     if (!ctx->wamr->exec_env) {
         DEBUG_TRACE("wasm_runtime_create_exec_env[%d] failed", ctx->id);
         ret = -1;
@@ -665,7 +670,7 @@ int WantedWappRun(wapp_data_t *ctx) {
             ret += -EINVAL;
             continue;
         }
-        char mount[MAX_PATH_LEN];
+        char mount[CONFIG_WANTED_MAX_PATH_LEN];
         snprintf(mount, sizeof(mount), WANTED_DEV_MOUNT_FMT, d->name);
         ret += WantedInstallDriver(ctx->vfs, wapp, d->name, mount, d->options);
     }
@@ -680,7 +685,7 @@ int WantedWappRun(wapp_data_t *ctx) {
             ret += -EINVAL;
             continue;
         }
-        char mount[MAX_PATH_LEN];
+        char mount[CONFIG_WANTED_MAX_PATH_LEN];
         snprintf(mount, sizeof(mount), WANTED_NET_MOUNT_FMT, s->name);
         ret += WantedInstallDriver(ctx->vfs, wapp, "socket", mount, s->options);
     }
@@ -707,7 +712,7 @@ int WantedWappRun(wapp_data_t *ctx) {
              * host path (`src=`) and access mode (`ro`/`rw`); the host dir is
              * bound as a WASI preopen at the wapp-visible m->path. A malformed
              * options string is a config error and fails the launch. */
-            char hostPath[MAX_PATH_LEN];
+            char hostPath[CONFIG_WANTED_MAX_PATH_LEN];
             bool readonly;
             int rc = parsePlatformMountOptions(m->options, hostPath,
                                                sizeof(hostPath), &readonly);
@@ -743,7 +748,7 @@ int WantedWappRun(wapp_data_t *ctx) {
              * namespaced under the instance so one wapp cannot reach another's;
              * a `shared` volume sits in a global namespace any wapp can name —
              * a cross-wapp store. */
-            char volName[MAX_PATH_LEN];
+            char volName[CONFIG_WANTED_MAX_PATH_LEN];
             bool readonly, shared;
             int rc = parseVolumeMountOptions(
                 m->options, volName, sizeof(volName), &readonly, &shared);
@@ -753,7 +758,7 @@ int WantedWappRun(wapp_data_t *ctx) {
                 ret += rc;
                 continue;
             }
-            char hostPath[MAX_PATH_LEN];
+            char hostPath[CONFIG_WANTED_MAX_PATH_LEN];
             int n = shared
                         ? snprintf(hostPath, sizeof(hostPath),
                                    WANTED_VOLUME_SHARED_FMT,
@@ -784,6 +789,7 @@ int WantedWappRun(wapp_data_t *ctx) {
             if (rc < 0) {
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
             }
+#ifdef CONFIG_WANTED_VFS_LOGMOUNT
         } else if (strcmp(m->name, "log") == 0) {
             /* A `log` mount is the read-only directory view over the per-wapp
              * LogStore, bound at the wapp-visible m->path. `options` may carry
@@ -804,6 +810,7 @@ int WantedWappRun(wapp_data_t *ctx) {
                     drv->Destroy(drv);
                 ret += rc;
             }
+#endif /* CONFIG_WANTED_VFS_LOGMOUNT */
         } else {
             ret += WantedInstallDriver(ctx->vfs, wapp, m->name, m->path,
                                        m->options);

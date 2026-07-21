@@ -785,7 +785,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
         while (sz > 0 && c9parsedir(&a->c, &s, &b, &sz) == 0) {
             dir.d_ino = s.qid.path;
             dir.d_type = convert9pFiletype(s.qid.type);
-            dir.d_namlen = strnlen(s.name, MAX_PATH_LEN);
+            dir.d_namlen = strnlen(s.name, CONFIG_WANTED_MAX_PATH_LEN);
             dir.d_next = off;
 
             if (used + sizeof(dir) + dir.d_namlen > bufLen) {

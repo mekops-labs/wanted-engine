@@ -3,7 +3,7 @@
 #pragma once
 
 #include <platform-config.h>
-#include <wanted-config.h>
+#include <wanted-autoconf.h>
 
 /* The registry index (one small metadata file per entry: name/version/slot/
  * size) lives on the LittleFS "persist" partition, mounted at
@@ -25,14 +25,15 @@
  * (4096 B) slots make allocation a used/free bitmap scan instead of a
  * general allocator; a slot bounds the largest installable wapp image.
  *
- * WAPP_IMAGE_MAX_SLOTS is an alias for MAX_WAPPS, not an independently
- * hand-set constant: registry_flash.c's mmap-handle table (g_mmapTable) is
- * sized off this same constant, so it bounds concurrently-*loaded* images
- * too, not just installed ones -- a wapp `start` past this many
- * concurrently-mapped images fails -ENOMEM even with free internal RAM and
- * PSRAM. Deriving both this and the "wapps" partition size from the one
- * MAX_WAPPS knob avoids hand-editing three places in sync. Slot size is
- * fixed across every profile -- only the slot count (MAX_WAPPS) varies. */
+ * WAPP_IMAGE_MAX_SLOTS is an alias for CONFIG_WANTED_MAX_WAPPS, not an
+ * independently hand-set constant: registry_flash.c's mmap-handle table
+ * (g_mmapTable) is sized off this same constant, so it bounds
+ * concurrently-*loaded* images too, not just installed ones -- a wapp `start`
+ * past this many concurrently-mapped images fails -ENOMEM even with free
+ * internal RAM and PSRAM. Deriving both this and the "wapps" partition size
+ * from the one CONFIG_WANTED_MAX_WAPPS knob avoids hand-editing three places in
+ * sync. Slot size is fixed across every profile -- only the slot count
+ * (CONFIG_WANTED_MAX_WAPPS) varies. */
 #define WAPP_IMAGE_PARTITION_LABEL "wapps"
-#define WAPP_IMAGE_MAX_SLOTS MAX_WAPPS
+#define WAPP_IMAGE_MAX_SLOTS CONFIG_WANTED_MAX_WAPPS
 #define WAPP_IMAGE_SLOT_SIZE (160 * 1024) /* 40 sectors */
