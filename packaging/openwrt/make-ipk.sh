@@ -2,24 +2,27 @@
 # Assemble an OpenWRT .ipk from a cross-built engine. Installed layout and the
 # supervisor model: packaging/openwrt/README.md.
 # Usage: make-ipk.sh <opkg_arch> <wanted-cli> <supervisor.tar> <version> <out_dir>
+#                    [config.json]
 set -eu
 
 ARCH="$1"; BIN="$2"; SUP="$3"; VER="$4"; OUT="$5"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-
 # The launch config the package installs; the router one by default, so a direct
 # invocation still produces a working package.
 CFG="${6:-$HERE/../../configs/openwrt.json}"
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # --- data.tar.gz: the installed rootfs -----------------------------------
 data="$work/data"
-mkdir -p "$data/usr/bin" "$data/usr/share/wanted" "$data/etc/wanted" "$data/etc/init.d"
+mkdir -p "$data/usr/bin" "$data/usr/share/wanted" "$data/etc/wanted" "$data/etc/init.d" \
+         "$data/etc/config"
 install -m 0755 "$BIN" "$data/usr/bin/wanted-cli"
 install -m 0644 "$SUP" "$data/usr/share/wanted/supervisor.tar"
 install -m 0644 "$CFG" "$data/etc/wanted/config.json"
 install -m 0755 "$HERE/files/etc/init.d/wanted" "$data/etc/init.d/wanted"
+install -m 0644 "$HERE/files/etc/config/wanted" "$data/etc/config/wanted"
 
 isize=$(du -sb "$data" | cut -f1)
 ( cd "$data" && tar --numeric-owner --owner=0 --group=0 -czf "$work/data.tar.gz" ./* )
@@ -30,7 +33,8 @@ mkdir -p "$ctrl"
 
 # Depends follow what the binary actually links.
 needed=$(readelf -d "$BIN" 2>/dev/null | sed -n 's/.*NEEDED.*\[\(.*\)\]/\1/p')
-deps="libc"
+# jshn renders the runtime config from UCI in the init script.
+deps="libc, jshn"
 printf '%s\n' "$needed" | grep -q '^libgcc_s'        && deps="$deps, libgcc"
 printf '%s\n' "$needed" | grep -q '^libatomic'       && deps="$deps, libatomic"
 printf '%s\n' "$needed" | grep -qE '^lib(ssl|crypto)' && deps="$deps, libopenssl"
@@ -45,11 +49,12 @@ Architecture: $ARCH
 Installed-Size: $isize
 Description: WANTED engine — a WebAssembly nanocontainer VFS router.
  Runs sandboxed WebAssembly applications (wapps) under a built-in supervisor;
- provisioned from /etc/wanted/config.json and managed by procd.
+ deployment settings in UCI (/etc/config/wanted), managed by procd. The service
+ stays down until the control-plane endpoint and Marshal key are set.
 EOF
 
 # Preserve user edits to the config across upgrades.
-printf '/etc/wanted/config.json\n' > "$ctrl/conffiles"
+printf '/etc/wanted/config.json\n/etc/config/wanted\n' > "$ctrl/conffiles"
 
 cat > "$ctrl/postinst" <<'EOF'
 #!/bin/sh
