@@ -262,10 +262,10 @@ int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
 
         if (nonblock || iter >= PIPE_POLL_MAX_ITERS)
             return -EAGAIN;
-        /* Sleep UNLOCKED: async pthread_cancel on a worker thread must never
-         * strand the shared mutex. A signalled stop interrupts the sleep
-         * (EINTR); return it so the read unwinds to the interpreter and the
-         * terminate flag is honoured, instead of polling out the safety cap. */
+        /* Sleep UNLOCKED so a worker torn down here cannot strand the shared
+         * mutex. A signalled stop interrupts the sleep (EINTR); return it so
+         * the read unwinds to the interpreter and the terminate flag is
+         * honoured, instead of polling out the safety cap. */
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
             return -EINTR;

@@ -18,6 +18,10 @@ profile   := env_var_or_default("PROFILE", "")
 cmake_extra := env_var_or_default("CMAKE_EXTRA_ARGS", "")
 wsh_tar   := "./wasm/supervisor/wsh/supervisor.tar"
 
+# OpenWRT SDKs for the qemu selftest lanes, matching the reference routers.
+sdk_aarch64 := "https://downloads.openwrt.org/releases/24.10.0/targets/mediatek/filogic/openwrt-sdk-24.10.0-mediatek-filogic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
+sdk_mipsel  := "https://downloads.openwrt.org/releases/23.05.5/targets/ramips/mt7621/openwrt-sdk-23.05.5-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+
 # Optional resource-limit profile (cmake/profiles/<name>.cmake). Absolute: the
 # build recipes cd into {{build_dir}} before invoking cmake.
 profile_arg := if profile != "" { "-C " + justfile_directory() + "/cmake/profiles/" + profile + ".cmake" } else { "" }
@@ -74,6 +78,18 @@ smoke-engine:
 # Run the in-WASM selftest suite on Linux.
 selftest:
     ./test/selftest.sh ./{{build_dir}}/cmd/wanted-cli
+
+# Run the in-WASM selftest suite against a cross-built engine under qemu.
+# sdk = OpenWRT SDK URL or local SDK dir; the aarch64/mipsel shorthands below
+# pin the SDKs the reference routers run.
+selftest-qemu sdk:
+    ./test/selftest-qemu.sh "{{sdk}}"
+
+selftest-qemu-aarch64:
+    ./test/selftest-qemu.sh "{{sdk_aarch64}}"
+
+selftest-qemu-mipsel:
+    ./test/selftest-qemu.sh "{{sdk_mipsel}}"
 
 # Run the system-control (poweroff/reboot/exit) checks on Linux.
 syscontrol:

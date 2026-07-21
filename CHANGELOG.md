@@ -1,6 +1,28 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Fixed
+
+- Linux wapp stop is cooperative: `PlatformWappStop` sets the WAMR terminate
+  flag and signals the worker with `SIGUSR2` to interrupt a blocked host call.
+  Stopping a never-yielding wapp crashed the engine on aarch64.
+- `PlatformClockNanoSleep` on Linux reports `clock_nanosleep`'s error, so an
+  interrupted sleep surfaces `EINTR` instead of reporting success.
+
+### Build
+
+- WAMR thread manager enabled: the interpreter's terminate check compiles in
+  only with it (~14 KB text).
+
+### Testing
+
+- `selftest-qemu` recipes run the selftest suite against a cross-built engine
+  under qemu user-mode emulation (aarch64, mipsel), catching architecture-
+  specific faults without target hardware.
+
 0.10.0 (2026-07-20)
 ------------------
 

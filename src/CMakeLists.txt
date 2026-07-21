@@ -71,6 +71,12 @@ set(WAMR_BUILD_LIBC_WASI 0)
 set(WAMR_BUILD_LIBC_BUILTIN 1)
 set(WAMR_BUILD_MULTI_MODULE 0)
 set(WAMR_BUILD_SHARED_MEMORY 0)
+# Required by the cooperative wapp stop: only with the thread manager does
+# setting the instance exception reach the interpreter's terminate check
+# (WASM_SUSPEND_FLAG_TERMINATE, tested at every branch and loop back-edge).
+# Without it the flag is a string nothing reads and a never-yielding wapp
+# cannot be stopped.
+set(WAMR_BUILD_THREAD_MGR 1)
 include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 add_library(vmlib STATIC ${WAMR_RUNTIME_LIB_SOURCE})
 target_include_directories(vmlib INTERFACE
