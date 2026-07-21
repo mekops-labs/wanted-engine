@@ -28,6 +28,15 @@
 
 FROM docker.io/espressif/idf:release-v5.3
 
+# `just` so this image builds through the same `just build` entry point as every
+# other target — the engine's configured target decides what gets built, and an
+# image that cannot run the recipe would force esp-idf back onto a bespoke one.
+# The upstream static binary, pinned: `just` is not packaged for the base
+# image's Ubuntu 22.04, and the musl build has no runtime dependencies.
+USER root
+RUN curl -fsSL https://github.com/casey/just/releases/download/1.36.0/just-1.36.0-x86_64-unknown-linux-musl.tar.gz \
+    | tar -xz -C /usr/local/bin just
+
 LABEL maintainer="mek.xgt@gmail.com"
 LABEL org.opencontainers.image.title="wanted-engine-esp-idf-build"
 LABEL org.opencontainers.image.description="ESP-IDF (ESP32-S3) build toolchain for the WANTED engine."

@@ -44,8 +44,8 @@ The environment is standardized via Podman/Docker. Commands are [`just`](https:/
 
 ```bash
 just menuconfig      # configure this build dir (Kconfig; optional)
-just build           # engine + sheriff supervisor
-just wsh             # engine + wsh debug supervisor
+just build           # build whatever target is configured (default: linux)
+just supervisor-variant wsh && just build   # swap in the wsh debug supervisor
 just test            # run unit tests
 just selftest        # run in-WASM functional suite
 ```
@@ -55,6 +55,18 @@ defaults, so `just build` works with no configure step. `configs/` holds
 capacity envelopes and per-board defconfigs — `DEFCONFIG=small just build`
 seeds one. See the [Platform Guide](docs/platform-guide.md).
 
+**Which target gets built is configuration too.** The `Target` menu selects
+linux, nuttx, esp-idf or openwrt along with that target's board or SDK, and
+`just build` dispatches on it — so there is no build recipe per target and
+architecture. Each build directory carries its own `.config`, so two targets
+can be configured side by side:
+
+```bash
+BUILD_DIR=build-mips just target openwrt
+BUILD_DIR=build-mips just setconfig 'WANTED_TARGET_OPENWRT_SDK="mipsel"'
+BUILD_DIR=build-mips just build      # .ipk, while build/ stays on linux
+```
+
 See the [Quick Start](docs/quickstart.md) and [Testing Guide](docs/testing-guide.md) for details.
 
 ## NuttX simulator
@@ -63,7 +75,7 @@ WANTED runs as a first-class NuttX application.
 
 ```bash
 just nuttx-deps      # init submodules
-just nuttx-build     # build the sim
+just target nuttx && just build     # build the sim
 just nuttx-selftest  # run the suite on the sim
 ```
 
