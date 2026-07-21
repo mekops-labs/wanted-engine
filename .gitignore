@@ -42,3 +42,4 @@ qemu_*.core
 
 # Python bytecode from the vendored kconfig tooling
 __pycache__/
+src/include/wanted-config.h

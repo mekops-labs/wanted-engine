@@ -1,0 +1,25 @@
+{
+    "system": {
+        "privileged": true
+    },
+    "supervisor": {
+        "params": {
+            "console": {
+                "in":  {"name": "platform"},
+                "out": {"name": "platform"},
+                "err": {"name": "platform"}
+            },
+            "drivers": [
+                {"name": "wanted"},
+                {"name": "ota"}
+            ],
+            "mounts": [
+                {"name": "log", "path": "/logs"}
+            ],
+            "sockets": [
+                {"name": "s",  "address": "tcp://1.1.1.1:80"},
+                {"name": "st", "address": "tcps://1.1.1.1:443"}
+            ]
+        }
+    }
+}

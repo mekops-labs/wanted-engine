@@ -27,6 +27,40 @@ foreach(_seed IN LISTS _seeds)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${_repo}/wapps/${_seed}/${_seed}.wasm")
 endforeach()
+execute_process(
+    COMMAND "${_repo}/platform/esp-idf/registry-seed.sh" "${_repo}" "${_seed_dir}" ${_seeds}
+    RESULT_VARIABLE _seed_rc
+    OUTPUT_VARIABLE _seed_out
+    ERROR_VARIABLE _seed_err)
+if(NOT _seed_rc EQUAL 0)
+    message(FATAL_ERROR "packaging the factory-seed images failed:\n${_seed_out}${_seed_err}")
+endif()
+
+# Launch config as a blob — no filesystem holds one at first boot.
+# EMBED_TXTFILES, not EMBED_FILES: it appends the NUL app_main.c needs. Staged
+# under a fixed name so the embed symbol survives a change of file.
+#
+# A cache variable, not a CONFIG_ symbol: embedded in a host tree the engine's
+# .config is narrowed to Kconfig.engine, so the target half is invisible here.
+if(NOT WANTED_DEFAULT_CONFIG)
+    set(WANTED_DEFAULT_CONFIG "configs/example_config.json")
+    set(_cfg_origin "default")
+else()
+    set(_cfg_origin "configured")
+endif()
+set(_cfg_staged "${CMAKE_CURRENT_BINARY_DIR}/wanted-config.json")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${_repo}/${WANTED_DEFAULT_CONFIG}")
+execute_process(
+    COMMAND "${_repo}/utils/default-config.sh" "${_repo}"
+            "${WANTED_DEFAULT_CONFIG}" "${_cfg_staged}"
+    RESULT_VARIABLE _cfg_rc
+    OUTPUT_VARIABLE _cfg_out
+    ERROR_VARIABLE _cfg_err)
+if(NOT _cfg_rc EQUAL 0)
+    message(FATAL_ERROR "staging the default configuration failed:\n${_cfg_out}${_cfg_err}")
+endif()
+message(STATUS "Default configuration: ${WANTED_DEFAULT_CONFIG} (${_cfg_origin})")
 
 idf_component_register(SRCS "app_main.c"
                        INCLUDE_DIRS "."
@@ -39,4 +73,5 @@ idf_component_register(SRCS "app_main.c"
                        EMBED_FILES
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/looper.wapp"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/wifi-connect.wapp"
-                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/devcheck.wapp")
+                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/devcheck.wapp"
+                       EMBED_TXTFILES "${_cfg_staged}")

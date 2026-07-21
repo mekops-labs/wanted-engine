@@ -351,19 +351,9 @@ static void consoleUseBlockingDriver(void) {
     usb_serial_jtag_vfs_use_driver();
 }
 
-/* Sockets entries grant /net/s (TCP) and /net/st (TLS) to Cloudflare
- * (1.1.1.1:80/443) — a DNS-independent round-trip target. Log mount at
- * /logs for reading wapp stdout/stderr. */
-#define WANTED_DEFAULT_CFG                                                     \
-    "{\"system\":{\"privileged\":true},"                                       \
-    "\"supervisor\":{\"params\":{"                                             \
-    "\"console\":{\"in\":{\"name\":\"platform\"},"                             \
-    "\"out\":{\"name\":\"platform\"},"                                         \
-    "\"err\":{\"name\":\"platform\"}},"                                        \
-    "\"drivers\":[{\"name\":\"wanted\"},{\"name\":\"ota\"}],"                  \
-    "\"mounts\":[{\"name\":\"log\",\"path\":\"/logs\"}],"                      \
-    "\"sockets\":[{\"name\":\"s\",\"address\":\"tcp://1.1.1.1:80\"},"          \
-    "{\"name\":\"st\",\"address\":\"tcps://1.1.1.1:443\"}]}}}"
+/* Launch config, embedded by main/CMakeLists.txt from the configured JSON.
+ * EMBED_TXTFILES NUL-terminates it, so it is already a C string. */
+extern const char _binary_wanted_config_json_start[];
 
 void app_main(void) {
     ESP_LOGI(TAG, "WANTED engine — ESP-IDF platform bring-up");
@@ -400,6 +390,7 @@ void app_main(void) {
     PlatformSetProcessArgs(0, NULL);
     consoleUseBlockingDriver();
     ESP_LOGI(TAG, "starting WANTED engine (supervisor: wsh, privileged)");
-    int ret = WantedStart(WANTED_DEFAULT_CFG, strlen(WANTED_DEFAULT_CFG));
+    int ret = WantedStart(_binary_wanted_config_json_start,
+                          strlen(_binary_wanted_config_json_start));
     ESP_LOGI(TAG, "WantedStart returned %d", ret);
 }

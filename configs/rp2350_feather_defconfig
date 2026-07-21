@@ -1,0 +1,20 @@
+# Adafruit Feather RP2350 under NuttX, 8 MB PSRAM. PSRAM backs the large
+# allocations, but worker stacks and wapp slot tables still come out of internal
+# SRAM, which is what bounds the wapp count.
+#
+# The limits are `small`; the board is here for what an envelope cannot say —
+# which launch config it ships. wsh, matching the board's NuttX config
+# (adafruit-feather-rp2350:wanted selects no sheriff boot ROMFS). No imagePath
+# in the config: the image comes from the boot ROMFS the app was built with.
+
+CONFIG_WANTED_MAX_WAPPS=16
+CONFIG_WANTED_WASM_STACK_SIZE=65536
+CONFIG_WANTED_WASM_HEAP_SIZE=262144
+CONFIG_WANTED_WASM_WORKER_STACK_SIZE=65536
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=16
+CONFIG_WANTED_MAX_PATH_LEN=512
+CONFIG_WANTED_MAX_DRIVERS_CNT=8
+CONFIG_WANTED_MAX_OPTIONS_SIZE=256
+
+CONFIG_WANTED_SUPERVISOR_WSH=y
+CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-rp2350-wsh.json"

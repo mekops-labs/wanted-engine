@@ -1,0 +1,17 @@
+# Pimoroni Pico 2 Plus W under NuttX, RP2350 + PSRAM. Limits as `small`, as on
+# the Feather; the board is here for the launch config.
+#
+# Matches pimoroni-pico-2-plus-w:sheriff — that config selects the sheriff boot
+# ROMFS and the CYW43439, so the manager uplink is TCP rather than USB-CDC.
+
+CONFIG_WANTED_MAX_WAPPS=16
+CONFIG_WANTED_WASM_STACK_SIZE=65536
+CONFIG_WANTED_WASM_HEAP_SIZE=262144
+CONFIG_WANTED_WASM_WORKER_STACK_SIZE=65536
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=16
+CONFIG_WANTED_MAX_PATH_LEN=512
+CONFIG_WANTED_MAX_DRIVERS_CNT=8
+CONFIG_WANTED_MAX_OPTIONS_SIZE=256
+
+CONFIG_WANTED_SUPERVISOR_SHERIFF=y
+CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-rp2350-wifi.json"
