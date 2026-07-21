@@ -6,10 +6,9 @@
 # control-plane connection. devcheck exercises /dev/sha256 (and /dev/inflate,
 # /dev/ed25519) with known-answer vectors from inside WASM
 # that the hardware-backed PlatformSha256* seam produces a bit-correct digest
-# on real silicon, not just "doesn't crash". Prerequisite: `just wapps`, then
-# package each wapps/<name>/<name>.wasm per docs/quickstart.md into
-# wasm/registry-seed/<name>.wapp (gitignored, like every other packaged .wapp
-# — see .gitignore's REGISTRY_ROOT comment).
+# on real silicon, not just "doesn't crash". The images are packaged below from
+# wapps/<name>/<name>.wasm and are gitignored build outputs, like every other
+# packaged .wapp — see .gitignore's REGISTRY_ROOT comment.
 #
 # supervisor.tar (the compiled-in default supervisor) is embedded by the
 # wanted_engine component instead — see that CMakeLists.txt — because
@@ -18,15 +17,15 @@
 # archive is not visible to a different component's archive without
 # --start-group/--end-group (this is exactly the link failure that surfaced
 # the constraint).
-# Fail with the fix rather than CMake's "Cannot find source file": these are
-# gitignored build outputs, so an otherwise clean checkout does not have them.
-set(_seed_dir "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed")
-foreach(_seed looper wifi-connect devcheck)
-    if(NOT EXISTS "${_seed_dir}/${_seed}.wapp")
-        message(FATAL_ERROR
-            "factory-seed image missing: ${_seed_dir}/${_seed}.wapp\n"
-            "Run `make wapps` then `just registry-seed` to package them.")
-    endif()
+# Packaged at configure time so EMBED_FILES below is given files that exist, and
+# so `idf.py build` works directly. The script leaves up-to-date images alone, so
+# this does not relink every build.
+get_filename_component(_repo "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
+set(_seed_dir "${_repo}/wasm/registry-seed")
+set(_seeds looper wifi-connect devcheck)
+foreach(_seed IN LISTS _seeds)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${_repo}/wapps/${_seed}/${_seed}.wasm")
 endforeach()
 
 idf_component_register(SRCS "app_main.c"
