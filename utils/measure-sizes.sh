@@ -1,6 +1,6 @@
 #!/bin/bash
-# Report the WANTED engine's per-wapp and fixed memory footprint for each build
-# profile, on both the host (LP64) and the 32-bit embedded (ILP32) ABI.
+# Report the WANTED engine's per-wapp and fixed memory footprint for each
+# resource envelope, on both the host (LP64) and the 32-bit embedded (ILP32) ABI.
 #
 # Runs in the build container (clang + readelf); see `make sizes`. The figures
 # come from a compile-only build of utils/measure_structs.c — no program is run
@@ -36,36 +36,49 @@ SRC="$ENGINE_DIR/utils/measure_structs.c"
 INC="-I$ENGINE_DIR/include -I$ENGINE_DIR/src/include -I$ENGINE_DIR/src/vfs \
      -I$ENGINE_DIR/vendor/cwalk/include -I$ENGINE_DIR/vendor/wamr/core/iwasm/include"
 PROFILES=(tiny constrained small big)
+KCL="$ENGINE_DIR/tools/kconfiglib"
 
 # Freestanding 32-bit build needs only size_t from <stdlib.h>; stub it.
 STUB=$(mktemp -d)
 printf '#pragma once\n#include <stddef.h>\n' >"$STUB/stdlib.h"
 trap 'rm -rf "$STUB"' EXIT
 
-profile_defines() { # $1 = profile name
-    sed -nE 's/^[[:space:]]*set\(([A-Z_]+)[[:space:]]+([0-9]+).*/-D\1=\2/p' \
-        "$ENGINE_DIR/cmake/profiles/$1.cmake" | tr '\n' ' '
+# Generate wanted-autoconf.h for an envelope into its own dir, and echo the dir.
+# The engine headers include that header, so this is what makes the measured
+# limits the configured ones rather than a second copy of the numbers.
+profile_include() { # $1 = profile name -> stdout: dir holding wanted-autoconf.h
+    local d="$STUB/cfg-$1"
+    [ -f "$d/wanted-autoconf.h" ] && { echo "$d"; return; }
+    mkdir -p "$d"
+    ( cd "$ENGINE_DIR" && PYTHONPATH="$KCL" KCONFIG_CONFIG="$d/.config" \
+        python3 "$KCL/defconfig.py" --kconfig Kconfig "configs/$1_defconfig" \
+        >/dev/null 2>&1
+      PYTHONPATH="$KCL" KCONFIG_CONFIG="$d/.config" \
+        python3 "$KCL/genconfig.py" --header-path "$d/wanted-autoconf.h" Kconfig \
+        >/dev/null 2>&1 )
+    echo "$d"
 }
 
-# WASM_MAX_MEMORY_PAGES for a profile (0 = uncapped). ABI-independent.
+# WASM_MAX_MEMORY_PAGES as configured, read from .config so 0 (uncapped) stays
+# distinguishable from 1 — EMIT floors symbol sizes at 1 byte.
 profile_cap() { # $1 = profile name
     local v
-    v=$(sed -nE 's/^[[:space:]]*set\(WASM_MAX_MEMORY_PAGES[[:space:]]+([0-9]+).*/\1/p' \
-        "$ENGINE_DIR/cmake/profiles/$1.cmake")
+    v=$(sed -nE 's/^CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=([0-9]+)$/\1/p' \
+        "$(profile_include "$1")/.config")
     echo "${v:-0}"
 }
 
 declare -A M
 measure() { # $1 = abi (linux|nuttx), $2 = profile -> fills M[name]=size
-    local abi="$1" defs obj res
-    defs=$(profile_defines "$2")
+    local abi="$1" cfg obj res
+    cfg=$(profile_include "$2")
     obj=$(mktemp --suffix=.o)
     if [ "$abi" = nuttx ]; then
         res=$(clang -print-resource-dir)
         clang -ffreestanding -target i386-unknown-linux-gnu -nostdinc \
-            -I"$res/include" -I"$STUB" $INC $defs -fno-common -c "$SRC" -o "$obj"
+            -I"$res/include" -I"$STUB" -I"$cfg" $INC -fno-common -c "$SRC" -o "$obj"
     else
-        clang $INC $defs -fno-common -c "$SRC" -o "$obj"
+        clang -I"$cfg" $INC -fno-common -c "$SRC" -o "$obj"
     fi
     # readelf prints the symbol Size in hex once it grows large; $(( )) folds
     # both hex and decimal to a plain decimal so downstream math/format is uniform.
@@ -88,7 +101,7 @@ report_abi() { # $1 = abi label, $2 = abi key
     printf '\n=== ABI: %s (sizeof(void*)=%s, sizeof(size_t)=%s) ===\n' \
         "$1" "${M[ptr]}" "${M[size_t]}"
     printf '%-12s %4s %9s %9s %10s %11s %10s %12s\n' \
-        profile MAX structs wapp-mem max-linear per-wapp overhead "worst case"
+        envelope MAX structs wapp-mem max-linear per-wapp overhead "worst case"
     local p struct fixed over pages lin perw linstr perwstr worststr
     for p in "${PROFILES[@]}"; do
         measure "$abi" "$p"
@@ -112,10 +125,10 @@ report_abi() { # $1 = abi label, $2 = abi key
     done
 }
 
-echo "WANTED engine memory footprint by profile"
+echo "WANTED engine memory footprint by resource envelope"
 echo "structs    = exact per-wapp engine slot structures (wapp_t, vfs/wasi/wamr ctx, log ring)"
 echo "wapp-mem   = per-wapp runtime memory: WASM stack + WASM app heap + worker native stack + ~16 KiB WAMR overhead (approx)"
-echo "max-linear = WASM_MAX_MEMORY_PAGES x 64 KiB — the per-wapp linear-memory ceiling (unbounded = no cap)"
+echo "max-linear = CONFIG_WANTED_WASM_MAX_MEMORY_PAGES x 64 KiB — the per-wapp linear-memory ceiling (unbounded = no cap)"
 echo "per-wapp   = structs + wapp-mem + max-linear;  worst case = engine overhead + MAX_WAPPS x per-wapp"
 echo "Excludes the per-image writable module copy."
 report_abi "linux  (LP64)"  linux
