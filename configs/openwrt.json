@@ -11,7 +11,17 @@
                 "err": {"name": "platform"}
             },
             "drivers": [
-                {"name": "wanted"}
+                {"name": "wanted"},
+                {"name": "sha256"},
+                {"name": "ed25519"},
+                {"name": "inflate"}
+            ],
+            "mounts": [
+                {
+                    "name": "platform",
+                    "path": "/var/lib/sheriff",
+                    "options": "src=/srv/wanted/sheriff"
+                }
             ]
         }
     }
