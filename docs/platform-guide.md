@@ -325,7 +325,7 @@ OpenWrt instead builds the engine as an external package and shares no symbol na
 
 ### Measuring the footprint
 
-- `just sizes` reports each profile's per-wapp and worst-case memory for both the host (LP64) and 32-bit embedded (ILP32) ABIs, measured from the real engine structs, but it's just approximate value (e.g. wamr overhead is arbitrary worst case value), it doesn't actually measure the whole runtime overhead on specific hardware, using specifc compiler, just the struct sizes.
+- `just sizes` reports each defconfig's per-wapp and worst-case memory — plus the build dir's own `.config`, as a final row, so a configuration you have edited is measured alongside the envelopes it derives from. `just sizes current` reports that row alone, and is what `menuconfig`, `defconfig` and `olddefconfig` run once they have written a `.config`, so a limit change is priced as it is made. It also narrows to the ABI the configured target actually builds for, derived from the target half of the tree — an extracted OpenWrt SDK is asked directly for its toolchain triple, and when neither that nor the SDK/board name settles it, both ABIs are shown with the reason. The full survey always shows both, since a defconfig carries no target. Both cover the host (LP64) and 32-bit embedded (ILP32) ABIs, measured from the real engine structs, but it's just approximate value (e.g. wamr overhead is arbitrary worst case value), it doesn't actually measure the whole runtime overhead on specific hardware, using specifc compiler, just the struct sizes.
 - `just memcap` is a negative test that verifies the `WASM_MAX_MEMORY_PAGES` cap actually bounds a wapp's `memory.grow`.
 
 ## Out-of-tree drivers
