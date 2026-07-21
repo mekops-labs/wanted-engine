@@ -931,15 +931,65 @@ void WantedWappTerminate(wapp_data_t *ctx) {
     wasm_runtime_terminate(ctx->wamr->instance);
 }
 
-wapp_t *WantedGetCurrentSupervisor(void) {
-    /* The supervisor always runs the factory image; a newer downloaded
-     * version is not adopted. */
+/* Reload state. Single bytes are atomic on every target; `volatile` keeps the
+ * run loop from caching a value the supervisor's thread has changed.
+ * `reloadArmed` is consumed at the next respawn; `pinBuiltin` survives a
+ * reload and marks a staged image as bad. */
+static volatile uint8_t supervisorReloadArmed;
+static volatile uint8_t supervisorPinBuiltin;
 
+/* Image path to read: configured normally, compiled-in once rolled back. */
+static const char *supervisorImagePath(const wantedConfig_t *cfg) {
+    if (supervisorPinBuiltin)
+        return SUPERVISOR_IMAGE_PATH;
+    return (cfg && cfg->supervisorImagePath[0]) ? cfg->supervisorImagePath
+                                                : SUPERVISOR_IMAGE_PATH;
+}
+
+/* Load the supervisor image, falling back to the compiled-in one. */
+static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
+    const char *path = supervisorImagePath(cfg);
+
+    int ret = PlatformWappLoad(path, w);
+    if (ret < 0 && strcmp(path, SUPERVISOR_IMAGE_PATH) != 0) {
+        DEBUG_TRACE("staged supervisor %s failed (%d); using built-in %s", path,
+                    ret, SUPERVISOR_IMAGE_PATH);
+        path = SUPERVISOR_IMAGE_PATH;
+        ret = PlatformWappLoad(path, w);
+    }
+    if (ret < 0)
+        DEBUG_TRACE("failed to load supervisor image from %s: %d", path, ret);
+
+    return ret;
+}
+
+int WantedSupervisorReload(void) {
+    supervisorReloadArmed = 1;
+    return 0;
+}
+
+int WantedSupervisorRollback(void) {
+    /* Already on the built-in image — nothing to fall back to. */
+    if (supervisorPinBuiltin)
+        return -1;
+
+    supervisorPinBuiltin = 1;
+    supervisorReloadArmed = 1;
+    return 0;
+}
+
+wapp_t *WantedGetCurrentSupervisor(void) {
     int ret = 0;
     static wapp_t *w = NULL;
 
     if (NULL != w) {
-        // supervisor metadata is initialized, return it
+        /* An armed reload re-reads the image in place. The old mapping is
+         * dropped only here, while no supervisor is running. */
+        if (supervisorReloadArmed) {
+            supervisorReloadArmed = 0;
+            PlatformWappUnload(w);
+            loadSupervisorImage(w, WantedGetConfig());
+        }
         return w;
     }
 
@@ -972,22 +1022,7 @@ wapp_t *WantedGetCurrentSupervisor(void) {
     if (ret < 0)
         return w;
 
-    /* Prefer the configured (e.g. overlay-staged) image; fall back to the
-     * built-in so the engine always boots. */
-    const char *img_path = (cfg && cfg->supervisorImagePath[0])
-                               ? cfg->supervisorImagePath
-                               : SUPERVISOR_IMAGE_PATH;
-    int load_ret = PlatformWappLoad(img_path, w);
-    if (load_ret < 0 && strcmp(img_path, SUPERVISOR_IMAGE_PATH) != 0) {
-        DEBUG_TRACE("staged supervisor %s failed (%d); using built-in %s",
-                    img_path, load_ret, SUPERVISOR_IMAGE_PATH);
-        img_path = SUPERVISOR_IMAGE_PATH;
-        load_ret = PlatformWappLoad(img_path, w);
-    }
-    if (load_ret < 0) {
-        DEBUG_TRACE("failed to load supervisor image from %s: %d", img_path,
-                    load_ret);
-    }
+    loadSupervisorImage(w, cfg);
 
     return w;
 }

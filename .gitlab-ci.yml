@@ -205,6 +205,9 @@ integration-tests:
     - just smoke-engine
     - just selftest
     - just syscontrol
+    # Builds its own wsh engine (the supervisor image is compiled in), so it
+    # does not use BUILD_DIR above.
+    - just live-update
 
 # The same in-WASM suite against a cross-built engine under qemu user-mode
 # emulation. Engine faults that depend on the target's calling convention,

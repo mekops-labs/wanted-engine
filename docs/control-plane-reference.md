@@ -27,7 +27,7 @@ The `wanted` driver is a device singleton: it mounts at its canonical `/dev/want
 ```
 /dev/wanted/
   ctl                       root verbs: "create <name>" | "delete <name>"
-                            | "poweroff" | "reboot"
+                            | "poweroff" | "reboot" | "reload-supervisor"
   wapps/                    enumerable directory — one entry per known instance
     <name>/                 <name> is the instance name (set by create)
       ctl       (w)         per-wapp verb: "start [<image>]" | "stop"
@@ -41,7 +41,7 @@ The `wanted` driver is a device singleton: it mounts at its canonical `/dev/want
 
 | Path | Access | Description |
 |------|--------|-------------|
-| `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `delete <name>` releases a slot — a `create` reservation or a terminal (`exited`/`failure`) wapp — so the name leaves `wapps/` and its nodes return `-ENOENT` again. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). |
+| `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `delete <name>` releases a slot — a `create` reservation or a terminal (`exited`/`failure`) wapp — so the name leaves `wapps/` and its nodes return `-ENOENT` again. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). `reload-supervisor` arms a supervisor image reload, applied at the next respawn. |
 | `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`, plus the declared linear-memory profile — see below) synthesized from the registry, peeking only the image header. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image. The version is an opaque tag; each ref component must match `[A-Za-z0-9_][A-Za-z0-9._-]*` or the open is rejected. A plain read of the directory itself returns `-EISDIR`. |
 | `/dev/wanted/config` | r | Supervisor bootstrap meta-config. |
 
@@ -56,7 +56,7 @@ The registry descriptor reports each image's **declared** linear-memory envelope
 
 The memory fields are the declared envelope, not a runtime prediction; they are omitted when the image header cannot be read or declares no memory of its own (e.g. an imported memory).
 
-The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, and `reboot`; any other token returns `-EINVAL`. The root ctl does **not** launch wapps — `start` and `stop` exist only per-wapp (`wapps/<name>/ctl`). `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.
+The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, `reboot`, and `reload-supervisor`; any other token returns `-EINVAL`. The root ctl does **not** launch wapps — `start` and `stop` exist only per-wapp (`wapps/<name>/ctl`). `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.
 
 ### Releasing a slot (`delete`)
 
@@ -201,6 +201,21 @@ A `volume` mount is an engine-managed persistent store; its `options` accept `na
 
 The parser uses a bounded token pool and a 2048-byte stack buffer; an oversized config returns `-EMSGSIZE`.
 
+## Supervisor live update
+
+The supervisor can be replaced without stopping the engine or its child wapps. The engine reads the supervisor image once and keeps it mapped, so a newly staged image is adopted only when a reload is armed.
+
+The handoff is a graceful one — nothing is killed:
+
+1. **Stage the new image by atomic rename** beside `supervisor.imagePath`. Never write in place: the engine holds the current image mapped, so an overwrite changes what the running engine sees at the length it recorded at load.
+2. **Arm the reload:** `write /dev/wanted/ctl reload-supervisor`. Stops nothing.
+3. **The supervisor quiesces at its own pace** and returns from `main`. A clean exit is respawned.
+4. **The respawn re-reads the configured path** and starts the new image.
+
+Child wapps are untouched throughout; no state is handed over — the new supervisor recovers what it needs by reading `wapps/` and `/proc/wapps`.
+
+**Rollback.** A staged image that cannot launch falls back to the compiled-in one and the engine keeps serving. The fallback pins the built-in image for the rest of the run, so a bad staged image cannot put the engine into a respawn loop. If the built-in image also fails, the configuration itself is broken and the engine stops loudly.
+
 ## Driving it from wsh
 
 The `wsh` debug supervisor wraps the raw node operations as builtins:
@@ -215,6 +230,7 @@ The `wsh` debug supervisor wraps the raw node operations as builtins:
 | `start <name>` | Write `start` to `wapps/<name>/ctl` (launches with the buffered config; the image comes from `config.image`, defaulting to `<name>`). |
 | `stop <name>` | Write `stop` to `wapps/<name>/ctl`. |
 | `poweroff` / `reboot` | Drain child wapps, then write the verb to the root `ctl`. |
+| live update | Stage the new image, then `write /dev/wanted/ctl reload-supervisor` and exit. |
 
 The filesystem builtins (`ls`, `cat`, `write`) operate on any node directly — e.g. `cat /proc/wapps/app1/state` or `ls /dev/wanted/wapps`. A wapp's log is read through its `log` mount (e.g. `cat /log/app1`).
 
