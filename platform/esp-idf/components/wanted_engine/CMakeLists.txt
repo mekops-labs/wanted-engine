@@ -136,18 +136,28 @@ configure_file(
     @ONLY
 )
 
-# EMBED_FILES links the compiled-in default supervisor (wsh) straight into the
-# app binary as a linker section (`_binary_supervisor_tar_{start,end}`) —
+# EMBED_FILES links the compiled-in supervisor straight into the app binary as
+# a linker section (`_binary_supervisor_tar_{start,end}` — named for the file's
+# basename, so it is the same symbol whichever variant is configured).
 # platform.c's PlatformWappLoad reads it directly, zero-copy. The ESP-IDF
 # equivalent of the NuttX port's boot ROMFS (platform/nuttx/app/
 # wanted_esp32_main.c), since ESP-IDF has no host filesystem to stage a
-# supervisor image on. Prerequisite: `just supervisor`
-# (wasm/supervisor/wsh/supervisor.tar). Embedded here rather than by the
-# `main` component so platform.c and the embed live in the same static
-# library — a symbol EMBED_FILES defines in one component's archive is not
-# visible to a different component's archive without
-# --start-group/--end-group, which is exactly the link failure that surfaced
-# this constraint.
+# supervisor image on. Embedded here rather than by the `main` component so
+# platform.c and the embed live in the same static library — a symbol
+# EMBED_FILES defines in one component's archive is not visible to a different
+# component's archive without --start-group/--end-group, which is exactly the
+# link failure that surfaced this constraint.
+#
+# The variant is the Kconfig choice, carried as a repo-relative path. The image
+# is built separately (wapp SDK image), so a missing one names its command.
+string(REGEX REPLACE "^\\./" "" _supervisor_rel "${CONFIG_WANTED_SUPERVISOR_IMAGE}")
+set(_supervisor_tar "${ENGINE}/${_supervisor_rel}")
+if(NOT EXISTS "${_supervisor_tar}")
+    message(FATAL_ERROR
+        "supervisor image missing: ${_supervisor_tar}\n"
+        "Build it with `make sheriff`, or `make supervisor` for wsh/selftest.")
+endif()
+message(STATUS "Supervisor image: ${_supervisor_tar}")
 idf_component_register(
     SRCS ${core_srcs} ${vfs_srcs} ${wasi_srcs} ${vendor_srcs} ${platform_srcs}
     INCLUDE_DIRS ${ENGINE}/include ${WANTED_AUTOCONF_DIR}
@@ -160,7 +170,7 @@ idf_component_register(
         ${ENGINE}/vendor/cwalk/include
         ${ENGINE}/vendor/uzlib/src
     REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash mbedtls app_update esp_timer joltwallet__littlefs
-    EMBED_FILES ${ENGINE}/wasm/supervisor/wsh/supervisor.tar
+    EMBED_FILES ${_supervisor_tar}
 )
 
 # TLS backend for this platform: the engine asks through its own Kconfig, and
