@@ -75,7 +75,7 @@ just supervisor-variant wsh && just build   # ...with the wsh debug supervisor
 - **TLS** — OpenSSL-backed secure sockets (`T`/`U` socket options).
 - **Memory stats** — `mallinfo2`.
 
-CMake options of note: `WANTED_PLATFORM` (the platform layer), `WANTED_DEFCONFIG` (seed the configuration from `configs/<name>_defconfig`), `WANTED_EXTRA_DRIVERS_DIR` (an out-of-tree driver tree). Everything else is Kconfig — see [Build configuration](#build-configuration). TLS is `CONFIG_WANTED_VFS_SOCKET_TLS`: the engine states the intent and the host supplies the backend (OpenSSL here, mbedTLS on NuttX and ESP-IDF), so a host that cannot provide one fails the build rather than silently handing back a binary whose secure sockets are rejected at launch.
+CMake options of note: `WANTED_PLATFORM` (the platform layer) and `WANTED_DEFCONFIG` (seed the configuration from `configs/<name>_defconfig`). Everything else is Kconfig — see [Build configuration](#build-configuration). TLS is `CONFIG_WANTED_VFS_SOCKET_TLS`: the engine states the intent and the host supplies the backend (OpenSSL here, mbedTLS on NuttX and ESP-IDF), so a host that cannot provide one fails the build rather than silently handing back a binary whose secure sockets are rejected at launch.
 
 ## NuttX simulator
 
@@ -238,6 +238,24 @@ Kconfig            top level — sources both; what `just menuconfig` opens
 
 The split exists for the hosts. NuttX and ESP-IDF compile engine sources into their own trees and source `Kconfig.engine`, not the top level — they have answered the target question by existing, and asking again would give the build two answers. A `Target` menu in the shared file would have contradicted that.
 
+### General and host-build options
+
+Two menus hold the compilation knobs, split by the same rule as the files:
+
+**General** (`Kconfig.engine`) is for options that change the binary, so every host gets them:
+
+| Symbol | Default | Effect |
+|---|---|---|
+| `CONFIG_WANTED_DEBUG_TRACES` | `n` | Compiles in the `DEBUG_TRACE()` call sites — VFS routing, wapp lifecycle, driver open/close. Off, they expand to nothing. A development aid, not an operational log: the traces bypass the per-wapp log capture and are verbose enough to change timing on a constrained target. |
+
+**Host build options** (`Kconfig.target`, shown for the linux and openwrt targets) drive CMake and never reach a translation unit — NuttX and ESP-IDF run no CMake of ours and could not honour them:
+
+| Symbol | Default | Effect |
+|---|---|---|
+| `CONFIG_WANTED_BUILD_COVERAGE` | `n` | `--coverage -O0` across every target, so `just coverage` can report. Applied before any target is defined, so the engine library is instrumented too — not just the test binary. |
+| `CONFIG_WANTED_BUILD_STATIC_CLI` | `n` | Links `wanted-cli` with `-static`. Needs a static OpenSSL if secure sockets are on, and glibc still wants its shared NSS modules to resolve hostnames — see the symbol's help. |
+| `CONFIG_WANTED_EXTRA_DRIVERS_DIR` | `""` | An out-of-tree driver tree; see [Out-of-tree drivers](#out-of-tree-drivers). |
+
 ### Resource limits
 
 The static memory envelope is set here. Every symbol is prefixed `CONFIG_WANTED_` without exception — engine and host symbols reach the same translation unit on NuttX and ESP-IDF, and an unprefixed name is a collision waiting to happen.
@@ -315,7 +333,8 @@ OpenWrt instead builds the engine as an external package and shares no symbol na
 A driver written for one deployment — a router's config store, a site-specific sensor bus — does not have to live in this repo to be linked into a target. Point the build at a source tree that supplies `ExtraDriverTable()` and its entries join the launch-config driver names:
 
 ```bash
-cmake -GNinja -DWANTED_EXTRA_DRIVERS_DIR=/path/to/tree ..
+just setconfig 'WANTED_EXTRA_DRIVERS_DIR="/path/to/tree"'
+just build
 ```
 
 The tree's `CMakeLists.txt` defines a library target named `wanted_extra_drivers`; the engine adds its headers to that target. The coupling is source-level — the tree is compiled as part of this build against `vfs-drivers.h`, so there is no binary ABI to keep stable, and no runtime loader. `test/extra-drivers/` is a minimal working example. With the option unset, a default `ExtraDriverTable()` returning `NULL` is compiled in.

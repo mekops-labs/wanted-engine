@@ -7,10 +7,36 @@ description: "Common engine failure modes — symptom, cause, and fix — from a
 ---
 
 Symptom → cause → fix for the failures that come up most. Errnos link to the
-[Error Reference](error-reference.md) for their engine-context meaning. Building
-with `-DWANTED_DEBUG_TRACES=ON` (or `WANTED_DEBUG_TRACES=ON` for the NuttX app
-build) adds a `DEBUG_TRACE` line at every decision point and is the first tool
-for anything below.
+[Error Reference](error-reference.md) for their engine-context meaning.
+
+**Turn on debug traces first.** They add a `DEBUG_TRACE` line at every decision
+point — VFS routing, wapp lifecycle, driver open/close — and are the fastest way
+into anything below. It is a configuration option (General → Debug traces)
+rather than a build flag:
+
+```bash
+just setconfig WANTED_DEBUG_TRACES=y
+just build
+```
+
+That acts on this build directory's `.config`, which covers the linux and
+openwrt targets. NuttX and ESP-IDF keep their **own** engine `.config` — they
+compile engine sources into their own trees — so set it there instead:
+
+```bash
+# NuttX app build
+PYTHONPATH=tools/kconfiglib \
+  KCONFIG_CONFIG=third_party/nuttx-apps/system/wanted/autoconf/.config \
+  python3 tools/kconfiglib/setconfig.py --kconfig Kconfig.engine \
+  WANTED_DEBUG_TRACES=y
+```
+
+The setting survives rebuilds (the app build carries its `.config` forward), but
+a `DEFCONFIG=<name>` build reseeds from that envelope and drops it.
+
+The traces go to fd 1 with a raw `write()`, bypassing the per-wapp log capture,
+so they show up even where a `FILE` stream is not bound to the console (the
+NuttX sim init task, hardware over UART).
 
 ## A wapp fails to start
 
