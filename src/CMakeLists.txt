@@ -118,10 +118,8 @@ target_include_directories(vmlib INTERFACE
 # below. With the option unset, a default ExtraDriverTable() returning NULL is
 # compiled in and the build is byte-identical to one built before this seam
 # existed.
-set(WANTED_EXTRA_DRIVERS_DIR "" CACHE PATH
-    "Out-of-tree source dir supplying ExtraDriverTable()")
-
-if (WANTED_EXTRA_DRIVERS_DIR)
+if (CONFIG_WANTED_EXTRA_DRIVERS_DIR)
+    set(WANTED_EXTRA_DRIVERS_DIR ${CONFIG_WANTED_EXTRA_DRIVERS_DIR})
     message("-- Extra drivers: ${WANTED_EXTRA_DRIVERS_DIR}")
     add_subdirectory(${WANTED_EXTRA_DRIVERS_DIR}
                      ${CMAKE_BINARY_DIR}/extra-drivers)
@@ -197,10 +195,11 @@ target_compile_options(${project} PUBLIC -g)
 set_source_files_properties(${sources} ${vfs-srcs} ${wasi-src}
     PROPERTIES COMPILE_OPTIONS "${WANTED_STRICT_WARNINGS}")
 
-option(WANTED_DEBUG_TRACES "Enable debug prints for Wanted" OFF)
-if (WANTED_DEBUG_TRACES)
+# Debug traces are CONFIG_WANTED_DEBUG_TRACES, read straight from the generated
+# header by debug_trace.h — no define to forward here. Announced because it is
+# a build whose output differs from a normal one.
+if (CONFIG_WANTED_DEBUG_TRACES)
     message("-- Debug tracing for Wanted enabled")
-    target_compile_definitions(${project} PRIVATE DEBUG=1)
 endif()
 
 

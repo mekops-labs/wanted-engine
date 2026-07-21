@@ -165,12 +165,12 @@ test:
 # Build and test with an out-of-tree driver tree linked in, asserting extra
 # drivers resolve and that one claiming a core name still loses to core.
 test-extra-drivers:
-    mkdir -p build-extra-drivers
-    cd build-extra-drivers && cmake -GNinja {{defconfig_arg}} {{cmake_extra}} \
-        -DWANTED_EXTRA_DRIVERS_DIR={{justfile_directory()}}/test/extra-drivers .. && ninja
+    BUILD_DIR=build-extra-drivers just setconfig \
+        'WANTED_EXTRA_DRIVERS_DIR="{{justfile_directory()}}/test/extra-drivers"'
+    BUILD_DIR=build-extra-drivers just build
     cd build-extra-drivers && ctest -j"$(nproc)" --output-on-failure -R driver_tables
 
-# Cobertura coverage report (build with CMAKE_EXTRA_ARGS=-DENABLE_CODE_COVERAGE=on).
+# Cobertura coverage report (build with WANTED_BUILD_COVERAGE=y set first).
 coverage:
     cd {{build_dir}} && ninja coverage
 

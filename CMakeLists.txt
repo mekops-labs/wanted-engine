@@ -24,8 +24,12 @@ message("Building ${project} v${SEMVER}")
 # Instrument every target for gcov when coverage is requested. Must be set
 # before any target is defined so the wanted library itself is covered, not
 # just the test binary. The `coverage` report target is wired in test/.
-option(ENABLE_CODE_COVERAGE "Enable build with code coverage analysis." OFF)
-if(ENABLE_CODE_COVERAGE)
+#
+# Configured (CONFIG_WANTED_BUILD_COVERAGE), so it must come after the Kconfig
+# step below reads .config — hence the include, then this block.
+include(cmake/Kconfig.cmake)
+
+if(CONFIG_WANTED_BUILD_COVERAGE)
     message("-- Code coverage build enabled")
     add_compile_options(--coverage -O0 -g)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
@@ -34,10 +38,6 @@ endif()
 
 # Engine-only warning guard. The NuttX kbuild already compiles with these.
 set(WANTED_STRICT_WARNINGS -Werror=strict-prototypes -Werror=undef)
-
-# Build configuration: reads Kconfig + this build dir's .config, generates
-# wanted-autoconf.h, and mirrors the symbols into CMake variables.
-include(cmake/Kconfig.cmake)
 
 # The generated header is build-wide configuration, not one target's private
 # header: engine core, platform layers, and tests all compile against it.
