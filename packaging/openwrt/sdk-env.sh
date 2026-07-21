@@ -51,9 +51,20 @@ case "$cross" in
 esac
 log "target: cross=$cross opkg_arch=$OPKG_ARCH wamr_arch=$wamr_arch"
 
-# Target rootfs staged by the SDK — the runtime loader and shared libraries the
-# cross-built binary resolves against (qemu's -L root).
-SDK_TARGET_ROOT="$(ls -d "$SDK/staging_dir/$tgt_dir"/root-* 2>/dev/null | head -1)"
+# Loader root for the cross-built binary — where qemu's -L resolves the dynamic
+# linker and shared libraries.
+#
+# A board SDK stages a populated target rootfs (staging_dir/target-*/root-<x>).
+# A generic one (armsr, malta) has no board to stage for and ships none, but its
+# toolchain sysroot carries the musl loader and libc, which is all the engine
+# needs. Prefer the rootfs when present, fall back to the toolchain.
+# `|| true`: with no match the pipeline fails, and the caller runs under
+# `set -eo pipefail`, so the assignment alone would abort before the fallback.
+SDK_TARGET_ROOT="$(ls -d "$SDK/staging_dir/$tgt_dir"/root-* 2>/dev/null | head -1 || true)"
+if [ -z "$SDK_TARGET_ROOT" ]; then
+    SDK_TARGET_ROOT="$SDK/staging_dir/$tc_dir"
+    log "no staged rootfs; using the toolchain sysroot as the loader root"
+fi
 
 # --- stage libopenssl into the SDK (once) ---------------------------------
 if [ "${STAGE_SSL:-0}" = "1" ]; then
