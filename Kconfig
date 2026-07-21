@@ -11,11 +11,6 @@ mainmenu "WANTED Engine Configuration"
 
 menu "VFS drivers"
 
-comment "Mandatory core, no symbols: tarfs/devfs/netfs/procfs own members of"
-comment "struct vfs_ctx_t and are called directly from vfs.c; null/log/pipe/"
-comment "stdio/virtual back the console defaults, the always-present /dev"
-comment "entries, and the wanted namespace. Only name-addressable drivers here."
-
 config WANTED_VFS_9P
 	bool "9p — 9P2000 client for an external driver server"
 	default y
@@ -37,6 +32,21 @@ config WANTED_VFS_SOCKET
 	help
 	  Backs the sockets[] section at /net/<name>. Without it a config naming a
 	  socket fails its launch with -ENODEV.
+
+config WANTED_VFS_SOCKET_TLS
+	bool "secure sockets (TLS)"
+	depends on WANTED_VFS_SOCKET
+	default y
+	help
+	  Adds the tcps:// and udps:// transports to the socket driver.
+
+	  The engine states the intent here; the backend is the host's — OpenSSL
+	  on Linux, mbedTLS on NuttX and ESP-IDF. A host that cannot provide one
+	  fails the build rather than quietly handing back a binary whose secure
+	  socket entries are rejected at wapp launch.
+
+	  Certificate verification is not implemented on any backend: connections
+	  are encrypted but unauthenticated.
 
 config WANTED_VFS_SHA256
 	bool "sha256 — streaming digest device"
@@ -66,6 +76,15 @@ config WANTED_VFS_LOGMOUNT
 	  Backs a mounts[] entry named `log`: the per-wapp log rings as a readable
 	  directory. Read side only — the capturing console driver is always in.
 
+
+config WANTED_LOGMOUNT_MAX_OPEN
+	int "Concurrent open handles on a log mount"
+	depends on WANTED_VFS_LOGMOUNT
+	default 8
+	range 1 64
+	help
+	  Reader slots in the log mount's fd table.
+
 config WANTED_VFS_WANTED
 	bool "wanted — the control-plane namespace"
 	default y
@@ -73,6 +92,31 @@ config WANTED_VFS_WANTED
 	  /dev/wanted: the privileged lifecycle/registry namespace a supervisor
 	  drives. Deselect only for a fixed-function node with no supervisor —
 	  without it nothing can start, stop or install a wapp at runtime.
+
+
+config WANTED_PIPE_BUF_SIZE
+	int "Bytes per named pipe"
+	default 4096
+	range 256 65536
+	help
+	  Ring buffer for one /dev/pipe channel.
+
+config WANTED_PIPE_MAX_PIPES
+	int "Concurrent named pipes"
+	default 8
+	range 1 64
+	help
+	  The pipe store is ONE engine-wide instance of count * buf bytes,
+	  allocated whether or not any wapp opens /dev/pipe — 32 KiB at the
+	  defaults, ~6 % of a 512 KiB part. Raising it also grows a stack frame:
+	  the driver's readdir sizes a local array by this.
+
+config WANTED_LOG_CAP
+	int "Bytes retained per wapp log"
+	default 2048
+	range 256 65536
+	help
+	  Most-recent output kept per wapp, times WANTED_MAX_WAPPS.
 
 endmenu
 
@@ -192,43 +236,5 @@ config WANTED_MAX_OPTIONS_SIZE
 	help
 	  Per-entry options blob. A 9P address or a bind mount's src= must fit.
 
-menu "Driver limits"
-
-comment "Driver-private static allocation sizes. Behavioural knobs stay local"
-comment "to their driver — the criterion here is whether it sizes an allocation."
-
-config WANTED_PIPE_BUF_SIZE
-	int "Bytes per named pipe"
-	default 4096
-	range 256 65536
-	help
-	  Ring buffer for one /dev/pipe channel.
-
-config WANTED_PIPE_MAX_PIPES
-	int "Concurrent named pipes"
-	default 8
-	range 1 64
-	help
-	  The pipe store is ONE engine-wide instance of count * buf bytes,
-	  allocated whether or not any wapp opens /dev/pipe — 32 KiB at the
-	  defaults, ~6 % of a 512 KiB part. Raising it also grows a stack frame:
-	  the driver's readdir sizes a local array by this.
-
-config WANTED_LOG_CAP
-	int "Bytes retained per wapp log"
-	default 2048
-	range 256 65536
-	help
-	  Most-recent output kept per wapp, times WANTED_MAX_WAPPS.
-
-config WANTED_LOGMOUNT_MAX_OPEN
-	int "Concurrent open handles on a log mount"
-	depends on WANTED_VFS_LOGMOUNT
-	default 8
-	range 1 64
-	help
-	  Reader slots in the log mount's fd table.
-
-endmenu
 
 endmenu
