@@ -325,8 +325,8 @@ static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
 /* Core driver table — the platform-agnostic drivers, identical on every target
  * Platform-specific drivers a target may
  * lack (gpio, wifi, ...) come from PlatformDriverTable() instead. Core names
- * are reserved: WantedInstallDriver searches this table first, so a platform
- * table cannot shadow a security-relevant driver such as `wanted`. */
+ * are reserved: this table is searched first, so no other table can shadow a
+ * security-relevant driver such as `wanted`. */
 static const vfs_driver_table_t core_driver_table[] = {
     {"null", VfsNullInit},
     {"log", VfsLogInit},
@@ -341,19 +341,35 @@ static const vfs_driver_table_t core_driver_table[] = {
     {NULL, NULL},
 };
 
-/* Resolve a config driver name to its init callback by exact match, core table
- * first then the platform table. Returns NULL when no table offers the name —
- * the driver is not available on this build. */
-static VfsInitFunction_t resolveDriver(const char *name) {
-    for (int i = 0; core_driver_table[i].name != NULL; i++) {
-        if (strcmp(core_driver_table[i].name, name) == 0)
-            return core_driver_table[i].init;
+/* The tables a driver name resolves against, in search order: core names are
+ * reserved, the platform contributes what the target implements, and an
+ * out-of-tree tree may append its own. Lowest priority last, so neither a
+ * platform nor an extra table can shadow a core driver. */
+static const vfs_driver_table_t *driverTables(size_t i) {
+    switch (i) {
+    case 0:
+        return core_driver_table;
+    case 1:
+        return PlatformDriverTable();
+    case 2:
+        return ExtraDriverTable();
+    default:
+        return NULL;
     }
+}
 
-    const vfs_driver_table_t *pt = PlatformDriverTable();
-    for (int i = 0; pt != NULL && pt[i].name != NULL; i++) {
-        if (strcmp(pt[i].name, name) == 0)
-            return pt[i].init;
+#define DRIVER_TABLE_CNT 3
+
+/* Resolve a config driver name to its init callback by exact match. Returns
+ * NULL when no table offers the name — the driver is not available on this
+ * build. */
+static VfsInitFunction_t resolveDriver(const char *name) {
+    for (size_t t = 0; t < DRIVER_TABLE_CNT; t++) {
+        const vfs_driver_table_t *tab = driverTables(t);
+        for (int i = 0; tab != NULL && tab[i].name != NULL; i++) {
+            if (strcmp(tab[i].name, name) == 0)
+                return tab[i].init;
+        }
     }
 
     return NULL;
@@ -363,12 +379,10 @@ int WantedListDrivers(char *buf, size_t bufLen) {
     if (buf == NULL || bufLen == 0)
         return -EINVAL;
 
-    const vfs_driver_table_t *tables[] = {core_driver_table,
-                                          PlatformDriverTable()};
     int w = 0;
 
-    for (size_t t = 0; t < sizeof(tables) / sizeof(*tables); t++) {
-        const vfs_driver_table_t *tab = tables[t];
+    for (size_t t = 0; t < DRIVER_TABLE_CNT; t++) {
+        const vfs_driver_table_t *tab = driverTables(t);
         for (int i = 0; tab != NULL && tab[i].name != NULL; i++) {
             int n = snprintf(buf + w, bufLen - (size_t)w, "%s%s",
                              w > 0 ? " " : "", tab[i].name);
