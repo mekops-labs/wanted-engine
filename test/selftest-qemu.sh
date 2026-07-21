@@ -36,9 +36,15 @@ command -v "$QEMU" >/dev/null 2>&1 || {
 # SDK's one-time OpenSSL stage.
 log "cross-building selftest engine for $OPKG_ARCH"
 bdir="$REPO/build-selftest-$OPKG_ARCH"
+# WAMR detects stack overflow with guard pages and a SIGSEGV handler. qemu-user
+# emulates that imperfectly and the outcome depends on the host kernel's mmap
+# behaviour, so the runtime can take a real SIGSEGV before the supervisor emits
+# anything. Software bound checking costs a little speed and keeps the lane
+# testing the engine rather than the emulator.
 cmake -B "$bdir" -S "$REPO" -G Ninja \
       -DCMAKE_TOOLCHAIN_FILE="$REPO/cmake/toolchain-openwrt.cmake" \
-      -DBUILD_TESTING=OFF -DSECURE_SOCKETS=OFF
+      -DBUILD_TESTING=OFF -DSECURE_SOCKETS=OFF \
+      -DWAMR_DISABLE_HW_BOUND_CHECK=1
 cmake --build "$bdir" -j"$(nproc)"
 
 # selftest.sh execs the engine directly, so hand it a wrapper rather than
