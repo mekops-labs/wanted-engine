@@ -37,14 +37,21 @@ elif printf '%s' "$SDK_ARG" | grep -qE '^https?://'; then
     SDK="$SDK_CACHE/$dname"
     if [ ! -d "$SDK" ]; then
         log "downloading SDK: $fname"
-        wget -q -O "$SDK_CACHE/$fname" "$SDK_ARG"
+        # A silent several-hundred-MB download is indistinguishable from a hang.
+        # Bar on a terminal, dots when piped so CI logs stay readable.
+        if [ -t 2 ]; then
+            wget -q --show-progress --progress=bar:force:noscroll \
+                 -O "$SDK_CACHE/$fname" "$SDK_ARG"
+        else
+            wget --progress=dot:mega -O "$SDK_CACHE/$fname" "$SDK_ARG"
+        fi
         # --no-same-owner: the SDK tarballs carry the build farm's uid (999).
         # Extracting as root preserves it, and the SDK then belongs to a user
         # that does not exist here — the OpenSSL stage below cannot create
         # feeds/ inside it and dies with perl's bare exit 13. Non-root tar
         # already defaults to this; making it explicit means the cache is owned
         # by the extracting user either way.
-        log "extracting SDK"
+        log "extracting SDK ($(du -h "$SDK_CACHE/$fname" | cut -f1), takes a minute)"
         case "$fname" in
             *.tar.zst) tar --zstd --no-same-owner -xf "$SDK_CACHE/$fname" -C "$SDK_CACHE" ;;
             *.tar.xz)  tar --no-same-owner -xf "$SDK_CACHE/$fname" -C "$SDK_CACHE" ;;
@@ -106,20 +113,28 @@ if [ "${STAGE_SSL:-0}" = "1" ]; then
         else
             run_sdk() { bash -c "$1"; }
         fi
-        # Errors reach the terminal. Progress does not: these four steps are
-        # thousands of lines, and the last one is a full OpenSSL build. Sending
-        # stderr to /dev/null too — as this did — turned every failure into a
-        # bare exit code with no indication of which step died or why.
-        if ! run_sdk "cd '$SDK' && \
-            ./scripts/feeds update base >/dev/null && \
-            ./scripts/feeds install libopenssl >/dev/null && \
-            make defconfig >/dev/null && \
-            make package/openssl/compile -j\$(nproc) >/dev/null"; then
-            echo "sdk-env: staging OpenSSL into the SDK failed (see above)." >&2
-            echo "  A cached SDK extracted by an earlier, root-owned run may be" >&2
-            echo "  unwritable; remove it from .openwrt-sdk/ and retry." >&2
-            return 1
-        fi
+        # Thousands of lines, the last a full OpenSSL build: output to a log,
+        # step trace to the terminal, tail of the log on failure.
+        # The cache dir exists only for a URL SDK; a directory one needs it too.
+        mkdir -p "$SDK_CACHE"
+        stage_log="$SDK_CACHE/openssl-stage.log"
+        : > "$stage_log"
+        sdk_step() { # $1 = label, $2 = command
+            printf '  --> %s\n' "$1"
+            if ! run_sdk "cd '$SDK' && $2" >>"$stage_log" 2>&1; then
+                echo "sdk-env: $1 — failed. Last 40 lines of $stage_log:" >&2
+                tail -40 "$stage_log" >&2
+                echo "sdk-env: staging OpenSSL into the SDK failed." >&2
+                echo "  A cached SDK extracted by an earlier, root-owned run may be" >&2
+                echo "  unwritable; remove it from .openwrt-sdk/ and retry." >&2
+                return 1
+            fi
+        }
+        sdk_step "updating package feeds"     "./scripts/feeds update base" || return 1
+        sdk_step "installing libopenssl feed" "./scripts/feeds install libopenssl" || return 1
+        sdk_step "generating SDK config"      "make defconfig" || return 1
+        sdk_step "compiling OpenSSL (several minutes)" \
+                 "make package/openssl/compile -j\$(nproc)" || return 1
     fi
 fi
 

@@ -153,7 +153,8 @@ build:
         idf.py build
         ;;
     openwrt)
-        packaging/openwrt/openwrt-package.sh "$(just _cfg CONFIG_WANTED_TARGET_OPENWRT_SDK)"
+        WANTED_CONFIG="{{build_dir}}/.config" \
+            packaging/openwrt/openwrt-package.sh "$(just _cfg CONFIG_WANTED_TARGET_OPENWRT_SDK)"
         ;;
     *)
         echo "build: unknown target '$target'" >&2; exit 1

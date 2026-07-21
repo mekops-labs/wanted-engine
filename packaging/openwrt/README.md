@@ -66,6 +66,24 @@ opkg install wanted-engine_<version>_<arch>.ipk
 
 ## Notes
 
+**Configuration.** The build uses the build dir's `.config` — what `make
+menuconfig` last wrote — and nothing else. No defconfig is applied implicitly;
+load the router envelope explicitly when you want it:
+
+```sh
+make openwrt-package DEFCONFIG=openwrt SDK=aarch64  # seeds a build dir that has no .config yet
+make menuconfig                                     # adjust, including the supervisor variant
+make defconfig openwrt                              # reload the envelope, discarding local edits
+```
+
+The supervisor variant selected there decides which image the `.ipk` carries, so
+a package configured for `sheriff` needs `make sheriff` to have built
+`wasm/supervisor/sheriff/supervisor.tar` — the packaging step fails loudly if it
+is missing rather than substituting another. Pass an image path as the second
+argument to `openwrt-package.sh` to override the choice. The one value the
+package pins itself is `CONFIG_WANTED_SUPERVISOR_IMAGE_PATH`: the `.ipk` installs
+the image at a fixed path, so the binary is compiled to read it from there.
+
 - The built-in default supervisor is the self-contained `wsh` shell, which boots
   standalone. The engine is TLS-capable; to run the control-plane supervisor,
   stage its image at the overlay path and set the manager/registry `tcps://`
