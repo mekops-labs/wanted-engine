@@ -2,7 +2,13 @@
 
 #pragma once
 
-#if defined(DEBUG) && DEBUG
+#include <wanted-autoconf.h>
+
+/* CONFIG_WANTED_DEBUG_TRACES, not a build-system -DDEBUG: the generated header
+ * is the one place a configured value comes from, so every host that compiles
+ * these sources -- including NuttX and ESP-IDF, which run no CMake of ours --
+ * gets the switch with no glue of its own. */
+#if defined(CONFIG_WANTED_DEBUG_TRACES) && CONFIG_WANTED_DEBUG_TRACES
 #include <stdarg.h>
 #include <stdio.h>
 #include <unistd.h>

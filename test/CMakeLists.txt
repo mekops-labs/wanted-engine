@@ -72,8 +72,9 @@ set(ed25519_vendor_src
 )
 
 # Coverage instrumentation flags are applied at the top-level CMakeLists when
-# ENABLE_CODE_COVERAGE is ON. Here we only wire the `coverage` report target.
-if(ENABLE_CODE_COVERAGE)
+# CONFIG_WANTED_BUILD_COVERAGE is set. Here we only wire the `coverage` report
+# target.
+if(CONFIG_WANTED_BUILD_COVERAGE)
     include(${CMAKE_SOURCE_DIR}/cmake/CodeCoverage.cmake)
     SETUP_TARGET_FOR_COVERAGE_COBERTURA(coverage test/tests coverage)
 endif()

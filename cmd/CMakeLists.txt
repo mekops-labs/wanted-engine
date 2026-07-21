@@ -6,8 +6,7 @@ target_include_directories(${project}-cli
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include)
 
-option(STATIC_EXECUTABLE "Static build of the executable" OFF)
-if (STATIC_EXECUTABLE)
+if (CONFIG_WANTED_BUILD_STATIC_CLI)
     target_link_libraries(${project}-cli PUBLIC "-static")  #static executable
 endif()
 

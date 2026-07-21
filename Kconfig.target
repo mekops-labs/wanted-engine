@@ -121,4 +121,54 @@ config WANTED_TARGET_OPENWRT_SDK
 	default "mipsel" if WANTED_OPENWRT_SDK_MIPSEL
 	default WANTED_TARGET_OPENWRT_SDK_URL if WANTED_OPENWRT_SDK_CUSTOM
 
+# CMake-only knobs. They change how the build runs, not what the engine is, so
+# they stay out of the generated header — and out of Kconfig.engine, which the
+# hosts source: NuttX and ESP-IDF run no CMake of ours and could not honour any
+# of these. Options that change the binary (debug traces) live in General.
+menu "Host build options"
+	depends on WANTED_TARGET_LINUX || WANTED_TARGET_OPENWRT
+
+config WANTED_BUILD_COVERAGE
+	bool "Instrument for code coverage"
+	default n
+	help
+	  Compile and link everything with --coverage at -O0, so `just coverage`
+	  can produce a report. Must be set before any target is defined, so it
+	  applies to the engine library itself rather than only the test binary.
+
+config WANTED_BUILD_STATIC_CLI
+	bool "Link wanted-cli statically"
+	default n
+	help
+	  Link the CLI with -static, for dropping a single binary onto a host
+	  that has no matching shared libraries.
+
+	  Two caveats, both from the C library rather than the engine:
+
+	  Secure sockets need a static OpenSSL. The build image ships libssl and
+	  libcrypto as shared objects only, so this combination fails at link
+	  ("attempted static link of dynamic object"). Either deselect secure
+	  sockets or build against an image carrying libssl.a.
+
+	  glibc resolves hostnames through dlopen'd NSS modules, so a statically
+	  linked binary still needs the matching glibc at runtime to connect by
+	  name. Connecting by address is unaffected. A musl toolchain — the
+	  OpenWrt SDK, for instance — has no such split.
+
+config WANTED_EXTRA_DRIVERS_DIR
+	string "Out-of-tree driver source directory"
+	default ""
+	help
+	  A source tree outside this repository supplying ExtraDriverTable(); its
+	  drivers join the launch-config driver names. The tree is compiled as
+	  part of this build (source-level coupling, no binary ABI, no runtime
+	  loader) and must define a library target named wanted_extra_drivers.
+
+	  The extra table is searched last, so a tree claiming a core name cannot
+	  shadow it. An extra driver still runs at full engine privilege: living
+	  outside this repo keeps it out of core review, not outside the trust
+	  boundary. Empty compiles in a stub returning NULL.
+
+endmenu
+
 endmenu

@@ -154,8 +154,8 @@ coverage:
   variables:
     BUILD_DIR: build
     CC: gcc
-    CMAKE_EXTRA_ARGS: -DENABLE_CODE_COVERAGE=on
   script:
+    - just setconfig WANTED_BUILD_COVERAGE=y
     - just build
     - just coverage
   coverage: '/lines: \d+\.\d+/'

@@ -12,6 +12,23 @@
 #      and kconfiglib resolves an unknown symbol to n with at most a warning —
 #      the feature vanishes silently. Host edges go in that host's Kconfig.
 
+menu "General"
+
+config WANTED_DEBUG_TRACES
+	bool "Debug traces"
+	default n
+	help
+	  Compile in the DEBUG_TRACE() call sites scattered through the engine:
+	  VFS routing decisions, wapp lifecycle transitions, driver open/close.
+	  Off, they expand to nothing and cost neither code nor a branch.
+
+	  Development aid, not an operational log. The traces are written with a
+	  raw write() to stderr, bypassing the per-wapp log capture, and they are
+	  verbose enough to change timing on a constrained target. The engine's
+	  normal reporting is /proc and the log mount, which are always present.
+
+endmenu
+
 menu "VFS drivers"
 
 config WANTED_VFS_9P
