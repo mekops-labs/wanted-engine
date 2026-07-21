@@ -107,6 +107,20 @@ int PlatformNetFree(struct netCtx *c) {
     return 0;
 }
 
+/* Put a termios into raw mode: no input translation or flow control, no output
+ * post-processing, no canonical buffering, echo or signal generation, 8-bit
+ * characters with no parity. This is what cfmakeraw() does, written out because
+ * that function is a BSD extension some libcs (ESP-IDF's newlib) do not
+ * declare; every flag used here is POSIX. */
+static void makeRaw(struct termios *t) {
+    t->c_iflag &= ~(tcflag_t)(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR |
+                              IGNCR | ICRNL | IXON);
+    t->c_oflag &= ~(tcflag_t)OPOST;
+    t->c_lflag &= ~(tcflag_t)(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+    t->c_cflag &= ~(tcflag_t)(CSIZE | PARENB);
+    t->c_cflag |= (tcflag_t)CS8;
+}
+
 int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
     const struct hostent *host;
     struct sockaddr_in addr;
@@ -134,7 +148,7 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
          * the host tests) just keeps its default discipline. */
         struct termios tio;
         if (tcgetattr(fd, &tio) == 0) {
-            cfmakeraw(&tio);
+            makeRaw(&tio);
             tio.c_cc[VMIN] = 1;
             tio.c_cc[VTIME] = 0;
             (void)tcsetattr(fd, TCSANOW, &tio);
