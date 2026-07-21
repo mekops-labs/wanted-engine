@@ -106,7 +106,7 @@ The image is selected by `supervisor.imagePath` in the config, falling back to t
 
 Everything OS-specific sits behind the `Platform*` seam (`platform/include/platform.h`): thread lifecycle (`PlatformWappStart`/`Stop`/`Loop`/`GetState`), file I/O and state dirs, sockets, clock and sleep, random, memory stats, mutexes, the registry backend, crypto offload (SHA-256, Ed25519 verify), the external-RAM (PSRAM) heap, A/B firmware OTA, and the power-state hooks. The engine core is platform-agnostic and links one implementation:
 
-- **`platform/linux/`** — pthreads, a host-filesystem registry, `mallinfo2` memory stats, OpenSSL TLS and Ed25519, `pthread_cancel`-based stop.
+- **`platform/linux/`** — pthreads, a host-filesystem registry, `mallinfo2` memory stats, OpenSSL TLS and Ed25519, cooperative stop interrupted by `SIGUSR2`.
 - **`platform/nuttx/`** — the NuttX port: the CI-gated simulator plus real boards (classic ESP32, RP2350); cooperative stop interrupted by `SIGUSR2`; vendored `orlp/ed25519` verify; no TLS.
 - **`platform/esp-idf/`** — the native ESP-IDF port for the ESP32-S3: FreeRTOS via the pthread wrapper, a flash LittleFS registry, octal PSRAM, A/B OTA, mbedTLS sockets.
 - **`platform/dummy/`** — an in-memory stub used by unit tests.

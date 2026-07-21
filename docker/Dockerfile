@@ -68,6 +68,9 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     file \
     rsync \
     wget \
+    # qemu user-mode emulation — runs the cross-built engine on the build host,
+    # so the aarch64/mipsel selftest lanes need no router hardware.
+    qemu-user-static \
     && rm -rf /var/lib/apt/lists/*
 
 # Route every host compile through ccache via the masquerade dir on PATH. The
