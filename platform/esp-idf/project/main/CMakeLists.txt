@@ -18,6 +18,17 @@
 # archive is not visible to a different component's archive without
 # --start-group/--end-group (this is exactly the link failure that surfaced
 # the constraint).
+# Fail with the fix rather than CMake's "Cannot find source file": these are
+# gitignored build outputs, so an otherwise clean checkout does not have them.
+set(_seed_dir "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed")
+foreach(_seed looper wifi-connect devcheck)
+    if(NOT EXISTS "${_seed_dir}/${_seed}.wapp")
+        message(FATAL_ERROR
+            "factory-seed image missing: ${_seed_dir}/${_seed}.wapp\n"
+            "Run `make wapps` then `just registry-seed` to package them.")
+    endif()
+endforeach()
+
 idf_component_register(SRCS "app_main.c"
                        INCLUDE_DIRS "."
                        PRIV_INCLUDE_DIRS
