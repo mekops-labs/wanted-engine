@@ -11,7 +11,7 @@
 #include <vfs-drivers.h>
 #include <vfs-netfs.h>
 #include <wanted-api.h>
-#include <wanted-config.h>
+#include <wanted-autoconf.h>
 #include <wanted-vfs-api.h>
 #include <wanted_log.h>
 #include <wanted_malloc.h>
@@ -276,12 +276,13 @@ static void appendMemoryProfile(const reg_entry_t *entry, char *buf, int *n,
             if (w > 0 && *n + w < (int)bufLen)
                 *n += w;
 
-#if WASM_MAX_MEMORY_PAGES > 0
+#if CONFIG_WANTED_WASM_MAX_MEMORY_PAGES > 0
             /* The build caps per-wapp linear memory; flag an image whose
              * declared initial memory already exceeds the cap — it would be
              * refused at load. */
             w = snprintf(buf + *n, bufLen - (size_t)*n, ",\"over_cap\":%s",
-                         init > WASM_MAX_MEMORY_PAGES ? "true" : "false");
+                         init > CONFIG_WANTED_WASM_MAX_MEMORY_PAGES ? "true"
+                                                                    : "false");
             if (w > 0 && *n + w < (int)bufLen)
                 *n += w;
 #endif
@@ -330,14 +331,28 @@ static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
 static const vfs_driver_table_t core_driver_table[] = {
     {"null", VfsNullInit},
     {"log", VfsLogInit},
-    {"9p", Vfs9PInit},
-    {"config", VfsConfigInit},
     {"platform", platformFsInitRW},
+#ifdef CONFIG_WANTED_VFS_9P
+    {"9p", Vfs9PInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_CONFIG
+    {"config", VfsConfigInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_SOCKET
     {"socket", VfsSocketInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_SHA256
     {"sha256", VfsSha256Init},
+#endif
+#ifdef CONFIG_WANTED_VFS_ED25519
     {"ed25519", VfsEd25519Init},
+#endif
+#ifdef CONFIG_WANTED_VFS_INFLATE
     {"inflate", VfsInflateInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_WANTED
     {"wanted", VfsWantedInit},
+#endif
     {NULL, NULL},
 };
 
@@ -459,8 +474,8 @@ static void parseResourceArray(json_t const *params, const char *section,
     size_t i = 0;
 
     if (a && JSON_ARRAY == json_getType(a)) {
-        for (json_t const *e = json_getChild(a); e && i < MAX_DRIVERS_CNT;
-             e = json_getSibling(e)) {
+        for (json_t const *e = json_getChild(a);
+             e && i < CONFIG_WANTED_MAX_DRIVERS_CNT; e = json_getSibling(e)) {
             if (JSON_OBJ != json_getType(e))
                 continue;
             const char *name = json_getPropertyValue(e, "name");

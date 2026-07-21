@@ -80,14 +80,11 @@ set(platform_srcs
     ${ENGINE}/platform/dummy/dummy-crypto.c
 )
 
-# Engine resource limits. The idf.py build bypasses the top-level CMakeLists
-# profile loop, so resolve a profile here and turn its limits into compile
-# definitions (each is #ifndef-guarded in wanted-config.h). Defaults to the S3 +
-# PSRAM profile; override with -DWANTED_PROFILE=<name> from cmake/profiles/.
-if(NOT WANTED_PROFILE)
-    set(WANTED_PROFILE "psram-s3")
-endif()
-include(${ENGINE}/cmake/profiles/${WANTED_PROFILE}.cmake)
+# Engine build configuration. The idf.py build is not the engine's top-level
+# project, so point the shared Kconfig step at the engine root and let it
+# generate wanted-autoconf.h here. The OTA profile below selects the envelope,
+# so MAX_WAPPS and the flash layout cannot disagree.
+set(WANTED_ENGINE_ROOT ${ENGINE})
 
 # ESP-IDF OTA flash-layout profile: couples MAX_WAPPS (overriding the
 # WANTED_PROFILE value above), WAPP_IMAGE_MAX_SLOTS (config-esp-idf.h
@@ -99,6 +96,10 @@ if(NOT OTA_PROFILE)
     set(OTA_PROFILE "s3-wapps")
 endif()
 include(${ENGINE}/platform/esp-idf/ota-profiles/${OTA_PROFILE}.cmake)
+
+# The OTA profile above names the engine defconfig; generating it here is what
+# makes CONFIG_WANTED_MAX_WAPPS below the same number the header carries.
+include(${ENGINE}/cmake/Kconfig.cmake)
 
 # Fixed flash geometry (8 MB XIAO ESP32-S3): reserved 64 KiB (bootloader +
 # partition table + nvs 24 KiB + phy_init 4 KiB) + otadata 8 KiB + two OTA
@@ -113,7 +114,7 @@ set(OTA_SLOT_KB 1600)
 math(EXPR OTA_POOL_KB "8192 - 64 - 8 - (2 * ${OTA_SLOT_KB})")
 
 set(WAPP_IMAGE_SLOT_SIZE_KB 160)
-math(EXPR OTA_WAPPS_KB "${MAX_WAPPS} * ${WAPP_IMAGE_SLOT_SIZE_KB}")
+math(EXPR OTA_WAPPS_KB "${CONFIG_WANTED_MAX_WAPPS} * ${WAPP_IMAGE_SLOT_SIZE_KB}")
 math(EXPR OTA_PERSIST_KB "${OTA_POOL_KB} - ${OTA_WAPPS_KB}")
 
 # Build-time assert on the coupled quad: this is the derivation itself (not
@@ -121,7 +122,7 @@ math(EXPR OTA_PERSIST_KB "${OTA_POOL_KB} - ${OTA_WAPPS_KB}")
 # OTA_PROFILE edit that pushes wapps past the pool.
 if(OTA_WAPPS_KB GREATER OTA_POOL_KB)
     message(FATAL_ERROR
-        "OTA_PROFILE=${OTA_PROFILE}: MAX_WAPPS=${MAX_WAPPS} needs "
+        "OTA_PROFILE=${OTA_PROFILE}: CONFIG_WANTED_MAX_WAPPS=${CONFIG_WANTED_MAX_WAPPS} needs "
         "${OTA_WAPPS_KB} KiB of wapps, exceeding the ${OTA_POOL_KB} KiB "
         "persist+wapps pool (OTA_SLOT_KB=${OTA_SLOT_KB})")
 endif()

@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <vfs.h>
 #include <wanted-api.h>
+#include <wanted-autoconf.h>
 
 #ifndef SECURE_SOCKETS
 #define SECURE_SOCKETS 0
@@ -47,18 +48,37 @@ typedef struct vfs_driver_table_t {
  * builds without one link a default returning NULL. */
 const vfs_driver_table_t *ExtraDriverTable(void);
 
+/* Always compiled in. */
 vfs_driver_t *VfsNullInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsLogInit(const wapp_t *wapp, const char *options);
-vfs_driver_t *VfsLogMountInit(const wapp_t *wapp, const char *options);
-vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *options);
-vfs_driver_t *VfsConfigInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
                                 bool readonly);
-vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options);
-vfs_driver_t *VfsSha256Init(const wapp_t *wapp, const char *options);
-vfs_driver_t *VfsEd25519Init(const wapp_t *wapp, const char *options);
-vfs_driver_t *VfsInflateInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsVirtualInit(const wapp_t *wapp, const char *options);
+
+/* Configurable. Each declaration is gated with its source so a call from a
+ * build that deselected the driver fails at compile time, naming the symbol,
+ * rather than at link time. */
+#ifdef CONFIG_WANTED_VFS_LOGMOUNT
+vfs_driver_t *VfsLogMountInit(const wapp_t *wapp, const char *options);
+#endif
+#ifdef CONFIG_WANTED_VFS_9P
+vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *options);
+#endif
+#ifdef CONFIG_WANTED_VFS_CONFIG
+vfs_driver_t *VfsConfigInit(const wapp_t *wapp, const char *options);
+#endif
+#ifdef CONFIG_WANTED_VFS_SOCKET
+vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options);
+#endif
+#ifdef CONFIG_WANTED_VFS_SHA256
+vfs_driver_t *VfsSha256Init(const wapp_t *wapp, const char *options);
+#endif
+#ifdef CONFIG_WANTED_VFS_ED25519
+vfs_driver_t *VfsEd25519Init(const wapp_t *wapp, const char *options);
+#endif
+#ifdef CONFIG_WANTED_VFS_INFLATE
+vfs_driver_t *VfsInflateInit(const wapp_t *wapp, const char *options);
+#endif
 vfs_driver_t *VfsGpioInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsOtaInit(const wapp_t *wapp, const char *options);

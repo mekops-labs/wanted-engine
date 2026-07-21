@@ -70,8 +70,8 @@ static int parseSub(const char *sub, char *name, char *leaf) {
 /* Look up a running wapp's state by name. Returns true and fills *out when the
  * platform reports a slot for it. */
 static bool findState(const char *name, wapp_state_t *out) {
-    wapp_state_t states[MAX_WAPPS];
-    int n = PlatformWappGetState(states, MAX_WAPPS);
+    wapp_state_t states[CONFIG_WANTED_MAX_WAPPS];
+    int n = PlatformWappGetState(states, CONFIG_WANTED_MAX_WAPPS);
     for (int i = 0; i < n; i++) {
         if (strncmp(states[i].name, name, WAPP_MAX_NAME_LEN) == 0) {
             *out = states[i];
@@ -181,11 +181,11 @@ static int wappsReadDir(vfs_ctx_t c, const char *sub, void *buf, size_t bufLen,
 
     if (name[0] == '\0') {
         /* /proc/wapps — one directory per running wapp. */
-        wapp_state_t states[MAX_WAPPS];
-        int n = PlatformWappGetState(states, MAX_WAPPS);
+        wapp_state_t states[CONFIG_WANTED_MAX_WAPPS];
+        int n = PlatformWappGetState(states, CONFIG_WANTED_MAX_WAPPS);
         if (n < 0)
             return n;
-        vfs_dir_entry_t entries[MAX_WAPPS];
+        vfs_dir_entry_t entries[CONFIG_WANTED_MAX_WAPPS];
         for (int i = 0; i < n; i++) {
             entries[i].name = states[i].name;
             entries[i].type = VFS_FILETYPE_DIRECTORY;

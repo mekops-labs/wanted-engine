@@ -1,0 +1,16 @@
+# constrained resource envelope.
+#
+# The default envelope. Matches the Kconfig defaults, written out in full so
+# a board file always states its numbers rather than inheriting them silently.
+#
+# Values are written out in full rather than minimised against the defaults,
+# so a board's envelope is readable here without cross-referencing Kconfig.
+
+CONFIG_WANTED_MAX_WAPPS=3
+CONFIG_WANTED_WASM_STACK_SIZE=8192
+CONFIG_WANTED_WASM_HEAP_SIZE=8192
+CONFIG_WANTED_WASM_WORKER_STACK_SIZE=65536
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=1
+CONFIG_WANTED_MAX_PATH_LEN=256
+CONFIG_WANTED_MAX_DRIVERS_CNT=6
+CONFIG_WANTED_MAX_OPTIONS_SIZE=128

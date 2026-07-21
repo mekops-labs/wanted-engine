@@ -10,22 +10,22 @@
 # Override the runtime, image, build dir, or profile as needed:
 #   make test RUNNER_CMD=docker run
 #   make build IMAGE=localhost/wanted-build:dev
-#   make build BUILD_DIR=build-dbg PROFILE=tiny
+#   make build BUILD_DIR=build-dbg DEFCONFIG=tiny
 
 RUNNER_CMD ?= podman run --userns=keep-id
 IMAGE     ?= registry.gitlab.com/mekops/wanted/wanted-engine/build
 WAPP_SDK_IMG ?= registry.gitlab.com/mekops/wanted/wanted-engine/wapp-sdk
 BUILD_DIR ?= build
-PROFILE   ?=
+DEFCONFIG ?=
 
 # Forward an override into the container only when the user actually set it (env
 # or command line) — never make's built-in default (e.g. CC defaults to `cc`).
 fwd = $(if $(filter-out undefined default,$(origin $(1))),-e $(1)="$($(1))")
 
 # Env handed to the in-container `just` so recipes pick up overrides. BUILD_DIR
-# and PROFILE always flow; the rest only when explicitly set (mirrors the
+# and DEFCONFIG always flow; the rest only when explicitly set (mirrors the
 # variables CI sets per job).
-ENVS = -e BUILD_DIR=$(BUILD_DIR) -e PROFILE=$(PROFILE) \
+ENVS = -e BUILD_DIR=$(BUILD_DIR) -e DEFCONFIG=$(DEFCONFIG) \
        $(call fwd,CC) $(call fwd,CMAKE_EXTRA_ARGS) \
        $(call fwd,NUTTX_SKIP_BUILD) $(call fwd,NUTTX_CLEAN)
 
@@ -123,7 +123,7 @@ esp32-flash: ## flash third_party/nuttx/nuttx.bin to the board [ESP32_PORT=/dev/
 #
 # WANTED board variants:
 #   make rp2350 RP2350_CONFIG=adafruit-feather-rp2350:wanted            # wsh supervisor
-#   make rp2350 RP2350_CONFIG=adafruit-feather-rp2350:sheriff PROFILE=small  # Sheriff over USB-CDC
+#   make rp2350 RP2350_CONFIG=adafruit-feather-rp2350:sheriff  # Sheriff over USB-CDC
 # The `sheriff` config puts the console on UART0 (Debug Probe) and frees the
 # native USB-CDC for the Sheriff<->Deputy link; flash it over SWD with
 # `rp2350-flash-swd` and watch the console on the Probe's UART.
@@ -145,16 +145,10 @@ RP2350_OPENOCD = $(RUNNER_CMD) --rm --privileged -v /dev/bus/usb:/dev/bus/usb \
     -f interface/cmsis-dap.cfg -c 'transport select swd' -f target/rp2350.cfg \
     -c 'adapter speed 5000'
 
-rp2350: supervisor ## cross-build the RP2350 firmware -> third_party/nuttx/nuttx.uf2 [RP2350_CONFIG=... PROFILE=...]
+rp2350: supervisor ## cross-build the RP2350 firmware -> third_party/nuttx/nuttx.uf2 [RP2350_CONFIG=...]
 	$(RP2350_RUN) 'cd /src && ./test/nuttx-sim.sh deps && cd third_party/nuttx && \
 	    { [ -f .config ] || ./tools/configure.sh -a ../nuttx-apps $(RP2350_CONFIG); } && \
-	    DEFS=""; \
-	    if [ -n "$(PROFILE)" ]; then \
-	      f=/src/cmake/profiles/$(PROFILE).cmake; \
-	      [ -f "$$f" ] || { echo "unknown profile '$(PROFILE)' (no $$f)" >&2; exit 1; }; \
-	      DEFS=$$(sed -nE "s/^[[:space:]]*set\(([A-Z_]+)[[:space:]]+([0-9]+).*/-D\1=\2/p" "$$f" | tr "\n" " "); \
-	    fi; \
-	    make -j"$$(nproc)" WANTED_RESOURCE_DEFINES="$$DEFS"'
+	    make -j"$$(nproc)"'
 
 rp2350-flash: ## flash $(RP2350_BIN) over USB; put board in BOOTSEL first (hold BOOTSEL, tap RESET) [RP2350_BIN=...]
 	picotool load -x $(RP2350_BIN)

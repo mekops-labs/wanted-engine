@@ -3,12 +3,54 @@ enable_testing()
 option(UNITY_EXTENSION_FIXTURE "Compiles Unity with the \"fixture\" extension." ON)
 add_subdirectory(unity)
 
-file(GLOB test_src "./*.c")
+file(GLOB test_src "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
+
+# A test calls its driver's init directly, so a dropped driver drops its tests
+# too — a minimal build shrinks the suite rather than failing to link.
+function(_drop_test_src)
+    foreach(_f IN LISTS ARGN)
+        list(REMOVE_ITEM test_src "${CMAKE_CURRENT_SOURCE_DIR}/${_f}")
+    endforeach()
+    set(test_src "${test_src}" PARENT_SCOPE)
+endfunction()
+
+if(NOT CONFIG_WANTED_VFS_9P)
+    _drop_test_src(test-vfs-9p.c test-vfs-9p-local.c)
+endif()
+if(NOT CONFIG_WANTED_VFS_CONFIG)
+    _drop_test_src(test-vfs-config.c)
+endif()
+if(NOT CONFIG_WANTED_VFS_LOGMOUNT)
+    _drop_test_src(test-logmount.c)
+endif()
+if(NOT CONFIG_WANTED_VFS_SOCKET)
+    _drop_test_src(test-vfs-socket.c)
+endif()
+if(NOT CONFIG_WANTED_VFS_SHA256)
+    _drop_test_src(test-vfs-sha256.c)
+endif()
+if(NOT CONFIG_WANTED_VFS_ED25519)
+    _drop_test_src(test-vfs-ed25519.c)
+endif()
+if(NOT CONFIG_WANTED_VFS_INFLATE)
+    _drop_test_src(test-vfs-inflate.c)
+endif()
+if(NOT CONFIG_WANTED_VFS_WANTED)
+    _drop_test_src(test-vfs-wanted-drivers.c test-vfs-wanted-registry.c
+                   test-vfs-wanted-wapps.c)
+endif()
+
+# The runner is generated from the sources actually compiled.
+set(_runner_inputs "")
+foreach(_f IN LISTS test_src)
+    get_filename_component(_n ${_f} NAME)
+    list(APPEND _runner_inputs ${_n})
+endforeach()
 
 execute_process(
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMAND  ${CMAKE_CURRENT_SOURCE_DIR}/generate_runner.sh
-             ${CMAKE_CURRENT_BINARY_DIR}/runner.c
+             ${CMAKE_CURRENT_BINARY_DIR}/runner.c ${_runner_inputs}
 )
 
 set(tiny_json_src
@@ -61,7 +103,7 @@ target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/src/include)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/tiny-json)
-# The 9P local-transport test forks the c9 server half as a driver-server stand-in.
+# The 9P local-transport test forks the c9 server half.
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/c9)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/vendor/ed25519/src)
 target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/platform/dummy)

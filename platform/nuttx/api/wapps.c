@@ -62,7 +62,7 @@ typedef struct {
 
 volatile struct {
     size_t n;
-    thread_data_t threads[MAX_WAPPS];
+    thread_data_t threads[CONFIG_WANTED_MAX_WAPPS];
 } state;
 
 /* System-control requests, raised by a privileged wapp and consumed by
@@ -99,7 +99,7 @@ void WA_threadEnd(void *ptr) {
 static void stopSigHandler(int sig) {
     (void)sig;
     pthread_t self = pthread_self();
-    for (int i = 0; i < MAX_WAPPS; i++) {
+    for (int i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
         if (pthread_equal(state.threads[i].t, self)) {
             state.threads[i].interrupted = 1;
             break;
@@ -111,7 +111,7 @@ static void stopSigHandler(int sig) {
  */
 bool PlatformStopInterruptConsume(void) {
     pthread_t self = pthread_self();
-    for (int i = 0; i < MAX_WAPPS; i++) {
+    for (int i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
         if (pthread_equal(state.threads[i].t, self)) {
             if (state.threads[i].interrupted) {
                 state.threads[i].interrupted = 0;
@@ -169,10 +169,10 @@ static int basePriority = -1;
  * same way — the WAMR classic interpreter is recursive and the WASI/VFS host
  * calls add frames, and the NuttX per-thread default
  * (CONFIG_PTHREAD_STACK_DEFAULT, ~2 KB) overflows the moment real wasm runs
- * (see WASM_WORKER_STACK_SIZE in wanted-config.h). Floored at PTHREAD_STACK_MIN
- * for safety. */
+ * (see CONFIG_WANTED_WASM_WORKER_STACK_SIZE from Kconfig). Floored at
+ * PTHREAD_STACK_MIN for safety. */
 static size_t worker_stacksize(void) {
-    size_t ss = WASM_WORKER_STACK_SIZE;
+    size_t ss = CONFIG_WANTED_WASM_WORKER_STACK_SIZE;
 #ifdef PTHREAD_STACK_MIN
     if (ss < (size_t)PTHREAD_STACK_MIN)
         ss = (size_t)PTHREAD_STACK_MIN;
@@ -230,18 +230,18 @@ int PlatformWappStart(wapp_t *wapp) {
     }
 
     pthread_mutex_lock(&state_mtx);
-    if (state.n >= MAX_WAPPS) {
+    if (state.n >= CONFIG_WANTED_MAX_WAPPS) {
         pthread_mutex_unlock(&state_mtx);
         return -ENOSPC;
     }
 
-    for (slot = 0; slot < MAX_WAPPS; slot++) {
+    for (slot = 0; slot < CONFIG_WANTED_MAX_WAPPS; slot++) {
         if (state.threads[slot].status == NOT_STARTED ||
             state.threads[slot].status == EXITED ||
             state.threads[slot].status == FAILURE)
             break;
     }
-    if (slot >= MAX_WAPPS) {
+    if (slot >= CONFIG_WANTED_MAX_WAPPS) {
         pthread_mutex_unlock(&state_mtx);
         return -ENOSPC;
     }
@@ -293,7 +293,7 @@ int PlatformWappStop(const char *name) {
      * cannot be reaped (status flipped, slot reused) out from under us. */
     pthread_mutex_lock(&state_mtx);
 
-    for (slot = 0; slot < MAX_WAPPS; slot++) {
+    for (slot = 0; slot < CONFIG_WANTED_MAX_WAPPS; slot++) {
         if (state.threads[slot].data.wapp == NULL)
             continue;
         if ((strcmp((char *)state.threads[slot].data.wapp->name, name) == 0) &&
@@ -301,7 +301,7 @@ int PlatformWappStop(const char *name) {
             break;
     }
 
-    if (slot == MAX_WAPPS) {
+    if (slot == CONFIG_WANTED_MAX_WAPPS) {
         pthread_mutex_unlock(&state_mtx);
         return -ENOENT;
     }
@@ -334,14 +334,14 @@ int PlatformWappRelease(const char *name) {
 
     pthread_mutex_lock(&state_mtx);
 
-    for (slot = 0; slot < MAX_WAPPS; slot++) {
+    for (slot = 0; slot < CONFIG_WANTED_MAX_WAPPS; slot++) {
         if (state.threads[slot].data.wapp == NULL)
             continue;
         if (strcmp((char *)state.threads[slot].data.wapp->name, name) == 0)
             break;
     }
 
-    if (slot == MAX_WAPPS) {
+    if (slot == CONFIG_WANTED_MAX_WAPPS) {
         pthread_mutex_unlock(&state_mtx);
         return -ENOENT;
     }
@@ -429,7 +429,7 @@ void PlatformWappLoop(void) {
         supervisorOk = 0;
         int supervisorFailed = 0;
         int supervisorErr = 0;
-        for (int i = 0; i < MAX_WAPPS; i++) {
+        for (int i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
             /* at least 1 supervisor needs to be running */
             if (state.threads[i].data.wapp == NULL)
                 continue;
@@ -481,7 +481,7 @@ void PlatformWappLoop(void) {
 int PlatformWappGetState(wapp_state_t *wapps, size_t appsLen) {
     int i, r;
 
-    for (i = 0, r = 0; i < MAX_WAPPS && r < appsLen; i++) {
+    for (i = 0, r = 0; i < CONFIG_WANTED_MAX_WAPPS && r < appsLen; i++) {
         if (state.threads[i].data.wapp == NULL)
             continue;
 

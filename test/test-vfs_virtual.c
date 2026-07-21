@@ -351,7 +351,7 @@ TEST_TEAR_DOWN(vfs_virtual_open) { virt->Destroy(virt); }
 
 TEST(vfs_virtual_open, OpenFail) {
     int r;
-    char path_too_long[MAX_PATH_LEN + 1];
+    char path_too_long[CONFIG_WANTED_MAX_PATH_LEN + 1];
 
     r = TRY_DRV(virt, Open, "", 0);
     TEST_ASSERT_EQUAL(-EINVAL, r);
@@ -372,7 +372,7 @@ TEST(vfs_virtual_open, OpenFail) {
     TEST_ASSERT_EQUAL(-EBADF, r);
 
     memset(path_too_long, 'a', sizeof(path_too_long));
-    path_too_long[MAX_PATH_LEN] = '\0';
+    path_too_long[CONFIG_WANTED_MAX_PATH_LEN] = '\0';
 
     r = TRY_DRV(virt, OpenAt, 0, path_too_long, 0);
     TEST_ASSERT_EQUAL(-ENAMETOOLONG, r);

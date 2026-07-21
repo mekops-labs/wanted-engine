@@ -7,30 +7,51 @@ set(sources
     "default_supervisor_cfg.json.h"
 )
 
+# Mandatory core — not configurable; see the Kconfig comment for why.
 set(vfs-srcs
     "vfs/vfs.c"
-    "vfs/vfs-9p.c"
-    "vfs/vfs-config.c"
     "vfs/vfs-devfs.c"
     "vfs/vfs-netfs.c"
     "vfs/vfs-null.c"
     "vfs/vfs-log.c"
-    "vfs/vfs-logmount.c"
     "vfs/vfs-pipe.c"
     "vfs/vfs-procfs.c"
     "vfs/vfs-procfs-wapps.c"
     "vfs/vfs-stdio.c"
     "vfs/vfs-tarfs.c"
-    "vfs/vfs-socket.c"
-    "vfs/vfs-sha256.c"
-    "vfs/vfs-ed25519.c"
-    "vfs/vfs-inflate.c"
-    "vfs/vfs-wanted.c"
-    "vfs/vfs-wanted-config.c"
-    "vfs/vfs-wanted-wapps.c"
-    "vfs/vfs-wanted-registry.c"
     "vfs/vfs-virtual.c"
     )
+
+# Configurable drivers: dropping one drops its source and its table row.
+if(CONFIG_WANTED_VFS_9P)
+    list(APPEND vfs-srcs "vfs/vfs-9p.c")
+endif()
+if(CONFIG_WANTED_VFS_CONFIG)
+    list(APPEND vfs-srcs "vfs/vfs-config.c")
+endif()
+if(CONFIG_WANTED_VFS_LOGMOUNT)
+    list(APPEND vfs-srcs "vfs/vfs-logmount.c")
+endif()
+if(CONFIG_WANTED_VFS_SOCKET)
+    list(APPEND vfs-srcs "vfs/vfs-socket.c")
+endif()
+if(CONFIG_WANTED_VFS_SHA256)
+    list(APPEND vfs-srcs "vfs/vfs-sha256.c")
+endif()
+if(CONFIG_WANTED_VFS_ED25519)
+    list(APPEND vfs-srcs "vfs/vfs-ed25519.c")
+endif()
+if(CONFIG_WANTED_VFS_INFLATE)
+    list(APPEND vfs-srcs "vfs/vfs-inflate.c")
+endif()
+if(CONFIG_WANTED_VFS_WANTED)
+    list(APPEND vfs-srcs
+        "vfs/vfs-wanted.c"
+        "vfs/vfs-wanted-config.c"
+        "vfs/vfs-wanted-wapps.c"
+        "vfs/vfs-wanted-registry.c"
+        )
+endif()
 
 set(wasi-src
     "wasi/wasi-vfs.c"
@@ -41,17 +62,21 @@ set(tiny-json-src
     ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c
 )
 
-# Add c9
-set(c9-src
-    ${CMAKE_SOURCE_DIR}/vendor/c9/c9.c
-)
+# c9 serves only 9p, uzlib only inflate; each follows its consumer out.
+set(c9-src "")
+if(CONFIG_WANTED_VFS_9P)
+    set(c9-src ${CMAKE_SOURCE_DIR}/vendor/c9/c9.c)
+endif()
 
-# Add uzlib (decompressor + checksums only; the compressor stays uncompiled)
-set(uzlib-src
-    ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/tinflate.c
-    ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/crc32.c
-    ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/adler32.c
-)
+# uzlib (decompressor + checksums only; the compressor stays uncompiled)
+set(uzlib-src "")
+if(CONFIG_WANTED_VFS_INFLATE)
+    set(uzlib-src
+        ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/tinflate.c
+        ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/crc32.c
+        ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/adler32.c
+    )
+endif()
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
 
@@ -124,6 +149,7 @@ add_library(${project} STATIC
 
 target_include_directories(${project}
     PUBLIC ${CMAKE_SOURCE_DIR}/include
+    PUBLIC ${WANTED_AUTOCONF_DIR}
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json

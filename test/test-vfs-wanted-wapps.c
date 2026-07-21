@@ -361,23 +361,31 @@ TEST(vfs_wanted_wapps, RootCtlCreateTooLongName_ReturnsEinval) {
                           ctl->Write(ctl->ctx, fd, cmd, strlen(cmd)));
 }
 
+/* Write "create w<i>" and return the driver's result. The slot pool is sized by
+ * configuration, so these tests count against CONFIG_WANTED_MAX_WAPPS rather
+ * than a literal — a build with a different envelope must still exhaust at its
+ * own limit, not at the default one. */
+static int CreateNth(int fd, int i) {
+    char cmd[32];
+    int n = snprintf(cmd, sizeof(cmd), "create w%d", i);
+    return ctl->Write(ctl->ctx, fd, cmd, (size_t)n);
+}
+
 TEST(vfs_wanted_wapps, RootCtlCreateExhaustsSlots_ReturnsEnospc) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
-    /* Only MAX_WAPPS (3) pending slots exist; the fourth distinct name fails. */
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create a", 8) > 0);
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create b", 8) > 0);
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create c", 8) > 0);
-    TEST_ASSERT_EQUAL_INT(-ENOSPC, ctl->Write(ctl->ctx, fd, "create d", 8));
+    for (int i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++)
+        TEST_ASSERT_TRUE(CreateNth(fd, i) > 0);
+    TEST_ASSERT_EQUAL_INT(-ENOSPC, CreateNth(fd, CONFIG_WANTED_MAX_WAPPS));
 }
 
 TEST(vfs_wanted_wapps, RootCtlCreateIsIdempotent) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
     /* Re-creating the same name reuses its slot rather than exhausting the
      * pool, so two more distinct names still fit. */
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create a", 8) > 0);
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create a", 8) > 0);
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create b", 8) > 0);
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create c", 8) > 0);
+    TEST_ASSERT_TRUE(CreateNth(fd, 0) > 0);
+    TEST_ASSERT_TRUE(CreateNth(fd, 0) > 0);
+    for (int i = 1; i < CONFIG_WANTED_MAX_WAPPS; i++)
+        TEST_ASSERT_TRUE(CreateNth(fd, i) > 0);
 }
 
 /* delete — slot release */
@@ -437,13 +445,12 @@ TEST(vfs_wanted_wapps, RootCtlDeleteNoName_ReturnsEinval) {
 /* delete frees a pending slot back to the pool, so a new name fits afterwards. */
 TEST(vfs_wanted_wapps, RootCtlDelete_FreesPoolSlot) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create a", 8) > 0);
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create b", 8) > 0);
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create c", 8) > 0);
-    TEST_ASSERT_EQUAL_INT(-ENOSPC, ctl->Write(ctl->ctx, fd, "create d", 8));
+    for (int i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++)
+        TEST_ASSERT_TRUE(CreateNth(fd, i) > 0);
+    TEST_ASSERT_EQUAL_INT(-ENOSPC, CreateNth(fd, CONFIG_WANTED_MAX_WAPPS));
 
-    TEST_ASSERT_EQUAL_INT(8, ctl->Write(ctl->ctx, fd, "delete a", 8));
-    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create d", 8) > 0);
+    TEST_ASSERT_EQUAL_INT(9, ctl->Write(ctl->ctx, fd, "delete w0", 9));
+    TEST_ASSERT_TRUE(CreateNth(fd, CONFIG_WANTED_MAX_WAPPS) > 0);
 }
 
 /* fd table exhaustion — bounded, no overflow */
