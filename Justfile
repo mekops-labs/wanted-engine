@@ -5,7 +5,7 @@
 # That is how CI and the devcontainer invoke them.
 #
 # Overrides are read from the environment so one recipe serves local + CI:
-#   BUILD_DIR (default build) · DEFCONFIG (tiny|constrained|small|big|psram-s3)
+#   BUILD_DIR (default build) · DEFCONFIG (a name under configs/, sans suffix)
 #   CC · CMAKE_EXTRA_ARGS · NUTTX_SKIP_BUILD · NUTTX_CLEAN
 
 build_dir := env_var_or_default("BUILD_DIR", "build")

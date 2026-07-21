@@ -136,7 +136,7 @@ What this layer guarantees: a wapp's reach is exactly its granted paths — no m
 Embedded targets have a fixed memory budget, so the engine treats resource exhaustion as a security property:
 
 - `MAX_WAPPS` bounds concurrent instances; a `start` past the cap is rejected cleanly with `-ENOSPC` (verified on the ESP32-S3: the supervisor plus 19 wapps fit, the 20th is rejected).
-- Per-wapp stack, heap, and linear-memory caps are compile-time (see [Platform Guide → Resource limits](platform-guide.md#resource-limits-and-build-profiles)); profiles (`tiny`/`constrained`/`small`/`big`/`psram-s3`) tune them per target class.
+- Per-wapp stack, heap, and linear-memory caps are compile-time (see [Platform Guide → Resource limits](platform-guide.md#resource-limits)); envelopes (`tiny`/`constrained`/`small`/`big`) tune them per target class, and a board defconfig may narrow them further.
 - Console pipes are **lossy** (`out`/`err` drop oldest on a full ring) so an unread peer console cannot wedge the writer — a wapp cannot DoS the engine by spamming stdout.
 - The launch-config parser uses a bounded token pool and a 2048-byte stack buffer; an oversized config returns `-EMSGSIZE` rather than overflowing.
 

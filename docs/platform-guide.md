@@ -121,7 +121,7 @@ The reference constrained target, and the one the control-plane story is proven 
 A native ESP-IDF port (`platform/esp-idf/`, `app_main`) — not NuttX — targeting the ESP32-S3 (e.g. S3R8, octal PSRAM), 8 MB flash. Built with `idf.py` from `platform/esp-idf/project/`, so it is not wired into this Makefile's `esp32` host targets (those are the *classic* ESP32 NuttX build below).
 
 - **Threads / stop** — FreeRTOS via the ESP-IDF pthread wrapper; cooperative stop (the WAMR terminate flag aborts the in-flight call).
-- **Registry / PSRAM** — flash-backed LittleFS registry (`registry_flash.c`); octal PSRAM via `extram.c`. Built with the `psram-s3` profile (`MAX_WAPPS=20`); measured on an S3 with 8 MB PSRAM: the supervisor plus 19 concurrent user wapps fit, the 20th `start` is rejected cleanly with `-ENOSPC`.
+- **Registry / PSRAM** — flash-backed LittleFS registry (`registry_flash.c`); octal PSRAM via `extram.c`. Built with `DEFCONFIG=xiao_esp32s3` (`MAX_WAPPS=20`); measured on an S3 with 8 MB PSRAM: the supervisor plus 19 concurrent user wapps fit, the 20th `start` is rejected cleanly with `-ENOSPC`.
 - **OTA** — A/B firmware update through `esp_ota_ops` (`ota.c`), with a pending-verify / rollback seam.
 - **Secure sockets** — raw mbedTLS with ESP32-S3 hardware AES/SHA/ECC acceleration. No CA bundle is provisioned (`MBEDTLS_SSL_VERIFY_NONE`), so `tcps://` here is encrypted but **unauthenticated** — a demo transport, not production TLS.
 - **Crypto** — SHA-256 is hardware-backed, but **Ed25519 verify is not yet ported** (still the dummy backend, `platform/dummy/dummy-crypto.c`). So an ESP32-S3 control-plane demo reconciles with signature verification stubbed — the genuine Ed25519 path is the RP2350's.
@@ -189,10 +189,11 @@ Three engine-controlled regions are passed to WAMR per instance:
 
 | Board | Host | Notes |
 |---|---|---|
-| `rp2350_feather` | NuttX | 8 MB PSRAM; ships the production supervisor |
 | `xiao_esp32s3` | ESP-IDF | octal PSRAM, app heap off; `-storage` variant trades wapp slots for persist space |
 | `esp32-nuttx` | NuttX | classic ESP32; 24 KiB worker stacks, which must fit scarce internal DRAM |
 | `openwrt` | OpenWrt | packaged `.ipk`; supervisor read from its install path |
+
+A board defconfig exists only where the board needs something an envelope does not give it. The RP2350 has no entry because `small` already describes it exactly — build it with `DEFCONFIG=small` rather than carrying a file that restates those numbers and would silently stop tracking them.
 
 A defconfig seeds a build directory that has no `.config` yet; it never overwrites an existing one, so a configuration you edited is not silently replaced by a rebuild.
 
