@@ -4,6 +4,16 @@ Changelog
 Unreleased
 ----------
 
+### Added
+
+- Supervisor live update: `reload-supervisor` on the root `ctl` arms a
+  supervisor image reload, applied when the supervisor next exits. Child wapps
+  keep running across the swap. The image must be staged by atomic rename — the
+  engine keeps the current one mapped, so an in-place overwrite corrupts what
+  the next respawn reads.
+- A staged supervisor image that repeatedly fails to launch is rolled back to
+  the compiled-in image and the engine keeps serving, instead of aborting.
+
 ### Fixed
 
 - Linux wapp stop is cooperative: `PlatformWappStop` sets the WAMR terminate
@@ -22,6 +32,9 @@ Unreleased
 - `selftest-qemu` recipes run the selftest suite against a cross-built engine
   under qemu user-mode emulation (aarch64, mipsel), catching architecture-
   specific faults without target hardware.
+- `live-update` recipe swaps the supervisor image under a running engine and
+  asserts child-wapp continuity, that adoption happens only with a reload
+  armed, and the rollback path.
 
 0.10.0 (2026-07-20)
 ------------------

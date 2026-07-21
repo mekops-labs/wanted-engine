@@ -399,16 +399,24 @@ void PlatformWappLoop(void) {
         }
 
         /* No supervisor running. A clean exit is respawned (the supervisor is a
-         * persistent singleton). A launch FAILURE that repeats is a fatal
-         * misconfiguration — e.g. a malformed mount in the supervisor config —
-         * so abort loudly instead of respawning in silence forever. */
+         * persistent singleton). A launch FAILURE that repeats rolls back to
+         * the built-in image; with no fallback left, the config itself is
+         * broken — e.g. a malformed mount — so abort loudly. */
         if (supervisorFailed &&
             ++supervisorFailures >= MAX_SUPERVISOR_LAUNCH_FAILURES) {
-            fprintf(stderr,
-                    "wanted: supervisor failed to launch %d times in a row "
-                    "(%s); aborting — check the supervisor config\n",
-                    supervisorFailures, wappErrText(supervisorErr));
-            exit(EXIT_FAILURE);
+            if (WantedSupervisorRollback() == 0) {
+                fprintf(stderr,
+                        "wanted: staged supervisor failed to launch %d times "
+                        "in a row (%s); falling back to the built-in image\n",
+                        supervisorFailures, wappErrText(supervisorErr));
+                supervisorFailures = 0;
+            } else {
+                fprintf(stderr,
+                        "wanted: supervisor failed to launch %d times in a row "
+                        "(%s); aborting — check the supervisor config\n",
+                        supervisorFailures, wappErrText(supervisorErr));
+                exit(EXIT_FAILURE);
+            }
         }
         if (!supervisorFailed)
             supervisorFailures = 0;
