@@ -9,16 +9,36 @@ find_program(WANTED_PYTHON NAMES python3 python REQUIRED)
 
 # Engine checkout root. Set explicitly by a host that compiles engine sources
 # into its own tree (the ESP-IDF component), where the engine is not top-level.
-if(NOT WANTED_ENGINE_ROOT)
+if(WANTED_ENGINE_ROOT)
+    set(_wanted_embedded TRUE)
+else()
     set(WANTED_ENGINE_ROOT ${CMAKE_SOURCE_DIR})
+    set(_wanted_embedded FALSE)
 endif()
 
 set(WANTED_KCONFIG_DIR ${WANTED_ENGINE_ROOT}/tools/kconfiglib)
-set(WANTED_KCONFIG_ROOT ${WANTED_ENGINE_ROOT}/Kconfig)
+
+# The header always comes from the engine half alone, so a board string or SDK
+# URL can never reach a translation unit; build-system symbols are read off
+# .config below, where CMake already parses it.
+set(WANTED_KCONFIG_ENGINE ${WANTED_ENGINE_ROOT}/Kconfig.engine)
+
+# .config's root differs by who is driving. Standalone, it spans the whole tree
+# so menuconfig and `just build` see the target. Embedded in a host tree, the
+# host has already decided the target by construction — offering it the menu
+# again would be a second answer to a settled question.
+if(_wanted_embedded)
+    set(WANTED_KCONFIG_ROOT ${WANTED_KCONFIG_ENGINE})
+else()
+    set(WANTED_KCONFIG_ROOT ${WANTED_ENGINE_ROOT}/Kconfig)
+endif()
 set(WANTED_DOTCONFIG ${CMAKE_BINARY_DIR}/.config)
 set(WANTED_AUTOCONF_DIR ${CMAKE_BINARY_DIR}/include)
 set(WANTED_AUTOCONF ${WANTED_AUTOCONF_DIR}/wanted-autoconf.h)
 
+# The full filename under configs/, suffix included — this is an internal
+# variable, set by the OpenWrt packaging script and the ESP-IDF OTA profiles.
+# The user-facing DEFCONFIG env var omits the suffix; the Justfile appends it.
 set(WANTED_DEFCONFIG "" CACHE STRING
     "Board defconfig under configs/ to seed .config (empty = Kconfig defaults)")
 
@@ -64,11 +84,12 @@ else()
 endif()
 
 _wanted_kconfig_run(genconfig.py --header-path ${WANTED_AUTOCONF}
-                    ${WANTED_KCONFIG_ROOT})
+                    ${WANTED_KCONFIG_ENGINE})
 
-# Reconfigure when either changes, so the header cannot go stale.
+# Reconfigure when any of them changes, so the header cannot go stale.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    ${WANTED_DOTCONFIG} ${WANTED_KCONFIG_ROOT})
+    ${WANTED_DOTCONFIG} ${WANTED_KCONFIG_ROOT} ${WANTED_KCONFIG_ENGINE}
+    ${WANTED_ENGINE_ROOT}/Kconfig.target)
 
 # Mirror into CMake variables. `=y` becomes true; ints and strings carry their
 # value; "is not set" lines are skipped, leaving the variable undefined.
