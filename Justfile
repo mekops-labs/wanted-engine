@@ -280,10 +280,21 @@ cppcheck:
     for d in $(find platform/esp-idf -type d \( -name build -o -name managed_components -o -name .cache \) 2>/dev/null); do
         excludes="$excludes -i$d"
     done
+    # cppcheck parses without a build, so it has no generated configuration
+    # header. Without one every CONFIG_WANTED_* reads as undefined: the host
+    # guard's #error fires, and the configurable drivers analyse as absent.
+    # Generate one from the Kconfig defaults (every driver on) into a scratch
+    # dir so the analysis sees the code as it is actually built.
+    cfg=$(mktemp -d); trap 'rm -rf "$cfg"' EXIT
+    PYTHONPATH=tools/kconfiglib KCONFIG_CONFIG="$cfg/.config" \
+        python3 tools/kconfiglib/olddefconfig.py Kconfig >/dev/null
+    PYTHONPATH=tools/kconfiglib KCONFIG_CONFIG="$cfg/.config" \
+        python3 tools/kconfiglib/genconfig.py --header-path "$cfg/wanted-autoconf.h" \
+        Kconfig >/dev/null
     cppcheck --enable=warning,style,performance,portability \
         --suppress=missingIncludeSystem --suppress=normalCheckLevelMaxBranches \
         --inline-suppr --error-exitcode=1 \
-        -I include -I src/include -I platform/include \
+        -I include -I src/include -I platform/include -I "$cfg" \
         -DCONFIG_RP23XX_FLASH_MTD_MOUNTPOINT='"/mnt/flash"' \
         $excludes \
         src platform cmd
