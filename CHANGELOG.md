@@ -6,67 +6,34 @@ Unreleased
 
 ### Changed
 
-- Build configuration moved to a Kconfig tree at the repository root, read by
-  the vendored kconfiglib in `tools/`. Configuring generates
-  `wanted-autoconf.h`, which every engine source compiles against; each build
-  directory owns its own `.config`. `src/include/wanted-config.h` is gone and
-  every limit is now a `CONFIG_WANTED_*` symbol with range bounds.
-- `cmake/profiles/*.cmake` replaced by `configs/*_defconfig`, which now cover
-  boards as well as capacity envelopes. The two places that scraped a profile's
-  CMake syntax back into `-D` flags are gone.
-- VFS drivers a launch config reaches by name are selectable. Deselecting one
-  drops its source, its factory-table row and its declaration; `9p` and
-  `inflate` take the vendored c9 and uzlib with them. A minimal selection
-  removes ~31% of engine `.text`.
-- The supervisor variant (sheriff / wsh / selftest) is a configuration choice
-  rather than a build flag; `just supervisor-variant <name>` switches it.
+- Build configuration moved to a Kconfig tree at the repo root (vendored kconfiglib in `tools/`); `.config` is per-build-dir, every limit is a bounded `CONFIG_WANTED_*` symbol, and `src/include/wanted-config.h` is gone.
+- `cmake/profiles/*.cmake` replaced by `configs/*_defconfig` covering boards and capacity envelopes; the CMake-syntax-to-`-D` scrapers are gone.
+- VFS drivers are Kconfig-selectable; deselecting drops source, factory row, declaration, and vendored deps (c9 for `9p`, uzlib for `inflate`). A minimal selection removes ~31% of engine `.text`.
+- Supervisor variant (sheriff / wsh / selftest) is a Kconfig choice (`just supervisor-variant <name>`).
 
 ### Added
 
-- Supervisor live update: `reload-supervisor` on the root `ctl` arms a
-  supervisor image reload, applied when the supervisor next exits. Child wapps
-  keep running across the swap. The image must be staged by atomic rename — the
-  engine keeps the current one mapped, so an in-place overwrite corrupts what
-  the next respawn reads.
-- A staged supervisor image that repeatedly fails to launch is rolled back to
-  the compiled-in image and the engine keeps serving, instead of aborting.
-- 9P mounts reach a server on the same box over a filesystem socket:
-  `unix://<socket-path>` alongside `tcp://` and `udp://`. An on-box driver
-  server needs no loopback port.
-- Drivers can be linked in from a source tree outside this repo, via
-  `ExtraDriverTable()` and the `WANTED_EXTRA_DRIVERS_DIR` build option. The
-  extra table is searched after the core and platform tables, so it cannot
-  shadow a core driver name; its entries are listed on `/proc/wanted`.
+- Supervisor live update: `reload-supervisor` on the root `ctl` arms a swap applied on the next supervisor exit; child wapps keep running. Staging must be an atomic rename — in-place overwrite corrupts the current mapped image.
+- A repeatedly failing staged supervisor image is rolled back to the compiled-in one; the engine keeps serving.
+- 9P `unix://<socket-path>`: reach an on-box server over a filesystem socket, no loopback port.
+- Out-of-tree drivers via `ExtraDriverTable()` and the `WANTED_EXTRA_DRIVERS_DIR` build option. The extra table is searched after the core and platform tables, so it cannot shadow a core driver name; its entries are listed on `/proc/wanted`.
 
 ### Fixed
 
-- Linux wapp stop is cooperative: `PlatformWappStop` sets the WAMR terminate
-  flag and signals the worker with `SIGUSR2` to interrupt a blocked host call.
-  Stopping a never-yielding wapp crashed the engine on aarch64.
-- `PlatformClockNanoSleep` on Linux reports `clock_nanosleep`'s error, so an
-  interrupted sleep surfaces `EINTR` instead of reporting success.
-- 9P `Stat` copies the parsed stat out of the response callback's frame; it
-  previously read through a pointer into a dead stack frame.
+- Linux wapp stop is cooperative: `PlatformWappStop` sets the WAMR terminate flag and signals the worker with `SIGUSR2`, interrupting a blocked host call. Stopping a never-yielding wapp crashed the engine on aarch64.
+- `PlatformClockNanoSleep` on Linux propagates `clock_nanosleep`'s error, so an interrupted sleep surfaces `EINTR`.
+- 9P `Stat` copies the parsed stat out of the response callback's frame; it previously read through a pointer into a dead stack frame.
 
 ### Build
 
-- WAMR thread manager enabled: the interpreter's terminate check compiles in
-  only with it (~14 KB text).
+- WAMR thread manager enabled (the interpreter's terminate check compiles in only with it; ~14 KB text).
 
 ### Testing
 
-- `selftest-qemu` recipes run the selftest suite against a cross-built engine
-  under qemu user-mode emulation (aarch64, mipsel), catching architecture-
-  specific faults without target hardware.
-- `live-update` recipe swaps the supervisor image under a running engine and
-  asserts child-wapp continuity, that adoption happens only with a reload
-  armed, and the rollback path.
-- The 9P driver is tested against a live server: a minimal 9P2000 server is
-  forked onto a local socket and the walk/open/stat/read/write round trips run
-  for real.
-- `test-extra-drivers` builds against a fixture out-of-tree driver tree and
-  asserts an extra driver resolves while one claiming a core name does not
-  shadow it.
+- `selftest-qemu`: selftest against a cross-built engine under qemu user-mode emulation (aarch64, mipsel) — architecture-specific faults without target hardware.
+- `live-update`: swaps the supervisor image under a running engine; asserts child-wapp continuity, that adoption happens only with a reload armed, and the rollback path.
+- 9P against a live server: a minimal 9P2000 server forked onto a local socket, exercising walk/open/stat/read/write for real.
+- `test-extra-drivers`: builds against a fixture out-of-tree driver tree; asserts an extra driver resolves and one claiming a core name does not shadow it.
 
 0.10.0 (2026-07-20)
 ------------------
