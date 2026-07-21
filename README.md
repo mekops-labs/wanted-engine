@@ -43,11 +43,17 @@ See [Architecture](docs/architecture.md) for the full conceptual overview.
 The environment is standardized via Podman/Docker. Commands are [`just`](https://just.systems) recipes that run inside the build container (`just --list` shows them all). On a bare host the root `Makefile` is a thin wrapper that runs the same recipe in the container — `make build` is just `just build` in the image — so either works. Inside the devcontainer or CI, call `just` directly.
 
 ```bash
+just menuconfig      # configure this build dir (Kconfig; optional)
 just build           # engine + sheriff supervisor
 just wsh             # engine + wsh debug supervisor
 just test            # run unit tests
 just selftest        # run in-WASM functional suite
 ```
+
+Configuration is a Kconfig tree; an unconfigured build directory takes the
+defaults, so `just build` works with no configure step. `configs/` holds
+capacity envelopes and per-board defconfigs — `DEFCONFIG=small just build`
+seeds one. See the [Platform Guide](docs/platform-guide.md).
 
 See the [Quick Start](docs/quickstart.md) and [Testing Guide](docs/testing-guide.md) for details.
 

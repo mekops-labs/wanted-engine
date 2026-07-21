@@ -159,7 +159,7 @@ endforeach()
 # this constraint.
 idf_component_register(
     SRCS ${core_srcs} ${vfs_srcs} ${wasi_srcs} ${vendor_srcs} ${platform_srcs}
-    INCLUDE_DIRS ${ENGINE}/include
+    INCLUDE_DIRS ${ENGINE}/include ${WANTED_AUTOCONF_DIR}
     PRIV_INCLUDE_DIRS
         ${ENGINE}/src/include
         ${ENGINE}/platform/include

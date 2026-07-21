@@ -3,8 +3,6 @@
 # The default envelope. Matches the Kconfig defaults, written out in full so
 # a board file always states its numbers rather than inheriting them silently.
 #
-# Values are written out in full rather than minimised against the defaults,
-# so a board's envelope is readable here without cross-referencing Kconfig.
 
 CONFIG_WANTED_MAX_WAPPS=3
 CONFIG_WANTED_WASM_STACK_SIZE=8192

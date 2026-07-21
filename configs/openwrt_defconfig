@@ -1,7 +1,4 @@
-# small resource envelope.
-#
-# Router-class and small-SBC targets with real RAM but no MMU pressure.
-#
+# Router-class: real RAM, no MMU pressure, so the small envelope applies.
 
 CONFIG_WANTED_MAX_WAPPS=16
 CONFIG_WANTED_WASM_STACK_SIZE=65536
@@ -11,3 +8,6 @@ CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=16
 CONFIG_WANTED_MAX_PATH_LEN=512
 CONFIG_WANTED_MAX_DRIVERS_CNT=8
 CONFIG_WANTED_MAX_OPTIONS_SIZE=256
+
+CONFIG_WANTED_SUPERVISOR_WSH=y
+CONFIG_WANTED_SUPERVISOR_IMAGE_PATH="/usr/share/wanted/supervisor.tar"

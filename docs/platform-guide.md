@@ -73,7 +73,7 @@ just wsh          # engine with the wsh debug supervisor
 - **TLS** — OpenSSL-backed secure sockets (`T`/`U` socket options).
 - **Memory stats** — `mallinfo2`.
 
-CMake options of note: `WANTED_PLATFORM` (the platform layer), `WANTED_SUPERVISOR_IMAGE_PATH` (compile-time supervisor image), `SECURE_SOCKETS` (TLS), `WANTED_EXTRA_DRIVERS_DIR` (an out-of-tree driver tree).
+CMake options of note: `WANTED_PLATFORM` (the platform layer), `WANTED_DEFCONFIG` (seed the configuration from `configs/<name>`), `SECURE_SOCKETS` (TLS), `WANTED_EXTRA_DRIVERS_DIR` (an out-of-tree driver tree). Everything else is Kconfig — see Build configuration.
 
 ## NuttX simulator
 
@@ -104,7 +104,7 @@ The reference constrained target, and the one the control-plane story is proven 
 - **Core / boards** — ARM Cortex-M33 (RP2350). Two boards carry WANTED configs in the pinned NuttX fork: `adafruit-feather-rp2350:wanted` (the `wsh` debug supervisor) and `pimoroni-pico-2-plus-w:sheriff` (the Sheriff control-plane agent, with the onboard CYW43439 radio). A RISC-V/Hazard3 build of the silicon runs (PSRAM + `ostest` clean) but a WANTED board config for it is a deprioritized stretch.
 
   ```bash
-  make rp2350 RP2350_CONFIG=pimoroni-pico-2-plus-w:sheriff PROFILE=small
+  make rp2350 RP2350_CONFIG=pimoroni-pico-2-plus-w:sheriff
   make rp2350-flash-swd    # flash over SWD via a Raspberry Pi Debug Probe (no BOOTSEL)
   ```
 
@@ -135,19 +135,38 @@ make esp32          # cross-build -> third_party/nuttx/nuttx.bin (xtensa toolcha
 make esp32-flash    # esptool over ESP32_PORT (default /dev/ttyUSB0)
 ```
 
-## Resource limits and build profiles
+## Build configuration
 
-The engine's static memory envelope is set at build time. Every engine-wide limit lives in one header, `src/include/wanted-config.h`, each `#ifndef`-guarded so the build system overrides it without editing source:
+The engine is configured through a **Kconfig** tree at the repository root, read by the vendored kconfiglib in `tools/kconfiglib`. Configuring produces `.config` and a generated `wanted-autoconf.h` that every engine source compiles against; there is no second place a value can come from.
 
-| Constant | Default | Sizes |
+Each build directory owns its own `.config`, so a debug build, a cross build, and the extra-drivers lane can differ without fighting each other:
+
+```bash
+just menuconfig                          # edit this build dir's configuration
+just defconfig small_defconfig           # seed it from a named envelope
+DEFCONFIG=beryl_openwrt just build       # seed on first configure, then build
+just savedefconfig my_board_defconfig    # write the minimal diff back
+```
+
+Editing `.config` re-runs the configure step and regenerates the header, so a changed configuration cannot leave stale values compiled in.
+
+### Resource limits
+
+The static memory envelope is set here. Every symbol is prefixed `CONFIG_WANTED_` without exception — engine and host symbols reach the same translation unit on NuttX and ESP-IDF, and an unprefixed name is a collision waiting to happen.
+
+| Symbol | Default | Sizes |
 |---|---|---|
-| `MAX_WAPPS` | 3 | concurrent wapp instances (and, via `LOG_SLOTS`, the per-wapp log rings) |
-| `WASM_STACK_SIZE` | 8192 | per-instance operand (interpreter) stack |
-| `WASM_HEAP_SIZE` | 8192 | per-instance app heap |
-| `WASM_MAX_MEMORY_PAGES` | 1 | per-instance linear-memory ceiling, in 64 KiB pages (`0` = uncapped) |
-| `MAX_PATH_LEN` | 256 | VFS path buffers |
+| `CONFIG_WANTED_MAX_WAPPS` | 3 | concurrent wapp instances (and, via the log slots, the per-wapp log rings) |
+| `CONFIG_WANTED_WASM_STACK_SIZE` | 8192 | per-instance operand (interpreter) stack |
+| `CONFIG_WANTED_WASM_HEAP_SIZE` | 8192 | per-instance app heap |
+| `CONFIG_WANTED_WASM_MAX_MEMORY_PAGES` | 1 | per-instance linear-memory ceiling, in 64 KiB pages (`0` = uncapped) |
+| `CONFIG_WANTED_MAX_PATH_LEN` | 256 | VFS path buffers |
 
-Driver-private limits (e.g. the 9P open-file table, the socket address buffer) stay local to their driver and are not part of this surface.
+Driver allocation sizes that size a static structure are configurable too, under their own submenu: the pipe ring and pipe count, the per-wapp log capacity, and the log mount's open-handle table. Driver *behavioural* knobs (poll intervals and the like) stay local to their driver — the criterion for appearing in the configuration is whether the value sizes an allocation.
+
+### Selectable drivers
+
+Drivers a launch config reaches by name can be deselected, which drops their source, their factory-table row, and their declaration together. `9p` and `inflate` also drag the vendored c9 and uzlib libraries out of the build, so they are the two largest wins. The VFS core — `tarfs`, `devfs`, `netfs`, `procfs`, plus `null`/`log`/`pipe`/`stdio`/`virtual` — is mandatory and carries no symbols.
 
 ### A wapp's memory
 
@@ -157,27 +176,41 @@ Three engine-controlled regions are passed to WAMR per instance:
 - **App heap** (`WASM_HEAP_SIZE`) — a host-managed heap for `wasm_runtime_module_malloc`, **outside** linear memory. WAMR disables it when the module exports its own `malloc`/`free`, so a WASI wapp (which allocates from its libc heap at the top of linear memory) usually does not use it.
 - **Linear memory** (`WASM_MAX_MEMORY_PAGES`) — the memory the wapp actually addresses: its data, C aux stack, and libc heap. Enforced two ways: WAMR bounds `memory.grow` to the cap at runtime, and the engine refuses at load any image whose declared *initial* memory exceeds it (otherwise WAMR clamps the cap up to the module's initial, letting a large initial bypass the runtime bound). `0` disables both. (A module containing no `memory.grow` is collapsed by WAMR to a single fixed page - `WAMR_BUILD_SHRUNK_MEMORY` flag is on by default.)
 
-### Profiles
+### Defconfigs
 
-Per-capacity profiles ship as CMake cache fragments under `cmake/profiles/`:
+`configs/` holds two kinds of defconfig. **Envelopes** describe a capacity class; **boards** describe a specific target and additionally pick its supervisor and install paths.
 
-| Profile | Target class | `MAX_WAPPS` | stack / heap | linear cap |
+| Envelope | Target class | wapps | stack / heap | linear cap |
 |---|---|---|---|---|
 | `tiny` | no-PSRAM (ESP32-WROOM, ~180 KB internal RAM) | 2 | 4 KiB / 4 KiB | 1 page |
-| `constrained` | ~512 KB RAM, PSRAM (ESP32-WROVER/NuttX) | 3 | 8 KiB / 8 KiB | 1 page |
-| `psram-s3` | ESP32-S3 + octal PSRAM (ESP-IDF port) | 20 | 64 KiB / 0 (app heap off) | 16 pages |
+| `constrained` | ~512 KB RAM, PSRAM (ESP32-WROVER/NuttX) — the defaults | 3 | 8 KiB / 8 KiB | 1 page |
 | `small` | routers (128 MB–1 GB) | 16 | 64 KiB / 256 KiB | 16 pages |
 | `big` | Linux / cloud | 64 | 128 KiB / 1 MiB | uncapped |
 
-Select one — the unset default is the `constrained` header values:
+| Board | Host | Notes |
+|---|---|---|
+| `rp2350_feather` | NuttX | 8 MB PSRAM; ships the production supervisor |
+| `xiao_esp32s3` | ESP-IDF | octal PSRAM, app heap off; `-storage` variant trades wapp slots for persist space |
+| `esp32-nuttx` | NuttX | classic ESP32; 24 KiB worker stacks, which must fit scarce internal DRAM |
+| `beryl_openwrt` | OpenWrt | packaged `.ipk`; supervisor read from its install path |
+
+A defconfig seeds a build directory that has no `.config` yet; it never overwrites an existing one, so a configuration you edited is not silently replaced by a rebuild.
+
+### Supervisor variant
+
+Which supervisor the engine boots is part of the configuration rather than a build flag:
 
 ```bash
-PROFILE=small just build         # Linux engine + CLI
-PROFILE=small just nuttx-build   # NuttX sim
-cmake -C cmake/profiles/small.cmake -S . -B build   # direct cmake
+just supervisor-variant wsh      # sheriff | wsh | selftest
 ```
 
-On Linux the fragment seeds the CMake cache; for NuttX the same values are forwarded as `-D` overrides into the engine app build. A command-line `-DMAX_WAPPS=…` overrides a profile.
+The choice sets the image path. A package that installs the image elsewhere sets `CONFIG_WANTED_SUPERVISOR_IMAGE_PATH` to an absolute path, which wins — that is for where the image *lives*, not which one it is.
+
+### Hosts that build the engine themselves
+
+NuttX and ESP-IDF compile engine sources into their own trees. They generate the engine's header from an engine `.config`; their own Kconfig files carry only the **edges** that cross into host symbols (`depends on NET`, `select CRYPTO_MBEDTLS`). The engine's own tree must never reference a host symbol: it is also read standalone, and kconfiglib resolves an unknown symbol to `n` with at most a warning — a feature would disappear with nothing to show why.
+
+OpenWrt instead builds the engine as an external package and shares no symbol namespace at all. `src/include/wanted-host-guard.h` catches what a preprocessor can there — a self-contradictory configuration, or a build that never ran the Kconfig step. A missing host library still surfaces at link time.
 
 ### Measuring the footprint
 

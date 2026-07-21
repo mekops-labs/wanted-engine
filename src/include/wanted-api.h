@@ -8,6 +8,7 @@
 #include <vfs-tarfs.h>
 #include <vfs.h>
 #include <wanted-autoconf.h>
+#include <wanted-host-guard.h>
 #include <wanted.h>
 
 /* Per-wapp log ring slots. Derived rather than configured: a slot exists for
