@@ -33,7 +33,9 @@ command -v "$QEMU" >/dev/null 2>&1 || {
 }
 
 # TLS off: the lane exercises engine/wapp lifecycle, and skipping it avoids the
-# SDK's one-time OpenSSL stage.
+# SDK's one-time OpenSSL stage. Secure sockets are a configuration symbol, so
+# turn them off there — the old -DSECURE_SOCKETS=OFF no longer reaches the
+# build, which would have pulled OpenSSL back in.
 log "cross-building selftest engine for $OPKG_ARCH"
 bdir="$REPO/build-selftest-$OPKG_ARCH"
 # WAMR detects stack overflow with guard pages and a SIGSEGV handler. qemu-user
@@ -41,9 +43,16 @@ bdir="$REPO/build-selftest-$OPKG_ARCH"
 # behaviour, so the runtime can take a real SIGSEGV before the supervisor emits
 # anything. Software bound checking costs a little speed and keeps the lane
 # testing the engine rather than the emulator.
+mkdir -p "$bdir"
+PYTHONPATH="$REPO/tools/kconfiglib" KCONFIG_CONFIG="$bdir/.config" \
+    python3 "$REPO/tools/kconfiglib/olddefconfig.py" "$REPO/Kconfig" >/dev/null
+PYTHONPATH="$REPO/tools/kconfiglib" KCONFIG_CONFIG="$bdir/.config" \
+    python3 "$REPO/tools/kconfiglib/setconfig.py" --kconfig "$REPO/Kconfig" \
+    WANTED_VFS_SOCKET_TLS=n >/dev/null
+
 cmake -B "$bdir" -S "$REPO" -G Ninja \
       -DCMAKE_TOOLCHAIN_FILE="$REPO/cmake/toolchain-openwrt.cmake" \
-      -DBUILD_TESTING=OFF -DSECURE_SOCKETS=OFF \
+      -DBUILD_TESTING=OFF \
       -DWAMR_DISABLE_HW_BOUND_CHECK=1
 cmake --build "$bdir" -j"$(nproc)"
 

@@ -292,9 +292,18 @@ cppcheck:
     PYTHONPATH=tools/kconfiglib KCONFIG_CONFIG="$cfg/.config" \
         python3 tools/kconfiglib/genconfig.py --header-path "$cfg/wanted-autoconf.h" \
         Kconfig >/dev/null
+    # SECURE_SOCKETS is a build-system define, not part of the generated header,
+    # so derive it from the same .config — otherwise the analysis contradicts
+    # itself and the host guard stops it.
+    if grep -q '^CONFIG_WANTED_VFS_SOCKET_TLS=y$' "$cfg/.config"; then
+        tls=1
+    else
+        tls=0
+    fi
     cppcheck --enable=warning,style,performance,portability \
         --suppress=missingIncludeSystem --suppress=normalCheckLevelMaxBranches \
         --inline-suppr --error-exitcode=1 \
+        -DSECURE_SOCKETS=$tls \
         -I include -I src/include -I platform/include -I "$cfg" \
         -DCONFIG_RP23XX_FLASH_MTD_MOUNTPOINT='"/mnt/flash"' \
         $excludes \

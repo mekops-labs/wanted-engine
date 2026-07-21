@@ -90,16 +90,26 @@ profile_cap() { # $1 = profile name
 }
 
 declare -A M
+# SECURE_SOCKETS is a build-system define rather than a configuration symbol,
+# so derive it from the same .config: the engine headers refuse to compile if
+# the two disagree.
+profile_tls() { # $1 = profile name -> 1 | 0
+    grep -q '^CONFIG_WANTED_VFS_SOCKET_TLS=y$' "$(profile_include "$1")/.config" \
+        && echo 1 || echo 0
+}
+
 measure() { # $1 = abi (linux|nuttx), $2 = profile -> fills M[name]=size
-    local abi="$1" cfg obj res
+    local abi="$1" cfg obj res tls
     cfg=$(profile_include "$2")
+    tls=$(profile_tls "$2")
     obj=$(mktemp --suffix=.o)
     if [ "$abi" = nuttx ]; then
         res=$(clang -print-resource-dir)
         clang -ffreestanding -target i386-unknown-linux-gnu -nostdinc \
-            -I"$res/include" -I"$STUB" -I"$cfg" $INC -fno-common -c "$SRC" -o "$obj"
+            -I"$res/include" -I"$STUB" -I"$cfg" $INC -DSECURE_SOCKETS="$tls" \
+            -fno-common -c "$SRC" -o "$obj"
     else
-        clang -I"$cfg" $INC -fno-common -c "$SRC" -o "$obj"
+        clang -I"$cfg" $INC -DSECURE_SOCKETS="$tls" -fno-common -c "$SRC" -o "$obj"
     fi
     # readelf prints the symbol Size in hex once it grows large; $(( )) folds
     # both hex and decimal to a plain decimal so downstream math/format is uniform.
