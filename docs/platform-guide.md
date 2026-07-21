@@ -144,7 +144,7 @@ Each build directory owns its own `.config`, so a debug build, a cross build, an
 ```bash
 just menuconfig                          # edit this build dir's configuration
 just defconfig small_defconfig           # seed it from a named envelope
-DEFCONFIG=beryl_openwrt just build       # seed on first configure, then build
+DEFCONFIG=openwrt just build             # seed on first configure, then build
 just savedefconfig my_board_defconfig    # write the minimal diff back
 ```
 
@@ -192,7 +192,7 @@ Three engine-controlled regions are passed to WAMR per instance:
 | `rp2350_feather` | NuttX | 8 MB PSRAM; ships the production supervisor |
 | `xiao_esp32s3` | ESP-IDF | octal PSRAM, app heap off; `-storage` variant trades wapp slots for persist space |
 | `esp32-nuttx` | NuttX | classic ESP32; 24 KiB worker stacks, which must fit scarce internal DRAM |
-| `beryl_openwrt` | OpenWrt | packaged `.ipk`; supervisor read from its install path |
+| `openwrt` | OpenWrt | packaged `.ipk`; supervisor read from its install path |
 
 A defconfig seeds a build directory that has no `.config` yet; it never overwrites an existing one, so a configuration you edited is not silently replaced by a rebuild.
 

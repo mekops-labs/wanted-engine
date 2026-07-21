@@ -22,7 +22,7 @@ rm -rf "$bdir"
 cmake -B "$bdir" -S "$REPO" -G Ninja \
       -DCMAKE_TOOLCHAIN_FILE="$REPO/cmake/toolchain-openwrt.cmake" \
       -DBUILD_TESTING=OFF \
-      -DWANTED_DEFCONFIG="${WANTED_DEFCONFIG:-beryl_openwrt_defconfig}"
+      -DWANTED_DEFCONFIG="${WANTED_DEFCONFIG:-openwrt_defconfig}"
 cmake --build "$bdir" -j"$(nproc)"
 
 # --- assemble the .ipk ----------------------------------------------------
