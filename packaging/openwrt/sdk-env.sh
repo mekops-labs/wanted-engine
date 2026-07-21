@@ -38,10 +38,16 @@ elif printf '%s' "$SDK_ARG" | grep -qE '^https?://'; then
     if [ ! -d "$SDK" ]; then
         log "downloading SDK: $fname"
         wget -q -O "$SDK_CACHE/$fname" "$SDK_ARG"
+        # --no-same-owner: the SDK tarballs carry the build farm's uid (999).
+        # Extracting as root preserves it, and the SDK then belongs to a user
+        # that does not exist here — the OpenSSL stage below cannot create
+        # feeds/ inside it and dies with perl's bare exit 13. Non-root tar
+        # already defaults to this; making it explicit means the cache is owned
+        # by the extracting user either way.
         log "extracting SDK"
         case "$fname" in
-            *.tar.zst) tar --zstd -xf "$SDK_CACHE/$fname" -C "$SDK_CACHE" ;;
-            *.tar.xz)  tar -xf "$SDK_CACHE/$fname" -C "$SDK_CACHE" ;;
+            *.tar.zst) tar --zstd --no-same-owner -xf "$SDK_CACHE/$fname" -C "$SDK_CACHE" ;;
+            *.tar.xz)  tar --no-same-owner -xf "$SDK_CACHE/$fname" -C "$SDK_CACHE" ;;
             *) echo "unknown SDK archive type: $fname" >&2; return 1 ;;
         esac
         rm -f "$SDK_CACHE/$fname"
@@ -100,11 +106,20 @@ if [ "${STAGE_SSL:-0}" = "1" ]; then
         else
             run_sdk() { bash -c "$1"; }
         fi
-        run_sdk "cd '$SDK' && \
-            ./scripts/feeds update base >/dev/null 2>&1 && \
-            ./scripts/feeds install libopenssl >/dev/null 2>&1 && \
-            make defconfig >/dev/null 2>&1 && \
-            make package/openssl/compile -j\$(nproc) >/dev/null 2>&1"
+        # Errors reach the terminal. Progress does not: these four steps are
+        # thousands of lines, and the last one is a full OpenSSL build. Sending
+        # stderr to /dev/null too — as this did — turned every failure into a
+        # bare exit code with no indication of which step died or why.
+        if ! run_sdk "cd '$SDK' && \
+            ./scripts/feeds update base >/dev/null && \
+            ./scripts/feeds install libopenssl >/dev/null && \
+            make defconfig >/dev/null && \
+            make package/openssl/compile -j\$(nproc) >/dev/null"; then
+            echo "sdk-env: staging OpenSSL into the SDK failed (see above)." >&2
+            echo "  A cached SDK extracted by an earlier, root-owned run may be" >&2
+            echo "  unwritable; remove it from .openwrt-sdk/ and retry." >&2
+            return 1
+        fi
     fi
 fi
 
