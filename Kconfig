@@ -9,13 +9,6 @@
 
 mainmenu "WANTED Engine Configuration"
 
-config WANTED_KCONFIG_SELFTEST
-	bool "Kconfig mechanism self-test symbol"
-	default y
-	help
-	  Proves the configuration round trip. Nothing reads it but the build's
-	  own check; enabled it costs one #define.
-
 menu "VFS drivers"
 
 comment "Mandatory core, no symbols: tarfs/devfs/netfs/procfs own members of"
