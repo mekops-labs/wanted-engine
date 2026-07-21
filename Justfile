@@ -53,8 +53,9 @@ all: build test
 kconfig := "PYTHONPATH=" + justfile_directory() + "/tools/kconfiglib KCONFIG_CONFIG=" + build_dir + "/.config"
 kcl := justfile_directory() + "/tools/kconfiglib"
 
-# Edit this build dir's configuration in the terminal UI.
-# On a bare host run it through `make menuconfig`, which allocates a TTY.
+# Edit this build dir's configuration in the terminal UI. Needs a terminal, so
+# on a bare host go through `make menuconfig` — that target allocates one and
+# passes TERM through; the Makefile's catch-all does neither.
 menuconfig:
     mkdir -p {{build_dir}}
     {{kconfig}} python3 {{kcl}}/menuconfig.py Kconfig
