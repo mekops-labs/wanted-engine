@@ -74,16 +74,51 @@ config WANTED_TARGET_ESP_IDF_CHIP
 	help
 	  Passed to `idf.py set-target` unchanged.
 
-config WANTED_TARGET_OPENWRT_SDK
-	string "OpenWrt SDK"
+choice
+	prompt "OpenWrt SDK"
 	depends on WANTED_TARGET_OPENWRT
-	default "aarch64"
+	default WANTED_OPENWRT_SDK_AARCH64
 	help
-	  One of the architecture keywords packaging/openwrt/sdk-env.sh resolves
-	  to a generic SDK — aarch64 (armsr/armv8) or mipsel (malta/le) — or an
-	  explicit SDK URL or local directory for any other target.
+	  Which SDK cross-builds the package.
 
-	  The generic SDKs are board-independent on purpose: the engine is built
-	  for an architecture, not for a particular router.
+	  The two generic SDKs are board-independent on purpose: the engine is
+	  built for an architecture, not for a particular router. Pick the custom
+	  entry to name any other OpenWrt target by URL.
+
+config WANTED_OPENWRT_SDK_AARCH64
+	bool "aarch64 — generic 64-bit ARM (armsr/armv8)"
+
+config WANTED_OPENWRT_SDK_MIPSEL
+	bool "mipsel — generic 32-bit MIPS (malta/le)"
+
+config WANTED_OPENWRT_SDK_CUSTOM
+	bool "custom — SDK URL or local directory"
+
+endchoice
+
+config WANTED_TARGET_OPENWRT_SDK_URL
+	string "OpenWrt SDK URL or directory"
+	depends on WANTED_OPENWRT_SDK_CUSTOM
+	help
+	  A target-specific SDK to build against, as either:
+
+	    - a URL to an OpenWrt SDK archive (.tar.zst or .tar.xz), downloaded
+	      and cached under .openwrt-sdk/ on first use; or
+	    - a path to an SDK directory already extracted locally.
+
+	  The target, architecture and toolchain prefix are auto-detected from
+	  the SDK's own staging_dir layout, so nothing here needs restating them.
+	  Example, for a device on the 24.10.0 ath79/generic target:
+
+	    https://downloads.openwrt.org/releases/24.10.0/targets/ath79/generic/openwrt-sdk-24.10.0-ath79-generic_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+
+# Derived from the choice above, no prompt: one string for the build to read,
+# whether it came from a keyword or a URL. sdk-env.sh already accepted all three
+# forms — the choice only makes that visible in the menu.
+config WANTED_TARGET_OPENWRT_SDK
+	string
+	default "aarch64" if WANTED_OPENWRT_SDK_AARCH64
+	default "mipsel" if WANTED_OPENWRT_SDK_MIPSEL
+	default WANTED_TARGET_OPENWRT_SDK_URL if WANTED_OPENWRT_SDK_CUSTOM
 
 endmenu
