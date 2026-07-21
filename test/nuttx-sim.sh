@@ -90,9 +90,15 @@ stage_hostfs() {
     cp "$ENGINE_DIR/test/nuttx-sim-config.json" "$SIMROOT/smoke.json"
 }
 
-# Configure + build the sim:wanted board config (the native defconfig in the
-# nuttx fork: SYSTEM_WANTED + hostfs, wanted_sim_main as the init task, and
-# BOARDCTL_POWEROFF so the sim exits cleanly when the engine loop returns).
+# Configure + build a NuttX board config. Defaults to sim:wanted (the native
+# defconfig in the nuttx fork: SYSTEM_WANTED + hostfs, wanted_sim_main as the
+# init task, and BOARDCTL_POWEROFF so the sim exits cleanly when the engine loop
+# returns).
+#
+# NUTTX_BOARD overrides it and is passed to configure.sh verbatim, in its own
+# <board>:<config> notation -- this script enumerates no boards. `just build`
+# sets it from the engine's configured target; hardware boards additionally need
+# a toolchain image the host build image does not carry.
 #
 build_kernel() {
     # Run-only mode (split CI: a `build` job built the kernel and passed the
@@ -110,7 +116,7 @@ build_kernel() {
     cd "$NUTTX_DIR"
     if [ "${NUTTX_CLEAN:-0}" = 1 ] || [ ! -f .config ]; then
         make distclean >/dev/null 2>&1 || true
-        ./tools/configure.sh -a "$apps_rel" sim:wanted >/dev/null
+        ./tools/configure.sh -a "$apps_rel" "${NUTTX_BOARD:-sim:wanted}" >/dev/null
     fi
     # DEFCONFIG names an engine envelope (engine configs/<name>_defconfig); the
     # app Makefile generates the engine's configuration header from it. Unset,
@@ -119,9 +125,14 @@ build_kernel() {
     make -j"$(nproc)" WANTED_DEFCONFIG="${DEFCONFIG:+${DEFCONFIG}_defconfig}"
 }
 
-# Stage the current variant's hostfs and (re)build the kernel.
+# Stage the current variant's hostfs and (re)build the kernel. Only the sim has
+# a host filesystem to stage onto; hardware boards bake the supervisor into a
+# boot ROMFS instead, and staging for them would fail on a missing simroot for
+# an image nothing reads.
 build() {
-    stage_hostfs
+    case "${NUTTX_BOARD:-sim:wanted}" in
+        sim:*) stage_hostfs ;;
+    esac
     build_kernel
 }
 

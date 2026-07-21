@@ -72,10 +72,10 @@ profile_include() { # $1 = profile name -> stdout: dir holding wanted-autoconf.h
     [ -f "$d/wanted-autoconf.h" ] && { echo "$d"; return; }
     mkdir -p "$d"
     ( cd "$ENGINE_DIR" && PYTHONPATH="$KCL" KCONFIG_CONFIG="$d/.config" \
-        python3 "$KCL/defconfig.py" --kconfig Kconfig "configs/$1_defconfig" \
+        python3 "$KCL/defconfig.py" --kconfig Kconfig.engine "configs/$1_defconfig" \
         >/dev/null 2>&1
       PYTHONPATH="$KCL" KCONFIG_CONFIG="$d/.config" \
-        python3 "$KCL/genconfig.py" --header-path "$d/wanted-autoconf.h" Kconfig \
+        python3 "$KCL/genconfig.py" --header-path "$d/wanted-autoconf.h" Kconfig.engine \
         >/dev/null 2>&1 )
     echo "$d"
 }

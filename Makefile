@@ -66,17 +66,24 @@ menuconfig: ## edit the build configuration in the terminal UI [BUILD_DIR=...]
 	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src $(ENVS) \
 	    -e TERM="$${TERM:-xterm}" --entrypoint=just $(IMAGE) menuconfig
 
-openwrt-package: ## build a production OpenWRT .ipk — pass SDK=<url-or-dir>
-	$(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src \
-	    --entrypoint=just $(IMAGE) openwrt-package "$(SDK)"
+# Target-specific BUILD_DIR: $(ENVS) is lazily expanded, so each of these gets
+# its own .config and none of them disturbs the default (linux) build dir.
+openwrt-package: BUILD_DIR = build-openwrt
+openwrt-package: ## build a production OpenWRT .ipk [SDK=aarch64|mipsel|url|dir]
+	$(JUST) target openwrt
+	$(if $(SDK),$(JUST) setconfig 'WANTED_TARGET_OPENWRT_SDK="$(SDK)"',)
+	$(JUST) build
 
 wsh-shell: supervisor ## build wsh and open the interactive wsh prompt on Linux (wanted-cli)
-	$(JUST) wsh
+	$(JUST) supervisor-variant wsh
+	$(JUST) build
 	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh $(IMAGE) -c \
 	    './$(BUILD_DIR)/cmd/wanted-cli ./configs/example_config_wsh.json'
 
+nuttx-shell: BUILD_DIR = build-nuttx-cfg
 nuttx-shell: ## build the wsh sim and drop into the interactive wsh prompt
-	$(JUST) nuttx-build
+	$(JUST) target nuttx
+	$(JUST) build
 	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src/build-nuttx/simroot \
 	    --entrypoint=/bin/sh $(IMAGE) -c '/src/third_party/nuttx/nuttx'
 
@@ -111,9 +118,13 @@ ESP32_BAUD  ?= 460800
 # mapped back to the invoking host user under rootless podman.
 ESP32_JUST = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=just $(ESP32_IMAGE)
 
+esp32: BUILD_DIR = build-esp32-cfg
+esp32: DEFCONFIG = esp32-nuttx
 esp32: supervisor ## cross-build the ESP32 firmware -> third_party/nuttx/nuttx.bin
+	$(JUST) target nuttx
+	$(JUST) setconfig 'WANTED_TARGET_NUTTX_BOARD="esp32-devkitc:wanted"'
 	$(JUST) nuttx-deps
-	$(ESP32_JUST) esp32-build
+	$(ESP32_JUST) build
 
 esp32-flash: ## flash third_party/nuttx/nuttx.bin to the board [ESP32_PORT=/dev/ttyUSB0]
 	esptool.py -c esp32 -p $(ESP32_PORT) -b $(ESP32_BAUD) --before default_reset \

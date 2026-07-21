@@ -106,7 +106,8 @@ build-clang:
 build-wsh:
   <<: *build_defs
   script:
-    - just wsh
+    - just supervisor-variant wsh
+    - just build
   needs:
     - build-gcc
   cache:

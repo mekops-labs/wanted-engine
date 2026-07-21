@@ -1,0 +1,89 @@
+# Build orchestration: which target `just build` builds, and that target's
+# inputs. Read by the build system from .config; deliberately absent from
+# wanted-autoconf.h, so nothing here can be tested by engine code.
+#
+# Boards and SDKs are pass-through strings, never enumerated. `sim:wanted`
+# reaches configure.sh verbatim and the engine holds no opinion about which
+# boards exist — modelling them here would be a second source of truth that
+# drifts from the vendor tree, which is the failure this migration removed.
+
+menu "Target"
+
+choice
+	prompt "Build target"
+	default WANTED_TARGET_LINUX
+	help
+	  Which target `just build` builds. Each carries its own inputs below.
+
+	  Every target keeps its own build directory and therefore its own
+	  .config, so two can be configured side by side without either
+	  disturbing the other.
+
+config WANTED_TARGET_LINUX
+	bool "linux — host engine + CLI"
+	help
+	  The hosted build: engine, CLI, unit suite, lint and coverage. What CI
+	  and the devcontainer build by default.
+
+config WANTED_TARGET_NUTTX
+	bool "nuttx — NuttX built-in application"
+	help
+	  Cross-builds the engine as a NuttX app, for the simulator or real
+	  hardware depending on the board below.
+
+config WANTED_TARGET_ESP_IDF
+	bool "esp-idf — ESP-IDF firmware"
+	help
+	  Builds firmware through idf.py, with the engine as an ESP-IDF
+	  component.
+
+config WANTED_TARGET_OPENWRT
+	bool "openwrt — OpenWrt package"
+	help
+	  Cross-builds an .ipk from an OpenWrt SDK.
+
+endchoice
+
+# Derived from the choice, no prompt: one string for the build to switch on,
+# rather than every consumer re-deriving it from four booleans. A prompted
+# string would freeze at its user value and go stale the moment the choice
+# changed — the same trap WANTED_SUPERVISOR_IMAGE avoids.
+config WANTED_TARGET
+	string
+	default "linux" if WANTED_TARGET_LINUX
+	default "nuttx" if WANTED_TARGET_NUTTX
+	default "esp-idf" if WANTED_TARGET_ESP_IDF
+	default "openwrt" if WANTED_TARGET_OPENWRT
+
+config WANTED_TARGET_NUTTX_BOARD
+	string "NuttX board configuration"
+	depends on WANTED_TARGET_NUTTX
+	default "sim:wanted"
+	help
+	  Passed to NuttX's tools/configure.sh unchanged, in its own
+	  <board>:<config> notation — sim:wanted for the simulator,
+	  esp32-devkitc:wanted for the classic ESP32.
+
+	  Hardware boards need a toolchain the host build image does not carry;
+	  the Makefile selects that container.
+
+config WANTED_TARGET_ESP_IDF_CHIP
+	string "ESP-IDF chip target"
+	depends on WANTED_TARGET_ESP_IDF
+	default "esp32s3"
+	help
+	  Passed to `idf.py set-target` unchanged.
+
+config WANTED_TARGET_OPENWRT_SDK
+	string "OpenWrt SDK"
+	depends on WANTED_TARGET_OPENWRT
+	default "aarch64"
+	help
+	  One of the architecture keywords packaging/openwrt/sdk-env.sh resolves
+	  to a generic SDK — aarch64 (armsr/armv8) or mipsel (malta/le) — or an
+	  explicit SDK URL or local directory for any other target.
+
+	  The generic SDKs are board-independent on purpose: the engine is built
+	  for an architecture, not for a particular router.
+
+endmenu
