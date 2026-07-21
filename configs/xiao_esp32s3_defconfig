@@ -1,11 +1,18 @@
 # XIAO ESP32-S3 (ESP-IDF, octal PSRAM). The host-managed WASM heap is off —
 # the fragmented PSRAM allocator serves the runtime better than a fixed pool.
+#
+# Linear memory is capped at 2 pages (128 KiB) per wapp so a full house fits
+# the 8 MB PSRAM: 20 slots x ~289 KiB is ~5.7 MB. The cap is deliberately
+# below the arithmetic ceiling (3 pages) because `make sizes` excludes the
+# per-image writable module copy — one .wasm per running wapp, out of the
+# same PSRAM — and the image cache. A wapp needing more linear memory is
+# refused at load, which is the intended loud failure.
 
 CONFIG_WANTED_MAX_WAPPS=20
 CONFIG_WANTED_WASM_STACK_SIZE=65536
 CONFIG_WANTED_WASM_HEAP_SIZE=0
 CONFIG_WANTED_WASM_WORKER_STACK_SIZE=65536
-CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=16
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=2
 CONFIG_WANTED_MAX_PATH_LEN=256
 CONFIG_WANTED_MAX_DRIVERS_CNT=6
 CONFIG_WANTED_MAX_OPTIONS_SIZE=128
