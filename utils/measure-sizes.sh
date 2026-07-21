@@ -37,23 +37,43 @@ INC="-I$ENGINE_DIR/include -I$ENGINE_DIR/src/include -I$ENGINE_DIR/src/vfs \
      -I$ENGINE_DIR/vendor/cwalk/include -I$ENGINE_DIR/vendor/wamr/core/iwasm/include"
 KCL="$ENGINE_DIR/tools/kconfiglib"
 
-# Every envelope in configs/, discovered rather than listed: a new board
-# defconfig is reported the moment it is added, with nothing here to update.
-# The four capacity envelopes lead, in ascending size so the progression reads
-# top to bottom; boards follow alphabetically, each comparable against them.
-mapfile -t PROFILES < <(
-    for f in "$ENGINE_DIR"/configs/*_defconfig; do
-        n=$(basename "$f"); n=${n%_defconfig}
-        case "$n" in
-            tiny)        echo "0 $n" ;;
-            constrained) echo "1 $n" ;;
-            small)       echo "2 $n" ;;
-            big)         echo "3 $n" ;;
-            *)           echo "4 $n" ;;
-        esac
-    done | sort -k1,1 -k2,2 | cut -d" " -f2
-)
-[ "${#PROFILES[@]}" -gt 0 ] || { echo "no configs/*_defconfig found" >&2; exit 1; }
+# Two modes: the full survey, and this build dir alone — the latter is what the
+# configuration recipes run after writing a .config.
+MODE="${1:-all}"
+case "$MODE" in
+    all|current) ;;
+    *) echo "usage: measure-sizes.sh [all|current]" >&2; exit 1 ;;
+esac
+
+# The build dir's own .config, named for the dir so two stay distinguishable.
+BUILD_DIR=${BUILD_DIR:-build}
+CURRENT_CONFIG="$ENGINE_DIR/$BUILD_DIR/.config"
+CURRENT_NAME="$BUILD_DIR/.config"
+
+if [ "$MODE" = current ]; then
+    [ -f "$CURRENT_CONFIG" ] || {
+        echo "measure-sizes: no configuration at $CURRENT_NAME" >&2; exit 1; }
+    PROFILES=("$CURRENT_NAME")
+else
+    # Discovered, not listed, so a new board defconfig needs no edit here.
+    # Capacity envelopes ascending, then boards alphabetically, then this dir.
+    mapfile -t PROFILES < <(
+        for f in "$ENGINE_DIR"/configs/*_defconfig; do
+            n=$(basename "$f"); n=${n%_defconfig}
+            case "$n" in
+                tiny)        echo "0 $n" ;;
+                constrained) echo "1 $n" ;;
+                small)       echo "2 $n" ;;
+                big)         echo "3 $n" ;;
+                *)           echo "4 $n" ;;
+            esac
+        done | sort -k1,1 -k2,2 | cut -d" " -f2
+    )
+    [ "${#PROFILES[@]}" -gt 0 ] || { echo "no configs/*_defconfig found" >&2; exit 1; }
+    if [ -f "$CURRENT_CONFIG" ]; then
+        PROFILES+=("$CURRENT_NAME")
+    fi
+fi
 
 # Widest name, so the table stays aligned as board defconfigs come and go.
 NAMEW=8
@@ -68,15 +88,26 @@ trap 'rm -rf "$STUB"' EXIT
 # The engine headers include that header, so this is what makes the measured
 # limits the configured ones rather than a second copy of the numbers.
 profile_include() { # $1 = profile name -> stdout: dir holding wanted-autoconf.h
-    local d="$STUB/cfg-$1"
+    local d="$STUB/cfg-${1//\//_}"
     [ -f "$d/wanted-autoconf.h" ] && { echo "$d"; return; }
     mkdir -p "$d"
-    ( cd "$ENGINE_DIR" && PYTHONPATH="$KCL" KCONFIG_CONFIG="$d/.config" \
-        python3 "$KCL/defconfig.py" --kconfig Kconfig.engine "configs/$1_defconfig" \
-        >/dev/null 2>&1
+    ( cd "$ENGINE_DIR"
+      if [ "$1" = "$CURRENT_NAME" ]; then
+          # Already a .config; generating from Kconfig.engine drops the target
+          # half, the same narrowing every engine build does.
+          cp "$CURRENT_CONFIG" "$d/.config"
+      else
+          PYTHONPATH="$KCL" KCONFIG_CONFIG="$d/.config" \
+            python3 "$KCL/defconfig.py" --kconfig Kconfig.engine "configs/$1_defconfig" \
+            >/dev/null 2>&1
+      fi
       PYTHONPATH="$KCL" KCONFIG_CONFIG="$d/.config" \
         python3 "$KCL/genconfig.py" --header-path "$d/wanted-autoconf.h" Kconfig.engine \
         >/dev/null 2>&1 )
+    # Silenced above (kconfiglib is noisy about the narrowing), so check here:
+    # a failure would otherwise surface as an unexplained clang error.
+    [ -f "$d/wanted-autoconf.h" ] || {
+        echo "measure-sizes: could not generate a header for '$1'" >&2; exit 1; }
     echo "$d"
 }
 
@@ -126,9 +157,69 @@ human() { # bytes -> human string
         else printf "%.2f MB", b/1048576 }'
 }
 
+# Which ABI the configured target builds for. Only the build dir's .config can
+# answer it — the defconfigs carry no target, which is why the survey shows both.
+# Sets ABI_KEY (linux | nuttx | empty) and ABI_WHY; empty is a real answer, not
+# a failure, since a custom SDK URL need not name an architecture.
+ABI_KEY=""; ABI_WHY=""
+
+# Resolve an SDK argument to an ABI from an extracted SDK's toolchain triple.
+# Returns 1 when none is on disk, leaving the caller to fall back to the name.
+openwrt_sdk_abi() { # $1 = SDK keyword | URL | directory
+    local dir base tc
+    if [ -d "$1" ]; then
+        dir="$1"
+    else
+        # Same cache layout sdk-env.sh writes.
+        base="$(basename "$1")"
+        dir="$ENGINE_DIR/.openwrt-sdk/${base%.tar.*}"
+    fi
+    tc="$(ls -d "$dir"/staging_dir/toolchain-* 2>/dev/null | head -1)" || return 1
+    [ -n "$tc" ] || return 1
+    case "$(basename "$tc")" in
+        *aarch64*)       ABI_KEY=linux ;;
+        *mips*|*arm_*|*riscv32*|*i386*) ABI_KEY=nuttx ;;
+        *x86_64*)        ABI_KEY=linux ;;
+        *) return 1 ;;
+    esac
+    ABI_WHY="OpenWrt SDK $(basename "$tc") — $([ "$ABI_KEY" = linux ] && echo 64-bit || echo 32-bit)"
+    return 0
+}
+
+detect_abi() { # $1 = .config path
+    local cfg="$1" target board sdk
+    target=$(sed -nE 's/^CONFIG_WANTED_TARGET="(.*)"$/\1/p' "$cfg")
+    case "$target" in
+        linux)
+            ABI_KEY=linux; ABI_WHY="target linux — the build host" ;;
+        esp-idf)
+            ABI_KEY=nuttx; ABI_WHY="target esp-idf — 32-bit xtensa/riscv" ;;
+        nuttx)
+            board=$(sed -nE 's/^CONFIG_WANTED_TARGET_NUTTX_BOARD="(.*)"$/\1/p' "$cfg")
+            case "$board" in
+                sim:*)          ABI_KEY=linux; ABI_WHY="NuttX board '$board' — the sim runs on the host" ;;
+                esp32*|rp2350*) ABI_KEY=nuttx; ABI_WHY="NuttX board '$board' — 32-bit" ;;
+                *)              ABI_KEY="";    ABI_WHY="NuttX board '$board' — architecture not recognised" ;;
+            esac ;;
+        openwrt)
+            sdk=$(sed -nE 's/^CONFIG_WANTED_TARGET_OPENWRT_SDK="(.*)"$/\1/p' "$cfg")
+            # The toolchain triple is the only answer that is not a guess.
+            # Cache is read, never fetched: this runs after every menuconfig.
+            if ! openwrt_sdk_abi "$sdk"; then
+                case "$sdk" in
+                    aarch64|*aarch64*|*armv8*)  ABI_KEY=linux; ABI_WHY="OpenWrt SDK '$sdk' — 64-bit (from the name)" ;;
+                    mipsel|*mipsel*|*malta*)    ABI_KEY=nuttx; ABI_WHY="OpenWrt SDK '$sdk' — 32-bit (from the name)" ;;
+                    *)                          ABI_KEY="";    ABI_WHY="OpenWrt SDK '$sdk' — architecture not in the name, and no extracted SDK to ask" ;;
+                esac
+            fi ;;
+        *)  ABI_KEY=""; ABI_WHY="no target selected" ;;
+    esac
+}
+
 report_abi() { # $1 = abi label, $2 = abi key
     local abi="$2"
-    measure "$abi" constrained
+    # Pointer width is an ABI property, so any reported configuration answers it.
+    measure "$abi" "${PROFILES[0]}"
     printf '\n=== ABI: %s (sizeof(void*)=%s, sizeof(size_t)=%s) ===\n' \
         "$1" "${M[ptr]}" "${M[size_t]}"
     printf "%-${NAMEW}s %4s %9s %9s %10s %11s %10s %12s\n" \
@@ -156,11 +247,29 @@ report_abi() { # $1 = abi label, $2 = abi key
     done
 }
 
-echo "WANTED engine memory footprint by resource envelope"
-echo "structs    = exact per-wapp engine slot structures (wapp_t, vfs/wasi/wamr ctx, log ring)"
-echo "wapp-mem   = per-wapp runtime memory: WASM stack + WASM app heap + worker native stack + ~16 KiB WAMR overhead (approx)"
-echo "max-linear = CONFIG_WANTED_WASM_MAX_MEMORY_PAGES x 64 KiB — the per-wapp linear-memory ceiling (unbounded = no cap)"
-echo "per-wapp   = structs + wapp-mem + max-linear;  worst case = engine overhead + MAX_WAPPS x per-wapp"
-echo "Excludes the per-image writable module copy."
+if [ "$MODE" = current ]; then
+    # Run after every configuration change, so it stays short.
+    echo "WANTED engine memory footprint for $CURRENT_NAME"
+    detect_abi "$CURRENT_CONFIG"
+    if [ -n "$ABI_KEY" ]; then
+        echo "$ABI_WHY"
+        case "$ABI_KEY" in
+            linux) report_abi "linux  (LP64)"  linux ;;
+            nuttx) report_abi "nuttx  (ILP32)" nuttx ;;
+        esac
+        exit 0
+    fi
+    echo "$ABI_WHY — showing both ABIs"
+else
+    echo "WANTED engine memory footprint by resource envelope"
+    echo "structs    = exact per-wapp engine slot structures (wapp_t, vfs/wasi/wamr ctx, log ring)"
+    echo "wapp-mem   = per-wapp runtime memory: WASM stack + WASM app heap + worker native stack + ~16 KiB WAMR overhead (approx)"
+    echo "max-linear = CONFIG_WANTED_WASM_MAX_MEMORY_PAGES x 64 KiB — the per-wapp linear-memory ceiling (unbounded = no cap)"
+    echo "per-wapp   = structs + wapp-mem + max-linear;  worst case = engine overhead + MAX_WAPPS x per-wapp"
+    echo "Excludes the per-image writable module copy."
+    if [ ! -f "$CURRENT_CONFIG" ]; then
+        echo "($CURRENT_NAME not present — configure a build dir to see it reported here)"
+    fi
+fi
 report_abi "linux  (LP64)"  linux
 report_abi "nuttx  (ILP32)" nuttx

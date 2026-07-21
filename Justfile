@@ -77,6 +77,7 @@ _cfg sym:
 menuconfig:
     mkdir -p {{build_dir}}
     {{kconfig}} python3 {{kcl}}/menuconfig.py Kconfig
+    @just sizes current
 
 # Write the minimal defconfig for this build dir's .config to configs/<name>.
 savedefconfig name:
@@ -88,11 +89,14 @@ defconfig name:
     mkdir -p {{build_dir}}
     {{kconfig}} python3 {{kcl}}/defconfig.py --kconfig Kconfig \
         configs/{{name}}_defconfig
+    @just sizes current
 
 # Bring this build dir's .config forward over Kconfig edits (new symbols take
 # their default instead of silently reading as n).
 olddefconfig:
+    mkdir -p {{build_dir}}
     {{kconfig}} python3 {{kcl}}/olddefconfig.py Kconfig
+    @just sizes current
 
 # Select the supervisor image for this build dir (sheriff | wsh | selftest)
 # without disturbing the rest of its configuration.
