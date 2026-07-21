@@ -40,7 +40,7 @@ WAPP_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help shell wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync openwrt-package FORCE
+.PHONY: help shell menuconfig wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync openwrt-package FORCE
 
 # Catch-all: forward any goal without an explicit rule below to `just` in the
 # container. FORCE defeats make's "up to date" check so a goal that matches an
@@ -58,6 +58,13 @@ Makefile: ;
 
 shell: ## open an interactive shell in the build container
 	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint="" $(IMAGE) bash
+
+# Kconfig's TUI needs a terminal: -it for the tty and TERM so curses can find a
+# terminfo entry. The catch-all below gives neither, so this cannot be left to
+# it. The other configuration recipes are non-interactive and can.
+menuconfig: ## edit the build configuration in the terminal UI [BUILD_DIR=...]
+	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src $(ENVS) \
+	    -e TERM="$${TERM:-xterm}" --entrypoint=just $(IMAGE) menuconfig
 
 openwrt-package: ## build a production OpenWRT .ipk — pass SDK=<url-or-dir>
 	$(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src \
