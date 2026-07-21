@@ -1,6 +1,6 @@
 #!/bin/bash
-# Report the WANTED engine's per-wapp and fixed memory footprint for each
-# resource envelope, on both the host (LP64) and the 32-bit embedded (ILP32) ABI.
+# Report the WANTED engine's per-wapp and fixed memory footprint for every
+# defconfig in configs/, on both the host (LP64) and 32-bit embedded (ILP32) ABI.
 #
 # Runs in the build container (clang + readelf); see `make sizes`. The figures
 # come from a compile-only build of utils/measure_structs.c — no program is run
@@ -35,8 +35,29 @@ ENGINE_DIR=${ENGINE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
 SRC="$ENGINE_DIR/utils/measure_structs.c"
 INC="-I$ENGINE_DIR/include -I$ENGINE_DIR/src/include -I$ENGINE_DIR/src/vfs \
      -I$ENGINE_DIR/vendor/cwalk/include -I$ENGINE_DIR/vendor/wamr/core/iwasm/include"
-PROFILES=(tiny constrained small big)
 KCL="$ENGINE_DIR/tools/kconfiglib"
+
+# Every envelope in configs/, discovered rather than listed: a new board
+# defconfig is reported the moment it is added, with nothing here to update.
+# The four capacity envelopes lead, in ascending size so the progression reads
+# top to bottom; boards follow alphabetically, each comparable against them.
+mapfile -t PROFILES < <(
+    for f in "$ENGINE_DIR"/configs/*_defconfig; do
+        n=$(basename "$f"); n=${n%_defconfig}
+        case "$n" in
+            tiny)        echo "0 $n" ;;
+            constrained) echo "1 $n" ;;
+            small)       echo "2 $n" ;;
+            big)         echo "3 $n" ;;
+            *)           echo "4 $n" ;;
+        esac
+    done | sort -k1,1 -k2,2 | cut -d" " -f2
+)
+[ "${#PROFILES[@]}" -gt 0 ] || { echo "no configs/*_defconfig found" >&2; exit 1; }
+
+# Widest name, so the table stays aligned as board defconfigs come and go.
+NAMEW=8
+for _p in "${PROFILES[@]}"; do [ "${#_p}" -gt "$NAMEW" ] && NAMEW=${#_p}; done
 
 # Freestanding 32-bit build needs only size_t from <stdlib.h>; stub it.
 STUB=$(mktemp -d)
@@ -100,7 +121,7 @@ report_abi() { # $1 = abi label, $2 = abi key
     measure "$abi" constrained
     printf '\n=== ABI: %s (sizeof(void*)=%s, sizeof(size_t)=%s) ===\n' \
         "$1" "${M[ptr]}" "${M[size_t]}"
-    printf '%-12s %4s %9s %9s %10s %11s %10s %12s\n' \
+    printf "%-${NAMEW}s %4s %9s %9s %10s %11s %10s %12s\n" \
         envelope MAX structs wapp-mem max-linear per-wapp overhead "worst case"
     local p struct fixed over pages lin perw linstr perwstr worststr
     for p in "${PROFILES[@]}"; do
@@ -119,7 +140,7 @@ report_abi() { # $1 = abi label, $2 = abi key
         else
             linstr="unbounded"; perwstr="unbounded"; worststr="unbounded"
         fi
-        printf '%-12s %4s %9s %9s %10s %11s %10s %12s\n' \
+        printf "%-${NAMEW}s %4s %9s %9s %10s %11s %10s %12s\n" \
             "$p" "${M[MAX_WAPPS]}" "$(human $struct)" "$(human $fixed)" \
             "$linstr" "$perwstr" "$(human $over)" "$worststr"
     done
