@@ -63,8 +63,8 @@ The ESP-IDF port also reuses `posix/socket.c` (over lwIP). A target layer (`plat
 The primary target.
 
 ```bash
-just build        # engine + CLI with the production sheriff supervisor
-just wsh          # engine with the wsh debug supervisor
+just build                                  # build the configured target
+just supervisor-variant wsh && just build   # ...with the wsh debug supervisor
 ```
 
 - **Threads** — pthreads.
@@ -81,7 +81,7 @@ A first-class, CI-gated target: the full engine running as a NuttX application o
 
 ```bash
 just nuttx-deps      # init the nuttx + nuttx-apps submodules, link the app package
-just nuttx-build     # configure + build the sim from a clean tree
+just target nuttx && just build     # configure + build the sim
 just nuttx-selftest  # run the in-WASM selftest suite on the sim
 make nuttx-shell     # boot the sim to an interactive wsh prompt (host wrapper)
 ```
@@ -89,7 +89,7 @@ make nuttx-shell     # boot the sim to an interactive wsh prompt (host wrapper)
 - **Board config** — `sim:wanted`, a native defconfig in the NuttX fork. The engine runs as the NuttX init task via `wanted_sim_main`, which `chdir`s to `/data` (so `./registry` resolves against the sim's hostfs) and powers the board off cleanly when `wanted_main` returns.
 - **Console** — raw `write(1/2)` for output.
 - **Stop mechanism** — cooperative: `PlatformWappStop` sets the WAMR terminate flag and sends `SIGUSR2` to the worker so a wapp blocked in a host call is interrupted and checks the flag on return. A per-worker `interrupted` flag bridges `clock_nanosleep`'s success-on-signal quirk (Linux reports `EINTR` directly and needs no such bridge).
-- **Submodules** — `third_party/nuttx` and `third_party/nuttx-apps` are shallow submodules pinned to the `wanted` branch of the mekops forks; `just nuttx-deps` initialises them (idempotent) and must run once before `nuttx-build`.
+- **Submodules** — `third_party/nuttx` and `third_party/nuttx-apps` are shallow submodules pinned to the `wanted` branch of the mekops forks; `just nuttx-deps` initialises them (idempotent); `just build` runs it for you on the nuttx target.
 
 **Differences from Linux.** The `sim:wanted` board routes sockets to the host through usrsock (`CONFIG_SIM_NETUSRSOCK`), so `/net` sockets reach the host network; TLS comes from the shared raw-mbedTLS layer (`CONFIG_SYSTEM_WANTED_TLS` selects `apps/crypto/mbedtls` — same no-CA-bundle caveat as ESP-IDF: encrypted but unauthenticated). Neither target's cooperative stop can pre-empt a bare native call that never checks `EINTR`.
 

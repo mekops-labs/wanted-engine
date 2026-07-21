@@ -21,10 +21,11 @@ Compile the sample wapps and the engine with the `wsh` supervisor:
 
 ```bash
 just wapps   # compile the sample wapps under wapps/ (produces wapps/hello/hello.wasm)
-just wsh     # build the engine + CLI with the wsh debug supervisor
+just supervisor-variant wsh   # select the wsh debug supervisor
+just build                    # build the engine + CLI
 ```
 
-`just wapps` compiles each sample to a `.wasm` binary. `just wsh` builds `build/cmd/wanted-cli` with `wsh` as its boot supervisor.
+`just wapps` compiles each sample to a `.wasm` binary. The two commands above build `build/cmd/wanted-cli` with `wsh` as its boot supervisor — which supervisor boots is configuration, so it is selected once and then every `just build` honours it.
 
 ## Package a wapp into the registry
 

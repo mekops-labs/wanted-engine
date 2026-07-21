@@ -97,7 +97,7 @@ rebuild with `NUTTX_CLEAN=1` and re-run before investigating further.
 **Symptom.** An engine source edit doesn't change sim behaviour.
 
 **Cause & fix.** The incremental NuttX build may keep a stale engine object;
-rebuild with `NUTTX_CLEAN=1 just nuttx-build` (or `nuttx-selftest`) to force a
+rebuild with `NUTTX_CLEAN=1 just build` (or `nuttx-selftest`) to force a
 full reconfigure. A clean sim TLS build also re-unpacks mbedTLS and needs
 `unzip` in the build image.
 
