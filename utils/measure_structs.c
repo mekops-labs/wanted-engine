@@ -3,11 +3,12 @@
 /* Resource-footprint measurement TU for the WANTED engine.
  *
  * Reports the byte size of the engine's per-wapp and fixed structures for the
- * resource limits it is compiled with, so each build profile
- * (cmake/profiles/<name>.cmake) can be annotated with an exact memory cost.
+ * resource limits it is compiled with, so each defconfig (configs/<name>_defconfig)
+ * can be annotated with an exact memory cost.
  *
- * It pulls the real engine headers, so the figures track the actual structs and
- * the active MAX_* / WASM_* limits — there is nothing to keep in sync by hand.
+ * It pulls the real engine headers and the generated wanted-autoconf.h, so the
+ * figures track the actual structs and the configured limits — there is nothing
+ * to keep in sync by hand.
  *
  * Mechanism: each measured number is emitted as the *size of a global symbol*
  * (an uninitialised char array). A compile-only build (-c) is therefore enough
@@ -15,8 +16,9 @@
  * no program is run and no target libc/runtime is required. That lets the same
  * source be compiled for the 32-bit embedded ABI with a freestanding
  * cross-target (clang -ffreestanding -target i386-...), which would otherwise
- * fail to link. utils/measure-sizes.sh drives this for every profile on both
- * the host (LP64) and 32-bit (ILP32) models; see `make sizes`.
+ * fail to link. utils/measure-sizes.sh generates a header per defconfig and
+ * drives this for both the host (LP64) and 32-bit (ILP32) models; see
+ * `make sizes`.
  */
 
 #include <stdbool.h>
@@ -36,13 +38,11 @@ struct measured_wamr_t {
     uint8_t *wasm_bytes;
 };
 
-/* Per-wapp log ring slot, mirrored from log-store.c (LOG_CAP bytes retained per
- * wapp plus the ring bookkeeping). The store reserves LOG_SLOTS == MAX_WAPPS of
- * these, one per wapp. */
-#define MEASURED_LOG_CAP 2048
+/* Per-wapp log ring slot, mirrored from log-store.c (CONFIG_WANTED_LOG_CAP bytes retained per
+ * wapp plus the ring bookkeeping). The store reserves one per wapp. */
 struct measured_log_slot_t {
     char name[WAPP_MAX_NAME_LEN];
-    char buf[MEASURED_LOG_CAP];
+    char buf[CONFIG_WANTED_LOG_CAP];
     size_t start;
     size_t len;
     uint64_t tick;
@@ -67,9 +67,14 @@ EMIT(log_slot_t, sizeof(struct measured_log_slot_t));
 /* Engine-fixed structures */
 EMIT(wantedConfig_t, sizeof(wantedConfig_t));
 
-/* Active resource limits (so the report names the profile it measured) */
-EMIT(MAX_WAPPS, MAX_WAPPS);
-EMIT(MAX_PATH_LEN, MAX_PATH_LEN);
-EMIT(WASM_STACK_SIZE, WASM_STACK_SIZE);
-EMIT(WASM_HEAP_SIZE, WASM_HEAP_SIZE);
-EMIT(WASM_WORKER_STACK_SIZE, WASM_WORKER_STACK_SIZE);
+/* Active resource limits, so the report states what it measured and the driving
+ * script needs no second source for them. The symbol keeps the short name; the
+ * value comes from the generated configuration. EMIT floors at 1, so a limit
+ * configured to 0 (an uncapped linear memory) reads back as 1 — the caller
+ * distinguishes the two, see measure-sizes.sh. */
+EMIT(MAX_WAPPS, CONFIG_WANTED_MAX_WAPPS);
+EMIT(MAX_PATH_LEN, CONFIG_WANTED_MAX_PATH_LEN);
+EMIT(WASM_STACK_SIZE, CONFIG_WANTED_WASM_STACK_SIZE);
+EMIT(WASM_HEAP_SIZE, CONFIG_WANTED_WASM_HEAP_SIZE);
+EMIT(WASM_WORKER_STACK_SIZE, CONFIG_WANTED_WASM_WORKER_STACK_SIZE);
+EMIT(WASM_MAX_MEMORY_PAGES, CONFIG_WANTED_WASM_MAX_MEMORY_PAGES);
