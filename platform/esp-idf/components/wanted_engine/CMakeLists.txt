@@ -14,6 +14,7 @@ set(core_srcs
     ${ENGINE}/src/wanted_wasm_api.c
     ${ENGINE}/src/wanted-vfs-api.c
     ${ENGINE}/src/log-store.c
+    ${ENGINE}/src/extra-drivers-none.c
 )
 
 set(vfs_srcs

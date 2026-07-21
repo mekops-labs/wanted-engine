@@ -86,6 +86,33 @@ target_include_directories(vmlib INTERFACE
 set(WANTED_SUPERVISOR_IMAGE_PATH "./wasm/supervisor/sheriff/supervisor.tar" CACHE STRING
     "Supervisor TAR image path loaded at boot")
 
+# Out-of-tree driver tree. Keeps a use-case-specific driver out of this repo
+# while still linking it statically into a target: the tree is compiled as part
+# of this build (source-level coupling, no binary ABI) and supplies
+# ExtraDriverTable(), searched after the core and platform tables.
+#
+# The tree's CMakeLists.txt must define a library target named
+# `wanted_extra_drivers`; the engine headers it needs are added to that target
+# below. With the option unset, a default ExtraDriverTable() returning NULL is
+# compiled in and the build is byte-identical to one built before this seam
+# existed.
+set(WANTED_EXTRA_DRIVERS_DIR "" CACHE PATH
+    "Out-of-tree source dir supplying ExtraDriverTable()")
+
+if (WANTED_EXTRA_DRIVERS_DIR)
+    message("-- Extra drivers: ${WANTED_EXTRA_DRIVERS_DIR}")
+    add_subdirectory(${WANTED_EXTRA_DRIVERS_DIR}
+                     ${CMAKE_BINARY_DIR}/extra-drivers)
+    target_include_directories(wanted_extra_drivers
+        PRIVATE ${CMAKE_SOURCE_DIR}/include
+        PRIVATE ${CMAKE_SOURCE_DIR}/src/include
+        PRIVATE ${CMAKE_SOURCE_DIR}/platform/include
+        PRIVATE ${WAMR_ROOT_DIR}/core/iwasm/include
+        )
+else()
+    list(APPEND sources "extra-drivers-none.c")
+endif()
+
 add_library(${project} STATIC
     ${sources}
     ${vfs-srcs}
@@ -113,6 +140,10 @@ target_link_libraries(${project}
     PRIVATE m
     )
 
+if (WANTED_EXTRA_DRIVERS_DIR)
+    target_link_libraries(${project} PRIVATE wanted_extra_drivers)
+endif()
+
 message("-- Supervisor image: ${WANTED_SUPERVISOR_IMAGE_PATH}")
 target_compile_definitions(${project} PRIVATE
     SUPERVISOR_IMAGE_PATH="${WANTED_SUPERVISOR_IMAGE_PATH}")
@@ -120,6 +151,13 @@ target_compile_definitions(${project} PRIVATE
 # Engine version string (git-derived SemVer), surfaced at /proc/wanted.
 target_compile_definitions(${project} PRIVATE
     WANTED_VERSION="${SEMVER}")
+
+# Local (AF_UNIX) transport for the 9P driver, letting an on-box driver server
+# be reached over a filesystem socket. Hosted targets only — the lwIP-based MCU
+# builds have no local socket family.
+if (WANTED_PLATFORM STREQUAL "linux")
+    target_compile_definitions(${project} PRIVATE WANTED_9P_UNIX_TRANSPORT=1)
+endif()
 
 # Add debug symbols
 target_compile_options(${project} PUBLIC -g)

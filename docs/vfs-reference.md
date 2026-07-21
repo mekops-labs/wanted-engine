@@ -80,8 +80,9 @@ configured `WASM_WORKER_STACK_SIZE` after the platform's `PTHREAD_STACK_MIN`
 floor); `max_drivers` / `max_options` size each launch-config drivers/mounts/sockets
 section and the per-entry options blob. `drivers` lists the driver names a launch
 config can request on this build — the platform-agnostic core plus the drivers
-the running platform implements (e.g. `gpio wifi` on NuttX); naming any other
-driver fails the launch with `-ENODEV`.
+the running platform implements (e.g. `gpio wifi` on NuttX) and any linked in
+from an out-of-tree tree (see the [Platform Guide](platform-guide.md)); naming
+any other driver fails the launch with `-ENODEV`.
 
 `platform` is the build target (`linux`, `nuttx`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
 
@@ -116,7 +117,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
 | `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
 | `config` | `mounts[]` | chosen `path` (e.g. `/etc/config`) | Read-only config-file injection, reachable outside `/dev`. |
-| `9p` | `mounts[]` | chosen `path` | 9P2000 client for an external FS plugin. |
+| `9p` | `mounts[]` | chosen `path` | 9P2000 client for an external FS plugin. The `options` URL is `tcp://<host>:<port>`, `udp://<host>:<port>`, or `unix://<socket-path>` for a server on the same box. |
 | `log` | `mounts[]` | chosen `path` | Read-only directory view of per-wapp captured logs. `<path>/<name>` reads wapp `<name>`'s ring-buffered output; the mount enumerates wapps with a live log slot. A `name=<wapp>` option scopes it to one wapp (default: all). Grantable independently of `/dev/wanted`. |
 | `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
 | `log` | console slot | — | Console capture: routes a wapp's stdout/stderr into its per-wapp log slot (read back via a `log` mount). |

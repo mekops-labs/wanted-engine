@@ -22,7 +22,7 @@ Every platform implements the contract in `platform/include/platform.h`. A confo
 | Random | `PlatfromGetRandom` |
 | Memory | `PlatformMemoryStats`; `PlatformExtram*` (`Malloc` / `Realloc` / `Free` / `EarlyInit`) — the external-RAM (PSRAM) heap backing the engine's large allocations (image cache, WAMR runtime) where one exists |
 | Concurrency | `PlatformMutexNew` / `Lock` / `Unlock` / `Free` |
-| Drivers | `PlatformDriverTable` — the platform's additions to the launch-config driver names (`gpio`/`wifi` on NuttX, `wifi`/`ota` on ESP-IDF, none on Linux) |
+| Drivers | `PlatformDriverTable` — the platform's additions to the launch-config driver names (`gpio`/`wifi` on NuttX, `wifi`/`ota` on ESP-IDF, none on Linux). A build may add a third table from a tree outside this repo; see [Out-of-tree drivers](#out-of-tree-drivers) |
 | Crypto | `PlatformSha256New` / `Update` / `Final` / `Free` — streaming digest behind `/dev/sha256` (software body in `posix/sha256.c`; ESP32-S3 uses the SHA peripheral; no `-ENOSYS` path). `PlatformEd25519Verify` — the one seam symbol allowed to report an absent backend (`-ENOSYS`); the `/dev/ed25519` verdict read surfaces it to the wapp. Real on Linux (OpenSSL) and NuttX (vendored `orlp/ed25519`); the ESP-IDF port still uses the dummy backend |
 | Firmware update | `PlatformOtaInit` / `Confirm` / `GetBootState` / `BeginWrite` / `Write` / `Commit` / `Rollback` — the A/B OTA seam behind `/dev/ota`; real on ESP-IDF (`esp_ota_ops`), a fixed single-slot stub elsewhere |
 | Power / process | `PlatformSetProcessArgs`, `PlatformRequestShutdown`, `PlatformRequestReboot`, `PlatformName` |
@@ -73,7 +73,7 @@ just wsh          # engine with the wsh debug supervisor
 - **TLS** — OpenSSL-backed secure sockets (`T`/`U` socket options).
 - **Memory stats** — `mallinfo2`.
 
-CMake options of note: `WANTED_PLATFORM` (the platform layer), `WANTED_SUPERVISOR_IMAGE_PATH` (compile-time supervisor image), `SECURE_SOCKETS` (TLS).
+CMake options of note: `WANTED_PLATFORM` (the platform layer), `WANTED_SUPERVISOR_IMAGE_PATH` (compile-time supervisor image), `SECURE_SOCKETS` (TLS), `WANTED_EXTRA_DRIVERS_DIR` (an out-of-tree driver tree).
 
 ## NuttX simulator
 
@@ -183,6 +183,21 @@ On Linux the fragment seeds the CMake cache; for NuttX the same values are forwa
 
 - `just sizes` reports each profile's per-wapp and worst-case memory for both the host (LP64) and 32-bit embedded (ILP32) ABIs, measured from the real engine structs, but it's just approximate value (e.g. wamr overhead is arbitrary worst case value), it doesn't actually measure the whole runtime overhead on specific hardware, using specifc compiler, just the struct sizes.
 - `just memcap` is a negative test that verifies the `WASM_MAX_MEMORY_PAGES` cap actually bounds a wapp's `memory.grow`.
+
+## Out-of-tree drivers
+
+A driver written for one deployment — a router's config store, a site-specific sensor bus — does not have to live in this repo to be linked into a target. Point the build at a source tree that supplies `ExtraDriverTable()` and its entries join the launch-config driver names:
+
+```bash
+cmake -GNinja -DWANTED_EXTRA_DRIVERS_DIR=/path/to/tree ..
+```
+
+The tree's `CMakeLists.txt` defines a library target named `wanted_extra_drivers`; the engine adds its headers to that target. The coupling is source-level — the tree is compiled as part of this build against `vfs-drivers.h`, so there is no binary ABI to keep stable, and no runtime loader. `test/extra-drivers/` is a minimal working example. With the option unset, a default `ExtraDriverTable()` returning `NULL` is compiled in.
+
+Two properties are worth stating plainly:
+
+- **The extra table is searched last** — core names first, then the platform's, then the extra tree's. A tree claiming `wanted`, `socket`, or any other core name cannot shadow it.
+- **An extra driver runs at full engine privilege.** Living outside this repo keeps it out of core review; it does not put it outside the trust boundary. A fault in it faults the engine. For a driver that should be isolated instead, run it as a 9P server process and grant the wapp a `9p` mount — `unix://<socket-path>` reaches one on the same box.
 
 ## Porting to a new platform
 
