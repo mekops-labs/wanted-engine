@@ -238,7 +238,7 @@ selftest-qemu:
     matrix:
       - ARCH: [aarch64, mipsel]
   script:
-    - just selftest-qemu-$ARCH
+    - just selftest-qemu $ARCH
 
 # Boots the sim and runs the in-WASM selftest suite asserts VFS / control
 # plane / sandbox / robustness from inside WASM, identically to Linux. Needs

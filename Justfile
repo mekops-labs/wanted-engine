@@ -17,17 +17,6 @@ cmake_extra := env_var_or_default("CMAKE_EXTRA_ARGS", "")
 # build. Change one afterwards with `just menuconfig` or `just defconfig <name>`.
 defconfig_arg := if defconfig != "" { "-DWANTED_DEFCONFIG=" + defconfig } else { "" }
 
-# OpenWrt SDKs for the cross-architecture lanes. Deliberately *generic* targets
-# rather than any specific board: armsr ("ARM SystemReady") and malta (the QEMU
-# reference board) are OpenWrt's board-independent targets, so the lane proves
-# the architecture rather than one router. Both come from the same release and
-# toolchain, so a difference between them is a difference in the architecture.
-openwrt_release := "24.10.0"
-sdk_base := "https://downloads.openwrt.org/releases/" + openwrt_release + "/targets"
-sdk_suffix := "_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
-sdk_aarch64 := sdk_base + "/armsr/armv8/openwrt-sdk-" + openwrt_release + "-armsr-armv8" + sdk_suffix
-sdk_mipsel := sdk_base + "/malta/le/openwrt-sdk-" + openwrt_release + "-malta-le" + sdk_suffix
-
 # First-party C/H sources (vendored deps and generated trees are excluded).
 src_dirs := "src platform cmd include"
 # clang-tidy reads flags per TU from this build's compile_commands.json.
@@ -93,18 +82,11 @@ wsh:
     just supervisor-variant wsh
     cd {{build_dir}} && cmake -GNinja {{cmake_extra}} .. && ninja
 
-# Build a production OpenWrt .ipk -> dist/. sdk = SDK URL or local SDK dir.
-# Point it at whichever target the deployment runs; the two shorthands below
-# build for the generic per-architecture targets.
+# Build a production OpenWrt .ipk -> dist/.
+# sdk = aarch64 | mipsel (the generic per-architecture SDKs), an SDK URL, or a
+# local SDK dir. Point it at whichever target the deployment runs.
 openwrt-package sdk:
     packaging/openwrt/openwrt-package.sh "{{sdk}}"
-
-# .ipk for generic 64-bit ARM / 32-bit little-endian MIPS.
-openwrt-package-aarch64:
-    packaging/openwrt/openwrt-package.sh "{{sdk_aarch64}}"
-
-openwrt-package-mipsel:
-    packaging/openwrt/openwrt-package.sh "{{sdk_mipsel}}"
 
 # --- test (run against an already-built {{build_dir}}) ---------------------
 
@@ -133,18 +115,9 @@ selftest:
     ./test/selftest.sh ./{{build_dir}}/cmd/wanted-cli
 
 # Run the in-WASM selftest suite against a cross-built engine under qemu.
-# sdk = OpenWrt SDK URL or local SDK dir; the two shorthands below pin the
-# generic per-architecture SDKs. The SDK is cached under .openwrt-sdk/.
+# sdk = aarch64 | mipsel | SDK URL | local SDK dir; cached under .openwrt-sdk/.
 selftest-qemu sdk:
     ./test/selftest-qemu.sh "{{sdk}}"
-
-# 64-bit ARM (armsr/armv8) — generic, not a specific board.
-selftest-qemu-aarch64:
-    ./test/selftest-qemu.sh "{{sdk_aarch64}}"
-
-# 32-bit little-endian MIPS (malta/le) — generic, not a specific board.
-selftest-qemu-mipsel:
-    ./test/selftest-qemu.sh "{{sdk_mipsel}}"
 
 # Run the system-control (poweroff/reboot/exit) checks on Linux.
 syscontrol:
@@ -256,18 +229,16 @@ lint-shell:
     find . -name '*.sh' -not -path './vendor/*' -not -path './third_party/*' -not -path './build*/*' -not -path './.openwrt-sdk/*' -print0 \
         | xargs -0 shellcheck --severity=error
 
-# Configure + build the clang build dir clang-tidy reads compile_commands.json
-# from. Idempotent: a no-op when the dir is already built (CI build-clang
-# artifact). Builds so generated headers (e.g. the supervisor config) exist.
-tidy-build:
+# clang-tidy the compiled first-party sources. Builds the clang dir first for
+# its compile_commands.json — idempotent, so it is a near no-op when that dir
+# already exists (the CI build-clang artifact), and it is what makes generated
+# headers present. The file list comes from the compile DB, so conditionally
+# built sources (ssocket.c without TLS, a deselected driver) are analysed only
+# when actually compiled. --config-file pins the root config so clang-tidy
+# never loads a vendored .clang-tidy from an included header's tree.
+tidy:
     mkdir -p {{tidy_build_dir}}
     cd {{tidy_build_dir}} && CC=clang cmake -GNinja .. && ninja
-
-# clang-tidy the compiled first-party sources. The file list is taken from the
-# compile DB so conditionally-built sources (e.g. ssocket.c without OpenSSL) are
-# analysed only when actually compiled. --config-file pins the root config so
-# clang-tidy never loads a vendored .clang-tidy from an included header's tree.
-tidy: tidy-build
     clang-tidy -p {{tidy_build_dir}} --config-file=.clang-tidy --warnings-as-errors='*' \
         $(python3 -c "import json,os; print('\n'.join(sorted({os.path.relpath(e['file']) for e in json.load(open('{{tidy_build_dir}}/compile_commands.json')) if os.path.relpath(e['file']).startswith(('src/','platform/linux/','cmd/'))})))")
 

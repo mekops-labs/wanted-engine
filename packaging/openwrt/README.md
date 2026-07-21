@@ -31,8 +31,8 @@ URL from [downloads.openwrt.org](https://downloads.openwrt.org/) (find your
 router's target/subtarget there):
 
 ```sh
-make openwrt-package-aarch64      # generic 64-bit ARM (armsr/armv8)
-make openwrt-package-mipsel       # generic 32-bit MIPS (malta/le)
+make openwrt-package SDK=aarch64   # generic 64-bit ARM (armsr/armv8)
+make openwrt-package SDK=mipsel    # generic 32-bit MIPS (malta/le)
 
 # or point it at the SDK for whichever target the deployment runs:
 make openwrt-package SDK=<sdk-url-or-dir>
