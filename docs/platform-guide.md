@@ -3,10 +3,12 @@ title: "Platform Guide"
 date: 2026-06-08T17:30:00+01:00
 weight: 70
 toc: true
-description: "Building for and porting to each target: the Platform seam, Linux, the NuttX simulator, the RP2350 and ESP32 hardware targets, and what a new port must implement."
+description: "Building for and porting to each target: how the build target is configured, the Platform seam, Linux, the NuttX simulator, the RP2350 and ESP32 hardware targets, OpenWrt, and what a new port must implement."
 ---
 
-The engine core is platform-agnostic; everything OS-specific lives behind the `Platform*` seam. This guide covers the seam, the shared POSIX core that both production targets build on, the two targets themselves, and the checklist for a new port.
+The engine core is platform-agnostic; everything OS-specific lives behind the `Platform*` seam. This guide covers the seam, the shared POSIX core the production targets build on, each target, how the build is configured, and the checklist for a new port.
+
+**Which target gets built is configuration, not a choice of recipe.** `just build` reads the target from this build directory's `.config` and dispatches — see [Target selection](#target-selection). The per-target build recipes it replaced are gone.
 
 ## The platform seam
 
@@ -73,7 +75,7 @@ just supervisor-variant wsh && just build   # ...with the wsh debug supervisor
 - **TLS** — OpenSSL-backed secure sockets (`T`/`U` socket options).
 - **Memory stats** — `mallinfo2`.
 
-CMake options of note: `WANTED_PLATFORM` (the platform layer), `WANTED_DEFCONFIG` (seed the configuration from `configs/<name>`), `SECURE_SOCKETS` (TLS), `WANTED_EXTRA_DRIVERS_DIR` (an out-of-tree driver tree). Everything else is Kconfig — see Build configuration.
+CMake options of note: `WANTED_PLATFORM` (the platform layer), `WANTED_DEFCONFIG` (seed the configuration from `configs/<name>_defconfig`), `WANTED_EXTRA_DRIVERS_DIR` (an out-of-tree driver tree). Everything else is Kconfig — see [Build configuration](#build-configuration). TLS is `CONFIG_WANTED_VFS_SOCKET_TLS`: the engine states the intent and the host supplies the backend (OpenSSL here, mbedTLS on NuttX and ESP-IDF), so a host that cannot provide one fails the build rather than silently handing back a binary whose secure sockets are rejected at launch.
 
 ## NuttX simulator
 
@@ -118,7 +120,13 @@ The reference constrained target, and the one the control-plane story is proven 
 
 ### ESP32-S3 (ESP-IDF)
 
-A native ESP-IDF port (`platform/esp-idf/`, `app_main`) — not NuttX — targeting the ESP32-S3 (e.g. S3R8, octal PSRAM), 8 MB flash. Built with `idf.py` from `platform/esp-idf/project/`, so it is not wired into this Makefile's `esp32` host targets (those are the *classic* ESP32 NuttX build below).
+A native ESP-IDF port (`platform/esp-idf/`, `app_main`) — not NuttX — targeting the ESP32-S3 (e.g. S3R8, octal PSRAM), 8 MB flash. Distinct from the *classic* ESP32 NuttX build below: same vendor, different silicon and OS.
+
+```bash
+just target esp-idf && just build   # -> platform/esp-idf/project/build/wanted-esp-idf.bin
+```
+
+Runs in the ESP-IDF toolchain image (`docker/Containerfile.esp-idf`), which is built locally rather than published. `just` must be the container *command*, not an `--entrypoint` override — the base image's entrypoint sources `export.sh`, and bypassing it leaves `idf.py` off `PATH`.
 
 - **Threads / stop** — FreeRTOS via the ESP-IDF pthread wrapper; cooperative stop (the WAMR terminate flag aborts the in-flight call).
 - **Registry / PSRAM** — flash-backed LittleFS registry (`registry_flash.c`); octal PSRAM via `extram.c`. Built with `DEFCONFIG=xiao_esp32s3` (`MAX_WAPPS=20`); measured on an S3 with 8 MB PSRAM: the supervisor plus 19 concurrent user wapps fit, the 20th `start` is rejected cleanly with `-ENOSPC`.
@@ -128,12 +136,47 @@ A native ESP-IDF port (`platform/esp-idf/`, `app_main`) — not NuttX — target
 
 ### Classic ESP32 (Waveshare ESP32 One, NuttX)
 
-Xtensa NuttX firmware via the `esp32` / `esp32-flash` host targets (board `esp32-devkitc:wanted`). Bring-up landed in engine 0.8.0: a ROMFS-boot supervisor, an in-RAM image cache, a PSRAM heap, a registry, and the `gpio` / `wifi` drivers. Distinct from the ESP32-S3 ESP-IDF port above (same vendor, different silicon and OS).
+The `nuttx` target with board `esp32-devkitc:wanted` — no separate target, just a different pass-through board string. Bring-up landed in engine 0.8.0: a ROMFS-boot supervisor, an in-RAM image cache, a PSRAM heap, a registry, and the `gpio` / `wifi` drivers.
 
 ```bash
 make esp32          # cross-build -> third_party/nuttx/nuttx.bin (xtensa toolchain image)
 make esp32-flash    # esptool over ESP32_PORT (default /dev/ttyUSB0)
 ```
+
+`make esp32` exists because the xtensa toolchain lives in its own container: the wrapper selects that image and sets the board and envelope, then runs the same `just build` inside it. Container choice is the one thing the engine's configuration cannot decide for itself.
+
+## OpenWrt
+
+Routers, built as an `.ipk` package from an OpenWrt SDK. Unlike NuttX and ESP-IDF, OpenWrt builds the engine as an **external package** — it compiles no engine sources into its own tree and shares no symbol namespace.
+
+```bash
+just target openwrt && just build    # -> dist/wanted-engine_<ver>_<arch>.ipk
+```
+
+The **OpenWrt SDK** choice picks which SDK cross-builds the package:
+
+| Choice | OpenWrt target | Architecture |
+|---|---|---|
+| `WANTED_OPENWRT_SDK_AARCH64` | `armsr/armv8` | 64-bit ARM |
+| `WANTED_OPENWRT_SDK_MIPSEL` | `malta/le` | 32-bit little-endian MIPS |
+| `WANTED_OPENWRT_SDK_CUSTOM` | any — you name it | auto-detected |
+
+**The first two are generic, board-independent SDKs on purpose** — the engine is built for an architecture, not for a particular router.
+
+For any other target, choose **custom** and give `CONFIG_WANTED_TARGET_OPENWRT_SDK_URL` either a URL to an SDK archive (`.tar.zst` / `.tar.xz`, downloaded and cached) or a path to one already extracted:
+
+```bash
+just target openwrt
+just setconfig WANTED_OPENWRT_SDK_CUSTOM=y
+just setconfig 'WANTED_TARGET_OPENWRT_SDK_URL="https://downloads.openwrt.org/releases/24.10.0/targets/ath79/generic/openwrt-sdk-24.10.0-ath79-generic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"'
+just build
+```
+
+The target, architecture, and toolchain prefix are auto-detected from the SDK's own `staging_dir` layout, so a custom SDK needs nothing else stated — which is why the engine carries no table of OpenWrt targets to fall out of date.
+
+The SDK is downloaded and cached under `.openwrt-sdk/` on first use, and OpenSSL is staged into it once (skipped when TLS is off, which is why the qemu lane below is faster). The cache is extracted with `--no-same-owner`: the tarballs carry the build farm's uid, and preserving it leaves the SDK owned by a user that does not exist locally.
+
+The same SDK toolchain backs the cross-architecture test lane — see [Testing Guide](testing-guide.md#cross-architecture-selftest-qemu). Running the suite under qemu is the cheap way to catch faults that are invisible on x86: alignment, calling convention, signal handling.
 
 ## Build configuration
 
@@ -142,13 +185,58 @@ The engine is configured through a **Kconfig** tree at the repository root, read
 Each build directory owns its own `.config`, so a debug build, a cross build, and the extra-drivers lane can differ without fighting each other:
 
 ```bash
-just menuconfig                          # edit this build dir's configuration
-just defconfig small_defconfig           # seed it from a named envelope
-DEFCONFIG=openwrt just build             # seed on first configure, then build
-just savedefconfig my_board_defconfig    # write the minimal diff back
+just menuconfig                  # edit this build dir's configuration
+just defconfig small             # seed it from a named envelope
+DEFCONFIG=openwrt just build     # seed on first configure, then build
+just savedefconfig my_board      # write the minimal diff back
 ```
 
+`DEFCONFIG` and the `defconfig` / `savedefconfig` recipes name the envelope **without** the `_defconfig` suffix; the file is `configs/<name>_defconfig`.
+
 Editing `.config` re-runs the configure step and regenerates the header, so a changed configuration cannot leave stale values compiled in.
+
+### Target selection
+
+**Which target gets built is configuration, not a choice of recipe.** The `Target` menu selects linux, nuttx, esp-idf or openwrt and carries that target's build inputs; `just build` reads it and dispatches, echoing the target before anything runs.
+
+```bash
+just target nuttx                                          # linux | nuttx | esp-idf | openwrt
+just setconfig 'WANTED_TARGET_NUTTX_BOARD="sim:wanted"'    # that target's input
+just build
+```
+
+| Target | Input | Default | Reaches |
+|---|---|---|---|
+| `linux` | — | — | cmake + ninja |
+| `nuttx` | `CONFIG_WANTED_TARGET_NUTTX_BOARD` | `sim:wanted` | NuttX `tools/configure.sh` |
+| `esp-idf` | `CONFIG_WANTED_TARGET_ESP_IDF_CHIP` | `esp32s3` | `idf.py set-target` |
+| `openwrt` | the **OpenWrt SDK** choice — see below | `aarch64` | the OpenWrt SDK packaging script |
+
+**Boards and SDKs are pass-through strings, never enumerated here.** `sim:wanted` reaches `configure.sh` verbatim and the engine holds no opinion about which boards exist — modelling them would be a second source of truth that drifts from the vendor tree. The same string selects the simulator or real hardware; what differs for hardware is the toolchain container, which the `Makefile` picks (`make esp32`, `make rp2350`).
+
+Because `.config` is per build directory, two targets can be configured side by side:
+
+```bash
+BUILD_DIR=build-mips just target openwrt
+BUILD_DIR=build-mips just setconfig WANTED_OPENWRT_SDK_MIPSEL=y
+BUILD_DIR=build-mips just build      # .ipk, while build/ stays on linux
+```
+
+The cost of configuring rather than naming the target is that a stale `.config` builds something other than what you expected. That is why the target is echoed at the top of every build.
+
+### How the tree is split
+
+One menu, three files:
+
+```
+Kconfig            top level — sources both; what `just menuconfig` opens
+├─ Kconfig.target  how to build it: target, board, SDK
+└─ Kconfig.engine  what the binary IS — host-agnostic, sourced by hosts
+```
+
+`wanted-autoconf.h` is generated from `Kconfig.engine` alone while `.config` spans the whole tree. So an SDK URL or a board string never reaches a translation unit, and no engine source can test a build-orchestration symbol; the build system reads those off `.config`, which it already parses.
+
+The split exists for the hosts. NuttX and ESP-IDF compile engine sources into their own trees and source `Kconfig.engine`, not the top level — they have answered the target question by existing, and asking again would give the build two answers. A `Target` menu in the shared file would have contradicted that.
 
 ### Resource limits
 
@@ -197,6 +285,8 @@ A board defconfig exists only where the board needs something an envelope does n
 
 A defconfig seeds a build directory that has no `.config` yet; it never overwrites an existing one, so a configuration you edited is not silently replaced by a rebuild.
 
+**Keep the target out of a defconfig.** `just savedefconfig` records whatever the build directory holds, including `CONFIG_WANTED_TARGET_*` if you changed it — but an envelope describes a capacity class, not a target, and the two are independent axes. A stray target line is harmless in practice (a host reading `Kconfig.engine` drops it silently, which is the right answer there) but it makes the file claim something it does not mean. Save envelopes from a directory left at the default target, or delete the line.
+
 ### Supervisor variant
 
 Which supervisor the engine boots is part of the configuration rather than a build flag:
@@ -209,7 +299,9 @@ The choice sets the image path. A package that installs the image elsewhere sets
 
 ### Hosts that build the engine themselves
 
-NuttX and ESP-IDF compile engine sources into their own trees. They generate the engine's header from an engine `.config`; their own Kconfig files carry only the **edges** that cross into host symbols (`depends on NET`, `select CRYPTO_MBEDTLS`). The engine's own tree must never reference a host symbol: it is also read standalone, and kconfiglib resolves an unknown symbol to `n` with at most a warning — a feature would disappear with nothing to show why.
+NuttX and ESP-IDF compile engine sources into their own trees. They read **`Kconfig.engine`**, not the top-level `Kconfig`, and generate the engine's header from an engine `.config`; their own Kconfig files carry only the **edges** that cross into host symbols (`depends on NET`, `select CRYPTO_MBEDTLS`). The engine's own tree must never reference a host symbol: it is also read standalone, and kconfiglib resolves an unknown symbol to `n` with at most a warning — a feature would disappear with nothing to show why.
+
+The host also decides what only it can know. NuttX's `CONFIG_SYSTEM_WANTED_TLS` sets the engine's `WANTED_VFS_SOCKET_TLS` for it, so a board built without mbedTLS cannot meet an engine that assumed TLS was there — rather than each board defconfig restating the answer.
 
 OpenWrt instead builds the engine as an external package and shares no symbol namespace at all. `src/include/wanted-host-guard.h` catches what a preprocessor can there — a self-contradictory configuration, or a build that never ran the Kconfig step. A missing host library still surfaces at link time.
 

@@ -13,19 +13,29 @@ This guide takes you from a clean checkout to a running wapp. It uses the `wsh` 
 - A container runtime: **Podman** (default) or **Docker**.
 - **`make`** (the host wrapper) — or nothing extra if you work inside the devcontainer.
 
-Nothing else. The toolchain (CMake, Ninja, the WASI SDK, the WAMR runtime) lives in the build container. Commands are [`just`](https://just.systems) recipes that run in that container; on a bare host the `make` wrapper runs each one for you (`make build` is `just build` in the image), so the examples below use `just` and `make <recipe>` works identically. Inside the devcontainer or CI, call `just` directly. To use Docker instead of Podman, append `RUNNER=docker` to any `make` command.
+Nothing else. The toolchain (CMake, Ninja, the WASI SDK, the WAMR runtime) lives in the build container. Commands are [`just`](https://just.systems) recipes that run in that container; on a bare host the `make` wrapper runs each one for you (`make build` is `just build` in the image), so `make <recipe>` works for any recipe below. Inside the devcontainer or CI, call `just` directly. To use Docker instead of Podman, append `RUNNER=docker` to any `make` command.
+
+The exceptions are written as `make` throughout: wasm artifacts build in a **separate** wapp-SDK container that has no `just`, so `make wapps` has no `just` equivalent.
 
 ## Build
 
 Compile the sample wapps and the engine with the `wsh` supervisor:
 
 ```bash
-just wapps   # compile the sample wapps under wapps/ (produces wapps/hello/hello.wasm)
+make wapps   # compile the sample wapps under wapps/ (produces wapps/hello/hello.wasm)
 just supervisor-variant wsh   # select the wsh debug supervisor
 just build                    # build the engine + CLI
 ```
 
-`just wapps` compiles each sample to a `.wasm` binary. The two commands above build `build/cmd/wanted-cli` with `wsh` as its boot supervisor — which supervisor boots is configuration, so it is selected once and then every `just build` honours it.
+`make wapps` compiles each sample to a `.wasm` binary — a `make` target, not a `just` recipe, because wapps build in the separate wapp-SDK container. The two commands above build `build/cmd/wanted-cli` with `wsh` as its boot supervisor — which supervisor boots is configuration, so it is selected once and then every `just build` honours it.
+
+`just build` is the only build command. It builds whichever **target** this build directory is configured for, which is linux until you change it:
+
+```bash
+just menuconfig   # Target -> linux | nuttx | esp-idf | openwrt
+```
+
+The target, its board or SDK, the supervisor, and the resource envelope all live in one Kconfig menu, so there is no separate recipe per target — see the [Platform Guide](platform-guide.md#target-selection).
 
 ## Package a wapp into the registry
 
