@@ -2,7 +2,8 @@
 # Resolve an OpenWRT SDK and export the cross-build environment for it.
 # Sourced (not executed) by openwrt-package.sh and test/selftest-qemu.sh.
 #
-# In:  SDK_ARG   — SDK URL or an already-extracted SDK directory
+# In:  SDK_ARG   — an architecture keyword (aarch64 | mipsel), an SDK URL, or
+#                  an already-extracted SDK directory
 #      REPO      — repository root
 #      STAGE_SSL — "1" to stage libopenssl into the SDK (once per SDK)
 # Out: SDK, SDK_TARGET_ROOT, OPKG_ARCH, QEMU_ARCH, plus the OPENWRT_* and
@@ -11,6 +12,20 @@
 SDK_CACHE="$REPO/.openwrt-sdk"
 
 log() { printf '\n=== %s ===\n' "$*"; }
+
+# Generic per-architecture SDKs. Deliberately board-independent targets: armsr
+# is "ARM SystemReady" and malta is the QEMU reference board, so a lane built
+# from these proves the architecture rather than one router. Same release and
+# toolchain for both, so a difference between them is a difference in the arch.
+OPENWRT_RELEASE="24.10.0"
+openwrt_sdk_url() { # $1 = target path, $2 = target slug
+    printf 'https://downloads.openwrt.org/releases/%s/targets/%s/openwrt-sdk-%s-%s_gcc-13.3.0_musl.Linux-x86_64.tar.zst' \
+        "$OPENWRT_RELEASE" "$1" "$OPENWRT_RELEASE" "$2"
+}
+case "$SDK_ARG" in
+    aarch64) SDK_ARG="$(openwrt_sdk_url armsr/armv8 armsr-armv8)" ;;
+    mipsel)  SDK_ARG="$(openwrt_sdk_url malta/le malta-le)" ;;
+esac
 
 # --- resolve the SDK (download+extract a URL, or use a directory) ---------
 if [ -d "$SDK_ARG" ]; then
