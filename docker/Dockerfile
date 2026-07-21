@@ -1,7 +1,7 @@
 FROM docker.io/library/debian:trixie-slim
 
 LABEL maintainer="mek.xgt@gmail.com"
-LABEL version="0.7.0"
+LABEL version="0.7.1"
 
 # Unversioned LLVM packages track the distro default (clang/lld/lldb 19 on
 # trixie). The host engine builds with gcc (build-essential) and this clang;
@@ -69,8 +69,10 @@ RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false upd
     rsync \
     wget \
     # qemu user-mode emulation — runs the cross-built engine on the build host,
-    # so the aarch64/mipsel selftest lanes need no router hardware.
+    # so the cross-architecture selftest lanes need no router hardware.
     qemu-user-static \
+    # OpenWrt publishes its SDKs as .tar.zst from 24.10 onward.
+    zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # Route every host compile through ccache via the masquerade dir on PATH. The

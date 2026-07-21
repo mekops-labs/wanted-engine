@@ -100,7 +100,7 @@ The supervisor image is loaded at runtime via `PlatformWappLoad` — it is **not
 | `wsh` | `wasm/supervisor/wsh/` | compiled from `wapps/wsh/` | Interactive debug shell for manual inspection. |
 | `selftest` | `wasm/supervisor/selftest/` | compiled from `wapps/selftest/` | Orchestrates the in-WASM test suite. |
 
-The image is selected by `supervisor.imagePath` in the config, falling back to the `WANTED_SUPERVISOR_IMAGE_PATH` build option. A supervisor that exits on its own is respawned; only an explicit `poweroff`/`reboot` ends the engine. The image is read once and kept mapped; `reload-supervisor` on the root `ctl` arms a re-read so a newly staged image is adopted at the next respawn, with child wapps running throughout. A staged image that cannot launch is rolled back to the compiled-in one.
+The image is selected by `supervisor.imagePath` in the config, falling back to the image the `CONFIG_WANTED_SUPERVISOR_*` choice selects. A supervisor that exits on its own is respawned; only an explicit `poweroff`/`reboot` ends the engine. The image is read once and kept mapped; `reload-supervisor` on the root `ctl` arms a re-read so a newly staged image is adopted at the next respawn, with child wapps running throughout. A staged image that cannot launch is rolled back to the compiled-in one.
 
 ## Platform abstraction
 

@@ -53,7 +53,7 @@ wanted-cli configs/example_config.json   # explicit config file
 The supervisor image is resolved in priority order:
 
 1. `supervisor.imagePath` in the config (runtime override, no rebuild).
-2. `WANTED_SUPERVISOR_IMAGE_PATH` CMake option (compile-time default).
+2. The `CONFIG_WANTED_SUPERVISOR_*` Kconfig choice (compile-time default), or `CONFIG_WANTED_SUPERVISOR_IMAGE_PATH` when a package installs the image elsewhere.
 3. `./wasm/supervisor/sheriff/supervisor.tar`.
 
 ### `supervisor.params` — launch config
@@ -165,4 +165,4 @@ A relative/empty `src` or an unrecognised token is rejected at install.
 ## See also
 
 - [Control Plane Reference](control-plane-reference.md) — the launch-config schema in full (`console` / `drivers` / `mounts` / `sockets`).
-- [Platform Guide](platform-guide.md) — `WANTED_SUPERVISOR_IMAGE_PATH` and other build options.
+- [Platform Guide](platform-guide.md) — the supervisor choice and other build configuration.

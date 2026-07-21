@@ -23,7 +23,7 @@ default:
       - stuck_or_timeout_failure
 
 image:
-  name: registry.gitlab.com/mekops/wanted/wanted-engine/build:0.7.0
+  name: registry.gitlab.com/mekops/wanted/wanted-engine/build:0.7.1
   entrypoint: [""]
 
 stages:
@@ -100,12 +100,13 @@ build-clang:
     BUILD_DIR: build-clang
     CC: clang
 
-# Build-validation for the alternate supervisor-image cmake option
-# (-DWANTED_SUPERVISOR_IMAGE_PATH). The smoke tests select the wsh image at
-# runtime via config, so they don't depend on this job — it only asserts the
-# wsh-compiled-in build still links.
+# Build-validation for the alternate supervisor variant. The smoke tests select
+# the wsh image at runtime via config, so they don't depend on this job — it
+# only asserts the wsh-selected build still links.
 build-wsh:
   <<: *build_defs
+  script:
+    - just wsh
   needs:
     - build-gcc
   cache:
@@ -119,7 +120,6 @@ build-wsh:
   variables:
     BUILD_DIR: build-wsh
     CC: gcc
-    CMAKE_EXTRA_ARGS: -DWANTED_SUPERVISOR_IMAGE_PATH=./wasm/supervisor/wsh/supervisor.tar
 
 unit-test-gcc:
   <<: *unit_defs
@@ -225,8 +225,9 @@ integration-tests:
 # The same in-WASM suite against a cross-built engine under qemu user-mode
 # emulation. Engine faults that depend on the target's calling convention,
 # alignment, or signal handling do not reproduce on x86 — this is the lane that
-# catches them without router hardware. Cross-builds in-job from the OpenWRT SDK
-# (cached under .openwrt-sdk/), so it needs no engine artifact.
+# catches them without router hardware. Cross-builds in-job from a generic
+# per-architecture OpenWrt SDK (cached under .openwrt-sdk/), so it needs no
+# engine artifact and names no specific board.
 selftest-qemu:
   stage: integration-tests
   needs:
