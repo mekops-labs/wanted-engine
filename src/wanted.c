@@ -964,8 +964,9 @@ static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
         path = SUPERVISOR_IMAGE_PATH;
         ret = PlatformWappLoad(path, w);
     }
-    if (ret < 0)
+    if (ret < 0) {
         DEBUG_TRACE("failed to load supervisor image from %s: %d", path, ret);
+    }
 
     return ret;
 }
