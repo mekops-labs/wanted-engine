@@ -22,6 +22,10 @@
             "sockets": [
                 {"name": "manager", "address": "tcps://localhost:8443"},
                 {"name": "registry", "address": "tcps://localhost:5000"}
+            ],
+            "envs": [
+                "SHERIFF_DEVICE_ID=",
+                "SHERIFF_MARSHAL_PUBKEY=0:REPLACE_WITH_64_HEX_CHARS"
             ]
         }
     }
