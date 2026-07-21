@@ -7,7 +7,7 @@
 #include <platform.h>
 
 #include "esp_heap_caps.h"
-#include "esp_spiffs.h"
+#include "esp_littlefs.h"
 
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
     size_t total = heap_caps_get_total_size(MALLOC_CAP_DEFAULT);
@@ -18,14 +18,17 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
         *heap_used = (total > freeb) ? total - freeb : 0;
 }
 
-/* Registry and volumes live on the data partition; 0 when it is unmounted. */
+/* Registry and volumes live on the "persist" littlefs partition the app mounts
+ * at boot; 0 when it is unmounted. The label must match app_main.c's. */
+#define PERSIST_PARTITION_LABEL "persist"
+
 void PlatformStorageStats(size_t *free_b, size_t *total_b) {
     size_t total = 0, used = 0;
     if (free_b)
         *free_b = 0;
     if (total_b)
         *total_b = 0;
-    if (esp_spiffs_info(NULL, &total, &used) != ESP_OK)
+    if (esp_littlefs_info(PERSIST_PARTITION_LABEL, &total, &used) != ESP_OK)
         return;
     if (total_b)
         *total_b = total;
