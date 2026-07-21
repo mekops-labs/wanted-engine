@@ -20,7 +20,7 @@ Full developer and user documentation lives in [`docs/`](docs/):
 - [VFS Reference](docs/vfs-reference.md) — every `/dev`, `/net`, `/proc`, and TarFS path.
 - [Control Plane Reference](docs/control-plane-reference.md) — the `/dev/wanted` contract: nodes, verbs, state machine.
 - [Configuration Reference](docs/configuration-reference.md) — engine JSON config schema.
-- [Platform Guide](docs/platform-guide.md) — Linux, the NuttX simulator, and the porting checklist.
+- [Platform Guide](docs/platform-guide.md) — build configuration and target selection, Linux, the NuttX simulator, hardware targets, OpenWrt, and the porting checklist.
 - [Testing Guide](docs/testing-guide.md) — the unit, in-WASM selftest, and smoke tiers.
 
 ## Architecture
@@ -40,7 +40,9 @@ See [Architecture](docs/architecture.md) for the full conceptual overview.
 
 ## Build and Run
 
-The environment is standardized via Podman/Docker. Commands are [`just`](https://just.systems) recipes that run inside the build container (`just --list` shows them all). On a bare host the root `Makefile` is a thin wrapper that runs the same recipe in the container — `make build` is just `just build` in the image — so either works. Inside the devcontainer or CI, call `just` directly.
+The environment is standardized via Podman/Docker. Commands are [`just`](https://just.systems) recipes that run inside the build container (`just --list` shows them all). On a bare host the root `Makefile` is a thin wrapper that runs the same recipe in the container — `make build` is just `just build` in the image. Inside the devcontainer or CI, call `just` directly.
+
+A few `make` targets are **not** `just` recipes: the wasm ones (`make wapps`, `make supervisor`, `make wasm`, `make sheriff`) run in the separate wapp-SDK container, and the hardware ones (`make esp32`, `make rp2350`) select a toolchain image. `make help` lists them.
 
 ```bash
 just menuconfig      # configure this build dir (Kconfig; optional)
@@ -63,7 +65,7 @@ can be configured side by side:
 
 ```bash
 BUILD_DIR=build-mips just target openwrt
-BUILD_DIR=build-mips just setconfig 'WANTED_TARGET_OPENWRT_SDK="mipsel"'
+BUILD_DIR=build-mips just setconfig WANTED_OPENWRT_SDK_MIPSEL=y
 BUILD_DIR=build-mips just build      # .ipk, while build/ stays on linux
 ```
 

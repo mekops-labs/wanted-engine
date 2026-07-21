@@ -20,10 +20,15 @@ recipes — see `README.md` for the authoritative build/test/run instructions an
 same recipe in the container. The short version:
 
 ```bash
-just build         # engine + supervisor images (Kconfig defaults; `just menuconfig` to change)
+just build         # build the configured target (Kconfig defaults; `just menuconfig` to change)
 just test          # unit + smoke suite via ctest
 just smoke-engine  # production supervisor instantiates cleanly
 ```
+
+`just build` builds whichever target this build directory is configured for —
+linux unless you changed it. Which target, which supervisor, and the resource
+envelope are all Kconfig, so there is no recipe per target; see the
+[Platform Guide](docs/platform-guide.md#target-selection).
 
 A change is ready for review once `just test` and `just smoke-engine` pass.
 

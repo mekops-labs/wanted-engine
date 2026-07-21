@@ -162,8 +162,10 @@ The engine holds no keys: the wapp supplies the public key it trusts, so key
 custody stays with the caller and the engine only runs the curve arithmetic —
 through `PlatformEd25519Verify`, which a platform backs with its crypto
 library or hardware: OpenSSL on Linux, the vendored `orlp/ed25519` on NuttX.
-On a build without a backend (Linux with `SECURE_SOCKETS=0`, or the current
-ESP-IDF port) the verdict read fails with `-ENOSYS`.
+On a build without a backend the verdict read fails with `-ENOSYS`: on Linux
+that means secure sockets deselected (`CONFIG_WANTED_VFS_SOCKET_TLS=n`, which
+is what pulls OpenSSL in), and on ESP-IDF it is the port's current state
+regardless of configuration.
 
 ### `inflate` — streaming gzip decompression device
 
