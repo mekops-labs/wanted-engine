@@ -83,6 +83,53 @@ config WANTED_VFS_WANTED
 
 endmenu
 
+menu "Supervisor"
+
+choice
+	prompt "Supervisor image"
+	default WANTED_SUPERVISOR_SHERIFF
+	help
+	  Which supervisor TAR the engine boots. Read by path, not compiled in;
+	  the choice selects the path, the image is built separately.
+
+config WANTED_SUPERVISOR_SHERIFF
+	bool "sheriff — production control-plane agent"
+	help
+	  Reconciles against a control plane and manages wapp lifecycle. Built
+	  from its own repository.
+
+config WANTED_SUPERVISOR_WSH
+	bool "wsh — interactive debug shell"
+	help
+	  Console shell for driving the control plane by hand. Development and
+	  the system-control tests, not for a deployed node.
+
+config WANTED_SUPERVISOR_SELFTEST
+	bool "selftest — in-WASM test orchestrator"
+	help
+	  Runs the functional suite from inside WASM and reports TAP. A node
+	  configured with it runs tests and exits.
+
+endchoice
+
+# Derived from the choice, no prompt: a prompted string freezes at its user
+# value, so switching the choice would leave the path stale.
+config WANTED_SUPERVISOR_IMAGE
+	string
+	default "./wasm/supervisor/sheriff/supervisor.tar" if WANTED_SUPERVISOR_SHERIFF
+	default "./wasm/supervisor/wsh/supervisor.tar" if WANTED_SUPERVISOR_WSH
+	default "./wasm/supervisor/selftest/supervisor.tar" if WANTED_SUPERVISOR_SELFTEST
+
+config WANTED_SUPERVISOR_IMAGE_PATH
+	string "Supervisor image path override"
+	default ""
+	help
+	  Absolute path to a packaged supervisor image (e.g.
+	  /usr/share/wanted/supervisor.tar). Empty means the choice above decides;
+	  this is for where the image *lives*, not which variant it is.
+
+endmenu
+
 menu "Resource limits"
 
 comment "These size static tables and per-instance WAMR allocations. Changing"

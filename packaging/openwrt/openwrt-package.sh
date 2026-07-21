@@ -17,10 +17,12 @@ STAGE_SSL=1
 log "cross-building engine (SSL) for $OPKG_ARCH"
 bdir="$REPO/build-openwrt-$OPKG_ARCH"
 rm -rf "$bdir"
+# The board defconfig carries the resource envelope, the driver selection, and
+# the packaged install path for the supervisor image.
 cmake -B "$bdir" -S "$REPO" -G Ninja \
       -DCMAKE_TOOLCHAIN_FILE="$REPO/cmake/toolchain-openwrt.cmake" \
-      -DBUILD_TESTING=OFF -C "$REPO/cmake/profiles/small.cmake" \
-      -DWANTED_SUPERVISOR_IMAGE_PATH=/usr/share/wanted/supervisor.tar
+      -DBUILD_TESTING=OFF \
+      -DWANTED_DEFCONFIG="${WANTED_DEFCONFIG:-beryl_openwrt_defconfig}"
 cmake --build "$bdir" -j"$(nproc)"
 
 # --- assemble the .ipk ----------------------------------------------------

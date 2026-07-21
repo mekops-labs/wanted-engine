@@ -17,6 +17,7 @@ Before executing any build or test command, read `README.md`. It is the authorit
 All builds run inside the standardized build container — do **not** build natively. Commands are `just` recipes (in the `Justfile`) that run inside the container; `just --list` shows them all. The root `Makefile` is a thin wrapper that runs the same recipe in the container, so on a bare host `make <recipe>` == `just <recipe>`. Inside the devcontainer or CI, call `just` directly. The container provides the host-engine toolchain (CMake, Ninja, clang/gcc). Building a wapp needs the separate wapp SDK image instead — `make wasm` / `make supervisor` / `make sheriff` dispatch there.
 
 ```bash
+just menuconfig    # edit this build dir's configuration
 just build         # supervisor TAR images + engine (sheriff supervisor)
 just wsh           # engine with the wsh debug supervisor
 just test          # unit + smoke suite via ctest
@@ -41,7 +42,7 @@ cd build && ctest -R test-tarfs --output-on-failure
 | `-DWANTED_DEBUG_TRACES=ON` | OFF | Verbose WANTED engine output |
 | `-DENABLE_CODE_COVERAGE=ON` | OFF | Gcovr coverage instrumentation |
 | `-DSECURE_SOCKETS=ON` | auto | OpenSSL TLS support |
-| `-DWANTED_SUPERVISOR_IMAGE_PATH=<path>` | sheriff tar | Compiled-in supervisor image path |
+| `-DWANTED_DEFCONFIG=<name>` | unset | Seed `.config` from `configs/<name>` on first configure |
 | `-DWANTED_EXTRA_DRIVERS_DIR=<path>` | unset | Out-of-tree source tree supplying `ExtraDriverTable()` |
 
 ## Running
@@ -194,15 +195,16 @@ This applies to all of `src/`, `platform/`, `cmd/`, and `test/`. Vendor code und
 
 - **Platform boundary is strict.** `src/` must not call OS primitives directly. All platform-specific operations go through `platform/include/` headers.
 - **VFS is the only I/O path.** Wapps interact with the outside world exclusively through VFS. Adding direct syscalls from WASM host functions bypasses isolation and is not allowed.
-- **Compile-time resource limits.** Engine-wide limits live in `src/include/wanted-config.h` (`MAX_WAPPS`, `WASM_STACK_SIZE`, `WASM_HEAP_SIZE`, `WASM_MAX_MEMORY_PAGES`, `MAX_PATH_LEN`), each `#ifndef`-guarded and overridable via `-D` or a profile (`PROFILE=constrained|small|big just build`). Driver-private limits stay local to their driver. Changing a limit resizes statically allocated structures — audit every array dimensioned by it. See the [Platform Guide](docs/platform-guide.md) and `just sizes`.
+- **Build configuration is Kconfig.** The root `Kconfig` (read by the vendored kconfiglib in `tools/kconfiglib`) generates `wanted-autoconf.h`, and every engine source compiles against it — there is no second place a value comes from. Each build dir owns its `.config`. Every symbol is prefixed `CONFIG_WANTED_` without exception: engine and host symbols reach the same translation unit on NuttX and ESP-IDF. Resource limits (`CONFIG_WANTED_MAX_WAPPS`, `..._WASM_STACK_SIZE`, …) size statically allocated structures — audit every array dimensioned by one before changing it. Driver *behavioural* knobs stay local to their driver; only values that size an allocation are configurable. See the [Platform Guide](docs/platform-guide.md) and `just sizes`.
+- **Never reference a host symbol from the engine's `Kconfig`.** It is read standalone too, and kconfiglib resolves an unknown symbol to `n` with at most a warning — the feature silently disappears. Host edges belong in that host's own Kconfig.
 - **No dynamic allocation in wapp context after init.** Memory budget is constrained on embedded targets.
 
 ## Key Constants and Status Codes
 
-Engine-wide resource limits are in `src/include/wanted-config.h` (see Architecture Constraints); other key constants in `src/include/wanted-api.h`:
+Engine-wide resource limits are Kconfig symbols (see Architecture Constraints); other key constants in `src/include/wanted-api.h`:
 
 - Wapp states: `NOT_STARTED`, `CREATED`, `STARTING`, `RUNNING`, `EXITED`, `FAILURE`
-- `MAX_WAPPS` = 3, `WASM_STACK_SIZE` = 8192, `WASM_HEAP_SIZE` = 8192, `WASM_MAX_MEMORY_PAGES` = 1, `MAX_PATH_LEN` = 256 (constrained defaults; per profile)
+- `CONFIG_WANTED_MAX_WAPPS` = 3, `CONFIG_WANTED_WASM_STACK_SIZE` = 8192, `CONFIG_WANTED_WASM_HEAP_SIZE` = 8192, `CONFIG_WANTED_WASM_MAX_MEMORY_PAGES` = 1, `CONFIG_WANTED_MAX_PATH_LEN` = 256 (Kconfig defaults; per defconfig)
 - `WAPP_MAX_NAME_LEN` = 15
 
 ## CI/CD

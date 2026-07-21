@@ -4,6 +4,23 @@ Changelog
 Unreleased
 ----------
 
+### Changed
+
+- Build configuration moved to a Kconfig tree at the repository root, read by
+  the vendored kconfiglib in `tools/`. Configuring generates
+  `wanted-autoconf.h`, which every engine source compiles against; each build
+  directory owns its own `.config`. `src/include/wanted-config.h` is gone and
+  every limit is now a `CONFIG_WANTED_*` symbol with range bounds.
+- `cmake/profiles/*.cmake` replaced by `configs/*_defconfig`, which now cover
+  boards as well as capacity envelopes. The two places that scraped a profile's
+  CMake syntax back into `-D` flags are gone.
+- VFS drivers a launch config reaches by name are selectable. Deselecting one
+  drops its source, its factory-table row and its declaration; `9p` and
+  `inflate` take the vendored c9 and uzlib with them. A minimal selection
+  removes ~31% of engine `.text`.
+- The supervisor variant (sheriff / wsh / selftest) is a configuration choice
+  rather than a build flag; `just supervisor-variant <name>` switches it.
+
 ### Added
 
 - Supervisor live update: `reload-supervisor` on the root `ctl` arms a

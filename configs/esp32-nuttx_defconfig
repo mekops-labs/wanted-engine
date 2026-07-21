@@ -1,15 +1,11 @@
 # Classic ESP32 (Waveshare ESP32 One) under NuttX.
 #
-# Worker stacks must live in internal DRAM — a stack has to stay reachable while
-# the cache is disabled for flash ops and ISRs — and internal RAM is scarce once
-# WiFi and the PSRAM-backed engine are resident. 24 KiB lets two worker stacks
-# (supervisor plus one wapp) coexist with the WiFi/net buffers; 32 KiB fits only
-# one, and the 64 KiB default does not allocate alongside WiFi at all. The WAMR
-# classic interpreter keeps the wasm operand stack separate, so 24 KiB of native
-# stack is sufficient.
+# Worker stacks must live in internal DRAM (reachable while the cache is off for
+# flash ops/ISRs), which is scarce once WiFi and the PSRAM-backed engine are
+# resident. 24 KiB fits two stacks alongside the WiFi buffers; 32 KiB fits one,
+# and the 64 KiB default does not allocate at all. The classic interpreter keeps
+# the wasm operand stack separate.
 #
-# Values are written out in full rather than minimised against the defaults,
-# so a board's envelope is readable here without cross-referencing Kconfig.
 
 CONFIG_WANTED_MAX_WAPPS=3
 CONFIG_WANTED_WASM_STACK_SIZE=8192
