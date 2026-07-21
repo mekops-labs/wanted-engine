@@ -94,6 +94,8 @@ config WANTED_VFS_WANTED
 	  without it nothing can start, stop or install a wapp at runtime.
 
 
+menu "Built-in driver options"
+
 config WANTED_PIPE_BUF_SIZE
 	int "Bytes per named pipe"
 	default 4096
@@ -117,6 +119,8 @@ config WANTED_LOG_CAP
 	range 256 65536
 	help
 	  Most-recent output kept per wapp, times WANTED_MAX_WAPPS.
+
+endmenu
 
 endmenu
 
