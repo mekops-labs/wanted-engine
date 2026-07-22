@@ -25,7 +25,7 @@
             ],
             "envs": [
                 "SHERIFF_DEVICE_ID=",
-                "SHERIFF_MARSHAL_PUBKEY=0:REPLACE_WITH_64_HEX_CHARS"
+                "SHERIFF_MARSHAL_KEY_1=REPLACE_WITH_64_HEX_CHARS"
             ]
         }
     }

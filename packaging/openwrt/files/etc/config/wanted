@@ -1,8 +1,8 @@
 # WANTED engine — deployment settings. The service stays down until manager and
-# marshal_pubkey are set.
+# at least one marshal_key are set.
 #
 #   uci set wanted.main.manager='tcps://marshal.example:8443'
-#   uci set wanted.main.marshal_pubkey='0:<64 hex chars>'
+#   uci add_list wanted.main.marshal_key='1:<64 hex chars>'
 #   uci commit wanted && /etc/init.d/wanted restart
 
 config wanted 'main'
@@ -12,6 +12,6 @@ config wanted 'main'
 	option manager ''
 	option registry ''            # optional
 
-	# [<key_id>:]<64 hex>, comma-separated. Written to identity/ on first
-	# boot and never overwritten.
-	option marshal_pubkey ''
+	# One entry per Marshal key, '<id>:<64 hex>'. Written to identity/ on
+	# first boot and never overwritten. At least one is required.
+	# list marshal_key '1:0000000000000000000000000000000000000000000000000000000000000000'

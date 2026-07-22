@@ -17,20 +17,21 @@ DATADIR=/srv/wanted
 . /usr/share/libubox/jshn.sh
 
 render_config() {
-	local device_id manager registry pubkey missing
+	local device_id manager registry keys missing key
 
 	config_load wanted
 	config_get device_id main device_id
 	config_get manager   main manager
 	config_get registry  main registry
-	config_get pubkey    main marshal_pubkey
+	# A list option comes back space-separated; each item is '<id>:<64 hex>'.
+	config_get keys      main marshal_key
 
 	[ -n "$device_id" ] || device_id=$(uci -q get system.@system[0].hostname)
 	[ -n "$device_id" ] || device_id=$(cat /proc/sys/kernel/hostname)
 
 	missing=
 	[ -n "$manager" ] || missing="$missing manager"
-	[ -n "$pubkey" ] || missing="$missing marshal_pubkey"
+	[ -n "$keys" ] || missing="$missing marshal_key"
 	if [ -n "$missing" ]; then
 		logger -t wanted -p daemon.err \
 			"not starting — unset in /etc/config/wanted:$missing"
@@ -64,7 +65,11 @@ render_config() {
 	json_close_array
 	json_add_array envs
 	json_add_string "" "SHERIFF_DEVICE_ID=$device_id"
-	json_add_string "" "SHERIFF_MARSHAL_PUBKEY=$pubkey"
+	# One env var per key, the id from the '<id>:<hex>' entry into the name.
+	# shellcheck disable=SC2086  # word-split the space-separated list on purpose
+	for key in $keys; do
+		json_add_string "" "SHERIFF_MARSHAL_KEY_${key%%:*}=${key#*:}"
+	done
 	json_close_array
 	json_select ..
 	json_select ..
