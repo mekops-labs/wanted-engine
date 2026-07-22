@@ -26,17 +26,18 @@ at every start, so a stale render cannot outlive a config change or a reboot.
 ```sh
 uci set wanted.main.manager='tcps://marshal.example:8443'
 uci set wanted.main.registry='tcps://registry.example:5000'   # optional
-uci set wanted.main.marshal_pubkey='0:<64 hex chars>'
+uci add_list wanted.main.marshal_key='1:<64 hex chars>'       # one per Marshal key
 uci set wanted.main.device_id='node-01'                       # optional; hostname otherwise
 uci commit wanted && /etc/init.d/wanted restart
 ```
 
-`manager` and `marshal_pubkey` are empty by default and the service **refuses to
-start** without them, logging which are unset — a node that cannot reach or
-verify its control plane is not worth running. `device_id` and the key reach
-Sheriff through the launch config's `envs[]`, and are written to `identity/` on
-first boot and never overwritten: fix a wrong value before first boot, or wipe
-`/srv/wanted/…/identity/`.
+`manager` and at least one `marshal_key` are empty by default and the service
+**refuses to start** without them, logging which are unset — a node that cannot
+reach or verify its control plane is not worth running. Each `marshal_key` list
+entry is `<id>:<64 hex>`; the id is the rotation key id the control plane signs
+with. `device_id` and the keys reach Sheriff through the launch config's
+`envs[]`, and are written to `identity/` on first boot and never overwritten:
+fix a wrong value before first boot, or wipe `/srv/wanted/…/identity/`.
 
 ## Supervisor resolution: built-in, upgradable
 
