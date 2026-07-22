@@ -28,6 +28,7 @@ uci set wanted.main.manager='tcps://marshal.example:8443'
 uci set wanted.main.registry='tcps://registry.example:5000'   # optional
 uci add_list wanted.main.marshal_key='1:<64 hex chars>'       # one per Marshal key
 uci set wanted.main.device_id='node-01'                       # optional; hostname otherwise
+uci set wanted.main.sync_interval='60'                        # optional; reconcile seconds
 uci commit wanted && /etc/init.d/wanted restart
 ```
 
@@ -36,8 +37,8 @@ uci commit wanted && /etc/init.d/wanted restart
 reach or verify its control plane is not worth running. Each `marshal_key` list
 entry is `<id>:<64 hex>`; the id is the rotation key id the control plane signs
 with. `device_id` and the keys reach Sheriff through the launch config's
-`envs[]`, and are written to `identity/` on first boot and never overwritten:
-fix a wrong value before first boot, or wipe `/srv/wanted/…/identity/`.
+`envs[]`, read on every boot and never stored on the device: change a value in
+UCI and restart, and it takes effect — there is no `identity/` state to wipe.
 
 ## Supervisor resolution: built-in, upgradable
 

@@ -17,12 +17,13 @@ DATADIR=/srv/wanted
 . /usr/share/libubox/jshn.sh
 
 render_config() {
-	local device_id manager registry keys missing key
+	local device_id manager registry keys interval missing key
 
 	config_load wanted
 	config_get device_id main device_id
 	config_get manager   main manager
 	config_get registry  main registry
+	config_get interval  main sync_interval
 	# A list option comes back space-separated; each item is '<id>:<64 hex>'.
 	config_get keys      main marshal_key
 
@@ -70,6 +71,7 @@ render_config() {
 	for key in $keys; do
 		json_add_string "" "SHERIFF_MARSHAL_KEY_${key%%:*}=${key#*:}"
 	done
+	[ -n "$interval" ] && json_add_string "" "SHERIFF_SYNC_INTERVAL_S=$interval"
 	json_close_array
 	json_select ..
 	json_select ..
