@@ -9,20 +9,29 @@ Unreleased
 - Build configuration moved to a Kconfig tree at the repo root (vendored kconfiglib in `tools/`); `.config` is per-build-dir, every limit is a bounded `CONFIG_WANTED_*` symbol, and `src/include/wanted-config.h` is gone.
 - `cmake/profiles/*.cmake` replaced by `configs/*_defconfig` covering boards and capacity envelopes; the CMake-syntax-to-`-D` scrapers are gone.
 - VFS drivers are Kconfig-selectable; deselecting drops source, factory row, declaration, and vendored deps (c9 for `9p`, uzlib for `inflate`). A minimal selection removes ~31% of engine `.text`.
-- Supervisor variant (sheriff / wsh / selftest) is a Kconfig choice (`just supervisor-variant <name>`).
+- Supervisor variant (sheriff / wsh / selftest) is a Kconfig choice.
+- Build target (linux / nuttx / esp-idf / openwrt) is a Kconfig choice; `just build` builds it and the per-target recipes are gone.
+- Default launch config is a Kconfig choice (`WANTED_DEFAULT_CONFIG`), shipped per target as a file, an OpenWrt conffile, or a compiled-in blob, and parsed at build time.
+- Debug traces, coverage, static-CLI linking, secure sockets (TLS), and the OpenWrt SDK (generic arch or a custom URL) are Kconfig options too.
 
 ### Added
 
-- Supervisor live update: `reload-supervisor` on the root `ctl` arms a swap applied on the next supervisor exit; child wapps keep running. Staging must be an atomic rename — in-place overwrite corrupts the current mapped image.
-- A repeatedly failing staged supervisor image is rolled back to the compiled-in one; the engine keeps serving.
-- 9P `unix://<socket-path>`: reach an on-box server over a filesystem socket, no loopback port.
-- Out-of-tree drivers via `ExtraDriverTable()` and the `WANTED_EXTRA_DRIVERS_DIR` build option. The extra table is searched after the core and platform tables, so it cannot shadow a core driver name; its entries are listed on `/proc/wanted`.
+- Every target stages a ready artifact under `dist/<target>/`.
+- OpenWrt: deployment settings (endpoints, device identity, cadence) in UCI (`/etc/config/wanted`); the service stays down until a control-plane endpoint and Marshal key are set.
+- Supervisor live update: `reload-supervisor` on the root `ctl` swaps the image at the next supervisor exit; child wapps keep running (staging is atomic-rename). A repeatedly failing staged image rolls back to the compiled-in one.
+- 9P `unix://<socket-path>`: reach an on-box server over a filesystem socket.
+- Out-of-tree drivers via `ExtraDriverTable()` / `WANTED_EXTRA_DRIVERS_DIR`, searched after the core tables so they cannot shadow a core name.
+- `make <recipe> <arg>` forwards the argument to the `just` recipe; `just sizes current` prices the configured build for its ABI.
+- Sheriff v0.3.2: env-only identity, one env var per Marshal key, configurable reconcile cadence.
 
 ### Fixed
 
-- Linux wapp stop is cooperative: `PlatformWappStop` sets the WAMR terminate flag and signals the worker with `SIGUSR2`, interrupting a blocked host call. Stopping a never-yielding wapp crashed the engine on aarch64.
-- `PlatformClockNanoSleep` on Linux propagates `clock_nanosleep`'s error, so an interrupted sleep surfaces `EINTR`.
-- 9P `Stat` copies the parsed stat out of the response callback's frame; it previously read through a pointer into a dead stack frame.
+- OpenWrt packaging builds the build dir's `.config` (supervisor variant included) instead of re-seeding a defconfig and hardcoding wsh.
+- ESP-IDF embeds the configured supervisor, not a hardcoded wsh, and packages the factory-seed images and launch-config blob at configure time.
+- ESP-IDF target builds again (`cfmakeraw` → POSIX termios, generated header on the component include path) and reports storage from the mounted littlefs, not spiffs.
+- wasi-sdk 33 compatibility: `call_indirect` table index padded.
+- Linux wapp stop is cooperative (WAMR terminate flag + `SIGUSR2`); a never-yielding wapp no longer crashes the engine on aarch64.
+- `PlatformClockNanoSleep` propagates `EINTR`; 9P `Stat` copies the parsed stat out of the dead response frame.
 
 ### Build
 
@@ -30,10 +39,10 @@ Unreleased
 
 ### Testing
 
-- `selftest-qemu`: selftest against a cross-built engine under qemu user-mode emulation (aarch64, mipsel) — architecture-specific faults without target hardware.
-- `live-update`: swaps the supervisor image under a running engine; asserts child-wapp continuity, that adoption happens only with a reload armed, and the rollback path.
-- 9P against a live server: a minimal 9P2000 server forked onto a local socket, exercising walk/open/stat/read/write for real.
-- `test-extra-drivers`: builds against a fixture out-of-tree driver tree; asserts an extra driver resolves and one claiming a core name does not shadow it.
+- `selftest-qemu`: cross-built engine under qemu user-mode (aarch64, mipsel), catching architecture-specific faults without hardware.
+- `live-update`: asserts child-wapp continuity, armed-only adoption, and rollback.
+- 9P against a live 9P2000 server over a local socket (walk/open/stat/read/write).
+- `test-extra-drivers`: an out-of-tree driver resolves and cannot shadow a core name.
 
 0.10.0 (2026-07-20)
 ------------------
