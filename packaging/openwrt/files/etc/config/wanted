@@ -11,7 +11,7 @@ config wanted 'main'
 
 	option manager ''
 	option registry ''            # optional
+	option sync_interval ''       # optional; reconcile cadence in seconds
 
-	# One entry per Marshal key, '<id>:<64 hex>'. Written to identity/ on
-	# first boot and never overwritten. At least one is required.
+	# One entry per Marshal key, '<id>:<64 hex>'. At least one is required.
 	# list marshal_key '1:0000000000000000000000000000000000000000000000000000000000000000'
