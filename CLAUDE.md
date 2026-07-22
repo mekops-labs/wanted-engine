@@ -18,8 +18,8 @@ All builds run inside the standardized build container — do **not** build nati
 
 ```bash
 just menuconfig    # edit this build dir's configuration
-just build         # supervisor TAR images + engine (sheriff supervisor)
-just wsh           # engine with the wsh debug supervisor
+just build         # build the configured target (default: linux + sheriff supervisor)
+just supervisor-variant wsh && just build   # swap in the wsh debug supervisor
 just test          # unit + smoke suite via ctest
 just smoke-engine  # production supervisor instantiates cleanly
 make shell         # interactive shell in the build container (host wrapper)
@@ -48,7 +48,7 @@ cd build && ctest -R test-tarfs --output-on-failure
 ## Running
 
 ```bash
-./build/cmd/wanted-cli                           # built-in default config
+./build/cmd/wanted-cli                           # the configured default launch config
 ./build/cmd/wanted-cli configs/example_config.json  # explicit config file
 ```
 

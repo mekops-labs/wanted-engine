@@ -13,15 +13,15 @@ The schema itself is platform-independent, but the concrete examples, defaults, 
 ## Loading order
 
 ```bash
-wanted-cli                       # compiled-in default config
+wanted-cli                       # the configured default launch config
 wanted-cli configs/example_config.json   # explicit config file
 ```
 
 1. **CLI path argument** — if given, the JSON file is read and used verbatim.
-2. **Built-in minimal default** — with no argument, the engine uses `{"system": {}}`: no privileged `/proc`, and the supervisor falls back to compiled-in defaults.
+2. **Compiled-in default** — with no argument, the engine uses the launch config selected at build time (`WANTED_DEFAULT_CONFIG`, default `configs/example_config.json`), compiled into the binary. See the [Platform Guide](platform-guide.md) for selecting it.
 3. **Compiled-in supervisor params** — when the config omits `supervisor.params`, the engine applies the defaults baked into `src/default_supervisor_cfg.json.h`: a plain-TCP control socket at `localhost:8888`, the `wanted` control plane, and a `/var/lib/sheriff` preopen.
 
-`{"system": {}}` is a valid config.
+A minimal `{"system": {}}` is a valid config.
 
 ## Top-level schema
 
