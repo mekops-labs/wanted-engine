@@ -312,40 +312,40 @@ shell-check:
     - just lint-shell
 
 # clang-tidy reads compile_commands.json from the clang build artifact.
+# Blocking: zero non-suppressed findings in first-party code.
 clang-tidy:
   stage: static
   needs:
     - build-clang
   variables:
     TIDY_BUILD_DIR: build-clang
-  allow_failure: true
   script:
     - just tidy
 
 # cppcheck parses sources itself, so it needs no build artifact.
+# Blocking: zero findings.
 cppcheck:
   stage: static
   needs: []
-  allow_failure: true
   script:
     - just cppcheck
 
 # Pattern-based C/C++ security scan (semgrep p/c ruleset).
+# Blocking: zero findings.
 semgrep:
   stage: security
   needs: []
   variables:
     GIT_SUBMODULE_STRATEGY: none
-  allow_failure: true
   script:
     - just security
 
 # CVE + secret scan of the build image definition and the working tree.
+# Blocking: see .trivyignore for the one suppressed finding.
 trivy:
   stage: security
   needs: []
   variables:
     GIT_SUBMODULE_STRATEGY: none
-  allow_failure: true
   script:
     - just scan-image

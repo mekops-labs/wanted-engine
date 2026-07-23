@@ -326,5 +326,5 @@ security:
 
 # Scan the build image definition and the working tree for CVEs and secrets.
 scan-image:
-    trivy config --severity HIGH,CRITICAL docker/Dockerfile
-    trivy fs --severity HIGH,CRITICAL --scanners vuln,secret .
+    trivy config --severity HIGH,CRITICAL --exit-code 1 docker/Dockerfile
+    trivy fs --severity HIGH,CRITICAL --scanners vuln,secret --skip-dirs vendor --skip-dirs third_party --exit-code 1 .
