@@ -8,7 +8,11 @@ _JUNIT_FAILURES=0
 _JUNIT_COUNT=0
 
 _junit_escape() {
-    sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+    # Strip ANSI escape sequences and any other byte XML 1.0 disallows in text
+    # content (console output can carry both) before the XML entity escaping.
+    sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
+        | tr -d '\000-\010\013\014\016-\037\177' \
+        | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
 # junit_run <name> -- <command...>
