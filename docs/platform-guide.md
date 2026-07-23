@@ -176,7 +176,7 @@ The target, architecture, and toolchain prefix are auto-detected from the SDK's 
 
 The SDK is downloaded and cached under `.openwrt-sdk/` on first use, and OpenSSL is staged into it once (skipped when TLS is off, which is why the qemu lane below is faster). The cache is extracted with `--no-same-owner`: the tarballs carry the build farm's uid, and preserving it leaves the SDK owned by a user that does not exist locally.
 
-The same SDK toolchain backs the cross-architecture test lane — see [Testing Guide](testing-guide.md#cross-architecture-selftest-qemu). Running the suite under qemu is the cheap way to catch faults that are invisible on x86: alignment, calling convention, signal handling.
+The same SDK toolchain backs the cross-architecture test lane — see [Testing Guide](testing-guide.md#cross-architecture-selftest-openwrt-qemu). Running the suite under qemu is the cheap way to catch faults that are invisible on x86: alignment, calling convention, signal handling.
 
 ## Build configuration
 

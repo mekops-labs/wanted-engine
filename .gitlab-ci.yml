@@ -2,19 +2,11 @@ variables:
   GIT_SUBMODULE_STRATEGY: recursive
   GIT_FETCH_EXTRA_FLAGS: --tags
   GIT_DEPTH: none
-  # The NuttX + apps submodules are large and only the sim job needs them, so
-  # exclude them from the default recursive fetch and let that job init them
-  # shallow. Other jobs still get the vendored submodules (wamr, etc.).
   GIT_SUBMODULE_PATHS: ':(exclude)third_party/nuttx :(exclude)third_party/nuttx-apps'
-  # ccache persists across pipelines via the per-job cache below. The build
-  # image routes every compile through ccache via the /usr/lib/ccache masquerade.
   CCACHE_DIR: $CI_PROJECT_DIR/.ccache
   CCACHE_BASEDIR: $CI_PROJECT_DIR
   CCACHE_MAXSIZE: "500M"
 
-# Retry on transient runner infrastructure failures (e.g. DNS flakiness when
-# pulling the build image). runner_system_failure covers the "connection refused
-# on [::1]:53" DNS errors seen on ganymede1.
 default:
   retry:
     max: 2
@@ -34,18 +26,12 @@ stages:
   - integration-tests
   - security
 
-
-# Per-job ccache, reused by that job across pipelines. Caches are NOT shared
-# between jobs on purpose: ccache keys on the compiler and flags, so gcc/clang/
-# coverage entries are mutually incompatible, and parallel build jobs sharing
-# one key would only race to overwrite it. The masquerade (image PATH) is what
-# routes both the cmake builds and the NuttX kbuild through ccache.
 .ccache_cache: &ccache_cache
   key: "ccache-$CI_JOB_NAME"
   paths:
     - .ccache
 
-.build_job_template: &build_defs  # Hidden yaml configuration that defines an anchor named 'job_configuration'
+.build_job_template: &build_defs
   stage: build
   cache:
     *ccache_cache
@@ -68,15 +54,8 @@ stages:
     reports:
       junit: "$BUILD_DIR/rspec.xml"
 
-# build-nuttx shallow-inits the third_party/nuttx{,-apps} forks (excluded from
-# the global fetch above; cached across pipelines) and builds the engine as a
-# NuttX built-in over hostfs. The build image carries the sim prerequisites.
 build-nuttx:
   stage: build
-  # Force a clean clone. This job was seen running against a stale tree left in
-  # the runner's reused build dir (an empty get_sources step — no fetch/checkout
-  # logged), which then runs an outdated Justfile and fails to find the recipe.
-  # A fresh clone guarantees the working tree matches the commit under test.
   variables:
     GIT_STRATEGY: clone
   cache:
@@ -100,9 +79,6 @@ build-clang:
     BUILD_DIR: build-clang
     CC: clang
 
-# Build-validation for the alternate supervisor variant. The smoke tests select
-# the wsh image at runtime via config, so they don't depend on this job — it
-# only asserts the wsh-selected build still links.
 build-wsh:
   <<: *build_defs
   script:
@@ -111,9 +87,6 @@ build-wsh:
   needs:
     - build-gcc
   cache:
-    # Reuse build-gcc's warm cache: same gcc + flags, and the wsh image define
-    # only changes one object, so ~99% of compiles hit. pull-only so this build
-    # does not write back into build-gcc's cache.
     key: ccache-build-gcc
     paths:
       - .ccache
@@ -136,10 +109,6 @@ unit-test-clang:
   variables:
     BUILD_DIR: build-clang
 
-# Validates the out-of-tree driver seam: builds against the fixture tree in
-# test/extra-drivers and asserts an extra driver resolves while one claiming a
-# core name still loses to core. Configures its own build dir, so it consumes
-# no build artifact.
 extra-drivers:
   stage: test
   cache:
@@ -168,22 +137,6 @@ coverage:
         coverage_format: cobertura
         path: "$BUILD_DIR/coverage.xml"
 
-# End-to-end engine tests. The in-WASM selftest suite (test/selftest.sh) is the
-# canonical functional suite — it boots the selftest supervisor and asserts the
-# VFS/control-plane/sandbox/robustness behaviour from inside WASM, identically on
-# Linux and the nuttx sim. smoke-engine.sh covers what selftest does not: that the
-# production (sheriff) supervisor image instantiates cleanly. syscontrol.sh
-# covers the engine-process lifecycle the in-WASM suite cannot observe —
-# poweroff/reboot/exit and that a respawned supervisor keeps a working console.
-# The CLI comes from build-gcc, the supervisor TARs + test wapps from build-wasm.
-# Scripts assume the repo CWD is the project root, which is the CI default.
-
-# Every wasm artifact is built here, in the wapp-sdk image — the only image with
-# a wasm toolchain (wasi-sdk for the C wapps, Zig for sheriff). The engine build
-# image carries none, so the jobs below consume these artifacts instead of
-# compiling wasm themselves (WAPPS_PREBUILT=1). sheriff's submodule uses a
-# relative URL, which resolves to HTTPS + the job token in CI (SSH locally), so
-# the recursive fetch needs no key.
 build-wasm:
   stage: build
   image:
@@ -195,8 +148,6 @@ build-wasm:
     key: zig-sheriff
     paths:
       - .zig-cache
-  # The wapp-sdk image has make but no just, so drive the Makefiles directly
-  # (same targets the `wasm` / `sheriff` just recipes wrap).
   script:
     - make -C wasm/supervisor
     - make -C wapps
@@ -224,13 +175,7 @@ integration-tests:
     reports:
       junit: "$BUILD_DIR/integration-junit.xml"
 
-# The same in-WASM suite against a cross-built engine under qemu user-mode
-# emulation. Engine faults that depend on the target's calling convention,
-# alignment, or signal handling do not reproduce on x86 — this is the lane that
-# catches them without router hardware. Cross-builds in-job from a generic
-# per-architecture OpenWrt SDK (cached under .openwrt-sdk/), so it needs no
-# engine artifact and names no specific board.
-selftest-qemu:
+selftest-openwrt-qemu:
   stage: integration-tests
   needs:
     - build-wasm
@@ -240,11 +185,8 @@ selftest-qemu:
     matrix:
       - ARCH: [aarch64, mipsel]
   script:
-    - just selftest-qemu $ARCH
+    - just selftest-openwrt-qemu $ARCH
 
-# Boots the sim and runs the in-WASM selftest suite asserts VFS / control
-# plane / sandbox / robustness from inside WASM, identically to Linux. Needs
-# build-gcc for the engine and build-wasm for the supervisor TARs + test wapps.
 nuttx-selftest:
   stage: integration-tests
   needs:
@@ -263,9 +205,6 @@ nuttx-selftest:
     reports:
       junit: build-nuttx/selftest-junit.xml
 
-# the engine-process lifecycle the in-WASM suite cannot observe —
-# poweroff / reboot / exit and that a respawned supervisor keeps a working
-# console.
 nuttx-syscontrol:
   stage: integration-tests
   needs:
@@ -275,11 +214,6 @@ nuttx-syscontrol:
     - build-wasm
   variables:
     WAPPS_PREBUILT: "1"
-    # Build the sim in-job from a forced clean tree. An incremental NuttX build
-    # on a reused runner workspace can run a stale engine ELF (the kbuild does
-    # not track the engine objects), which silently tests an old binary and
-    # produces poweroff/reboot false negatives. distclean + reconfigure on every
-    # run is the only reliable guard against that.
     NUTTX_SKIP_BUILD: "0"
     NUTTX_CLEAN: "1"
   script:
@@ -293,7 +227,7 @@ nuttx-syscontrol:
 
 # --- lint / static analysis / security -----------------------------------
 
-# Blocking: zero tolerance on style drift. Needs no submodules or build.
+# Blocking: zero tolerance on style drift
 format-check:
   stage: lint
   needs: []
@@ -302,7 +236,7 @@ format-check:
   script:
     - just lint-format
 
-# Blocking: rejects shell scripts with error-level shellcheck findings.
+# Blocking: rejects shell scripts with error-level shellcheck findings
 shell-check:
   stage: lint
   needs: []
@@ -312,7 +246,7 @@ shell-check:
     - just lint-shell
 
 # clang-tidy reads compile_commands.json from the clang build artifact.
-# Blocking: zero non-suppressed findings in first-party code.
+# Blocking: zero non-suppressed findings in first-party code
 clang-tidy:
   stage: static
   needs:
@@ -322,23 +256,21 @@ clang-tidy:
   script:
     - just tidy
 
-# cppcheck parses sources itself, so it needs no build artifact.
-# Blocking: zero findings.
+# Blocking: zero findings
 cppcheck:
   stage: static
   needs: []
   script:
     - just cppcheck
 
-# Pattern-based C/C++ security scan (semgrep p/c ruleset).
-# Blocking: zero findings.
+# Blocking: zero findings
 semgrep:
   stage: security
   needs: []
   variables:
     GIT_SUBMODULE_STRATEGY: none
   script:
-    - just security
+    - just semgrep
 
 # CVE + secret scan of the build image definition and the working tree.
 # Blocking: see .trivyignore for the one suppressed finding.

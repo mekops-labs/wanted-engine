@@ -12,7 +12,7 @@ The engine has three test tiers, each catching a different class of failure. All
 |-------|---------|-------|
 | Unit (ctest) | `just test` | C unit tests: VFS, TarFS, WASI, registry, API parsing |
 | In-WASM selftest | `just selftest` / `just nuttx-selftest` | The functional + robustness scenario suite, run from inside WASM; TAP |
-| Cross-arch selftest | `just selftest-qemu aarch64` / `mipsel` | The same suite against a cross-built engine under qemu |
+| Cross-arch selftest | `just selftest-openwrt-qemu aarch64` / `mipsel` | The same suite against an OpenWRT cross-built engine under qemu |
 | Smoke | `just smoke-engine` | The production sheriff supervisor instantiates cleanly |
 | Live update | `just live-update` | The supervisor image is swapped under a running engine |
 | Integration (all of the above) | `just integration` | Runs smoke + selftest + syscontrol + live-update as one suite; emits a JUnit report |
@@ -64,12 +64,12 @@ A companion recipe, `just syscontrol` (Linux) / `just nuttx-syscontrol` (sim), r
 
 A standalone script, `test/devcheck.sh`, boots the `devcheck` wapp as the supervisor and round-trips the `sha256` / `ed25519` / `inflate` offload devices end to end (WASI → VFS → driver), powering the engine off after one pass.
 
-## Cross-architecture selftest (qemu)
+## Cross-architecture selftest (OpenWRT qemu)
 
 ```bash
-just selftest-qemu aarch64    # generic 64-bit ARM (armsr/armv8)
-just selftest-qemu mipsel     # generic 32-bit MIPS (malta/le)
-just selftest-qemu <sdk-url-or-dir>   # any OpenWRT target
+just selftest-openwrt-qemu aarch64    # generic 64-bit ARM (armsr/armv8)
+just selftest-openwrt-qemu mipsel     # generic 32-bit MIPS (malta/le)
+just selftest-openwrt-qemu <sdk-url-or-dir>   # any OpenWRT target
 ```
 
 `test/selftest-qemu.sh` cross-builds the engine from an OpenWRT SDK — the same toolchain the `.ipk` uses — and runs the selftest suite against it under qemu user-mode emulation. A board SDK stages a target rootfs to use as the loader root; a generic one ships none, so its toolchain sysroot serves instead — it carries the musl loader and libc, which is all the engine needs. The suite itself is unchanged: wapps and the supervisor are WASM loaded by path at runtime, so only the engine binary differs.
