@@ -195,6 +195,10 @@ live-update:
     BUILD_DIR=build-wsh just build
     ./test/live-update.sh ./build-wsh/cmd/wanted-cli
 
+# Run the full Linux integration suite, emitting one JUnit report.
+integration:
+    ./test/run-integration.sh
+
 # Negative test: WASM_MAX_MEMORY_PAGES bounds a wapp's linear-memory growth.
 memcap:
     ./test/memcap.sh
@@ -216,13 +220,13 @@ nuttx-deps:
 nuttx-kernel:
     ./test/nuttx-sim.sh kernel
 
-# Run the in-WASM selftest suite on the NuttX sim.
+# Run the in-WASM selftest suite on the NuttX sim (JUnit report for CI).
 nuttx-selftest:
-    ./test/nuttx-sim.sh selftest
+    ./test/run-one-junit.sh build-nuttx/selftest-junit.xml nuttx-selftest selftest -- ./test/nuttx-sim.sh selftest
 
-# Run the system-control (poweroff/reboot/exit) checks on the NuttX sim.
+# Run the system-control (poweroff/reboot/exit) checks on the NuttX sim (JUnit report for CI).
 nuttx-syscontrol:
-    ./test/nuttx-sim.sh syscontrol
+    ./test/run-one-junit.sh build-nuttx/syscontrol-junit.xml nuttx-syscontrol syscontrol -- ./test/nuttx-sim.sh syscontrol
 
 # Distclean the NuttX submodule tree.
 nuttx-clean:

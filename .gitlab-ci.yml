@@ -216,12 +216,13 @@ integration-tests:
     BUILD_DIR: build-gcc
     WAPPS_PREBUILT: "1"
   script:
-    - just smoke-engine
-    - just selftest
-    - just syscontrol
-    # Builds its own wsh engine (the supervisor image is compiled in), so it
-    # does not use BUILD_DIR above.
-    - just live-update
+    - just integration
+  artifacts:
+    when: always
+    paths:
+      - "$BUILD_DIR/integration-junit.xml"
+    reports:
+      junit: "$BUILD_DIR/integration-junit.xml"
 
 # The same in-WASM suite against a cross-built engine under qemu user-mode
 # emulation. Engine faults that depend on the target's calling convention,
@@ -255,6 +256,12 @@ nuttx-selftest:
     WAPPS_PREBUILT: "1"
   script:
     - just nuttx-selftest
+  artifacts:
+    when: always
+    paths:
+      - build-nuttx/selftest-junit.xml
+    reports:
+      junit: build-nuttx/selftest-junit.xml
 
 # the engine-process lifecycle the in-WASM suite cannot observe —
 # poweroff / reboot / exit and that a respawned supervisor keeps a working
@@ -277,6 +284,12 @@ nuttx-syscontrol:
     NUTTX_CLEAN: "1"
   script:
     - just nuttx-syscontrol
+  artifacts:
+    when: always
+    paths:
+      - build-nuttx/syscontrol-junit.xml
+    reports:
+      junit: build-nuttx/syscontrol-junit.xml
 
 # --- lint / static analysis / security -----------------------------------
 
