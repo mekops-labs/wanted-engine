@@ -219,4 +219,4 @@ GitLab CI (`.gitlab-ci.yml`) runs two compilers (gcc, clang) and a coverage buil
 - **One logical change per commit.** Do not mix unrelated areas in the same commit.
 - **No `Co-Authored-By` trailers** in commit messages.
 - **Never skip CI hooks** (`--no-verify`) or force-push `main`.
-- **Run formatting + static analysis before every commit.** Always run `just format-fix` (clang-format) first, then the static-analysis suite — at minimum `just lint` (format + shellcheck), and `just cppcheck`, `just tidy`, and `just security` for any change touching C/H sources. Fix or justify every finding before committing; these are the same checks CI runs.
+- **Run formatting + static analysis before every commit.** Always run `just format-fix` (clang-format) first, then the static-analysis suite — at minimum `just lint` (format + shellcheck), and `just cppcheck`, `just tidy`, and `just semgrep` for any change touching C/H sources. Fix or justify every finding before committing; these are the same checks CI runs.

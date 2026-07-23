@@ -181,8 +181,8 @@ smoke-engine:
 selftest:
     ./test/selftest.sh ./{{build_dir}}/cmd/wanted-cli
 
-# Run the in-WASM selftest suite against a cross-built engine under qemu. sdk = aarch64 | mipsel | SDK URL | local SDK dir; cached under .openwrt-sdk/
-selftest-qemu sdk:
+# Run the in-WASM selftest suite against an OpenWRT cross-built engine under qemu. sdk = aarch64 | mipsel | SDK URL | local SDK dir; cached under .openwrt-sdk/
+selftest-openwrt-qemu sdk:
     ./test/selftest-qemu.sh "{{sdk}}"
 
 # Run the system-control (poweroff/reboot/exit) checks on Linux.
@@ -321,7 +321,7 @@ analyze build_dir="build-analyze":
     cd {{build_dir}} && cmake -GNinja -DCMAKE_C_FLAGS="-fanalyzer" .. && ninja
 
 # Pattern-based security scan (C/C++ ruleset).
-security:
+semgrep:
     semgrep --config "p/c" --error --quiet {{src_dirs}}
 
 # Scan the build image definition and the working tree for CVEs and secrets.
