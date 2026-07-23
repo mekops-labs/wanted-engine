@@ -15,6 +15,7 @@ The engine has three test tiers, each catching a different class of failure. All
 | Cross-arch selftest | `just selftest-qemu aarch64` / `mipsel` | The same suite against a cross-built engine under qemu |
 | Smoke | `just smoke-engine` | The production sheriff supervisor instantiates cleanly |
 | Live update | `just live-update` | The supervisor image is swapped under a running engine |
+| Integration (all of the above) | `just integration` | Runs smoke + selftest + syscontrol + live-update as one suite; emits a JUnit report |
 
 ## Unit suite (ctest)
 
@@ -115,8 +116,8 @@ GitLab CI (`.gitlab-ci.yml`) runs the same `just` recipes you run locally:
 
 - **`build-gcc` / `build-clang`** — the engine under both compilers; **`build-wsh`** the debug-supervisor build; **`build-wasm`** every wasm artifact (supervisor TARs, sheriff, and the test wapps) in the wapp SDK image; **`build-nuttx`** the sim build.
 - **`unit-test-gcc` / `unit-test-clang`** — the ctest suite under each; **`coverage`** the instrumented build + report.
-- **`integration-tests`** — `smoke-engine` + `selftest` + `syscontrol` on Linux.
-- **`nuttx-selftest` / `nuttx-syscontrol`** — the same selftest and system-control suites on the NuttX sim, built in-job from a clean tree.
+- **`integration-tests`** — `just integration` runs `smoke-engine` + `selftest` + `syscontrol` + `live-update` on Linux as one suite and emits a JUnit report (`$BUILD_DIR/integration-junit.xml`), so pass/fail per check shows in the merge-request widget and pipeline Tests tab, not just the raw job log.
+- **`nuttx-selftest` / `nuttx-syscontrol`** — the same selftest and system-control suites on the NuttX sim, built in-job from a clean tree; each also emits its own single-case JUnit report (`build-nuttx/{selftest,syscontrol}-junit.xml`).
 - **Static analysis** — `format-check`, `shell-check`, `clang-tidy`, `cppcheck`, `semgrep`, `trivy`.
 
 ## See also
