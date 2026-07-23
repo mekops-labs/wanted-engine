@@ -181,9 +181,9 @@ smoke-engine:
 selftest:
     ./test/selftest.sh ./{{build_dir}}/cmd/wanted-cli
 
-# Run the in-WASM selftest suite against an OpenWRT cross-built engine under qemu. sdk = aarch64 | mipsel | SDK URL | local SDK dir; cached under .openwrt-sdk/
-selftest-openwrt-qemu sdk:
-    ./test/selftest-qemu.sh "{{sdk}}"
+# Run the in-WASM selftest suite against an OpenWRT cross-built engine under qemu (JUnit report for CI). sdk = aarch64 | mipsel | SDK URL | local SDK dir; cached under .openwrt-sdk/
+selftest-openwrt-qemu sdk report="build-openwrt-qemu-junit.xml":
+    ./test/run-one-junit.sh {{report}} selftest-openwrt-qemu {{sdk}} -- ./test/selftest-qemu.sh "{{sdk}}"
 
 # Run the system-control (poweroff/reboot/exit) checks on Linux.
 syscontrol:

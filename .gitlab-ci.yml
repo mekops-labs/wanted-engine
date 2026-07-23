@@ -185,7 +185,13 @@ selftest-openwrt-qemu:
     matrix:
       - ARCH: [aarch64, mipsel]
   script:
-    - just selftest-openwrt-qemu $ARCH
+    - just selftest-openwrt-qemu $ARCH build-openwrt-qemu-$ARCH-junit.xml
+  artifacts:
+    when: always
+    paths:
+      - build-openwrt-qemu-$ARCH-junit.xml
+    reports:
+      junit: build-openwrt-qemu-$ARCH-junit.xml
 
 nuttx-selftest:
   stage: integration-tests
