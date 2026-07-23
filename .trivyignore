@@ -1,0 +1,5 @@
+# DS-0002 (missing non-root USER): false positive. docker/entry.sh needs to
+# start as root to useradd a user matching the bind-mounted repo's host UID
+# before dropping to it via gosu — a static USER would break that. See
+# docker/README.md's UID-remap section.
+DS-0002
