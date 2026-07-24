@@ -62,14 +62,16 @@ if(NOT _cfg_rc EQUAL 0)
 endif()
 message(STATUS "Default configuration: ${WANTED_DEFAULT_CONFIG} (${_cfg_origin})")
 
-# esp_driver_usb_serial_jtag is only used (app_main.c's
-# consoleUseBlockingDriver, CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG-gated) on chips
-# with that peripheral (e.g. the S3); the classic part's UART console needs
-# it neither compiled nor required. IDF_TARGET is always defined by the time
-# a component CMakeLists.txt runs, no include needed.
+# The console blocking-driver setup (app_main.c's consoleUseBlockingDriver)
+# uses a different peripheral driver per board: USB-Serial/JTAG on the S3,
+# UART on the classic part. Require only the one this chip's console uses.
+# IDF_TARGET is always defined by the time a component CMakeLists.txt runs,
+# no include needed.
 set(_priv_requires littlefs esp_netif)
 if(IDF_TARGET STREQUAL "esp32s3")
     list(APPEND _priv_requires esp_driver_usb_serial_jtag)
+else()
+    list(APPEND _priv_requires esp_driver_uart)
 endif()
 
 idf_component_register(SRCS "app_main.c"

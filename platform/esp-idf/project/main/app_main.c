@@ -11,6 +11,9 @@
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
+#elif CONFIG_ESP_CONSOLE_UART_DEFAULT
+#include "driver/uart.h"
+#include "driver/uart_vfs.h"
 #endif
 #include "esp_littlefs.h"
 #include "esp_log.h"
@@ -342,11 +345,12 @@ static void seedWapp(const char *name, const uint8_t *start,
              (unsigned)len, w, fin);
 }
 
+/* Route the console VFS through the interrupt-driven driver so read(stdin)
+ * blocks. Without this the default VFS console is non-blocking: the
+ * supervisor shell's getline() spins returning nothing and never assembles a
+ * command line. The peripheral differs by board -- USB-Serial/JTAG on the S3,
+ * UART on the classic part -- but both need their blocking driver installed. */
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-/* Sets console to blocking USB-Serial/JTAG mode -- the default driver's
- * non-blocking writes drop output under load. Only the boards with this
- * peripheral (e.g. the S3) need it; the classic part's UART console works
- * with the default driver. */
 static void consoleUseBlockingDriver(void) {
     usb_serial_jtag_driver_config_t cfg =
         USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
@@ -354,6 +358,14 @@ static void consoleUseBlockingDriver(void) {
     ESP_LOGI(TAG, "console: usb_serial_jtag_driver_install -> %s",
              err == ESP_OK ? "OK" : esp_err_to_name(err));
     usb_serial_jtag_vfs_use_driver();
+}
+#elif CONFIG_ESP_CONSOLE_UART_DEFAULT
+static void consoleUseBlockingDriver(void) {
+    esp_err_t err =
+        uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0);
+    ESP_LOGI(TAG, "console: uart_driver_install -> %s",
+             err == ESP_OK ? "OK" : esp_err_to_name(err));
+    uart_vfs_dev_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
 }
 #endif
 
@@ -394,7 +406,7 @@ void app_main(void) {
     ESP_LOGI(TAG, "ota: init -> rc=%d", otaRc);
 
     PlatformSetProcessArgs(0, NULL);
-#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || CONFIG_ESP_CONSOLE_UART_DEFAULT
     consoleUseBlockingDriver();
 #endif
     ESP_LOGI(TAG, "starting WANTED engine (supervisor: wsh, privileged)");
