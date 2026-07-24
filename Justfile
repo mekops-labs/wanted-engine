@@ -84,7 +84,7 @@ target name: _config
     {{kconfig}} python3 {{kcl}}/setconfig.py --kconfig Kconfig \
         WANTED_TARGET_$(echo {{name}} | tr 'a-z-' 'A-Z_')=y
 
-# Set one symbol in this build dir's .config, e.g.: setconfig 'WANTED_TARGET_NUTTX_BOARD="esp32-devkitc:wanted"'
+# Set one symbol in this build dir's .config, e.g.: setconfig 'WANTED_TARGET_ESP_IDF_CHIP="esp32"'
 setconfig assignment: _config
     {{kconfig}} python3 {{kcl}}/setconfig.py --kconfig Kconfig {{assignment}}
 
