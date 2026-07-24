@@ -334,6 +334,8 @@ extern const uint8_t _binary_wifi_connect_wapp_start[];
 extern const uint8_t _binary_wifi_connect_wapp_end[];
 extern const uint8_t _binary_devcheck_wapp_start[];
 extern const uint8_t _binary_devcheck_wapp_end[];
+extern const uint8_t _binary_blink_wapp_start[];
+extern const uint8_t _binary_blink_wapp_end[];
 
 /* Factory-seeds a wapp into the flash registry. Safe to repeat every boot. */
 static void seedWapp(const char *name, const uint8_t *start,
@@ -384,6 +386,8 @@ void app_main(void) {
                  _binary_wifi_connect_wapp_end);
         seedWapp("devcheck", _binary_devcheck_wapp_start,
                  _binary_devcheck_wapp_end);
+        seedWapp("blink:1.0.0", _binary_blink_wapp_start,
+                 _binary_blink_wapp_end);
     }
 
     /* Starts lwIP's tcpip thread; required before any socket() call. */

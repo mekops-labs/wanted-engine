@@ -22,7 +22,7 @@
 # this does not relink every build.
 get_filename_component(_repo "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 set(_seed_dir "${_repo}/wasm/registry-seed")
-set(_seeds looper wifi-connect devcheck)
+set(_seeds looper wifi-connect devcheck blink)
 foreach(_seed IN LISTS _seeds)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${_repo}/wapps/${_seed}/${_seed}.wasm")
@@ -86,4 +86,5 @@ idf_component_register(SRCS "app_main.c"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/looper.wapp"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/wifi-connect.wapp"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/devcheck.wapp"
+                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/blink.wapp"
                        EMBED_TXTFILES "${_cfg_staged}")
