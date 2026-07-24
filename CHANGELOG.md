@@ -1,6 +1,22 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- Classic ESP32 (Waveshare ESP32 One, quad PSRAM, 4 MB flash) builds and runs under ESP-IDF, alongside the ESP32-S3. The ESP-IDF project is multi-chip: chip-independent settings in `sdkconfig.defaults`, per-chip differences in `sdkconfig.defaults.<chip>`. `make esp32` builds the classic part; its layout is a single factory app slot (no A/B OTA) sized for 4 MB flash. Verified on hardware: supervisor + wapps, WiFi station scan, and registry writes concurrent with a live PSRAM-resident wapp (40/40 clean).
+
+### Removed
+
+- The NuttX build path for the classic ESP32, along with its xtensa cross-toolchain image (`docker/Containerfile.esp32`) and `configs/esp32-nuttx_defconfig`. The ESP32 family is ESP-IDF; the RP2350 remains the NuttX hardware target.
+
+### Fixed
+
+- PSRAM allocations are 8-byte aligned (`heap_caps_aligned_alloc`); the raw `heap_caps_malloc` path returned insufficiently aligned pointers on the classic ESP32, which WAMR's GC heap rejects — every wapp failed to instantiate.
+- The classic ESP32's UART console installs a blocking driver, so the supervisor shell reads typed commands; the default non-blocking console left `getline()` spinning and dropped all input.
+
 0.11.0 (2026-07-22)
 -------------------
 
