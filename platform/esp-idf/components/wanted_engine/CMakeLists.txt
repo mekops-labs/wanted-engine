@@ -36,12 +36,18 @@ set(vendor_srcs
     ${ENGINE}/vendor/uzlib/src/tinflate.c
     ${ENGINE}/vendor/uzlib/src/crc32.c
     ${ENGINE}/vendor/uzlib/src/adler32.c
+    # ed25519 (orlp/ed25519, verify-only): backs PlatformEd25519Verify
+    # (crypto.c) -- no ECC peripheral / mbedTLS Ed25519 on this chip.
+    ${ENGINE}/vendor/ed25519/src/verify.c
+    ${ENGINE}/vendor/ed25519/src/sha512.c
+    ${ENGINE}/vendor/ed25519/src/ge.c
+    ${ENGINE}/vendor/ed25519/src/sc.c
+    ${ENGINE}/vendor/ed25519/src/fe.c
 )
 
 # Platform layer. Core primitives, the wapp lifecycle, the registry, sockets,
-# and the extram (PSRAM) allocator are the real ESP-IDF implementations plus
-# the shared POSIX layer; subsystems not yet ported (crypto) remain dummy
-# stubs.
+# crypto, and the extram (PSRAM) allocator are the real ESP-IDF
+# implementations plus the shared POSIX layer.
 set(platform_srcs
     # ESP-IDF core primitives + wapp lifecycle
     ${ENGINE}/platform/esp-idf/memory.c
@@ -54,6 +60,8 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/registry_flash.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-wifi.c
+    # /dev/gpio: drive a board pin (default GPIO21, the ESP32 One LED).
+    ${ENGINE}/platform/esp-idf/vfs/vfs-gpio.c
     # PlatformOta* on esp_ota_ops + the /dev/ota VFS driver.
     ${ENGINE}/platform/esp-idf/ota.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-ota.c
@@ -73,10 +81,10 @@ set(platform_srcs
     # is on by default for this SoC) -- unlike ECC/ECDSA, this chip has no
     # peripheral gap to work around.
     ${ENGINE}/platform/esp-idf/sha256.c
+    # PlatformEd25519Verify over the vendored ed25519 (in vendor_srcs).
+    ${ENGINE}/platform/esp-idf/crypto.c
     # PlatformExtram* routes WantedMalloc into PSRAM (heap_caps_malloc).
     ${ENGINE}/platform/esp-idf/extram.c
-    # Not-yet-ported subsystems
-    ${ENGINE}/platform/dummy/dummy-crypto.c
 )
 
 # Engine build configuration. The idf.py build is not the engine's top-level
@@ -183,7 +191,8 @@ idf_component_register(
         ${ENGINE}/vendor/c9
         ${ENGINE}/vendor/cwalk/include
         ${ENGINE}/vendor/uzlib/src
-    REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash mbedtls app_update esp_timer joltwallet__littlefs
+        ${ENGINE}/vendor/ed25519/src
+    REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash mbedtls app_update esp_timer joltwallet__littlefs esp_driver_gpio
     EMBED_FILES ${_supervisor_tar}
 )
 
