@@ -135,15 +135,28 @@ build:
     esp-idf)
         chip=$(just _cfg CONFIG_WANTED_TARGET_ESP_IDF_CHIP)
         cd platform/esp-idf/project
+        # Chip-independent + chip-specific sdkconfig fragments (see
+        # sdkconfig.defaults.<chip>); export so idf.py set-target picks the
+        # same files a fresh build would configure with.
+        export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.$chip"
         # set-target regenerates sdkconfig and clears the build dir, so run it
         # only when the chip actually changed — unconditionally would make every
         # build a cold one and discard any local sdkconfig edits.
         if ! grep -qx "CONFIG_IDF_TARGET=\"$chip\"" sdkconfig 2>/dev/null; then
             idf.py set-target "$chip"
         fi
+        # Flash-layout profile: per chip by default (esp32 -> single factory
+        # slot, esp32s3 -> A/B), overridable (e.g. OTA_PROFILE=s3-storage).
+        profile="${OTA_PROFILE:-}"
+        if [ -z "$profile" ]; then
+            case "$chip" in
+                esp32) profile="esp32-factory" ;;
+                *) profile="s3-wapps" ;;
+            esac
+        fi
         # Passed in: embedded in a host tree the engine's .config is narrowed to
         # the engine half, which carries no build-host paths.
-        idf.py -DWANTED_DEFAULT_CONFIG="$cfg" build
+        idf.py -DWANTED_DEFAULT_CONFIG="$cfg" -DOTA_PROFILE="$profile" build
         # Flashable at offset 0; the app binary alone is not.
         mkdir -p "$dist"
         idf.py merge-bin -o "$dist/wanted-$chip-merged.bin" >/dev/null

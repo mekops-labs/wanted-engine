@@ -1,0 +1,17 @@
+# Single-factory-app partition table for the classic ESP32 (4 MB flash) —
+# no A/B OTA slots (esp32-factory OTA_PROFILE, out of scope for the
+# reference-node build). Generated into partitions.csv by
+# components/wanted_engine/CMakeLists.txt (configure_file, @ONLY) — do not
+# edit partitions.csv by hand, it is regenerated on every configure.
+#
+# factory is placed immediately after the reserved 64 KiB region (bootloader
+# + partition table + nvs 24 KiB + phy_init 4 KiB, ending exactly on a
+# 64 KiB boundary) so it needs no alignment padding. persist/wapps (both
+# "data" type, page-granular alignment) follow it.
+#
+# Name,     Type, SubType,  Offset,   Size,  Flags
+nvs,        data, nvs,      0x9000,   0x6000,
+phy_init,   data, phy,      0xf000,   0x1000,
+factory,    app,  factory,  0x10000,  @FACTORY_APP_KB@K,
+persist,    data, littlefs, ,         @OTA_PERSIST_KB@K,
+wapps,      data, 0x40,     ,         @OTA_WAPPS_KB@K,

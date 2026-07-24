@@ -7,8 +7,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "sdkconfig.h"
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
+#endif
 #include "esp_littlefs.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -339,9 +342,11 @@ static void seedWapp(const char *name, const uint8_t *start,
              (unsigned)len, w, fin);
 }
 
-/* Supervisor config matches configs/example_config_wsh.json minus imagePath
- * (defaults to SUPERVISOR_IMAGE_PATH, the embedded wsh tar).
- * Sets console to blocking USB-Serial/JTAG mode. */
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+/* Sets console to blocking USB-Serial/JTAG mode -- the default driver's
+ * non-blocking writes drop output under load. Only the boards with this
+ * peripheral (e.g. the S3) need it; the classic part's UART console works
+ * with the default driver. */
 static void consoleUseBlockingDriver(void) {
     usb_serial_jtag_driver_config_t cfg =
         USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
@@ -350,6 +355,7 @@ static void consoleUseBlockingDriver(void) {
              err == ESP_OK ? "OK" : esp_err_to_name(err));
     usb_serial_jtag_vfs_use_driver();
 }
+#endif
 
 /* Launch config, embedded by main/CMakeLists.txt from the configured JSON.
  * EMBED_TXTFILES NUL-terminates it, so it is already a C string. */
@@ -388,7 +394,9 @@ void app_main(void) {
     ESP_LOGI(TAG, "ota: init -> rc=%d", otaRc);
 
     PlatformSetProcessArgs(0, NULL);
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     consoleUseBlockingDriver();
+#endif
     ESP_LOGI(TAG, "starting WANTED engine (supervisor: wsh, privileged)");
     int ret = WantedStart(_binary_wanted_config_json_start,
                           strlen(_binary_wanted_config_json_start));

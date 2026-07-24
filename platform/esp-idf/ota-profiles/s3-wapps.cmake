@@ -8,3 +8,4 @@
 # partition sizes. Naming a defconfig rather than setting the value keeps the
 # flash layout and the compiled-in limit derived from one source.
 set(WANTED_DEFCONFIG "xiao_esp32s3_defconfig" CACHE STRING "Engine defconfig" FORCE)
+set(WANTED_OTA_LAYOUT "ab")

@@ -62,6 +62,16 @@ if(NOT _cfg_rc EQUAL 0)
 endif()
 message(STATUS "Default configuration: ${WANTED_DEFAULT_CONFIG} (${_cfg_origin})")
 
+# esp_driver_usb_serial_jtag is only used (app_main.c's
+# consoleUseBlockingDriver, CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG-gated) on chips
+# with that peripheral (e.g. the S3); the classic part's UART console needs
+# it neither compiled nor required. IDF_TARGET is always defined by the time
+# a component CMakeLists.txt runs, no include needed.
+set(_priv_requires littlefs esp_netif)
+if(IDF_TARGET STREQUAL "esp32s3")
+    list(APPEND _priv_requires esp_driver_usb_serial_jtag)
+endif()
+
 idf_component_register(SRCS "app_main.c"
                        INCLUDE_DIRS "."
                        PRIV_INCLUDE_DIRS
@@ -69,7 +79,7 @@ idf_component_register(SRCS "app_main.c"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../platform/include"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../src/include"
                        REQUIRES wanted_engine
-                       PRIV_REQUIRES littlefs esp_netif esp_driver_usb_serial_jtag
+                       PRIV_REQUIRES ${_priv_requires}
                        EMBED_FILES
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/looper.wapp"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/wifi-connect.wapp"
