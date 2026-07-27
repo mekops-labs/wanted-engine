@@ -129,28 +129,32 @@ sheriff: ## build the sheriff (production) supervisor TAR
 wapp-shell: ## open an interactive shell in the wapp-sdk container
 	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint="" $(WAPP_SDK_IMG) bash
 
-# ESP32 cross-build uses a distinct xtensa toolchain image; the supervisor +
-# nuttx-deps stage in the build image, then the firmware links in the xtensa one.
-ESP32_IMAGE ?= localhost/wanted-esp32
-ESP32_PORT  ?= /dev/ttyUSB0
-ESP32_BAUD  ?= 460800
-# As with $(JUST), bypass the xtensa image entrypoint (its build-user remap
-# collides with rootless bind-mount UID mapping); build as container root,
-# mapped back to the invoking host user under rootless podman.
-ESP32_JUST = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=just $(ESP32_IMAGE)
+# ESP32 (classic, ESP-IDF) uses a distinct ESP-IDF toolchain image; ESP32_PORT/
+# BAUD are shared with rp2350's sibling vars in spirit but named for esptool's
+# -p/-b flags directly.
+ESP_IDF_IMAGE ?= localhost/wanted-esp-idf
+ESP32_PORT    ?= /dev/ttyUSB0
+ESP32_BAUD    ?= 460800
+# Unlike $(JUST)'s xtensa-NuttX image, this base image's own entrypoint
+# sources $IDF_PATH/export.sh before exec'ing its command — bypassing it via
+# --entrypoint would leave idf.py off PATH. Run `just` as the container
+# command instead, same as docker/Containerfile.esp-idf documents. Passes
+# BUILD_DIR explicitly (this recipe's `just build` runs in a separate
+# container invocation from the `just target`/`setconfig` steps above, so it
+# does not otherwise inherit this target's BUILD_DIR).
+ESP_IDF_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src -e BUILD_DIR=$(BUILD_DIR) $(ESP_IDF_IMAGE)
 
 esp32: BUILD_DIR = build-esp32-cfg
-esp32: DEFCONFIG = esp32-nuttx
-esp32: supervisor ## cross-build the ESP32 firmware -> third_party/nuttx/nuttx.bin
-	$(JUST) target nuttx
-	$(JUST) setconfig 'WANTED_TARGET_NUTTX_BOARD="esp32-devkitc:wanted"'
-	$(JUST) nuttx-deps
-	$(ESP32_JUST) build
+esp32: DEFCONFIG = esp32-esp-idf
+esp32: supervisor ## cross-build the classic ESP32 firmware (ESP-IDF) -> dist/esp-idf/wanted-esp32-merged.bin
+	$(JUST) target esp-idf
+	$(JUST) setconfig 'WANTED_TARGET_ESP_IDF_CHIP="esp32"'
+	$(ESP_IDF_RUN) just build
 
-esp32-flash: ## flash third_party/nuttx/nuttx.bin to the board [ESP32_PORT=/dev/ttyUSB0]
+esp32-flash: ## flash the classic ESP32 ESP-IDF merged image [ESP32_PORT=/dev/ttyUSB0]
 	esptool.py -c esp32 -p $(ESP32_PORT) -b $(ESP32_BAUD) --before default_reset \
-	    --after no_reset write_flash -fs detect -fm dio -ff 40m 0x1000 \
-	    third_party/nuttx/nuttx.bin
+	    --after hard_reset write_flash 0x0 \
+	    dist/esp-idf/wanted-esp32-merged.bin
 
 # --- RP2350 firmware (real hardware) --------------------------------------
 # Cross-builds the NuttX firmware for the Adafruit Feather RP2350 in the ARM

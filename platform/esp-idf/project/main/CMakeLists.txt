@@ -22,7 +22,7 @@
 # this does not relink every build.
 get_filename_component(_repo "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 set(_seed_dir "${_repo}/wasm/registry-seed")
-set(_seeds looper wifi-connect devcheck)
+set(_seeds looper wifi-connect devcheck blink)
 foreach(_seed IN LISTS _seeds)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${_repo}/wapps/${_seed}/${_seed}.wasm")
@@ -62,6 +62,18 @@ if(NOT _cfg_rc EQUAL 0)
 endif()
 message(STATUS "Default configuration: ${WANTED_DEFAULT_CONFIG} (${_cfg_origin})")
 
+# The console blocking-driver setup (app_main.c's consoleUseBlockingDriver)
+# uses a different peripheral driver per board: USB-Serial/JTAG on the S3,
+# UART on the classic part. Require only the one this chip's console uses.
+# IDF_TARGET is always defined by the time a component CMakeLists.txt runs,
+# no include needed.
+set(_priv_requires littlefs esp_netif)
+if(IDF_TARGET STREQUAL "esp32s3")
+    list(APPEND _priv_requires esp_driver_usb_serial_jtag)
+else()
+    list(APPEND _priv_requires esp_driver_uart)
+endif()
+
 idf_component_register(SRCS "app_main.c"
                        INCLUDE_DIRS "."
                        PRIV_INCLUDE_DIRS
@@ -69,9 +81,10 @@ idf_component_register(SRCS "app_main.c"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../platform/include"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../src/include"
                        REQUIRES wanted_engine
-                       PRIV_REQUIRES littlefs esp_netif esp_driver_usb_serial_jtag
+                       PRIV_REQUIRES ${_priv_requires}
                        EMBED_FILES
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/looper.wapp"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/wifi-connect.wapp"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/devcheck.wapp"
+                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/blink.wapp"
                        EMBED_TXTFILES "${_cfg_staged}")

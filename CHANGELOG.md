@@ -1,6 +1,22 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- Classic ESP32 (Waveshare ESP32 One, quad PSRAM, 4 MB flash) support under ESP-IDF, alongside the ESP32-S3. `make esp32` builds it. Single factory app slot, no A/B OTA.
+
+### Removed
+
+- The NuttX build path for the classic ESP32: `docker/Containerfile.esp32` and `configs/esp32-nuttx_defconfig`.
+
+### Fixed
+
+- PSRAM allocations are 8-byte aligned (`heap_caps_aligned_alloc`).
+- The classic ESP32's UART console installs a blocking driver.
+
 0.11.0 (2026-07-22)
 -------------------
 

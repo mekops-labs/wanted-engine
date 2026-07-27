@@ -12,6 +12,7 @@
 #include "esp_pthread.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
+#include "sdkconfig.h"
 
 #include <platform.h>
 #include <wanted-api.h>
@@ -90,7 +91,7 @@ size_t PlatformWorkerStackSize(void) {
  * terminate a runaway wapp. */
 static int basePriority = -1;
 
-/* Start a worker pthread for a wapp with its stack in PSRAM.
+/* Start a worker pthread for a wapp.
  * esp_pthread_set_cfg configures the next pthread_create on this thread; the
  * call is serialised by state_mtx. */
 static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
@@ -103,8 +104,15 @@ static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
     cfg.stack_size = CONFIG_WANTED_WASM_WORKER_STACK_SIZE;
     cfg.prio = (size_t)(basePriority + (isSupervisor ? 1 : 0));
     cfg.thread_name = isSupervisor ? "wapp-super" : "wapp";
+#if CONFIG_IDF_TARGET_ESP32
+    /* Worker threads read the flash-backed registry. The classic part fully
+     * disables its cache for a flash op; a PSRAM stack is unreachable during
+     * that window and ESP-IDF asserts (esp_task_stack_is_sane_cache_disabled)
+     * the moment one is used. Stack stays internal DRAM here. */
+#else
     /* Stack in PSRAM instead of internal DRAM. */
     cfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+#endif
     esp_pthread_set_cfg(&cfg);
 
     return pthread_create(t, NULL, WA_thread, (void *)data);

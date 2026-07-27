@@ -71,61 +71,40 @@ tag, so a rebuilt tag must never change content.
 
 - initial image: wasi-sdk 33, Zig 0.14.1, TinyGo 0.41.1 (Go 1.26.4), Rust 1.96.0, Wasmtime v44.0.1, wabt
 
-## ESP32 cross-build image (`Containerfile.esp32`)
+## ESP-IDF cross-build image (`Containerfile.esp-idf`)
 
-A separate image for building the engine as a NuttX built-in app for the
-**ESP32 (xtensa LX6)** target and flashing it over serial. It is kept out of the
-main build image because the xtensa toolchain is large (~700 MB unpacked) and
-only the ESP32 jobs need it.
+A dedicated ESP-IDF image for building the engine as a native ESP-IDF firmware
+for the whole **ESP32 family** — the **ESP32-S3** (octal PSRAM) and the
+**classic ESP32** (Waveshare ESP32 One, quad PSRAM). Distinct from a NuttX
+cross-toolchain: it carries the Espressif SPI-flash driver, PSRAM startup,
+lwIP, mbedTLS, and the Kconfig options the S3's coexistence mitigations depend
+on — none of which exist in a NuttX toolchain image.
 
-It carries the `xtensa-esp-elf` GCC the NuttX ESP32 port documents
-(`esp-14.2.0_20241119`), `esptool` (the `make` MKIMAGE/flash step), the NuttX
-kconfig/kbuild prerequisites, and cmake/ninja — all routed through ccache.
+Base: the official pinned Espressif IDF image (`espressif/idf:release-v5.3`),
+which already installs a tested ESP-IDF release plus the xtensa/riscv
+toolchains and sources `export.sh` from its own entrypoint; this image only
+adds `just`, so it builds through the same `just build` entry point as every
+other target.
 
 Build:
 
 ```sh
-# single arch
-podman build -f docker/Containerfile.esp32 -t wanted-esp32 docker/
-# multi arch + push
-podman build --platform linux/amd64,linux/arm64 \
-  -f docker/Containerfile.esp32 \
-  -t registry.gitlab.com/mekops/wanted/wanted-engine/esp32-build:latest \
-  --push docker/
+podman build -f docker/Containerfile.esp-idf -t wanted-esp-idf docker/
 ```
 
-Cross-build (no hardware needed):
+Cross-build (no hardware needed) — run `just` as the container *command*, not
+via `--entrypoint`, so the base entrypoint sources `export.sh` and `idf.py`
+lands on `PATH`:
 
 ```sh
-podman run --rm -v "$PWD:/src" wanted-esp32 \
-  bash -c 'cd third_party/nuttx && \
-    ./tools/configure.sh -a ../nuttx-apps esp32-devkitc:nsh && make -j"$(nproc)"'
+podman run --rm --userns=keep-id -v "$PWD:/src" -w /src wanted-esp-idf just build
 ```
 
-Flash to an attached board — pass the serial device through. On rootless podman
-also preserve the host's supplementary groups so the container user can open the
-`dialout`-owned device node:
-
-```sh
-podman run --rm -it \
-  --device /dev/ttyUSB0 \
-  --group-add keep-groups \
-  -v "$PWD:/src" wanted-esp32 \
-  bash -c 'cd third_party/nuttx && make flash ESPTOOL_PORT=/dev/ttyUSB0 ESPTOOL_BINDIR=./'
-```
-
-The image uses the same UID-remap entrypoint as the main build image (`entry.sh`
-+ `gosu`), so under a GitLab `docker` runner `/src` is owned by the runner UID
-and builds run as that user. For local **rootless podman**, add `--userns=keep-id`
-so the bind-mount owner is your UID (not container root) and the entrypoint can
-create the matching build user.
-
-On an SELinux host (Fedora, RHEL), add `:z` to bind mounts so the container can
-read them (e.g. `-v "$PWD:/src:z"`); without it the toolchain hits "Permission
-denied" on the mounted sources.
-
-Only `amd64` and `arm64` are built — Espressif publishes xtensa-esp-elf for
-those two Linux arches only.
+Which chip is built is the engine's configuration: `make esp32` builds the
+classic part, `make` with `target esp-idf` + `WANTED_TARGET_ESP_IDF_CHIP=esp32s3`
+the S3. Flashing/monitoring runs on the **host** (host `esptool` talks to the
+serial device directly), so no `--device` or serial-group plumbing is needed
+inside the container.
 
 ## RP2350 cross-build + debug image (`Containerfile.rp2350`)
 

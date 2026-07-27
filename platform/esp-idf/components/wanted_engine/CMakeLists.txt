@@ -36,12 +36,18 @@ set(vendor_srcs
     ${ENGINE}/vendor/uzlib/src/tinflate.c
     ${ENGINE}/vendor/uzlib/src/crc32.c
     ${ENGINE}/vendor/uzlib/src/adler32.c
+    # ed25519 (orlp/ed25519, verify-only): backs PlatformEd25519Verify
+    # (crypto.c) -- no ECC peripheral / mbedTLS Ed25519 on this chip.
+    ${ENGINE}/vendor/ed25519/src/verify.c
+    ${ENGINE}/vendor/ed25519/src/sha512.c
+    ${ENGINE}/vendor/ed25519/src/ge.c
+    ${ENGINE}/vendor/ed25519/src/sc.c
+    ${ENGINE}/vendor/ed25519/src/fe.c
 )
 
 # Platform layer. Core primitives, the wapp lifecycle, the registry, sockets,
-# and the extram (PSRAM) allocator are the real ESP-IDF implementations plus
-# the shared POSIX layer; subsystems not yet ported (crypto) remain dummy
-# stubs.
+# crypto, and the extram (PSRAM) allocator are the real ESP-IDF
+# implementations plus the shared POSIX layer.
 set(platform_srcs
     # ESP-IDF core primitives + wapp lifecycle
     ${ENGINE}/platform/esp-idf/memory.c
@@ -54,6 +60,8 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/registry_flash.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-wifi.c
+    # /dev/gpio: drive a board pin (default GPIO21, the ESP32 One LED).
+    ${ENGINE}/platform/esp-idf/vfs/vfs-gpio.c
     # PlatformOta* on esp_ota_ops + the /dev/ota VFS driver.
     ${ENGINE}/platform/esp-idf/ota.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-ota.c
@@ -73,10 +81,10 @@ set(platform_srcs
     # is on by default for this SoC) -- unlike ECC/ECDSA, this chip has no
     # peripheral gap to work around.
     ${ENGINE}/platform/esp-idf/sha256.c
+    # PlatformEd25519Verify over the vendored ed25519 (in vendor_srcs).
+    ${ENGINE}/platform/esp-idf/crypto.c
     # PlatformExtram* routes WantedMalloc into PSRAM (heap_caps_malloc).
     ${ENGINE}/platform/esp-idf/extram.c
-    # Not-yet-ported subsystems
-    ${ENGINE}/platform/dummy/dummy-crypto.c
 )
 
 # Engine build configuration. The idf.py build is not the engine's top-level
@@ -85,12 +93,14 @@ set(platform_srcs
 # so MAX_WAPPS and the flash layout cannot disagree.
 set(WANTED_ENGINE_ROOT ${ENGINE})
 
-# ESP-IDF OTA flash-layout profile: couples MAX_WAPPS (overriding the
+# ESP-IDF flash-layout profile: couples MAX_WAPPS (overriding the
 # WANTED_PROFILE value above), WAPP_IMAGE_MAX_SLOTS (config-esp-idf.h
 # aliases it directly to MAX_WAPPS), and the generated partitions.csv from
-# one source. Two named profiles: s3-wapps (default, MAX_WAPPS=20, max
-# concurrency) and s3-storage (MAX_WAPPS=10, roomier persist partition).
-# Only MAX_WAPPS varies; slot size is fixed at 160 KiB across both.
+# one source, per chip. S3 profiles (WANTED_OTA_LAYOUT=ab): s3-wapps
+# (default, MAX_WAPPS=20, max concurrency) and s3-storage (MAX_WAPPS=10,
+# roomier persist partition) -- only MAX_WAPPS varies, slot size fixed at
+# 160 KiB across both. Classic-ESP32 profile (WANTED_OTA_LAYOUT=factory):
+# esp32-factory, a single app slot, no A/B.
 if(NOT OTA_PROFILE)
     set(OTA_PROFILE "s3-wapps")
 endif()
@@ -100,30 +110,42 @@ include(${ENGINE}/platform/esp-idf/ota-profiles/${OTA_PROFILE}.cmake)
 # makes CONFIG_WANTED_MAX_WAPPS below the same number the header carries.
 include(${ENGINE}/cmake/Kconfig.cmake)
 
-# Fixed flash geometry (8 MB XIAO ESP32-S3): reserved 64 KiB (bootloader +
-# partition table + nvs 24 KiB + phy_init 4 KiB) + otadata 8 KiB + two OTA
-# app slots. 1600 KiB slots hold >=35% headroom over the measured,
-# OTA-code-included image (1 171 072 B, 2026-07-07) -- 1536 KiB (the
-# pre-OTA-code estimate) no longer clears that margin once this driver's own
-# code is counted, before the pending gpio driver or a real Ed25519 backend
-# land (floor-measured gpio stub: +832 B; Ed25519 unmeasured, budgeted
-# generously). Must stay a multiple of 64 KiB so ota_0/ota_1 auto-align with
-# zero padding waste -- see partitions.csv.in's layout comment.
-set(OTA_SLOT_KB 1600)
-math(EXPR OTA_POOL_KB "8192 - 64 - 8 - (2 * ${OTA_SLOT_KB})")
+if(WANTED_OTA_LAYOUT STREQUAL "factory")
+    # 4 MB flash (classic ESP32): reserved 64 KiB (bootloader + partition
+    # table + nvs 24 KiB + phy_init 4 KiB), one factory app slot, no A/B.
+    # 1536 KiB holds >=25% headroom over the measured image (1 164 000 B,
+    # 2026-07-24); persist+wapps take the remainder. Must stay a multiple of
+    # 64 KiB so persist/wapps auto-align with zero padding waste.
+    set(FACTORY_APP_KB 1536)
+    math(EXPR OTA_POOL_KB "4096 - 64 - ${FACTORY_APP_KB}")
+    set(_partition_template ${ENGINE}/platform/esp-idf/project/partitions-factory.csv.in)
+else()
+    # Fixed flash geometry (8 MB XIAO ESP32-S3): reserved 64 KiB (bootloader +
+    # partition table + nvs 24 KiB + phy_init 4 KiB) + otadata 8 KiB + two OTA
+    # app slots. 1600 KiB slots hold >=35% headroom over the measured,
+    # OTA-code-included image (1 171 072 B, 2026-07-07) -- 1536 KiB (the
+    # pre-OTA-code estimate) no longer clears that margin once this driver's own
+    # code is counted, before the pending gpio driver or a real Ed25519 backend
+    # land (floor-measured gpio stub: +832 B; Ed25519 unmeasured, budgeted
+    # generously). Must stay a multiple of 64 KiB so ota_0/ota_1 auto-align with
+    # zero padding waste -- see partitions.csv.in's layout comment.
+    set(OTA_SLOT_KB 1600)
+    math(EXPR OTA_POOL_KB "8192 - 64 - 8 - (2 * ${OTA_SLOT_KB})")
+    set(_partition_template ${ENGINE}/platform/esp-idf/project/partitions.csv.in)
+endif()
 
 set(WAPP_IMAGE_SLOT_SIZE_KB 160)
 math(EXPR OTA_WAPPS_KB "${CONFIG_WANTED_MAX_WAPPS} * ${WAPP_IMAGE_SLOT_SIZE_KB}")
 math(EXPR OTA_PERSIST_KB "${OTA_POOL_KB} - ${OTA_WAPPS_KB}")
 
 # Build-time assert on the coupled quad: this is the derivation itself (not
-# an independent re-check), but it still catches a future OTA_SLOT_KB/
+# an independent re-check), but it still catches a future slot-size/
 # OTA_PROFILE edit that pushes wapps past the pool.
 if(OTA_WAPPS_KB GREATER OTA_POOL_KB)
     message(FATAL_ERROR
         "OTA_PROFILE=${OTA_PROFILE}: CONFIG_WANTED_MAX_WAPPS=${CONFIG_WANTED_MAX_WAPPS} needs "
         "${OTA_WAPPS_KB} KiB of wapps, exceeding the ${OTA_POOL_KB} KiB "
-        "persist+wapps pool (OTA_SLOT_KB=${OTA_SLOT_KB})")
+        "persist+wapps pool")
 endif()
 
 # Regenerated on every configure -- partitions.csv is a build artifact (like
@@ -131,7 +153,7 @@ endif()
 # the cmake configure phase, strictly before the ninja build step that reads
 # CONFIG_PARTITION_TABLE_CUSTOM_FILENAME.
 configure_file(
-    ${ENGINE}/platform/esp-idf/project/partitions.csv.in
+    ${_partition_template}
     ${ENGINE}/platform/esp-idf/project/partitions.csv
     @ONLY
 )
@@ -169,7 +191,8 @@ idf_component_register(
         ${ENGINE}/vendor/c9
         ${ENGINE}/vendor/cwalk/include
         ${ENGINE}/vendor/uzlib/src
-    REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash mbedtls app_update esp_timer joltwallet__littlefs
+        ${ENGINE}/vendor/ed25519/src
+    REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash mbedtls app_update esp_timer joltwallet__littlefs esp_driver_gpio
     EMBED_FILES ${_supervisor_tar}
 )
 

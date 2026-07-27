@@ -61,9 +61,25 @@ function(_wanted_kconfig_run script)
 endfunction()
 
 # Seed a missing .config from a named defconfig, else from the Kconfig
-# defaults. An existing .config is never overwritten — a reconfigure must not
-# silently discard a configuration.
-if(NOT EXISTS ${WANTED_DOTCONFIG})
+# defaults. An existing .config is preserved across reconfigures — a
+# reconfigure must not silently discard a hand-edited configuration — UNLESS
+# an explicitly-named WANTED_DEFCONFIG differs from the one that last seeded
+# it: ESP-IDF's early component-requirements pass configures this component
+# before its own -D command-line cache variables are fully visible, so a
+# profile-driven embedded build (OTA_PROFILE selecting WANTED_DEFCONFIG) can
+# seed .config once from the wrong/default profile in that early pass, then
+# have the real configure pass silently keep it. Recorded via a marker file
+# rather than re-deriving it, since .config itself carries no record of which
+# defconfig produced it.
+set(_wanted_seeded_marker ${CMAKE_BINARY_DIR}/.wanted-defconfig-seeded)
+set(_wanted_last_seeded "")
+if(EXISTS ${_wanted_seeded_marker})
+    file(READ ${_wanted_seeded_marker} _wanted_last_seeded)
+    string(STRIP "${_wanted_last_seeded}" _wanted_last_seeded)
+endif()
+
+if(NOT EXISTS ${WANTED_DOTCONFIG} OR
+   (WANTED_DEFCONFIG AND NOT WANTED_DEFCONFIG STREQUAL _wanted_last_seeded))
     if(WANTED_DEFCONFIG)
         set(_defconfig ${WANTED_ENGINE_ROOT}/configs/${WANTED_DEFCONFIG})
         if(NOT EXISTS ${_defconfig})
@@ -73,9 +89,11 @@ if(NOT EXISTS ${WANTED_DOTCONFIG})
         message(STATUS "Kconfig: seeding .config from ${WANTED_DEFCONFIG}")
         _wanted_kconfig_run(defconfig.py --kconfig ${WANTED_KCONFIG_ROOT}
                             ${_defconfig})
+        file(WRITE ${_wanted_seeded_marker} "${WANTED_DEFCONFIG}")
     else()
         message(STATUS "Kconfig: seeding .config from Kconfig defaults")
         _wanted_kconfig_run(olddefconfig.py ${WANTED_KCONFIG_ROOT})
+        file(WRITE ${_wanted_seeded_marker} "")
     endif()
 else()
     # Carry an existing .config over Kconfig edits: new symbols take their

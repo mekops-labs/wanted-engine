@@ -1,31 +1,12 @@
-# WANTED engine on ESP32-S3R8 (octal PSRAM), ESP-IDF.
-CONFIG_IDF_TARGET="esp32s3"
-CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+# Chip-independent WANTED-on-ESP-IDF defaults. Chip-specific PSRAM/console/
+# flash-size settings live in sdkconfig.defaults.<chip> (esp32, esp32s3),
+# applied alongside this file via SDKCONFIG_DEFAULTS (see Justfile).
 
-# Custom partition table: A/B (ota_0/ota_1) app slots + LittleFS persist
-# partition + raw wapp-image area. Generated from partitions.csv.in by the
-# OTA_PROFILE mechanism.
+# Custom partition table: layout depends on the chip's OTA_PROFILE (A/B on
+# the S3, single factory app on the classic part) — generated from a
+# per-profile .csv.in template by the OTA_PROFILE mechanism.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
-
-# ESP-IDF native app-rollback: the bootloader boots a newly-committed OTA
-# slot as PENDING_VERIFY and reverts to the previous slot if the app never
-# confirms it (PlatformOtaConfirm, platform/esp-idf/ota.c) -- no MCUboot
-# needed, this is the stock ESP-IDF bootloader's own A/B mechanism. Secure
-# boot stays off (CONFIG_SECURE_BOOT unset): unsigned OTA images are
-# accepted by design for now -- signed OTA
-# is an explicit, separate follow-up.
-CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
-
-# Octal PSRAM with the flash/PSRAM coexistence mitigations validated in the
-# coexistence reproducer (auto-suspend keeps the cache enabled during flash ops;
-# XIP-from-PSRAM frees internal RAM for WiFi/TLS).
-CONFIG_SPIRAM=y
-CONFIG_SPIRAM_MODE_OCT=y
-CONFIG_SPIRAM_SPEED_80M=y
-CONFIG_SPIRAM_USE_MALLOC=y
-CONFIG_SPIRAM_XIP_FROM_PSRAM=y
-CONFIG_SPI_FLASH_AUTO_SUSPEND=y
 
 # POSIX threads for the wapp lifecycle (matches the Linux/NuttX platform).
 CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
@@ -35,9 +16,6 @@ CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
 # default 3584 B budget — a 4 KiB PATH_MAX-sized local plus littlefs's own
 # frames overflowed it. Matches the worker stack bump above.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
-
-# Console over USB-Serial/JTAG (XIAO ESP32-S3).
-CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 
 # WAMR feature set, matching the NuttX built-in app: classic interpreter,
 # libc-builtin, reference types, bulk memory, and the thread manager. Thread

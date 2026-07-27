@@ -97,7 +97,7 @@ make nuttx-shell     # boot the sim to an interactive wsh prompt (host wrapper)
 
 ## Hardware targets
 
-Three hardware target families live in the tree. Two are **NuttX** targets that share `platform/nuttx/` with the simulator — only the board config, the registry backend, and the entry point differ — and the third is a native **ESP-IDF** port under `platform/esp-idf/`.
+Two hardware target families live in the tree. The **RP2350** is a **NuttX** target that shares `platform/nuttx/` with the simulator — only the board config, the registry backend, and the entry point differ. The **ESP32 family** (classic ESP32 + ESP32-S3) is a native **ESP-IDF** port under `platform/esp-idf/`.
 
 ### RP2350 (NuttX) — reference embedded target
 
@@ -118,32 +118,25 @@ The reference constrained target, and the one the control-plane story is proven 
 - **Control plane over USB-CDC** — on a board with no radio, Sheriff reaches a host Deputy over the native USB-CDC using the engine's `serial://` socket scheme (a device path in place of `host:port`). The full reconcile loop runs on real hardware (verified on the Feather RP2350): State Report uplink → Ed25519-verified signed Desired State → wapp `RUNNING`, and a wrongly-signed Desired State is rejected. This is the ecosystem's first genuine (not demo-stubbed) signed-workload verification on embedded hardware.
 - **Secure boot** — validated entirely offline via `picotool seal --sign` (`make rp2350-sign`); the one-way OTP `SECURE_BOOT_ENABLE` fuse is deliberately never burned.
 
-### ESP32-S3 (ESP-IDF)
+### ESP32 family (ESP-IDF)
 
-A native ESP-IDF port (`platform/esp-idf/`, `app_main`) — not NuttX — targeting the ESP32-S3 (e.g. S3R8, octal PSRAM), 8 MB flash. Distinct from the *classic* ESP32 NuttX build below: same vendor, different silicon and OS.
+The whole ESP32 family runs a native ESP-IDF port (`platform/esp-idf/`, `app_main`) — not NuttX — across two chips: the **ESP32-S3** (e.g. S3R8, octal PSRAM, 8 MB flash) and the **classic ESP32** (Waveshare ESP32 One, quad PSRAM, 4 MB flash). The project is multi-chip: `sdkconfig.defaults` holds the chip-independent settings, `sdkconfig.defaults.<chip>` (`esp32`, `esp32s3`) the per-chip PSRAM/console/flash-size differences, applied automatically by chip.
 
 ```bash
-just target esp-idf && just build   # -> platform/esp-idf/project/build/wanted-esp-idf.bin
+just target esp-idf && just build   # S3 (default chip: esp32s3)
+make esp32                          # classic ESP32
+make esp32-flash                    # esptool over ESP32_PORT (default /dev/ttyUSB0)
 ```
 
-Runs in the ESP-IDF toolchain image (`docker/Containerfile.esp-idf`), which is built locally rather than published. `just` must be the container *command*, not an `--entrypoint` override — the base image's entrypoint sources `export.sh`, and bypassing it leaves `idf.py` off `PATH`.
+`just build` for esp-idf produces `dist/esp-idf/wanted-<chip>-merged.bin` (flashable at offset 0). Runs in the ESP-IDF toolchain image (`docker/Containerfile.esp-idf`), built locally rather than published. `just` must be the container *command*, not an `--entrypoint` override — the base image's entrypoint sources `export.sh`.
 
 - **Threads / stop** — FreeRTOS via the ESP-IDF pthread wrapper; cooperative stop (the WAMR terminate flag aborts the in-flight call).
-- **Registry / PSRAM** — flash-backed LittleFS registry (`registry_flash.c`); octal PSRAM via `extram.c`. Built with `DEFCONFIG=xiao_esp32s3` (`MAX_WAPPS=20`); measured on an S3 with 8 MB PSRAM: the supervisor plus 19 concurrent user wapps fit, the 20th `start` is rejected cleanly with `-ENOSPC`.
-- **OTA** — A/B firmware update through `esp_ota_ops` (`ota.c`), with a pending-verify / rollback seam.
+- **Registry / PSRAM** — flash-backed LittleFS registry (`registry_flash.c`); PSRAM via `extram.c` (8-byte-aligned allocations — WAMR's GC heap requires it).
+- **Flash layout** — S3: A/B (`ota_0`/`ota_1`) via the `s3-wapps`/`s3-storage` OTA profiles. Classic ESP32: a single `factory` app slot (`esp32-factory` profile), no A/B.
+- **Worker stacks** — S3: PSRAM. Classic ESP32: internal DRAM only — a flash op fully disables the classic part's cache, so a PSRAM stack is unreachable during it.
+- **OTA** — A/B firmware update through `esp_ota_ops` (`ota.c`) on the S3, with a pending-verify / rollback seam. The classic part's single-factory layout has no A/B slot to roll back to.
 - **Secure sockets** — raw mbedTLS with ESP32-S3 hardware AES/SHA/ECC acceleration. No CA bundle is provisioned (`MBEDTLS_SSL_VERIFY_NONE`), so `tcps://` here is encrypted but **unauthenticated** — a demo transport, not production TLS.
-- **Crypto** — SHA-256 is hardware-backed, but **Ed25519 verify is not yet ported** (still the dummy backend, `platform/dummy/dummy-crypto.c`). So an ESP32-S3 control-plane demo reconciles with signature verification stubbed — the genuine Ed25519 path is the RP2350's.
-
-### Classic ESP32 (Waveshare ESP32 One, NuttX)
-
-The `nuttx` target with board `esp32-devkitc:wanted` — no separate target, just a different pass-through board string. Bring-up landed in engine 0.8.0: a ROMFS-boot supervisor, an in-RAM image cache, a PSRAM heap, a registry, and the `gpio` / `wifi` drivers.
-
-```bash
-make esp32          # cross-build -> third_party/nuttx/nuttx.bin (xtensa toolchain image)
-make esp32-flash    # esptool over ESP32_PORT (default /dev/ttyUSB0)
-```
-
-`make esp32` exists because the xtensa toolchain lives in its own container: the wrapper selects that image and sets the board and envelope, then runs the same `just build` inside it. Container choice is the one thing the engine's configuration cannot decide for itself.
+- **Crypto** — SHA-256 is hardware-backed; Ed25519 verify uses a vendored portable `orlp/ed25519` backend (`crypto.c`) on both chips.
 
 ## OpenWrt
 
@@ -295,8 +288,8 @@ Three engine-controlled regions are passed to WAMR per instance:
 
 | Board | Host | Notes |
 |---|---|---|
-| `xiao_esp32s3` | ESP-IDF | octal PSRAM, app heap off, linear memory capped at 2 pages so a full house fits the 8 MB part; `-storage` variant trades wapp slots for persist space |
-| `esp32-nuttx` | NuttX | classic ESP32; 24 KiB worker stacks, which must fit scarce internal DRAM |
+| `xiao_esp32s3` | ESP-IDF | ESP32-S3, octal PSRAM, app heap off, linear memory capped at 2 pages so a full house fits the 8 MB part; `-storage` variant trades wapp slots for persist space |
+| `esp32-esp-idf` | ESP-IDF | classic ESP32, quad PSRAM, 4 MB flash, single-factory-app layout, internal-RAM worker stacks |
 | `openwrt` | OpenWrt | packaged `.ipk`; supervisor read from its install path |
 
 A board defconfig exists only where the board needs something an envelope does not give it. The RP2350 has no entry because `small` already describes it exactly — build it with `DEFCONFIG=small` rather than carrying a file that restates those numbers and would silently stop tracking them.

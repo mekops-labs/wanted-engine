@@ -1,0 +1,27 @@
+# Classic ESP32 (Waveshare ESP32 One: ESP32-D0WDQ6-V3, quad PSRAM, 4 MB
+# flash), ESP-IDF. Applied alongside the chip-independent sdkconfig.defaults
+# (see Justfile).
+CONFIG_IDF_TARGET="esp32"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# This board's true silicon revision (confirmed via esptool: rev v3.0).
+# Drops the inert Rev1 PSRAM-cache GCC workaround from the build -- that
+# symbol is a write-path fix for Rev1 silicon, unrelated to this chip's
+# PSRAM behaviour at rev v3.0.
+CONFIG_ESP32_REV_MIN_3=y
+
+# Quad PSRAM is the only mode this chip supports; CONFIG_SPIRAM is the one
+# enable knob (no octal mode, no XIP_FROM_PSRAM/SPI_FLASH_AUTO_SUSPEND —
+# those Kconfig symbols exist only under esp32s2/esp32s3/esp32p4).
+CONFIG_SPIRAM=y
+
+# No A/B rollback: the classic-part build uses a single factory app slot
+# (esp32-factory OTA_PROFILE) — see partitions-factory.csv.in.
+
+# This board's console is a CP2102 USB-UART bridge (/dev/ttyUSB0) — the
+# classic part has no USB-Serial/JTAG peripheral.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# Worker stacks stay internal DRAM on this chip (platform/esp-idf/wapps.c) —
+# a flash op fully disables the cache, so a PSRAM stack would be unreachable
+# during it; confirmed on hardware.
