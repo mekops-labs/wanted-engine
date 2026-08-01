@@ -13,6 +13,7 @@ wasm/supervisor/selftest/app.wasm
 wasm/supervisor/sheriff/app.wasm
 wasm/supervisor/wifi-connect/app.wasm
 wapps/*/*.wasm
+wapps/flasher/flasher.version
 wapps/*/*.wasm.h
 wapps/*/*.o
 # Registry root (REGISTRY_ROOT): packaged .wapp images staged at runtime/test.

@@ -26,6 +26,8 @@
 
 #define TAG "wanted"
 #define LITTLEFS_PARTITION_LABEL "persist"
+/* Registry entries read when checking whether a seed ref is already present. */
+#define REGISTRY_SEED_LIST 16
 #define SELFTEST_DIR "/data/selftest"
 
 static void selftest(void) {
@@ -336,14 +338,44 @@ extern const uint8_t _binary_devcheck_wapp_start[];
 extern const uint8_t _binary_devcheck_wapp_end[];
 extern const uint8_t _binary_blink_wapp_start[];
 extern const uint8_t _binary_blink_wapp_end[];
+extern const uint8_t _binary_flasher_wapp_start[];
+extern const uint8_t _binary_flasher_wapp_end[];
 
-/* Factory-seeds a wapp into the flash registry. Safe to repeat every boot. */
-static void seedWapp(const char *name, const uint8_t *start,
+/* True when the registry already holds `ref` ("<name>" or "<name>:<version>").
+ */
+static bool registryHasRef(const char *ref) {
+    reg_entry_t list[REGISTRY_SEED_LIST];
+    int n = PlatformRegistryRead(list, REGISTRY_SEED_LIST);
+
+    const char *colon = strchr(ref, ':');
+    size_t nameLen = (colon != NULL) ? (size_t)(colon - ref) : strlen(ref);
+    const char *version = (colon != NULL) ? colon + 1 : "";
+
+    for (int i = 0; i < n; i++) {
+        if (strlen(list[i].name) != nameLen)
+            continue;
+        if (strncmp(list[i].name, ref, nameLen) != 0)
+            continue;
+        if (strcmp(list[i].version, version) == 0)
+            return true;
+    }
+    return false;
+}
+
+/* Factory-seeds a wapp into the flash registry, once. Leaves a ref the
+ * registry already holds, so an image installed over a seeded ref survives the
+ * next boot. */
+static void seedWapp(const char *ref, const uint8_t *start,
                      const uint8_t *end) {
+    if (registryHasRef(ref)) {
+        ESP_LOGI(TAG, "seed: %s present, keeping the installed image", ref);
+        return;
+    }
+
     size_t len = (size_t)(end - start);
-    int w = PlatformRegistryWrite(START_WRITE, name, start, len);
+    int w = PlatformRegistryWrite(START_WRITE, ref, start, len);
     int fin = PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
-    ESP_LOGI(TAG, "seed: %s (%u bytes) -> write=%d finish=%d", name,
+    ESP_LOGI(TAG, "seed: %s (%u bytes) -> write=%d finish=%d", ref,
              (unsigned)len, w, fin);
 }
 
@@ -388,6 +420,11 @@ void app_main(void) {
                  _binary_devcheck_wapp_end);
         seedWapp("blink:1.0.0", _binary_blink_wapp_start,
                  _binary_blink_wapp_end);
+        /* Versioned by the tree it was built from, so a newer flasher
+         * installs alongside this one and a launch config selects which
+         * runs. */
+        seedWapp(WANTED_FLASHER_REF, _binary_flasher_wapp_start,
+                 _binary_flasher_wapp_end);
     }
 
     /* Starts lwIP's tcpip thread; required before any socket() call. */

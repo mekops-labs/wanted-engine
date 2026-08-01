@@ -1,9 +1,12 @@
-# EMBED_FILES links looper.wapp, wifi-connect.wapp and devcheck.wapp straight
-# into the app binary as linker sections (`_binary_<name>_wapp_{start,end}`,
-# ESP-IDF's standard symbol names for each file's basename). All three are
-# smoke-test fixtures: app_main.c factory-seeds them into the flash registry
-# at boot so the supervisor can start them without any host-side
-# control-plane connection. devcheck exercises /dev/sha256 (and /dev/inflate,
+# EMBED_FILES links each seed image straight into the app binary as a linker
+# section (`_binary_<name>_wapp_{start,end}`, ESP-IDF's standard symbol names
+# for each file's basename). app_main.c factory-seeds them into the flash
+# registry at boot so the supervisor can start them without any host-side
+# control-plane connection. A seed is written only when its ref is absent, so
+# an image installed over a seeded ref survives the next boot. looper,
+# wifi-connect, devcheck and blink are smoke-test fixtures; flasher installs
+# engine firmware and must be present before any network is up.
+# devcheck exercises /dev/sha256 (and /dev/inflate,
 # /dev/ed25519) with known-answer vectors from inside WASM
 # that the hardware-backed PlatformSha256* seam produces a bit-correct digest
 # on real silicon, not just "doesn't crash". The images are packaged below from
@@ -22,7 +25,7 @@
 # this does not relink every build.
 get_filename_component(_repo "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 set(_seed_dir "${_repo}/wasm/registry-seed")
-set(_seeds looper wifi-connect devcheck blink)
+set(_seeds looper wifi-connect devcheck blink flasher)
 foreach(_seed IN LISTS _seeds)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${_repo}/wapps/${_seed}/${_seed}.wasm")
@@ -34,6 +37,20 @@ execute_process(
     ERROR_VARIABLE _seed_err)
 if(NOT _seed_rc EQUAL 0)
     message(FATAL_ERROR "packaging the factory-seed images failed:\n${_seed_out}${_seed_err}")
+endif()
+
+# The flasher is seeded under the version of the tree it was built from,
+# written beside the wasm by the rule that produced it. A registry version
+# field holds WAPP_MAX_VERSION_LEN - 1 characters; a longer one truncates into
+# a ref naming a version the image is not, so it fails the build.
+file(READ "${_repo}/wapps/flasher/flasher.version" _flasher_version)
+string(STRIP "${_flasher_version}" _flasher_version)
+string(LENGTH "${_flasher_version}" _flasher_version_len)
+if(_flasher_version_len GREATER 14)
+    message(FATAL_ERROR
+        "flasher version '${_flasher_version}' is ${_flasher_version_len} characters; "
+        "a registry version field holds 14. Tag the supervisor tree, or raise "
+        "WAPP_MAX_VERSION_LEN (it bounds WAPP_MAX_IMAGE_REF_LEN, nothing on the wire).")
 endif()
 
 # Launch config as a blob — no filesystem holds one at first boot.
@@ -87,4 +104,10 @@ idf_component_register(SRCS "app_main.c"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/wifi-connect.wapp"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/devcheck.wapp"
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/blink.wapp"
+                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/flasher.wapp"
                        EMBED_TXTFILES "${_cfg_staged}")
+
+# After registration: a directory-level define runs before the component
+# library exists.
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    WANTED_FLASHER_REF=\"flasher:${_flasher_version}\")

@@ -8,10 +8,15 @@ Unreleased
 
 - Classic ESP32 (Waveshare ESP32 One, quad PSRAM, 4 MB flash) support under ESP-IDF, alongside the ESP32-S3. `make esp32` builds it. Single factory app slot, no A/B OTA.
 - `/dev/ota` takes an `abort` command, which discards a streaming image write and releases the session. A write that begins and never commits holds the slot, and every later `begin` answers `-EBUSY` until the board reboots.
+- The firmware flasher wapp is factory-seeded into the registry under the version of the supervisor tree it was built from: `flasher:0.3.3` at a tag, `flasher:0.3.3-abc123` past one. It installs an engine firmware image and exits, so it is present before any network is up. `make wapps` builds it from the supervisor submodule. A version too long for a registry version field fails the build.
 
 ### Removed
 
 - The NuttX build path for the classic ESP32: `docker/Containerfile.esp32` and `configs/esp32-nuttx_defconfig`.
+
+### Changed
+
+- A factory-seed image is written only when its registry ref is absent, so an image installed over a seeded ref survives the next boot.
 
 ### Fixed
 
