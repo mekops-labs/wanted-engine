@@ -24,6 +24,7 @@ Unreleased
 
 ### Fixed
 
+- A supervisor image that fails to load no longer leaves the engine holding freed layer memory. A reload unloads before it loads, so a failed reload presented a freed pointer as a valid image and the next start crashed the engine — reachable whenever a rollback landed on a compiled-in image that could not itself be loaded.
 - PSRAM allocations are 8-byte aligned (`heap_caps_aligned_alloc`).
 - The classic ESP32's UART console installs a blocking driver.
 

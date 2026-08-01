@@ -978,6 +978,14 @@ static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
     }
     if (ret < 0) {
         DEBUG_TRACE("failed to load supervisor image from %s: %d", path, ret);
+        /* Drop the layer bookkeeping so the struct keeps its own invariant: a
+         * valid wapp has layer_cnt >= 1, which wappTarfsInit checks. A reload
+         * unloads before it loads, and PlatformWappUnload takes a const wapp_t
+         * and cannot clear these, so a failed reload would otherwise present
+         * layers[0] pointing at freed memory. */
+        memset(w->layers, 0, sizeof(w->layers));
+        memset(w->layer_lens, 0, sizeof(w->layer_lens));
+        w->layer_cnt = 0;
     }
 
     return ret;
