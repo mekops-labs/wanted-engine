@@ -399,13 +399,15 @@ void PlatformWappLoop(void) {
             fprintf(stderr,
                     "wanted: staged supervisor failed %d times in a row (%s); "
                     "falling back to the built-in image\n",
-                    MAX_SUPERVISOR_LAUNCH_FAILURES, wappErrText(supervisorErr));
+                    MAX_SUPERVISOR_LAUNCH_FAILURES,
+                    supervisorFailText(supervisorFailed, supervisorErr));
             break;
         case SUPERVISOR_UNRECOVERABLE:
             fprintf(stderr,
                     "wanted: supervisor failed %d times in a row (%s); "
                     "aborting — check the supervisor config\n",
-                    MAX_SUPERVISOR_LAUNCH_FAILURES, wappErrText(supervisorErr));
+                    MAX_SUPERVISOR_LAUNCH_FAILURES,
+                    supervisorFailText(supervisorFailed, supervisorErr));
             exit(EXIT_FAILURE);
         }
         PlatformWappStart(WantedGetCurrentSupervisor());

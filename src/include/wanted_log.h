@@ -3,6 +3,7 @@
 #pragma once
 
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -38,4 +39,11 @@ static inline const char *wappErrText(int err) {
     if (err == -1)
         return "the wapp image failed to load or trapped at startup";
     return strerror(err < 0 ? -err : err);
+}
+
+/* Describe why a supervisor is being rolled back. Only a launch failure carries
+ * a result to name; an image that started and exited at once carries none, and
+ * strerror would call that success. */
+static inline const char *supervisorFailText(bool failed, int err) {
+    return failed ? wappErrText(err) : "started and exited at once";
 }
