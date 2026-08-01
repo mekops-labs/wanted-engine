@@ -223,9 +223,15 @@ int PlatformOtaWrite(const uint8_t *buf, size_t len);
  * malformed image is rejected with -EBADMSG and the boot partition is left
  * unchanged. */
 int PlatformOtaCommit(void);
-/* Explicitly revert to the other slot. May reboot the board as part of the
- * call rather than merely scheduling the revert for next boot -- the caller
- * must not assume control returns. */
+/* Discard a streaming write and release the session, leaving the boot
+ * partition unchanged. Ends a write that must not become bootable: a session
+ * begun and never committed holds the slot, and every later BeginWrite answers
+ * -EBUSY until the board reboots. Idempotent -- 0 when no write is in flight.
+ */
+int PlatformOtaAbort(void);
+/* Revert to the other slot. May reboot the board during the call rather than
+ * scheduling the revert for next boot, so the caller must not assume control
+ * returns. Reverts a booted image; it does not end a streaming write. */
 int PlatformOtaRollback(void);
 
 #endif /* PLATFORM_H */

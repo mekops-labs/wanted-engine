@@ -7,6 +7,7 @@ Unreleased
 ### Added
 
 - Classic ESP32 (Waveshare ESP32 One, quad PSRAM, 4 MB flash) support under ESP-IDF, alongside the ESP32-S3. `make esp32` builds it. Single factory app slot, no A/B OTA.
+- `/dev/ota` takes an `abort` command, which discards a streaming image write and releases the session. A write that begins and never commits holds the slot, and every later `begin` answers `-EBUSY` until the board reboots.
 
 ### Removed
 

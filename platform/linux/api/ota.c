@@ -37,4 +37,6 @@ int PlatformOtaWrite(const uint8_t *buf, size_t len) {
 
 int PlatformOtaCommit(void) { return -ENOSYS; }
 
+int PlatformOtaAbort(void) { return -ENOSYS; }
+
 int PlatformOtaRollback(void) { return -ENOSYS; }
