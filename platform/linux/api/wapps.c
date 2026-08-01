@@ -45,12 +45,6 @@ pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
         return err;                                                            \
     }
 
-/* Consecutive supervisor launch FAILUREs tolerated before the engine aborts.
- * A clean supervisor exit is respawned indefinitely; a supervisor that cannot
- * launch (e.g. a malformed mount in its config) would otherwise respawn-loop in
- * silence, so bail loudly once it fails this many times in a row. */
-#define MAX_SUPERVISOR_LAUNCH_FAILURES 3
-
 typedef struct {
     pthread_t t;
     status_t status;
@@ -346,8 +340,6 @@ void PlatformRequestReboot(void) {
 }
 
 void PlatformWappLoop(void) {
-    int supervisorFailures = 0;
-
     for (;;) {
         sleep(1);
 
@@ -373,8 +365,9 @@ void PlatformWappLoop(void) {
             return;
         }
 
-        uint8_t supervisorOk = 0;
-        int supervisorFailed = 0;
+        bool supervisorOk = false;
+        bool supervisorFailed = false;
+        bool supervisorExited = false;
         int supervisorErr = 0;
         for (int i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
             /* at least 1 supervisor needs to be running */
@@ -384,9 +377,11 @@ void PlatformWappLoop(void) {
                         "supervisor", strlen("supervisor")) != 0)
                 continue;
             if (state.threads[i].status == RUNNING) {
-                supervisorOk++;
+                supervisorOk = true;
+            } else if (state.threads[i].status == EXITED) {
+                supervisorExited = true;
             } else if (state.threads[i].status == FAILURE) {
-                supervisorFailed = 1;
+                supervisorFailed = true;
                 /* WantedWappRun's negative return — the launch error (e.g.
                  * -EINVAL for a malformed mount, -EROFS for a missing backing
                  * dir). */
@@ -394,33 +389,25 @@ void PlatformWappLoop(void) {
             }
         }
 
-        if (supervisorOk) {
-            supervisorFailures = 0;
+        switch (WantedSupervisorObserve(supervisorOk, supervisorFailed,
+                                        supervisorExited)) {
+        case SUPERVISOR_HEALTHY:
             continue;
+        case SUPERVISOR_RESPAWN:
+            break;
+        case SUPERVISOR_ROLLED_BACK:
+            fprintf(stderr,
+                    "wanted: staged supervisor failed %d times in a row (%s); "
+                    "falling back to the built-in image\n",
+                    MAX_SUPERVISOR_LAUNCH_FAILURES, wappErrText(supervisorErr));
+            break;
+        case SUPERVISOR_UNRECOVERABLE:
+            fprintf(stderr,
+                    "wanted: supervisor failed %d times in a row (%s); "
+                    "aborting — check the supervisor config\n",
+                    MAX_SUPERVISOR_LAUNCH_FAILURES, wappErrText(supervisorErr));
+            exit(EXIT_FAILURE);
         }
-
-        /* No supervisor running. A clean exit is respawned (the supervisor is a
-         * persistent singleton). A launch FAILURE that repeats rolls back to
-         * the built-in image; with no fallback left, the config itself is
-         * broken — e.g. a malformed mount — so abort loudly. */
-        if (supervisorFailed &&
-            ++supervisorFailures >= MAX_SUPERVISOR_LAUNCH_FAILURES) {
-            if (WantedSupervisorRollback() == 0) {
-                fprintf(stderr,
-                        "wanted: staged supervisor failed to launch %d times "
-                        "in a row (%s); falling back to the built-in image\n",
-                        supervisorFailures, wappErrText(supervisorErr));
-                supervisorFailures = 0;
-            } else {
-                fprintf(stderr,
-                        "wanted: supervisor failed to launch %d times in a row "
-                        "(%s); aborting — check the supervisor config\n",
-                        supervisorFailures, wappErrText(supervisorErr));
-                exit(EXIT_FAILURE);
-            }
-        }
-        if (!supervisorFailed)
-            supervisorFailures = 0;
         PlatformWappStart(WantedGetCurrentSupervisor());
     }
 }

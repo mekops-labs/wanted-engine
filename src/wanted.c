@@ -998,6 +998,66 @@ int WantedSupervisorRollback(void) {
     return 0;
 }
 
+/* Consecutive observations a supervisor must be seen running before an exit
+ * counts as an ordinary one. A platform run loop polls at 1 Hz, thus this is
+ * seconds. It clears a normal startup (~5 s) and stays far below any real
+ * working lifetime. */
+#define SUPERVISOR_HEALTHY_TICKS 10
+
+/* True while the running image is a staged one, thus a rollback has somewhere
+ * to go. */
+static bool supervisorStaged(void) {
+    const wantedConfig_t *cfg = WantedGetConfig();
+
+    if (supervisorPinBuiltin)
+        return false;
+    return cfg != NULL && cfg->supervisorImagePath[0] != '\0' &&
+           strcmp(cfg->supervisorImagePath, SUPERVISOR_IMAGE_PATH) != 0;
+}
+
+supervisorHealth_t WantedSupervisorObserve(bool running, bool failed,
+                                           bool exited) {
+    static int healthyTicks;
+    static int failures;
+
+    if (running) {
+        if (healthyTicks < SUPERVISOR_HEALTHY_TICKS)
+            healthyTicks++;
+        /* Only a supervisor that has run its full healthy span clears the
+         * count. Clearing it on any running tick would let an image that dies
+         * just short of that span restart forever, each attempt erasing the
+         * last. */
+        if (healthyTicks >= SUPERVISOR_HEALTHY_TICKS)
+            failures = 0;
+        return SUPERVISOR_HEALTHY;
+    }
+
+    /* A launch that failed outright, or a staged image that reached its entry
+     * point and left again immediately. The second is what an incompatible
+     * supervisor looks like: it loads, decides it cannot run here, and exits
+     * cleanly, which no load-failure check can see. An exit after a working
+     * lifetime is the ordinary one — a reboot, a poweroff, a live update.
+     *
+     * A quick exit counts only while a staged image is what runs. The
+     * compiled-in image has nothing to fall back to, and its exit is a
+     * supervisor's own business: an interactive one is quit and restarted
+     * freely, and ending the engine over that would be a denial of service. */
+    bool suspect = failed || (exited && supervisorStaged() &&
+                              healthyTicks < SUPERVISOR_HEALTHY_TICKS);
+    healthyTicks = 0;
+
+    if (!suspect) {
+        failures = 0;
+        return SUPERVISOR_RESPAWN;
+    }
+    if (++failures < MAX_SUPERVISOR_LAUNCH_FAILURES)
+        return SUPERVISOR_RESPAWN;
+
+    failures = 0;
+    return WantedSupervisorRollback() == 0 ? SUPERVISOR_ROLLED_BACK
+                                           : SUPERVISOR_UNRECOVERABLE;
+}
+
 wapp_t *WantedGetCurrentSupervisor(void) {
     int ret = 0;
     static wapp_t *w = NULL;

@@ -20,6 +20,7 @@ Unreleased
 ### Changed
 
 - A factory-seed image is written only when its registry ref is absent, so an image installed over a seeded ref survives the next boot.
+- A staged supervisor image that starts and exits at once now counts toward the rollback ceiling, alongside one that fails to launch. An image can load, find it cannot work with the engine, and leave cleanly, which no launch check sees. An exit after a working lifetime stays an ordinary one, and the compiled-in image is never judged this way.
 
 ### Fixed
 
