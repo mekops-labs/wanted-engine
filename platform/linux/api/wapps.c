@@ -491,3 +491,10 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
 #endif
 
 const char *PlatformName(void) { return "linux"; }
+
+/* No build-time image digest on this target. */
+int PlatformFirmwareDigest(char *buf, size_t bufLen) {
+    (void)buf;
+    (void)bufLen;
+    return -ENOSYS;
+}

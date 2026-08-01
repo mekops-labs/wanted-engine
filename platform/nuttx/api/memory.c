@@ -5,6 +5,7 @@
  * NuttX exposes mallinfo() (not the glibc-only mallinfo2()); its uordblks/arena
  * fields are int-width, which is sufficient on 32-bit targets (heap < 2 GB). */
 
+#include <errno.h>
 #include <malloc.h>
 
 #include <platform.h>
@@ -20,3 +21,10 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
 }
 
 const char *PlatformName(void) { return "nuttx"; }
+
+/* No build-time image digest on this target. */
+int PlatformFirmwareDigest(char *buf, size_t bufLen) {
+    (void)buf;
+    (void)bufLen;
+    return -ENOSYS;
+}

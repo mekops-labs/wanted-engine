@@ -382,6 +382,17 @@ static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
     if (w < 0)
         return -EIO;
 
+    /* Build-time image digest, on a platform that stamps one. The line is
+     * absent elsewhere, so a reader never mistakes an empty value for an
+     * image that hashes to nothing. */
+    char digest[FIRMWARE_DIGEST_HEX_LEN + 1];
+    if (w < (int)bufLen && PlatformFirmwareDigest(digest, sizeof(digest)) > 0) {
+        int n = snprintf((char *)buf + w, (size_t)((int)bufLen - w),
+                         "digest:\t%s\n", digest);
+        if (n > 0 && w + n < (int)bufLen)
+            w += n;
+    }
+
     /* Available drivers: the merged core + platform table a launch config can
      * request on this build, so a supervisor can discover capability before
      * configuring a wapp. */

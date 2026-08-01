@@ -126,6 +126,18 @@ void PlatformExtramEarlyInit(void);
  * /proc/wanted so a wapp can read which platform hosts it. */
 const char *PlatformName(void);
 
+/* Hex digits in a firmware digest (SHA-256). A buffer holding one needs a
+ * further byte for the terminator. */
+#define FIRMWARE_DIGEST_HEX_LEN 64
+
+/* Lowercase-hex digest of the running firmware image, NUL-terminated, written
+ * into `buf` and reported at /proc/wanted. The digest is stamped into the image
+ * at build time, so it distinguishes two builds of one source tree where a
+ * version string cannot: a control plane confirming a firmware update compares
+ * this. Returns the length written, -ENOSYS where the platform stamps no
+ * digest, or -ENOSPC when `bufLen` is too small. */
+int PlatformFirmwareDigest(char *buf, size_t bufLen);
+
 /* System control. A privileged wapp triggers these through the wanted host
  * module; PlatformWappLoop normally respawns a vanished supervisor forever, so
  * they are the only paths that end the engine. The request just sets a flag —

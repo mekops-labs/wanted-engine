@@ -53,7 +53,7 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/wapps/<name>/memory` | r | yes | Per-wapp WASM linear-memory accounting: `linear_cur` / `linear_max` (bytes) and `pages_cur` / `pages_max`. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, and `drivers` (the drivers available on this build). |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
@@ -83,6 +83,12 @@ config can request on this build — the platform-agnostic core plus the drivers
 the running platform implements (e.g. `gpio wifi` on NuttX) and any linked in
 from an out-of-tree tree (see the [Platform Guide](platform-guide.md)); naming
 any other driver fails the launch with `-ENODEV`.
+
+`digest` is the running image's build-time digest, 64 lowercase hex characters
+(ESP-IDF stamps the ELF SHA-256 into the image descriptor). It identifies the
+exact bytes that booted, thus a control plane confirming a firmware update
+compares it rather than `version`, which two builds of one source tree can
+share. The line is absent on a platform that stamps no digest.
 
 `platform` is the build target (`linux`, `nuttx`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
 
