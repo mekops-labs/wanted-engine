@@ -15,6 +15,17 @@
  * each wapp the engine can run, so the two counts cannot disagree. */
 #define CONFIG_WANTED_LOG_SLOTS CONFIG_WANTED_MAX_WAPPS
 
+/* Version of the contract between the engine and a supervisor wapp: the shape
+ * of the /dev/wanted control plane, its verbs, and the wapp states it reports.
+ * Reported at /proc/wanted as `supervisor_abi`.
+ *
+ * Bump only when a supervisor built against an earlier value would misread this
+ * engine — not for an ordinary release, and not for an addition an older
+ * supervisor can ignore. A supervisor reads it before acting on anything else
+ * and writes `rollback-supervisor` when it cannot support the value, which
+ * hands the node back to the compiled-in image. */
+#define WANTED_SUPERVISOR_ABI 1
+
 #define WAPP_MAX_NAME_LEN 15
 #define WAPP_MAX_VERSION_LEN 15
 #define MAX_DRIVER_NAME 15

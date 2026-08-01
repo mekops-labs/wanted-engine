@@ -10,6 +10,8 @@ Unreleased
 - `/dev/ota` takes an `abort` command, which discards a streaming image write and releases the session. A write that begins and never commits holds the slot, and every later `begin` answers `-EBUSY` until the board reboots.
 - The firmware flasher wapp is factory-seeded into the registry under the version of the supervisor tree it was built from: `flasher:0.3.3` at a tag, `flasher:0.3.3-abc123` past one. It installs an engine firmware image and exits, so it is present before any network is up. `make wapps` builds it from the supervisor submodule. A version too long for a registry version field fails the build.
 - `/proc/wanted` reports a `digest` line: the running image's build-time digest, 64 lowercase hex characters. It identifies the exact bytes that booted, which two builds of one source tree can share a `version` string without. ESP-IDF stamps one; the line is absent on platforms that do not.
+- `/proc/wanted` reports a `supervisor_abi` line: the version of the contract between the engine and a supervisor wapp. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value.
+- `/dev/wanted/ctl` takes `rollback-supervisor`, which pins the compiled-in supervisor image and reloads it. `-EALREADY` when that image is what already runs.
 
 ### Removed
 
