@@ -481,7 +481,9 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
 
 const char *PlatformName(void) { return "linux"; }
 
-/* No build-time image digest on this target. */
+/* No build-time image digest on this target. buf is unused here but the
+ * signature is the shared platform seam other targets write through. */
+/* NOLINTNEXTLINE(readability-non-const-parameter) */
 int PlatformFirmwareDigest(char *buf, size_t bufLen) {
     (void)buf;
     (void)bufLen;

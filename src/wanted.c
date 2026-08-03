@@ -983,7 +983,7 @@ static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
          * unloads before it loads, and PlatformWappUnload takes a const wapp_t
          * and cannot clear these, so a failed reload would otherwise present
          * layers[0] pointing at freed memory. */
-        memset(w->layers, 0, sizeof(w->layers));
+        memset((void *)w->layers, 0, sizeof(w->layers));
         memset(w->layer_lens, 0, sizeof(w->layer_lens));
         w->layer_cnt = 0;
     }
