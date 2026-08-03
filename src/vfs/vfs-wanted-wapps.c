@@ -599,6 +599,9 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
  *   write /dev/wanted/ctl reload-supervisor
  *                                         adopt a newly staged supervisor
  *                                         image at the next respawn
+ *   write /dev/wanted/ctl rollback-supervisor
+ *                                         pin the compiled-in supervisor image
+ *                                         and reload it
  *
  * (wsh has no shell redirection; its `write` builtin joins its trailing tokens
  * with single spaces and writes them to the node in one write().)
@@ -683,6 +686,18 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
     /* Arm a supervisor image reload — applied at the next respawn. */
     if (strncmp(line, "reload-supervisor", sizeof("reload-supervisor")) == 0) {
         WantedSupervisorReload();
+        return (int)nbyte;
+    }
+
+    /* Pin the compiled-in supervisor image and arm a reload. A supervisor that
+     * finds it cannot support this engine writes this, then exits: the fallback
+     * is deterministic, rather than waiting on the respawn loop's failure
+     * ceiling. -EALREADY when the compiled-in image is what is running, thus
+     * there is nothing to fall back to. */
+    if (strncmp(line, "rollback-supervisor", sizeof("rollback-supervisor")) ==
+        0) {
+        if (WantedSupervisorRollback() != 0)
+            return -EALREADY;
         return (int)nbyte;
     }
 

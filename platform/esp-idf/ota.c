@@ -268,6 +268,26 @@ static void commitJobFn(void *arg) {
     j->rc = (err == ESP_OK) ? 0 : -EIO;
 }
 
+typedef struct {
+    int rc;
+} abortJob_t;
+
+static void abortJobFn(void *arg) {
+    abortJob_t *j = arg;
+
+    if (!g_ota.writing) {
+        j->rc = 0;
+        return;
+    }
+
+    esp_err_t err = esp_ota_abort(g_ota.writeHandle);
+    /* Release the session whatever the driver reports: holding it wedges every
+     * later write. */
+    g_ota.writing = false;
+    g_ota.writeTarget = NULL;
+    j->rc = (err == ESP_OK) ? 0 : -EIO;
+}
+
 static void rollbackJobFn(void *arg) {
     (void)arg;
     /* Does not return on success -- reboots into the other slot. */
@@ -331,6 +351,15 @@ int PlatformOtaCommit(void) {
     if (!g_ota.writing)
         return -EPERM;
     if (!otaRunOnHelper(commitJobFn, &j))
+        return -ENOMEM;
+    return j.rc;
+}
+
+int PlatformOtaAbort(void) {
+    abortJob_t j = {0};
+    if (!g_ota.inited)
+        return -ENODEV;
+    if (!otaRunOnHelper(abortJobFn, &j))
         return -ENOMEM;
     return j.rc;
 }

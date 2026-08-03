@@ -126,6 +126,18 @@ void PlatformExtramEarlyInit(void);
  * /proc/wanted so a wapp can read which platform hosts it. */
 const char *PlatformName(void);
 
+/* Hex digits in a firmware digest (SHA-256). A buffer holding one needs a
+ * further byte for the terminator. */
+#define FIRMWARE_DIGEST_HEX_LEN 64
+
+/* Lowercase-hex digest of the running firmware image, NUL-terminated, written
+ * into `buf` and reported at /proc/wanted. The digest is stamped into the image
+ * at build time, so it distinguishes two builds of one source tree where a
+ * version string cannot: a control plane confirming a firmware update compares
+ * this. Returns the length written, -ENOSYS where the platform stamps no
+ * digest, or -ENOSPC when `bufLen` is too small. */
+int PlatformFirmwareDigest(char *buf, size_t bufLen);
+
 /* System control. A privileged wapp triggers these through the wanted host
  * module; PlatformWappLoop normally respawns a vanished supervisor forever, so
  * they are the only paths that end the engine. The request just sets a flag —
@@ -223,9 +235,15 @@ int PlatformOtaWrite(const uint8_t *buf, size_t len);
  * malformed image is rejected with -EBADMSG and the boot partition is left
  * unchanged. */
 int PlatformOtaCommit(void);
-/* Explicitly revert to the other slot. May reboot the board as part of the
- * call rather than merely scheduling the revert for next boot -- the caller
- * must not assume control returns. */
+/* Discard a streaming write and release the session, leaving the boot
+ * partition unchanged. Ends a write that must not become bootable: a session
+ * begun and never committed holds the slot, and every later BeginWrite answers
+ * -EBUSY until the board reboots. Idempotent -- 0 when no write is in flight.
+ */
+int PlatformOtaAbort(void);
+/* Revert to the other slot. May reboot the board during the call rather than
+ * scheduling the revert for next boot, so the caller must not assume control
+ * returns. Reverts a booted image; it does not end a streaming write. */
 int PlatformOtaRollback(void);
 
 #endif /* PLATFORM_H */

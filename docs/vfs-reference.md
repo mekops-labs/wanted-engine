@@ -53,7 +53,7 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/wapps/<name>/memory` | r | yes | Per-wapp WASM linear-memory accounting: `linear_cur` / `linear_max` (bytes) and `pages_cur` / `pages_max`. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, and `drivers` (the drivers available on this build). |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
@@ -84,6 +84,12 @@ the running platform implements (e.g. `gpio wifi` on NuttX) and any linked in
 from an out-of-tree tree (see the [Platform Guide](platform-guide.md)); naming
 any other driver fails the launch with `-ENODEV`.
 
+`digest` is the running image's build-time digest, 64 lowercase hex characters
+(ESP-IDF stamps the ELF SHA-256 into the image descriptor). It identifies the
+exact bytes that booted, thus a control plane confirming a firmware update
+compares it rather than `version`, which two builds of one source tree can
+share. The line is absent on a platform that stamps no digest.
+
 `platform` is the build target (`linux`, `nuttx`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
 
 ## `/` — TarFS application space
@@ -113,7 +119,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `inflate` | `drivers[]` | `/dev/inflate` | Streaming gzip decompression device; see below. |
 | `gpio` | `drivers[]` | `/dev/gpio` | A GPIO pin as a text level node — `write "1"/"0"` drives it high/low, `read` returns `"0\n"/"1\n"`. The engine does the GPIO ioctl; the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via `options`). NuttX only — naming it on a platform without GPIO (Linux) fails the launch with `-ENODEV`. |
 | `wifi` | `drivers[]` | `/dev/wifi` | Wi-Fi station control as a text node. `write "scan"` starts a scan (following reads stream one `<ssid> <bssid> <rssi>` line per AP, then EOF); `write "connect <ssid> <pass>"` associates (WPA2-PSK) and runs DHCP; `write "disconnect"` drops the association; a plain `read` returns one status line — `connected <ssid> <ip>` or `disconnected`. The engine drives the radio (WAPI on NuttX, `esp_wifi` on ESP-IDF); the wapp stays pure WASI. NuttX and ESP-IDF only — `-ENODEV` elsewhere. |
-| `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `confirm` / `rollback`), `read` drains a status snapshot (active slot, confirmed state, pending swap); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. ESP-IDF only (`esp_ota_ops`) — `-ENODEV` elsewhere. |
+| `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `abort` / `confirm` / `rollback`), `read` drains a status snapshot (active slot, confirmed state, pending swap); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. End every `begin`: `commit` makes the staged image bootable, `abort` discards it. A session left open holds the slot, and every later `begin` answers `-EBUSY` until the board reboots. `rollback` reverts a booted image and reboots the board; it does not end a streaming write. ESP-IDF only (`esp_ota_ops`) — `-ENODEV` elsewhere. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
 | `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
 | `config` | `mounts[]` | chosen `path` (e.g. `/etc/config`) | Read-only config-file injection, reachable outside `/dev`. |

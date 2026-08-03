@@ -7,13 +7,24 @@ Unreleased
 ### Added
 
 - Classic ESP32 (Waveshare ESP32 One, quad PSRAM, 4 MB flash) support under ESP-IDF, alongside the ESP32-S3. `make esp32` builds it. Single factory app slot, no A/B OTA.
+- `/dev/ota` takes an `abort` command, which discards a streaming image write and releases the session. A write that begins and never commits holds the slot, and every later `begin` answers `-EBUSY` until the board reboots.
+- The firmware flasher wapp is factory-seeded into the registry under the version of the supervisor tree it was built from: `flasher:0.3.3` at a tag, `flasher:0.3.3-abc123` past one. It installs an engine firmware image and exits, so it is present before any network is up. `make wapps` builds it from the supervisor submodule. A version too long for a registry version field fails the build.
+- `/proc/wanted` reports a `digest` line: the running image's build-time digest, 64 lowercase hex characters. It identifies the exact bytes that booted, which two builds of one source tree can share a `version` string without. ESP-IDF stamps one; the line is absent on platforms that do not.
+- `/proc/wanted` reports a `supervisor_abi` line: the version of the contract between the engine and a supervisor wapp. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value.
+- `/dev/wanted/ctl` takes `rollback-supervisor`, which pins the compiled-in supervisor image and reloads it. `-EALREADY` when that image is what already runs.
 
 ### Removed
 
 - The NuttX build path for the classic ESP32: `docker/Containerfile.esp32` and `configs/esp32-nuttx_defconfig`.
 
+### Changed
+
+- A factory-seed image is written only when its registry ref is absent, so an image installed over a seeded ref survives the next boot.
+- A staged supervisor image that starts and exits at once now counts toward the rollback ceiling, alongside one that fails to launch. An image can load, find it cannot work with the engine, and leave cleanly, which no launch check sees. An exit after a working lifetime stays an ordinary one, and the compiled-in image is never judged this way.
+
 ### Fixed
 
+- A supervisor image that fails to load no longer leaves the engine holding freed layer memory. A reload unloads before it loads, so a failed reload presented a freed pointer as a valid image and the next start crashed the engine — reachable whenever a rollback landed on a compiled-in image that could not itself be loaded.
 - PSRAM allocations are 8-byte aligned (`heap_caps_aligned_alloc`).
 - The classic ESP32's UART console installs a blocking driver.
 

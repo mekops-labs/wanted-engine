@@ -15,6 +15,17 @@
  * each wapp the engine can run, so the two counts cannot disagree. */
 #define CONFIG_WANTED_LOG_SLOTS CONFIG_WANTED_MAX_WAPPS
 
+/* Version of the contract between the engine and a supervisor wapp: the shape
+ * of the /dev/wanted control plane, its verbs, and the wapp states it reports.
+ * Reported at /proc/wanted as `supervisor_abi`.
+ *
+ * Bump only when a supervisor built against an earlier value would misread this
+ * engine — not for an ordinary release, and not for an addition an older
+ * supervisor can ignore. A supervisor reads it before acting on anything else
+ * and writes `rollback-supervisor` when it cannot support the value, which
+ * hands the node back to the compiled-in image. */
+#define WANTED_SUPERVISOR_ABI 1
+
 #define WAPP_MAX_NAME_LEN 15
 #define WAPP_MAX_VERSION_LEN 15
 #define MAX_DRIVER_NAME 15
@@ -232,3 +243,36 @@ int WantedSupervisorReload(void);
  *         built-in image and the caller must report the failure itself.
  */
 int WantedSupervisorRollback(void);
+
+/* Consecutive bad starts before the engine falls back to the compiled-in
+ * supervisor image. */
+#define MAX_SUPERVISOR_LAUNCH_FAILURES 3
+
+/** What a platform run loop should do after one supervisor observation. */
+typedef enum {
+    SUPERVISOR_HEALTHY,       /**< Running. Nothing to do. */
+    SUPERVISOR_RESPAWN,       /**< Gone. Start it again. */
+    SUPERVISOR_ROLLED_BACK,   /**< Bad image; the compiled-in one is pinned.
+                                   Start it and report the fallback. */
+    SUPERVISOR_UNRECOVERABLE, /**< The compiled-in image fails too, thus the
+                                   configuration is broken. Report and stop. */
+} supervisorHealth_t;
+
+/**
+ * Judge supervisor health once per run-loop iteration and count bad starts
+ * toward the rollback ceiling. Holds the counters, so a platform run loop keeps
+ * only the respawn itself.
+ *
+ * Call every iteration with what the platform's wapp slots report for the
+ * supervisor: whether any is RUNNING, whether any is in FAILURE (a launch error
+ * or a trap), and whether any has EXITED. An exit is judged by how long the
+ * supervisor ran first — an image that leaves immediately counts as a bad
+ * start, one that leaves after working does not.
+ *
+ * @param running  a supervisor slot is RUNNING.
+ * @param failed   a supervisor slot is in FAILURE.
+ * @param exited   a supervisor slot has EXITED.
+ * @return what the caller should do next.
+ */
+supervisorHealth_t WantedSupervisorObserve(bool running, bool failed,
+                                           bool exited);

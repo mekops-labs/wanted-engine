@@ -204,8 +204,10 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     return (int)n;
 }
 
-/* /dev/ota: one command per call ("begin"/"commit"/"confirm"/"rollback").
- * /dev/ota/slot: raw image bytes, forwarded to PlatformOtaWrite. */
+/* /dev/ota: one command per call ("begin"/"commit"/"abort"/"confirm"/
+ * "rollback"). "abort" discards a streaming write; "rollback" reverts a booted
+ * image and reboots. /dev/ota/slot: image bytes, forwarded to
+ * PlatformOtaWrite. */
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     if (fd < 0 || fd >= OTA_MAX_FDS || !d->fds[fd].used)
         return -EBADF;
@@ -232,6 +234,8 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
         rc = PlatformOtaBeginWrite();
     else if (strcmp(cmd, "commit") == 0)
         rc = PlatformOtaCommit();
+    else if (strcmp(cmd, "abort") == 0)
+        rc = PlatformOtaAbort();
     else if (strcmp(cmd, "confirm") == 0)
         rc = PlatformOtaConfirm();
     else if (strcmp(cmd, "rollback") == 0)

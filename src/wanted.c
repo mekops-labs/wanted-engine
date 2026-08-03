@@ -359,28 +359,40 @@ static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
  * key:\tvalue line per field: human-readable, trivially split on the tab. */
 static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
-    int w =
-        snprintf((char *)buf, bufLen,
-                 "platform:\t%s\n"
-                 "version:\t%s\n"
-                 "max_wapps:\t%d\n"
-                 "max_wapp_name:\t%d B\n"
-                 "max_path:\t%d B\n"
-                 "wasm_stack:\t%d B\n"
-                 "wasm_heap:\t%d B\n"
-                 "wasm_worker_stack:\t%zu B\n"
-                 "wasm_max_pages:\t%d\n"
-                 "max_drivers:\t%d\n"
-                 "max_options:\t%d B\n"
-                 "log_slots:\t%d\n",
-                 PlatformName(), WANTED_VERSION, CONFIG_WANTED_MAX_WAPPS,
-                 WAPP_MAX_NAME_LEN, CONFIG_WANTED_MAX_PATH_LEN,
-                 CONFIG_WANTED_WASM_STACK_SIZE, CONFIG_WANTED_WASM_HEAP_SIZE,
-                 PlatformWorkerStackSize(), CONFIG_WANTED_WASM_MAX_MEMORY_PAGES,
-                 CONFIG_WANTED_MAX_DRIVERS_CNT, CONFIG_WANTED_MAX_OPTIONS_SIZE,
-                 CONFIG_WANTED_LOG_SLOTS);
+    int w = snprintf((char *)buf, bufLen,
+                     "platform:\t%s\n"
+                     "version:\t%s\n"
+                     "supervisor_abi:\t%d\n"
+                     "max_wapps:\t%d\n"
+                     "max_wapp_name:\t%d B\n"
+                     "max_path:\t%d B\n"
+                     "wasm_stack:\t%d B\n"
+                     "wasm_heap:\t%d B\n"
+                     "wasm_worker_stack:\t%zu B\n"
+                     "wasm_max_pages:\t%d\n"
+                     "max_drivers:\t%d\n"
+                     "max_options:\t%d B\n"
+                     "log_slots:\t%d\n",
+                     PlatformName(), WANTED_VERSION, WANTED_SUPERVISOR_ABI,
+                     CONFIG_WANTED_MAX_WAPPS, WAPP_MAX_NAME_LEN,
+                     CONFIG_WANTED_MAX_PATH_LEN, CONFIG_WANTED_WASM_STACK_SIZE,
+                     CONFIG_WANTED_WASM_HEAP_SIZE, PlatformWorkerStackSize(),
+                     CONFIG_WANTED_WASM_MAX_MEMORY_PAGES,
+                     CONFIG_WANTED_MAX_DRIVERS_CNT,
+                     CONFIG_WANTED_MAX_OPTIONS_SIZE, CONFIG_WANTED_LOG_SLOTS);
     if (w < 0)
         return -EIO;
+
+    /* Build-time image digest, on a platform that stamps one. The line is
+     * absent elsewhere, so a reader never mistakes an empty value for an
+     * image that hashes to nothing. */
+    char digest[FIRMWARE_DIGEST_HEX_LEN + 1];
+    if (w < (int)bufLen && PlatformFirmwareDigest(digest, sizeof(digest)) > 0) {
+        int n = snprintf((char *)buf + w, (size_t)((int)bufLen - w),
+                         "digest:\t%s\n", digest);
+        if (n > 0 && w + n < (int)bufLen)
+            w += n;
+    }
 
     /* Available drivers: the merged core + platform table a launch config can
      * request on this build, so a supervisor can discover capability before
@@ -966,6 +978,14 @@ static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
     }
     if (ret < 0) {
         DEBUG_TRACE("failed to load supervisor image from %s: %d", path, ret);
+        /* Drop the layer bookkeeping so the struct keeps its own invariant: a
+         * valid wapp has layer_cnt >= 1, which wappTarfsInit checks. A reload
+         * unloads before it loads, and PlatformWappUnload takes a const wapp_t
+         * and cannot clear these, so a failed reload would otherwise present
+         * layers[0] pointing at freed memory. */
+        memset((void *)w->layers, 0, sizeof(w->layers));
+        memset(w->layer_lens, 0, sizeof(w->layer_lens));
+        w->layer_cnt = 0;
     }
 
     return ret;
@@ -984,6 +1004,66 @@ int WantedSupervisorRollback(void) {
     supervisorPinBuiltin = 1;
     supervisorReloadArmed = 1;
     return 0;
+}
+
+/* Consecutive observations a supervisor must be seen running before an exit
+ * counts as an ordinary one. A platform run loop polls at 1 Hz, thus this is
+ * seconds. It clears a normal startup (~5 s) and stays far below any real
+ * working lifetime. */
+#define SUPERVISOR_HEALTHY_TICKS 10
+
+/* True while the running image is a staged one, thus a rollback has somewhere
+ * to go. */
+static bool supervisorStaged(void) {
+    const wantedConfig_t *cfg = WantedGetConfig();
+
+    if (supervisorPinBuiltin)
+        return false;
+    return cfg != NULL && cfg->supervisorImagePath[0] != '\0' &&
+           strcmp(cfg->supervisorImagePath, SUPERVISOR_IMAGE_PATH) != 0;
+}
+
+supervisorHealth_t WantedSupervisorObserve(bool running, bool failed,
+                                           bool exited) {
+    static int healthyTicks;
+    static int failures;
+
+    if (running) {
+        if (healthyTicks < SUPERVISOR_HEALTHY_TICKS)
+            healthyTicks++;
+        /* Only a supervisor that has run its full healthy span clears the
+         * count. Clearing it on any running tick would let an image that dies
+         * just short of that span restart forever, each attempt erasing the
+         * last. */
+        if (healthyTicks >= SUPERVISOR_HEALTHY_TICKS)
+            failures = 0;
+        return SUPERVISOR_HEALTHY;
+    }
+
+    /* A launch that failed outright, or a staged image that reached its entry
+     * point and left again immediately. The second is what an incompatible
+     * supervisor looks like: it loads, decides it cannot run here, and exits
+     * cleanly, which no load-failure check can see. An exit after a working
+     * lifetime is the ordinary one — a reboot, a poweroff, a live update.
+     *
+     * A quick exit counts only while a staged image is what runs. The
+     * compiled-in image has nothing to fall back to, and its exit is a
+     * supervisor's own business: an interactive one is quit and restarted
+     * freely, and ending the engine over that would be a denial of service. */
+    bool suspect = failed || (exited && supervisorStaged() &&
+                              healthyTicks < SUPERVISOR_HEALTHY_TICKS);
+    healthyTicks = 0;
+
+    if (!suspect) {
+        failures = 0;
+        return SUPERVISOR_RESPAWN;
+    }
+    if (++failures < MAX_SUPERVISOR_LAUNCH_FAILURES)
+        return SUPERVISOR_RESPAWN;
+
+    failures = 0;
+    return WantedSupervisorRollback() == 0 ? SUPERVISOR_ROLLED_BACK
+                                           : SUPERVISOR_UNRECOVERABLE;
 }
 
 wapp_t *WantedGetCurrentSupervisor(void) {

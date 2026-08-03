@@ -1,8 +1,8 @@
 #!/bin/bash
 # Supervisor live-update functional test: replace the supervisor image without
 # stopping the engine or its child wapps. Asserts child continuity, that a
-# staged image is adopted only when a reload is armed, and that a bad staged
-# image rolls back to the built-in one.
+# staged image is adopted only when a reload is armed, and that a staged image
+# that cannot launch or exits at once rolls back to the built-in one.
 #
 # Usage: test/live-update.sh [wanted-cli] [config]
 set -u
@@ -56,6 +56,20 @@ stage_broken() {
     printf 'not-a-wapp' > "$d/README"
     tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
         -C "$d" -cf "$STAGED.new" README
+    rm -rf "$d"
+    mv -f "$STAGED.new" "$STAGED"
+}
+
+# A wapp image that loads and runs, then exits after a couple of seconds. It
+# stands in for a supervisor that starts under an engine it cannot work with
+# and leaves again: the load succeeds, so nothing reports a failure, and only
+# the lifetime distinguishes it from a working image.
+stage_fast_exit() {
+    local d
+    d=$(mktemp -d)
+    cp wapps/hello/hello.wasm "$d/app.wasm"
+    tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
+        -C "$d" -cf "$STAGED.new" app.wasm
     rm -rf "$d"
     mv -f "$STAGED.new" "$STAGED"
 }
@@ -169,6 +183,29 @@ check $? "engine reports the rollback"
 # have come up and answered a command after the rollback.
 [ "$(grep -c 'Following commands are available' "$ENGINE_OUT")" -ge 2 ]
 check $? "rolled-back supervisor has a working console"
+rm -f "$ENGINE_OUT"
+
+# ── 5. a staged image that loads but exits at once rolls back ───────────────
+# Distinct from case 4: this image is valid wasm and reaches its entry point,
+# so the load never fails and no launch error is ever reported. Its lifetime is
+# the only thing that gives it away.
+stage "$WSH_TAR"
+engine_start
+send 1   "help"
+stage_fast_exit
+send 1   "write /dev/wanted/ctl reload-supervisor"
+send 0.5 "exit"
+send 25  "help"
+engine_stop
+
+[ "$ENGINE_ALIVE" -eq 1 ]
+check $? "engine stays up when the staged supervisor exits at once"
+
+grep -q "falling back to the built-in image" "$ENGINE_OUT"
+check $? "a staged supervisor that exits at once rolls back"
+
+[ "$(grep -c 'Following commands are available' "$ENGINE_OUT")" -ge 2 ]
+check $? "console works again after a fast-exit rollback"
 rm -f "$ENGINE_OUT"
 
 if [ "$rc" -eq 0 ]; then

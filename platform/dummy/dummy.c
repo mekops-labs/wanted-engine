@@ -57,6 +57,13 @@ void PlatformStorageStats(size_t *free_b, size_t *total_b) {
 
 const char *PlatformName(void) { return "dummy"; }
 
+/* No build-time image digest on this target. */
+int PlatformFirmwareDigest(char *buf, size_t bufLen) {
+    (void)buf;
+    (void)bufLen;
+    return -ENOSYS;
+}
+
 /* The dummy platform is single-threaded (unit tests), so the mutex is a no-op.
  * A non-NULL sentinel is returned so callers can still distinguish allocation
  * failure (NULL) from a successfully created lock. */

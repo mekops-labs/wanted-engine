@@ -4,8 +4,11 @@
  * CONFIG_SPIRAM_USE_MALLOC is set, the PSRAM pool — matching where the engine's
  * allocations land. */
 
+#include <errno.h>
+
 #include <platform.h>
 
+#include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_littlefs.h"
 
@@ -37,3 +40,32 @@ void PlatformStorageStats(size_t *free_b, size_t *total_b) {
 }
 
 const char *PlatformName(void) { return "esp-idf"; }
+
+/* The toolchain stamps the ELF SHA-256 into the image descriptor at build time,
+ * thus this reads a digest rather than computing one.
+ *
+ * The raw descriptor field is hex-encoded here rather than read through
+ * esp_app_get_elf_sha256(): that call serves a RAM copy sized by
+ * CONFIG_APP_RETRIEVE_LEN_ELF_SHA, which holds 9 of the 64 hex digits by
+ * default and truncates to it silently. A prefix compares cleanly and would
+ * confirm the wrong image. */
+int PlatformFirmwareDigest(char *buf, size_t bufLen) {
+    static const char hex[] = "0123456789abcdef";
+    const esp_app_desc_t *desc = esp_app_get_description();
+
+    if (desc == NULL)
+        return -ENOSYS;
+
+    /* Bound against the field itself, not the advertised length, so a wider
+     * digest reports -ENOSPC instead of overrunning the caller. */
+    size_t len = 2 * sizeof(desc->app_elf_sha256);
+    if (bufLen < len + 1)
+        return -ENOSPC;
+
+    for (size_t i = 0; i < sizeof(desc->app_elf_sha256); i++) {
+        buf[2 * i] = hex[desc->app_elf_sha256[i] >> 4];
+        buf[2 * i + 1] = hex[desc->app_elf_sha256[i] & 0x0f];
+    }
+    buf[len] = '\0';
+    return (int)len;
+}
