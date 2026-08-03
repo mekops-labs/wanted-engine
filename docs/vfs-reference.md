@@ -51,7 +51,7 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/wapps/<name>/id` | r | yes | Engine-assigned wapp id (decimal). |
 | `/proc/wapps/<name>/exit_code` | r | yes | WASI exit code (authoritative when `state == exited`; else the sentinel `-1`). |
 | `/proc/wapps/<name>/memory` | r | yes | Per-wapp WASM linear-memory accounting: `linear_cur` / `linear_max` (bytes) and `pages_cur` / `pages_max`. |
-| `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`. |
+| `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`; `store_free` / `store_total`; `wasm_pages_free` — free WASM linear-memory pages, summed across every loaded wapp's headroom to its own ceiling. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
 | `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
 

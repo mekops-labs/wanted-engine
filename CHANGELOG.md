@@ -12,6 +12,7 @@ Unreleased
 - `/proc/wanted` reports a `digest` line: the running image's build-time digest, 64 lowercase hex characters. It identifies the exact bytes that booted, which two builds of one source tree can share a `version` string without. ESP-IDF stamps one; the line is absent on platforms that do not.
 - `/proc/wanted` reports a `supervisor_abi` line: the version of the contract between the engine and a supervisor wapp. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value.
 - `/dev/wanted/ctl` takes `rollback-supervisor`, which pins the compiled-in supervisor image and reloads it. `-EALREADY` when that image is what already runs.
+- `/proc/memory` reports a `wasm_pages_free` line: the sum, across every loaded wapp, of the WASM linear-memory headroom left before its own page ceiling. A live figure, unlike `/proc/wanted`'s compile-time `wasm_max_pages`.
 
 ### Removed
 

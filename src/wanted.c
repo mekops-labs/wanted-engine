@@ -340,12 +340,26 @@ static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
     size_t store_free = 0, store_total = 0;
     PlatformMemoryStats(&heap_used, &heap_total);
     PlatformStorageStats(&store_free, &store_total);
+
+    /* Free WASM linear-memory pages: the sum, across every loaded wapp, of the
+     * headroom left before its own page ceiling. Live per-wapp figures already
+     * back /proc/wapps/<name>/memory; this aggregates the same sample. */
+    wapp_state_t states[CONFIG_WANTED_MAX_WAPPS];
+    int n = PlatformWappGetState(states, CONFIG_WANTED_MAX_WAPPS);
+    uint64_t wasm_pages_free = 0;
+    for (int i = 0; i < n; i++) {
+        if (states[i].mem_pages_max > states[i].mem_pages_cur)
+            wasm_pages_free +=
+                states[i].mem_pages_max - states[i].mem_pages_cur;
+    }
+
     int w =
         snprintf((char *)buf, bufLen,
                  "stack_size:\t%d B\nheap_used:\t%zu B\nheap_total:\t%zu B\n"
-                 "store_free:\t%zu B\nstore_total:\t%zu B\n",
+                 "store_free:\t%zu B\nstore_total:\t%zu B\n"
+                 "wasm_pages_free:\t%llu\n",
                  CONFIG_WANTED_WASM_STACK_SIZE, heap_used, heap_total,
-                 store_free, store_total);
+                 store_free, store_total, (unsigned long long)wasm_pages_free);
     if (w < 0)
         return -EIO;
     return w < (int)bufLen ? w : (int)bufLen;
