@@ -188,6 +188,43 @@ int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
 int PlatformFsMkdir(int fd, const char *path);
 int PlatformFsRmdir(int fd, const char *path);
 
+/* GPIO backing for the core /dev/gpio driver (src/vfs/vfs-gpio.c).
+ *
+ * The driver owns the wapp-facing tree, the grant grammar, and the name-to-line
+ * mapping; the platform owns only the line itself. `address` is the grant's
+ * middle field and is interpreted here and nowhere else: a decimal pin number
+ * on ESP-IDF, a host character-device path such as "/dev/gpio0" on NuttX. A
+ * wapp never sees it.
+ *
+ * PlatformGpioOpen configures the line and returns a handle. It returns
+ * -ENOSYS where the target drives no GPIO, -EINVAL on an address this backing
+ * cannot parse, and -ENOTSUP for a pull or drive mode it cannot honour. The
+ * driver turns any of these into a failed launch, so a wapp never sees a
+ * configuration the board did not apply. */
+typedef struct platform_gpio_t platform_gpio_t;
+
+#define PLAT_GPIO_DIR_IN 0
+#define PLAT_GPIO_DIR_OUT 1
+
+#define PLAT_GPIO_PULL_NONE 0
+#define PLAT_GPIO_PULL_UP 1
+#define PLAT_GPIO_PULL_DOWN 2
+
+#define PLAT_GPIO_DRIVE_PP 0 /* push-pull */
+#define PLAT_GPIO_DRIVE_OD 1 /* open-drain */
+
+typedef struct plat_gpio_cfg_t {
+    const char *address;
+    uint8_t direction; /* PLAT_GPIO_DIR_* */
+    uint8_t pull;      /* PLAT_GPIO_PULL_* */
+    uint8_t drive;     /* PLAT_GPIO_DRIVE_*, output only */
+} plat_gpio_cfg_t;
+
+int PlatformGpioOpen(const plat_gpio_cfg_t *cfg, platform_gpio_t **out);
+int PlatformGpioRead(const platform_gpio_t *g, bool *level);
+int PlatformGpioWrite(platform_gpio_t *g, bool level);
+void PlatformGpioClose(platform_gpio_t *g);
+
 /* One transport endpoint, owned by the platform. Opaque to the engine. */
 struct netCtx;
 

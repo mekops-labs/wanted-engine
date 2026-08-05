@@ -14,7 +14,7 @@ STRINGIFY({
         },
         "drivers" : [
             {"name" : "wanted"},
-            {"name" : "gpio"}
+            {"name" : "gpio", "options" : "pins=led:21:out"}
         ],
         "mounts" : [
             {"name" : "config", "path" : "/etc/config", "options" : ""},

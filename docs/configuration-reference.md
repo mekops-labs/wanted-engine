@@ -80,7 +80,7 @@ Entry shapes per section:
 
 ## Driver name registry
 
-`name` selects one of the engine's built-in drivers. Some are platform-specific (`gpio` exists only on NuttX, `wifi` on NuttX and ESP-IDF, `ota` on ESP-IDF); naming a driver the running platform does not implement fails the launch with `-ENODEV`. Read `/proc/wanted` (`drivers` field) for the names available on a given build.
+`name` selects one of the engine's built-in drivers. Some are platform-specific (`wifi` exists on NuttX and ESP-IDF, `ota` on ESP-IDF); naming a driver the running platform does not implement fails the launch with `-ENODEV`. `gpio` resolves everywhere, but it needs a backing for the lines behind it: a grant on a target with none fails the launch with `-ENOSYS`. Read `/proc/wanted` (`drivers` field) for the names available on a given build.
 
 | `name` | Section | Purpose | `options` example |
 |--------|---------|---------|-------------------|
@@ -88,7 +88,7 @@ Entry shapes per section:
 | `sha256` | `drivers` | Streaming SHA-256 digest device at `/dev/sha256` — writes feed message bytes, the first read returns the digest as 64 hex characters. | — |
 | `ed25519` | `drivers` | Ed25519 signature verification at `/dev/ed25519` — write public key + signature + message, read back `ok`/`fail`. `-ENOSYS` on a build without a crypto backend. | — |
 | `inflate` | `drivers` | Streaming gzip decompression at `/dev/inflate` — a 4-byte LE size prefix, then the member; reads drain the decompressed output. | — |
-| `gpio` | `drivers` | A GPIO pin at `/dev/gpio` as a text level node: `write "1"/"0"` drives it high/low, `read` returns the level. Backed by the host GPIO char device on NuttX. NuttX only — naming it elsewhere (Linux) fails the launch with `-ENODEV`. | `/dev/gpio0` |
+| `gpio` | `drivers` | Digital I/O at `/dev/gpio/<name>/`, one subtree per granted pin, each with `value` and a read-only `direction`. `pins=` is required: a missing, malformed, or empty clause fails the launch. Backed by ESP-IDF and NuttX. | `pins=led:21:out,btn:2:in` |
 | `wifi` | `drivers` | Wi-Fi station control at `/dev/wifi` as a text node: `write "scan"` / `"connect <ssid> <pass>"` / `"disconnect"`; reads stream scan results or a status line. NuttX and ESP-IDF only. | — |
 | `ota` | `drivers` | A/B firmware update: `/dev/ota` control/status node (`begin`/`commit`/`confirm`/`rollback`), `/dev/ota/slot` streaming image sink. ESP-IDF only. | — |
 | `log` | console slot | Ring-buffer console; output captured per-wapp and read back through a `log` mount. | — |

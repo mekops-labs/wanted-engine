@@ -131,6 +131,16 @@ config WANTED_LOGMOUNT_MAX_OPEN
 	help
 	  Reader slots in the log mount's fd table.
 
+config WANTED_VFS_GPIO
+	bool "gpio — per-pin digital I/O"
+	default y
+	help
+	  /dev/gpio/<name>/{value,direction}: one subtree per pin the launch
+	  config granted. The grant maps a wapp-visible name onto a platform
+	  address, so a wapp image stays board-portable. Needs a PlatformGpio*
+	  backing — present on ESP-IDF and NuttX, absent on Linux, where a grant
+	  fails the launch until the libgpiod backing lands.
+
 config WANTED_VFS_WANTED
 	bool "wanted — the control-plane namespace"
 	default y
@@ -158,6 +168,14 @@ config WANTED_PIPE_MAX_PIPES
 	  allocated whether or not any wapp opens /dev/pipe — 32 KiB at the
 	  defaults, ~6 % of a 512 KiB part. Raising it also grows a stack frame:
 	  the driver's readdir sizes a local array by this.
+
+config WANTED_GPIO_MAX_PINS
+	int "Pins per gpio grant"
+	default 8
+	range 1 32
+	help
+	  Pins one wapp's gpio grant may name. Sizes a per-wapp table of names
+	  and addresses, and a local array in the driver's readdir.
 
 config WANTED_LOG_CAP
 	int "Bytes retained per wapp log"

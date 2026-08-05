@@ -12,6 +12,7 @@ endif()
 set(sources
     vfs/vfs-linux.c
     api/clock-sleep.c
+    api/gpio.c
     api/extram.c
     api/fs-volume.c
     ${CMAKE_SOURCE_DIR}/platform/posix/clock.c

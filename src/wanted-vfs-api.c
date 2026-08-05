@@ -324,8 +324,10 @@ static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
 }
 
 /* Core driver table — the platform-agnostic drivers, identical on every target
- * Platform-specific drivers a target may
- * lack (gpio, wifi, ...) come from PlatformDriverTable() instead. Core names
+ * `gpio` is core because its tree, grant grammar, and name-to-line mapping
+ * are identical everywhere — only the line itself is per-platform, behind
+ * PlatformGpio*. Drivers a target may lack outright (wifi, ota) still come
+ * from PlatformDriverTable() instead. Core names
  * are reserved: this table is searched first, so no other table can shadow a
  * security-relevant driver such as `wanted`. */
 static const vfs_driver_table_t core_driver_table[] = {
@@ -349,6 +351,9 @@ static const vfs_driver_table_t core_driver_table[] = {
 #endif
 #ifdef CONFIG_WANTED_VFS_INFLATE
     {"inflate", VfsInflateInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_GPIO
+    {"gpio", VfsGpioInit},
 #endif
 #ifdef CONFIG_WANTED_VFS_WANTED
     {"wanted", VfsWantedInit},

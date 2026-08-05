@@ -75,7 +75,7 @@ sequenceDiagram
     participant B as WASI bridge<br/>(wasi/wasi-vfs.c)
     participant R as VFS router<br/>(vfs/vfs.c)
     participant D as Driver<br/>(DevFS / NetFS / ProcFS / TarFS)
-    W->>B: path_open("/dev/gpio", flags)
+    W->>B: path_open("/dev/gpio/led/value", flags)
     B->>R: VfsOpenAt(dirfd, path, flags)
     R->>R: normalise path (cwalk),<br/>match the mount table
     R->>D: driver OpenAt(ctx, ...)

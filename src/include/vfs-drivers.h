@@ -79,7 +79,9 @@ vfs_driver_t *VfsEd25519Init(const wapp_t *wapp, const char *options);
 #ifdef CONFIG_WANTED_VFS_INFLATE
 vfs_driver_t *VfsInflateInit(const wapp_t *wapp, const char *options);
 #endif
+#ifdef CONFIG_WANTED_VFS_GPIO
 vfs_driver_t *VfsGpioInit(const wapp_t *wapp, const char *options);
+#endif
 vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsOtaInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *options);

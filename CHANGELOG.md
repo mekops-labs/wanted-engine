@@ -13,6 +13,7 @@ Unreleased
 - `/proc/wanted` reports a `supervisor_abi` line: the version of the contract between the engine and a supervisor wapp. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value.
 - `/dev/wanted/ctl` takes `rollback-supervisor`, which pins the compiled-in supervisor image and reloads it. `-EALREADY` when that image is what already runs.
 - A wapp can serve a socket. A `sockets[]` entry with `"role": "listen"` binds its address instead of connecting to it: on `tcp` the `/net/<name>` fd listens and `sock_accept` hands back a connection fd of its own, several of which are served at once (`backlog` and `max_conns` bound the listener); on `udp` the node is the bound socket, read for a datagram and written to answer its sender. Off by default, built in with `CONFIG_WANTED_VFS_SOCKET_LISTEN` (on for OpenWRT). A config asking for a listener the build cannot serve fails the launch. A secure transport cannot listen: TLS server credentials have no source.
+- The `gpio` driver addresses any pin the launch config grants it, at `/dev/gpio/<name>/{value,direction}`. A pin is named, not numbered — `pins=boot0:4:out,btn:2:in` maps a wapp-visible label onto a platform address — so one wapp image runs on boards with different wiring. `readdir` lists exactly the granted pins and an ungranted one is unreachable, not refused. Direction, pull and drive are fixed by the grant, and `direction` is read-only, so a wapp cannot drive a line an external device is already driving.
 - `/proc/memory` reports a `wasm_pages_free` line: the sum, across every loaded wapp, of the WASM linear-memory headroom left before its own page ceiling. A live figure, unlike `/proc/wanted`'s compile-time `wasm_max_pages`.
 
 ### Removed
@@ -21,6 +22,7 @@ Unreleased
 
 ### Changed
 
+- `gpio` is a core driver rather than a per-platform one, so its tree, grant grammar and name-to-line mapping are compiled once and only the line behind it is per-platform (`PlatformGpio*`). **This is a breaking change to the `gpio` ABI.** The single node at `/dev/gpio` is gone, and with it the silent fallback to GPIO 21 that a malformed grant used to reach: a missing, malformed or empty `pins=` clause now fails the launch. Every launch config granting `gpio` must add one, and a wapp must open `/dev/gpio/<name>/value` instead of `/dev/gpio`. The `blink` sample is migrated.
 - A factory-seed image is written only when its registry ref is absent, so an image installed over a seeded ref survives the next boot.
 - A staged supervisor image that starts and exits at once now counts toward the rollback ceiling, alongside one that fails to launch. An image can load, find it cannot work with the engine, and leave cleanly, which no launch check sees. An exit after a working lifetime stays an ordinary one, and the compiled-in image is never judged this way.
 

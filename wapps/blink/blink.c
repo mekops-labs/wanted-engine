@@ -2,16 +2,19 @@
 
 /* blink — toggles a board LED through the engine's gpio device node.
  *
- * Its launch config grants the `gpio` driver, which the engine mounts at
- * /dev/gpio in this wapp's namespace; blink drives the pin by writing "1"/"0"
- * and never returns on its own — the supervisor halts it with a control-plane
- * `stop`. The wapp touches hardware only through the VFS, with no GPIO-specific
- * ABI. */
+ * Its launch config grants the `gpio` driver one pin under the name `led`, for
+ * example "pins=led:21:out". The engine mounts that pin at
+ * /dev/gpio/led/value; blink drives it by writing "1"/"0" and never returns on
+ * its own — the supervisor halts it with a control-plane `stop`.
+ *
+ * The pin is named, not numbered, so this binary runs on any board whose
+ * launch config maps `led` onto the right line. The wapp touches hardware only
+ * through the VFS, with no GPIO-specific ABI. */
 
 #include <fcntl.h>
 #include <unistd.h>
 
-#define GPIO_PATH      "/dev/gpio"
+#define GPIO_PATH      "/dev/gpio/led/value"
 #define PERIOD_SECONDS 1
 
 int main(void) {

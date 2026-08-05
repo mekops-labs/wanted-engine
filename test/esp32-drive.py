@@ -15,7 +15,7 @@ BAUD = 115200
 DEFAULT = [
     "@2 status",
     "@1 create blink",
-    '@1 set_config blink {"drivers":[{"name":"gpio"}]}',
+    '@1 set_config blink {"drivers":[{"name":"gpio","options":"pins=led:21:out"}]}',
     "@1 start blink",
     "@2 status",
     "@1 create hello",
