@@ -36,7 +36,7 @@ A minimal `{"system": {}}` is a valid config.
       "console": { "in": {...}, "out": {...}, "err": {...} },
       "drivers": [ { "name": "...", "options": "..." } ],
       "mounts":  [ { "name": "...", "path": "...", "options": "..." } ],
-      "sockets": [ { "name": "...", "address": "..." } ]
+      "sockets": [ { "name": "...", "address": "...", "role": "connect|listen" } ]
     }
   }
 }
@@ -67,7 +67,7 @@ The launch config addresses resources through three purpose-specific sections, e
 | `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. |
 | `drivers` | array | Up to `MAX_DRIVERS_CNT` (default 6, profile-tunable) device singletons. Each mounts at `/dev/<name>` — the name determines the mount, so no `path`. |
 | `mounts` | array | Up to `MAX_DRIVERS_CNT` file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev` and `/net`. |
-| `sockets` | array | Up to `MAX_DRIVERS_CNT` named connections, each created at `/net/<name>`; the transport is the entry's `address`. |
+| `sockets` | array | Up to `MAX_DRIVERS_CNT` named sockets, each created at `/net/<name>`; the transport is the entry's `address` and the direction its `role`. |
 
 Entry shapes per section:
 
@@ -76,7 +76,7 @@ Entry shapes per section:
 | `console.*` | `name`, `options` | Driver backing the stdio slot. |
 | `drivers[]` | `name`, `options` | Device driver; mounted at `/dev/<name>`. A `path` is rejected. |
 | `mounts[]` | `name`, `path`, `options` | `path` is required, absolute, and must not fall under `/dev` or `/net`. |
-| `sockets[]` | `name`, `address` | `name` is the `/net` node label; `address` is the connection URL. A `path` is rejected. |
+| `sockets[]` | `name`, `address`, `role`, `backlog`, `max_conns` | `name` is the `/net` node label; `address` is the transport URL. `role` is `connect` (default) or `listen`; `backlog` and `max_conns` bound a stream listener and are rejected elsewhere. A `path` is rejected. |
 
 ## Driver name registry
 
@@ -96,12 +96,36 @@ Entry shapes per section:
 | `pipe` | console slot | Live console: backs the slot with a named pipe in the shared store, so a peer wapp reads the stream at `/dev/pipe/<name>`. The pipe is auto-named `<wapp>.<slot>` (e.g. `app.out`) unless `options` pins `name=`. `out`/`err` are lossy (drop oldest on a full ring so an unread console never wedges the wapp); `in` reads a peer's writes. | `name=feed` |
 | `platform` | console slot / `mounts` | As a console slot: the engine's native stdio (fds 0/1/2). In `mounts[]`: a bind mount of a host directory as a native WASI preopen at `path`; `options` set the host source and access mode. | `src=/etc/app,ro` |
 | `volume` | `mounts` | An engine-managed persistent store mounted at `path`. The engine owns the host location, so the wapp names only a volume — no host path. Private per wapp by default; `shared` makes it a cross-wapp store. Portable across hosts. | `name=cache` |
-| `socket` | `sockets` | TCP/UDP, plain or TLS. The transport is the entry's `address`. | `tcp://localhost:8888` |
+| `socket` | `sockets` | TCP/UDP, plain or TLS, outbound or listening. The transport is the entry's `address`. | `tcp://localhost:8888` |
 | `9p` | `mounts` | 9P2000 client for an external FS plugin. The `options` URL picks the transport: `tcp`/`udp` to reach a server over the network, `unix` to reach one on the same box over a filesystem socket. | `unix:///run/uci-9p.sock` |
 | `config` | `mounts` | Read-only config-file injection (e.g. mounted at `/etc/config`). | `{"config_file":"/config.json"}` |
 | `wanted` | `drivers` | The control-plane namespace at `/dev/wanted` (privileged). | — |
 
 A socket `address` is a URL, where the scheme picks the transport: `<scheme>://<host>:<port>` with `tcp`/`udp` (plain) or `tcps`/`udps` (TLS/DTLS), or `serial://<device-path>` (a local UART / USB-CDC byte-stream device in place of a network connection). See the [VFS Reference](vfs-reference.md).
+
+### Listening sockets
+
+`"role": "listen"` makes the entry a server: `address` is then the **bind** endpoint the wapp serves on.
+
+```json
+"sockets": [
+  { "name": "http",  "address": "tcp://0.0.0.0:8080", "role": "listen", "backlog": 4, "max_conns": 2 },
+  { "name": "coap",  "address": "udp://0.0.0.0:5683", "role": "listen" }
+]
+```
+
+| Field | Applies to | Effect |
+|-------|-----------|--------|
+| `role` | every entry | `connect` (default) opens an outbound connection; `listen` binds the address. Any other value fails the launch. |
+| `backlog` | `listen` + `tcp` | Connection queue depth, default 4. |
+| `max_conns` | `listen` + `tcp` | Cap on connections held open at once, up to the build's `VFS_SOCKET_MAX_CONNS` (default 4). Accepting past it returns `ENFILE`. |
+
+- **`tcp` + `listen`** — the `/net/<name>` fd is the listener: it binds and listens when opened, `sock_accept` returns a connection fd of its own, and reading the listener itself fails with `ENOTCONN`. Each accepted fd reads, writes, and closes independently; closing one leaves the others serving.
+- **`udp` + `listen`** — the `/net/<name>` fd is the bound socket itself: read a datagram from it, write the answer back. There is no accept step, and a write goes to the peer the last read came from.
+- **`tcps`/`udps` + `listen`** — rejected. A TLS server needs a certificate and key, and the config supplies neither.
+- **`serial` + `listen`** — rejected; a device has no bind step.
+
+The role is a build option, `CONFIG_WANTED_VFS_SOCKET_LISTEN` (default off, on in the OpenWRT defconfig). A config naming `"role": "listen"` on a build without it fails the launch and says so — it never falls back to an outbound connection. See the [Platform Guide](platform-guide.md).
 
 A `platform` mount is a **bind mount** — the Docker `-v /host/path:/wapp/path[:ro]` equivalent. Its `options` string carries two comma-separated knobs:
 

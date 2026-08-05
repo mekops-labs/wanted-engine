@@ -12,6 +12,7 @@ Unreleased
 - `/proc/wanted` reports a `digest` line: the running image's build-time digest, 64 lowercase hex characters. It identifies the exact bytes that booted, which two builds of one source tree can share a `version` string without. ESP-IDF stamps one; the line is absent on platforms that do not.
 - `/proc/wanted` reports a `supervisor_abi` line: the version of the contract between the engine and a supervisor wapp. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value.
 - `/dev/wanted/ctl` takes `rollback-supervisor`, which pins the compiled-in supervisor image and reloads it. `-EALREADY` when that image is what already runs.
+- A wapp can serve a socket. A `sockets[]` entry with `"role": "listen"` binds its address instead of connecting to it: on `tcp` the `/net/<name>` fd listens and `sock_accept` hands back a connection fd of its own, several of which are served at once (`backlog` and `max_conns` bound the listener); on `udp` the node is the bound socket, read for a datagram and written to answer its sender. Off by default, built in with `CONFIG_WANTED_VFS_SOCKET_LISTEN` (on for OpenWRT). A config asking for a listener the build cannot serve fails the launch. A secure transport cannot listen: TLS server credentials have no source.
 - `/proc/memory` reports a `wasm_pages_free` line: the sum, across every loaded wapp, of the WASM linear-memory headroom left before its own page ceiling. A live figure, unlike `/proc/wanted`'s compile-time `wasm_max_pages`.
 
 ### Removed
