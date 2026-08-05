@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF OTA VFS driver, exposed to a wapp as a text control node plus a
- * binary image sink. */
+/* A/B firmware update: a text control node plus a binary image sink.
+ * Backed per platform by PlatformOta*. See docs/vfs-reference.md. */
 
 #include <errno.h>
 #include <stdbool.h>

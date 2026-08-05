@@ -23,7 +23,7 @@ set(vfs_srcs
     vfs-stdio.c vfs-tarfs.c vfs-socket.c
     vfs-wanted.c vfs-wanted-config.c vfs-wanted-wapps.c
     vfs-wanted-registry.c vfs-virtual.c
-    vfs-sha256.c vfs-ed25519.c vfs-inflate.c vfs-gpio.c vfs-uart.c
+    vfs-sha256.c vfs-ed25519.c vfs-inflate.c vfs-gpio.c vfs-uart.c vfs-ota.c
 )
 list(TRANSFORM vfs_srcs PREPEND ${ENGINE}/src/vfs/)
 
@@ -64,9 +64,8 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/gpio.c
     # PlatformUart* over esp_driver_uart, backing the core /dev/uart driver.
     ${ENGINE}/platform/esp-idf/uart.c
-    # PlatformOta* on esp_ota_ops + the /dev/ota VFS driver.
+    # PlatformOta* on esp_ota_ops, backing the core /dev/ota driver.
     ${ENGINE}/platform/esp-idf/ota.c
-    ${ENGINE}/platform/esp-idf/vfs/vfs-ota.c
     # Shared POSIX primitives (also compiled by the Linux/NuttX builds).
     # platform/posix/fs.c is NOT reused here: its PlatformFsRename/Mkdir call
     # renameat/mkdirat, which esp-idf's newlib declares but never links (no
