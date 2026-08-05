@@ -11,6 +11,7 @@
 #include <vfs-pipe.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
+#include <wanted-autoconf.h>
 
 /* Each test group that needs a VFS with a pipe driver gets its own fixture.
  * The pipe storage now lives in a shared pipe_store_t the fixture owns; the
@@ -179,17 +180,17 @@ TEST(pipe_rw, DataPersistsAfterWriterCloses) {
 }
 
 TEST(pipe_rw, WriteToFullBufferReturnsEagain) {
-    /* 4096-byte ring buffer: write 4096 bytes then one more. */
+    /* Fill the ring, then write one byte past it. */
     int writer = VfsOpen(vfs, "/dev/pipe/full", VFS_O_WRONLY);
     int reader = VfsOpen(vfs, "/dev/pipe/full", VFS_O_RDONLY);
     TEST_ASSERT_TRUE(writer >= 0);
     TEST_ASSERT_TRUE(reader >= 0);
 
-    static uint8_t payload[4096];
+    static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
     memset(payload, 0xAB, sizeof(payload));
 
     int n = VfsWrite(vfs, writer, payload, sizeof(payload));
-    TEST_ASSERT_EQUAL_INT(4096, n);
+    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_PIPE_BUF_SIZE, n);
 
     /* Buffer is full — any further write returns -EAGAIN. */
     uint8_t extra = 0xFF;

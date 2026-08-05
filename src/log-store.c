@@ -14,9 +14,8 @@
 #include <log-store.h>
 #include <platform.h>
 #include <wanted-api.h>
+#include <wanted-autoconf.h>
 #include <wanted_malloc.h>
-
-#define CONFIG_WANTED_LOG_CAP 2048 /* bytes retained per wapp (most recent) */
 
 typedef struct {
     char name[WAPP_MAX_NAME_LEN];
