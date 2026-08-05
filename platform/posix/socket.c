@@ -30,9 +30,15 @@ struct netCtx {
 #endif
     int socket;
     bool isSerial; /* plain device fd: read()/write(), not recv()/send() */
+    bool dgram;
+    /* Datagram peer, learned from the last recvfrom() on a bound socket: the
+     * VFS carries no address alongside a payload, so a bound datagram socket
+     * answers whoever it last heard from. */
+    bool hasPeer;
+    struct sockaddr_in peer;
 };
 
-void *PlatformNetOpen(int socket_type) {
+struct netCtx *PlatformNetOpen(int socket_type) {
     int sock;
     int type;
 
@@ -88,6 +94,7 @@ void *PlatformNetOpen(int socket_type) {
     memset(netCtx, 0, sizeof(struct netCtx));
 
     netCtx->socket = sock;
+    netCtx->dgram = (type == SOCK_DGRAM);
 #if SECURE_SOCKETS
     if (socket_type == VFS_SKT_STCP || socket_type == VFS_SKT_SUDP) {
         netCtx->secure = true;
@@ -207,6 +214,84 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
     return 0;
 }
 
+int PlatformNetListen(struct netCtx *c, const char *bindAddr, uint16_t port,
+                      int backlog) {
+    const struct hostent *host;
+    struct sockaddr_in addr;
+    int on = 1;
+
+    if (NULL == c || NULL == bindAddr) {
+        return -EINVAL;
+    }
+
+    if (c->isSerial) {
+        return -ENOTSUP;
+    }
+
+#if SECURE_SOCKETS
+    if (c->secure) {
+        /* A TLS server needs a certificate and a private key, and nothing
+         * supplies them. */
+        return -ENOTSUP;
+    }
+#endif
+
+    if ((host = gethostbyname(bindAddr)) == NULL) {
+        return -EINVAL;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    memcpy(&addr.sin_addr.s_addr, host->h_addr, sizeof(addr.sin_addr.s_addr));
+
+    /* Rebind straight after a restart rather than waiting out TIME_WAIT. */
+    (void)setsockopt(c->socket, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+
+    if (bind(c->socket, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        return -errno;
+    }
+
+    if (c->dgram) {
+        return 0;
+    }
+
+    if (listen(c->socket, backlog) != 0) {
+        return -errno;
+    }
+
+    return 0;
+}
+
+int PlatformNetAccept(struct netCtx *c, struct netCtx **out) {
+    struct netCtx *conn;
+    int newFd;
+
+    if (NULL == c || NULL == out) {
+        return -EINVAL;
+    }
+
+    if (c->isSerial || c->dgram) {
+        /* Neither a device fd nor a datagram socket has an accept queue. */
+        return -ENOTSUP;
+    }
+
+    if ((newFd = accept(c->socket, NULL, NULL)) < 0) {
+        return -errno;
+    }
+
+    conn = WantedMalloc(sizeof(struct netCtx));
+    if (conn == NULL) {
+        close(newFd);
+        return -ENOMEM;
+    }
+    memset(conn, 0, sizeof(struct netCtx));
+    conn->socket = newFd;
+
+    *out = conn;
+    return 0;
+}
+
 int PlatformNetClose(struct netCtx *c) {
     if (NULL == c) {
         return -EINVAL;
@@ -253,6 +338,21 @@ int PlatformNetRecv(struct netCtx *c, void *buf, size_t nbyte, int flags) {
         return ret;
     }
 #endif
+    if (c->dgram) {
+        struct sockaddr_in from;
+        socklen_t fromLen = sizeof(from);
+        ret = (int)recvfrom(c->socket, buf, nbyte, flags,
+                            (struct sockaddr *)&from, &fromLen);
+        if (ret < 0) {
+            return -errno;
+        }
+        if (fromLen == sizeof(from)) {
+            c->peer = from;
+            c->hasPeer = true;
+        }
+        return ret;
+    }
+
     if ((ret = recv(c->socket, buf, nbyte, flags)) < 0) {
         return -errno;
     }
@@ -283,40 +383,19 @@ int PlatformNetSend(struct netCtx *c, const void *buf, size_t nbyte,
         return ret;
     }
 #endif
+    if (c->dgram && c->hasPeer) {
+        ret = (int)sendto(c->socket, buf, nbyte, flags,
+                          (const struct sockaddr *)&c->peer, sizeof(c->peer));
+        if (ret < 0) {
+            return -errno;
+        }
+        return ret;
+    }
+
     if ((ret = send(c->socket, buf, nbyte, flags)) < 0) {
         return -errno;
     }
     return ret;
-}
-
-int PlatformNetAccept(struct netCtx *c) {
-    int newFd;
-
-    if (NULL == c) {
-        return -EINVAL;
-    }
-
-    if (c->isSerial) {
-        /* A plain serial device fd has no listen/accept model. */
-        return -ENOTSUP;
-    }
-
-    if ((newFd = accept(c->socket, NULL, NULL)) < 0) {
-        return -errno;
-    }
-
-#if SECURE_SOCKETS
-    if (c->secure) {
-        c->ssl = TLSOpenConnection(c->sslCtx, newFd);
-        if (c->ssl == NULL) {
-            close(newFd);
-            return -ECONNREFUSED;
-        }
-        TLSAccept(c->ssl);
-    }
-#endif
-
-    return newFd;
 }
 
 int PlatformNetShutdown(struct netCtx *c, int how) {

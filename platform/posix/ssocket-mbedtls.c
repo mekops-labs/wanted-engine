@@ -18,9 +18,9 @@
  * against a trust store is a follow-up before any production posture.
  *
  * Neither this file's TLSOpenConnection nor Linux's ever branches on
- * direction: both unconditionally run a client-mode handshake, including
- * from PlatformNetAccept's call site, so there is no live TLS-server accept
- * path anywhere in this engine yet; TLSAccept is a parity no-op. */
+ * direction: both unconditionally run a client-mode handshake. A secure
+ * transport therefore cannot serve — PlatformNetListen rejects one, for want
+ * of a server certificate and key — and TLSAccept is a parity no-op. */
 
 #include <errno.h>
 #include <stddef.h>

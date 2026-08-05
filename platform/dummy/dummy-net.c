@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -13,137 +14,184 @@
  * delegates every operation to PlatformNet*, so this mock is what makes that
  * driver unit-testable: PlatformNetOpen hands out pool slots, Recv drains a
  * test-seeded inbound buffer, Send captures bytes for inspection, and the
- * connect/accept results are test-controllable. "Single connection" matches
- * the socket driver's own TODO, so the rx/tx buffers are global rather than
- * per-socket.
+ * connect/listen/accept results are test-controllable.
+ *
+ * Buffers are per socket, so a listener and the connections accepted from it
+ * carry their own streams and a test can assert they stay apart. The buffer
+ * helpers without an explicit context act on the most recently opened socket,
+ * which for a single-connection test is the only one there is.
  * ───────────────────────────────────────────────────────────────────────── */
 
-#define DUMMY_NET_MAX_SOCKS 4
+#define DUMMY_NET_MAX_SOCKS 8
 #define DUMMY_NET_BUF 256
 
-typedef struct {
+struct netCtx {
     int used;
     int type;
-} dummy_net_sock_t;
+    int listening;
+    uint8_t rx[DUMMY_NET_BUF];
+    size_t rx_len;
+    size_t rx_off;
+    uint8_t tx[DUMMY_NET_BUF];
+    size_t tx_len;
+};
 
-static dummy_net_sock_t g_socks[DUMMY_NET_MAX_SOCKS];
+static struct netCtx g_socks[DUMMY_NET_MAX_SOCKS];
+static struct netCtx *g_last;
 
 static int g_open_fail;
 static int g_connect_result;
+static int g_listen_result;
 static int g_accept_result;
-
-static uint8_t g_rx[DUMMY_NET_BUF];
-static size_t g_rx_len;
-static size_t g_rx_off;
-
-static uint8_t g_tx[DUMMY_NET_BUF];
-static size_t g_tx_len;
 
 /* ── Test control ───────────────────────────────────────────────────────── */
 
 void DummyNetReset(void) {
     memset(g_socks, 0, sizeof(g_socks));
+    g_last = NULL;
     g_open_fail = 0;
     g_connect_result = 0;
+    g_listen_result = 0;
     g_accept_result = 0;
-    memset(g_rx, 0, sizeof(g_rx));
-    g_rx_len = 0;
-    g_rx_off = 0;
-    memset(g_tx, 0, sizeof(g_tx));
-    g_tx_len = 0;
 }
 
 void DummyNetSetOpenFail(int fail) { g_open_fail = fail; }
 void DummyNetSetConnectResult(int result) { g_connect_result = result; }
+void DummyNetSetListenResult(int result) { g_listen_result = result; }
 void DummyNetSetAcceptResult(int result) { g_accept_result = result; }
 
-void DummyNetSeedRecv(const uint8_t *buf, size_t len) {
-    if (!buf)
+void DummyNetSeedRecvOn(void *ctx, const uint8_t *buf, size_t len) {
+    struct netCtx *s = ctx;
+    if (!s || !buf)
         return;
-    if (len > sizeof(g_rx))
-        len = sizeof(g_rx);
-    memcpy(g_rx, buf, len);
-    g_rx_len = len;
-    g_rx_off = 0;
+    if (len > sizeof(s->rx))
+        len = sizeof(s->rx);
+    memcpy(s->rx, buf, len);
+    s->rx_len = len;
+    s->rx_off = 0;
+}
+
+size_t DummyNetGetSentOn(void *ctx, uint8_t *buf, size_t len) {
+    struct netCtx *s = ctx;
+    if (!s)
+        return 0;
+    size_t n = s->tx_len < len ? s->tx_len : len;
+    if (buf && n > 0)
+        memcpy(buf, s->tx, n);
+    return s->tx_len;
+}
+
+void DummyNetSeedRecv(const uint8_t *buf, size_t len) {
+    DummyNetSeedRecvOn(g_last, buf, len);
 }
 
 size_t DummyNetGetSent(uint8_t *buf, size_t len) {
-    size_t n = g_tx_len < len ? g_tx_len : len;
-    if (buf && n > 0)
-        memcpy(buf, g_tx, n);
-    return g_tx_len;
+    return DummyNetGetSentOn(g_last, buf, len);
 }
+
+void *DummyNetLastSock(void) { return g_last; }
 
 /* ── PlatformNet* mock ──────────────────────────────────────────────────── */
 
-void *PlatformNetOpen(int socket_type) {
-    if (g_open_fail)
-        return NULL;
+static struct netCtx *allocSock(int socket_type) {
     for (int i = 0; i < DUMMY_NET_MAX_SOCKS; i++) {
         if (!g_socks[i].used) {
+            memset(&g_socks[i], 0, sizeof(g_socks[i]));
             g_socks[i].used = 1;
             g_socks[i].type = socket_type;
+            g_last = &g_socks[i];
             return &g_socks[i];
         }
     }
     return NULL;
 }
 
-int PlatformNetConnect(void *ctx, const char *hostname, uint16_t port) {
+struct netCtx *PlatformNetOpen(int socket_type) {
+    if (g_open_fail)
+        return NULL;
+    return allocSock(socket_type);
+}
+
+int PlatformNetConnect(struct netCtx *ctx, const char *hostname,
+                       uint16_t port) {
     (void)ctx;
     (void)hostname;
     (void)port;
     return g_connect_result;
 }
 
-int PlatformNetClose(void *ctx) {
+int PlatformNetListen(struct netCtx *ctx, const char *bindAddr, uint16_t port,
+                      int backlog) {
+    (void)bindAddr;
+    (void)port;
+    (void)backlog;
+    if (!ctx)
+        return -EINVAL;
+    if (g_listen_result == 0)
+        ctx->listening = 1;
+    return g_listen_result;
+}
+
+/* `ctx` is the listening socket the platform API hands every backend; this mock
+ * only reads it. */
+/* cppcheck-suppress constParameterPointer */
+int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out) {
+    if (!ctx || !out)
+        return -EINVAL;
+    if (g_accept_result < 0)
+        return g_accept_result;
+
+    struct netCtx *conn = allocSock(ctx->type);
+    if (!conn)
+        return -ENFILE;
+
+    *out = conn;
+    return 0;
+}
+
+int PlatformNetClose(struct netCtx *ctx) {
     (void)ctx;
     return 0;
 }
 
-int PlatformNetRecv(void *ctx, void *buf, size_t nbyte, int flags) {
-    (void)ctx;
+int PlatformNetRecv(struct netCtx *ctx, void *buf, size_t nbyte, int flags) {
     (void)flags;
-    if (!buf)
+    if (!ctx || !buf)
         return 0;
-    size_t avail = g_rx_len - g_rx_off;
+    size_t avail = ctx->rx_len - ctx->rx_off;
     size_t n = nbyte < avail ? nbyte : avail;
     if (n > 0) {
-        memcpy(buf, g_rx + g_rx_off, n);
-        g_rx_off += n;
+        memcpy(buf, ctx->rx + ctx->rx_off, n);
+        ctx->rx_off += n;
     }
     return (int)n;
 }
 
-int PlatformNetSend(void *ctx, const void *buf, size_t nbyte, int flags) {
-    (void)ctx;
+int PlatformNetSend(struct netCtx *ctx, const void *buf, size_t nbyte,
+                    int flags) {
     (void)flags;
-    if (!buf)
+    if (!ctx || !buf)
         return 0;
-    size_t space = sizeof(g_tx) - g_tx_len;
+    size_t space = sizeof(ctx->tx) - ctx->tx_len;
     size_t n = nbyte < space ? nbyte : space;
     if (n > 0) {
-        memcpy(g_tx + g_tx_len, buf, n);
-        g_tx_len += n;
+        memcpy(ctx->tx + ctx->tx_len, buf, n);
+        ctx->tx_len += n;
     }
     return (int)nbyte;
 }
 
-int PlatformNetAccept(void *ctx) {
-    (void)ctx;
-    return g_accept_result;
-}
-
-int PlatformNetShutdown(void *ctx, int how) {
+int PlatformNetShutdown(struct netCtx *ctx, int how) {
     (void)ctx;
     (void)how;
     return 0;
 }
 
-int PlatformNetFree(void *ctx) {
+int PlatformNetFree(struct netCtx *ctx) {
     if (ctx) {
-        dummy_net_sock_t *s = (dummy_net_sock_t *)ctx;
-        s->used = 0;
+        if (g_last == ctx)
+            g_last = NULL;
+        ctx->used = 0;
     }
     return 0;
 }

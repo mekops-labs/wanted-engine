@@ -188,14 +188,28 @@ int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
 int PlatformFsMkdir(int fd, const char *path);
 int PlatformFsRmdir(int fd, const char *path);
 
-void *PlatformNetOpen(int socket_type);
-int PlatformNetConnect(void *ctx, const char *hostname, uint16_t port);
-int PlatformNetClose(void *ctx);
-int PlatformNetRecv(void *ctx, void *buf, size_t nbyte, int flags);
-int PlatformNetSend(void *ctx, const void *buf, size_t nbyte, int flags);
-int PlatformNetAccept(void *ctx);
-int PlatformNetShutdown(void *ctx, int how);
-int PlatformNetFree(void *ctx);
+/* One transport endpoint, owned by the platform. Opaque to the engine. */
+struct netCtx;
+
+struct netCtx *PlatformNetOpen(int socket_type);
+int PlatformNetConnect(struct netCtx *ctx, const char *hostname, uint16_t port);
+int PlatformNetClose(struct netCtx *ctx);
+int PlatformNetRecv(struct netCtx *ctx, void *buf, size_t nbyte, int flags);
+int PlatformNetSend(struct netCtx *ctx, const void *buf, size_t nbyte,
+                    int flags);
+int PlatformNetShutdown(struct netCtx *ctx, int how);
+int PlatformNetFree(struct netCtx *ctx);
+
+/* Bind `ctx` to <bindAddr>:<port> and, on a stream transport, start listening
+ * `backlog` deep. A datagram transport is left bound: it is read with
+ * PlatformNetRecv and answered with PlatformNetSend, which addresses the peer
+ * the last datagram came from. */
+int PlatformNetListen(struct netCtx *ctx, const char *bindAddr, uint16_t port,
+                      int backlog);
+
+/* Take one connection off a listening context's queue into *out, a context of
+ * its own that the caller closes and frees. */
+int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out);
 
 /* A/B firmware OTA (dual-slot bootloader-level update + rollback). Shared
  * seam across every platform that can back it with a real bootloader
