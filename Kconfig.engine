@@ -141,6 +141,17 @@ config WANTED_VFS_GPIO
 	  backing — present on ESP-IDF and NuttX, absent on Linux, where a grant
 	  fails the launch until the libgpiod backing lands.
 
+config WANTED_VFS_UART
+	bool "uart — serial port"
+	default n
+	help
+	  /dev/uart/<port>/{data,baud,format}: one subtree per port the launch
+	  config granted, with the line settings writable at runtime because one
+	  link can carry two of them. One wapp holds a port exclusively; routing
+	  several logical users onto one link is a broker wapp's job. Needs a
+	  PlatformUart* backing — present on ESP-IDF and Linux, absent on NuttX,
+	  where a grant fails the launch.
+
 config WANTED_VFS_WANTED
 	bool "wanted — the control-plane namespace"
 	default y
@@ -176,6 +187,16 @@ config WANTED_GPIO_MAX_PINS
 	help
 	  Pins one wapp's gpio grant may name. Sizes a per-wapp table of names
 	  and addresses, and a local array in the driver's readdir.
+
+config WANTED_UART_BUF_SIZE
+	int "Bytes per UART ring, each direction"
+	depends on WANTED_VFS_UART
+	default 512
+	range 128 8192
+	help
+	  Receive and transmit ring the backing installs for a granted port. The
+	  receive ring bounds how far a wapp can fall behind a talking peer before
+	  bytes are lost.
 
 config WANTED_LOG_CAP
 	int "Bytes retained per wapp log"

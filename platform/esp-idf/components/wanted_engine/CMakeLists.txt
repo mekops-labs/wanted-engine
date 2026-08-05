@@ -23,7 +23,7 @@ set(vfs_srcs
     vfs-stdio.c vfs-tarfs.c vfs-socket.c
     vfs-wanted.c vfs-wanted-config.c vfs-wanted-wapps.c
     vfs-wanted-registry.c vfs-virtual.c
-    vfs-sha256.c vfs-ed25519.c vfs-inflate.c vfs-gpio.c
+    vfs-sha256.c vfs-ed25519.c vfs-inflate.c vfs-gpio.c vfs-uart.c
 )
 list(TRANSFORM vfs_srcs PREPEND ${ENGINE}/src/vfs/)
 
@@ -62,6 +62,8 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/vfs/vfs-wifi.c
     # PlatformGpio* over esp_driver_gpio, backing the core /dev/gpio driver.
     ${ENGINE}/platform/esp-idf/gpio.c
+    # PlatformUart* over esp_driver_uart, backing the core /dev/uart driver.
+    ${ENGINE}/platform/esp-idf/uart.c
     # PlatformOta* on esp_ota_ops + the /dev/ota VFS driver.
     ${ENGINE}/platform/esp-idf/ota.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-ota.c

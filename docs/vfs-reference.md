@@ -118,6 +118,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `ed25519` | `drivers[]` | `/dev/ed25519` | Ed25519 signature-verification device; see below. |
 | `inflate` | `drivers[]` | `/dev/inflate` | Streaming gzip decompression device; see below. |
 | `gpio` | `drivers[]` | `/dev/gpio/<name>/` | Digital I/O, one subtree per granted pin; see below. Backed by ESP-IDF and NuttX. On Linux the grant fails the launch with `-ENOSYS` until the libgpiod backing lands. |
+| `uart` | `drivers[]` | `/dev/uart/<port>/` | A serial port: a `data` byte stream plus writable `baud` and `format`; see below. Backed by ESP-IDF and Linux. On NuttX the grant fails the launch with `-ENOSYS`. |
 | `wifi` | `drivers[]` | `/dev/wifi` | Wi-Fi station control as a text node. `write "scan"` starts a scan (following reads stream one `<ssid> <bssid> <rssi>` line per AP, then EOF); `write "connect <ssid> <pass>"` associates (WPA2-PSK) and runs DHCP; `write "disconnect"` drops the association; a plain `read` returns one status line — `connected <ssid> <ip>` or `disconnected`. The engine drives the radio (WAPI on NuttX, `esp_wifi` on ESP-IDF); the wapp stays pure WASI. NuttX and ESP-IDF only — `-ENODEV` elsewhere. |
 | `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `abort` / `confirm` / `rollback`), `read` drains a status snapshot (active slot, confirmed state, pending swap); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. End every `begin`: `commit` makes the staged image bootable, `abort` discards it. A session left open holds the slot, and every later `begin` answers `-EBUSY` until the board reboots. `rollback` reverts a booted image and reboots the board; it does not end a streaming write. ESP-IDF only (`esp_ota_ops`) — `-ENODEV` elsewhere. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
@@ -251,6 +252,51 @@ board changes the launch config, not the image.
   drive mode fails the launch rather than serving `-ENOTSUP` in the field.
 - Pin exclusivity across wapps is not enforced by the engine. Two wapps granted
   one line both configure it. Issue non-overlapping grants.
+
+### `uart` — serial port
+
+A `uart` grant hands one port to one wapp:
+
+```
+/dev/uart/
+  <port>/
+    data    (rw)  raw byte stream
+    baud    (rw)  decimal rate, e.g. "921600"
+    format  (rw)  <databits><parity><stopbits>, e.g. "8N1", "8E1", "7E2"
+```
+
+```json
+{ "name": "uart", "options": "port=1,tx=1,rx=2,baud=57600,format=8E1" }
+```
+
+`port=` is required and names both the backing's port and the wapp-visible
+directory. `baud=` and `format=` set the initial line configuration, defaulting
+to `115200` and `8N1`. Every other key is platform addressing: `tx=`/`rx=` GPIO
+numbers on ESP-IDF, `dev=/dev/ttyUSB0` on Linux. A key meaningless on the
+running platform is rejected at launch, not ignored.
+
+- A `data` read blocks until at least one byte arrives and returns **short** —
+  it never waits to fill the caller's buffer. Open with `O_NONBLOCK` to get
+  `-EAGAIN` on an empty receive buffer instead.
+- **A blocking read has no wall-clock cap.** It returns on a byte or on
+  `-EINTR`. An idle line is a UART's normal state and carries no information
+  about a fault, so there is no elapsed time a timeout could be inferred from. A
+  wapp that wants a deadline uses `O_NONBLOCK` around its own clock.
+- A `data` write queues bytes and returns the count accepted, which may be
+  short.
+- `baud` and `format` are writable at runtime, because one link can carry two
+  settings — a bootloader sync at 57600 8E1 and the framed channel that follows
+  at 921600 8N1. A write drains the transmit buffer first, so a reconfiguration
+  cannot truncate a byte already on the wire.
+- **A write to `baud` or `format` discards the receive buffer.** Bytes received
+  under the previous settings cannot be decoded under the new ones. A wapp that
+  reconfigures mid-stream loses whatever was queued.
+- A rate or format the backing cannot produce returns `-EINVAL`. The backing
+  never selects the nearest achievable rate: that yields a link that looks
+  configured and corrupts data.
+- One wapp holds a port, exclusively; a second grant on a held port fails the
+  launch. Routing several logical users onto one physical link is a broker
+  wapp's job — it holds the grant and its peers reach it over `/dev/pipe`.
 
 ### `socket` — the `/net/` network namespace
 

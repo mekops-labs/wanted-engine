@@ -355,6 +355,9 @@ static const vfs_driver_table_t core_driver_table[] = {
 #ifdef CONFIG_WANTED_VFS_GPIO
     {"gpio", VfsGpioInit},
 #endif
+#ifdef CONFIG_WANTED_VFS_UART
+    {"uart", VfsUartInit},
+#endif
 #ifdef CONFIG_WANTED_VFS_WANTED
     {"wanted", VfsWantedInit},
 #endif

@@ -39,6 +39,19 @@ int DummyGpioSetLevel(const char *address, bool level);
  * Returns -ENOENT when no grant opened that address. */
 int DummyGpioGetLevel(const char *address, bool *level);
 
+/* ── UART loopback fake control (dummy-uart.c) ───────────────────────────── */
+
+/* Release the fake port and empty its ring. Call in TEST_SETUP. */
+void DummyUartReset(void);
+
+/* Report the line settings the driver last applied. Returns -ENOENT when no
+ * grant opened the port. Pass NULL for a field a test does not check. */
+int DummyUartGetLine(uint32_t *baud, uint8_t *databits, uint8_t *parity,
+                     uint8_t *stopbits);
+
+/* Bytes waiting in the loopback ring, or -ENOENT when the port is closed. */
+int DummyUartRxLen(void);
+
 /* ── Wapp runtime-state mock control (dummy-wapps.c) ────────────────────── */
 
 /* Clear the in-memory wapp runtime-state table. Call in TEST_SETUP. */
