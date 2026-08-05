@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "tap.h"
@@ -166,6 +167,18 @@
 #define CFGMAP_PATH "/etc/config"
 #define CFGMAP_MARKER "selftest-cfgmap-v1"
 #define SOCKET_NAME "uplink"
+
+/* The server/client pairs the listen checks use, wired by the listen variant
+ * of the supervisor config: a TCP listener with two clients on its port, and a
+ * bound datagram socket with one. */
+#define SERVER_SOCKET "/net/server"
+#define CLIENT_SOCKET "/net/client"
+#define CLIENT2_SOCKET "/net/client2"
+#define DGRAM_SOCKET "/net/dgram"
+#define DCLIENT_SOCKET "/net/dclient"
+#define LISTEN_REQ "ping"
+#define LISTEN_REQ2 "ping2"
+#define LISTEN_RES "pong"
 
 /* A `platform` bind mount at /host (selftest-config.json, backed by a host dir
  * the runner populates): an in-bounds file reads back, but a symlink the host
@@ -849,6 +862,118 @@ static void mounts_check(void) {
     }
 }
 
+/* Serving from inside the sandbox: a listening socket the config granted binds
+ * at open, accepts connections that each become an fd of their own, and answers
+ * on them. The client sockets connect back to the same port, so the whole
+ * exchange stays inside this wapp's own namespace.
+ *
+ * The sockets are present only where the engine carries the listen role; on a
+ * build without it the config has no server entry and the checks are skipped
+ * (a launch config naming one there fails the launch outright, which is the
+ * point of the gate). */
+static void listen_check(void) {
+    char buf[64];
+
+    int lfd = open(SERVER_SOCKET, O_RDWR);
+    if (lfd < 0) {
+        tap_diag("listen: skipped — no listening socket in this config "
+                 "(engine built without the listen role)");
+        return;
+    }
+
+    /* A stream listener carries no payload of its own. */
+    tap_ok(read(lfd, buf, sizeof(buf)) < 0,
+           "listen: reading the listener itself fails — only its connections "
+           "carry data");
+
+    /* The client's first write connects and queues a request the listener has
+     * not accepted yet; accept then hands back the connection that carries it.
+     */
+    int cfd = open(CLIENT_SOCKET, O_RDWR);
+    int wrote = cfd >= 0 && write(cfd, LISTEN_REQ, strlen(LISTEN_REQ)) > 0;
+
+    int afd = accept(lfd, NULL, NULL);
+    tap_ok(wrote && afd >= 0, "listen: accept yields a connection fd");
+
+    int n = afd >= 0 ? (int)read(afd, buf, sizeof(buf) - 1) : -1;
+    if (n > 0)
+        buf[n] = '\0';
+    tap_ok(n > 0 && strcmp(buf, LISTEN_REQ) == 0,
+           "listen: the accepted connection reads what the client sent");
+
+    if (afd >= 0)
+        write(afd, LISTEN_RES, strlen(LISTEN_RES));
+    n = cfd >= 0 ? (int)read(cfd, buf, sizeof(buf) - 1) : -1;
+    if (n > 0)
+        buf[n] = '\0';
+    tap_ok(n > 0 && strcmp(buf, LISTEN_RES) == 0,
+           "listen: the server's answer reaches the client (round trip)");
+
+    /* A second client is served alongside the first: two live connections, two
+     * fds, no cross-talk. */
+    int c2fd = open(CLIENT2_SOCKET, O_RDWR);
+    int wrote2 = c2fd >= 0 && write(c2fd, LISTEN_REQ2, strlen(LISTEN_REQ2)) > 0;
+    int a2fd = accept(lfd, NULL, NULL);
+    tap_ok(wrote2 && a2fd >= 0 && a2fd != afd,
+           "listen: a second connection accepts onto an fd of its own");
+
+    n = a2fd >= 0 ? (int)read(a2fd, buf, sizeof(buf) - 1) : -1;
+    if (n > 0)
+        buf[n] = '\0';
+    tap_ok(n > 0 && strcmp(buf, LISTEN_REQ2) == 0,
+           "listen: concurrent connections stay isolated");
+
+    /* Closing one connection leaves the other serving. */
+    if (afd >= 0)
+        close(afd);
+    if (cfd >= 0)
+        close(cfd);
+    int served = a2fd >= 0 && write(a2fd, LISTEN_RES, strlen(LISTEN_RES)) > 0;
+    n = c2fd >= 0 ? (int)read(c2fd, buf, sizeof(buf) - 1) : -1;
+    if (n > 0)
+        buf[n] = '\0';
+    tap_ok(served && n > 0 && strcmp(buf, LISTEN_RES) == 0,
+           "listen: closing one connection leaves the other serving");
+
+    if (a2fd >= 0)
+        close(a2fd);
+    if (c2fd >= 0)
+        close(c2fd);
+    close(lfd);
+}
+
+/* A bound datagram socket serves without an accept step: it reads a datagram
+ * and answers the sender on the socket itself. */
+static void dgram_listen_check(void) {
+    char buf[64];
+
+    int sfd = open(DGRAM_SOCKET, O_RDWR);
+    if (sfd < 0) {
+        tap_diag("listen: skipped — no bound datagram socket in this config");
+        return;
+    }
+
+    int cfd = open(DCLIENT_SOCKET, O_RDWR);
+    int sent = cfd >= 0 && write(cfd, LISTEN_REQ, strlen(LISTEN_REQ)) > 0;
+
+    int n = (int)read(sfd, buf, sizeof(buf) - 1);
+    if (n > 0)
+        buf[n] = '\0';
+    tap_ok(sent && n > 0 && strcmp(buf, LISTEN_REQ) == 0,
+           "listen: a bound datagram socket reads a datagram with no accept");
+
+    write(sfd, LISTEN_RES, strlen(LISTEN_RES));
+    n = cfd >= 0 ? (int)read(cfd, buf, sizeof(buf) - 1) : -1;
+    if (n > 0)
+        buf[n] = '\0';
+    tap_ok(n > 0 && strcmp(buf, LISTEN_RES) == 0,
+           "listen: the datagram answer reaches the sender");
+
+    if (cfd >= 0)
+        close(cfd);
+    close(sfd);
+}
+
 /* A `platform` bind mount must confine path resolution to its host directory.
  * An in-bounds file reads back; a symlink the host planted inside the mount
  * that points outside it must not resolve through the mount. (Host-side
@@ -1116,6 +1241,8 @@ int main(void) {
         {"positive_checks", positive_checks},
         {"mounts_check", mounts_check},
         {"bind_mount_escape_check", bind_mount_escape_check},
+        {"listen_check", listen_check},
+        {"dgram_listen_check", dgram_listen_check},
         {"pipe_duplex_check", pipe_duplex_check},
         {"multi_reader_pipe_check", multi_reader_pipe_check},
         {"robustness_checks", robustness_checks},

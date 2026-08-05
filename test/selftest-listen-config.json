@@ -1,0 +1,31 @@
+{
+    "system": {
+        "privileged": true
+    },
+    "supervisor": {
+        "imagePath": "./wasm/supervisor/selftest/supervisor.tar",
+        "params": {
+            "console": {
+                "in":  {"name": "platform"},
+                "out": {"name": "platform"},
+                "err": {"name": "platform"}
+            },
+            "drivers": [
+                {"name": "wanted"}
+            ],
+            "mounts": [
+                {"name": "config", "path": "/etc/config", "options": "selftest-cfgmap-v1"},
+                {"name": "platform", "path": "/host", "options": "src=/tmp/wanted-selftest-host"},
+                {"name": "log", "path": "/log"}
+            ],
+            "sockets": [
+                {"name": "uplink", "address": "tcp://localhost:8899"},
+                {"name": "server", "address": "tcp://127.0.0.1:8898", "role": "listen", "backlog": 2, "max_conns": 2},
+                {"name": "client", "address": "tcp://127.0.0.1:8898"},
+                {"name": "client2", "address": "tcp://127.0.0.1:8898"},
+                {"name": "dgram", "address": "udp://127.0.0.1:8897", "role": "listen"},
+                {"name": "dclient", "address": "udp://127.0.0.1:8897"}
+            ]
+        }
+    }
+}

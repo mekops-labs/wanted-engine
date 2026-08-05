@@ -17,7 +17,22 @@ cd "$ROOT"
 . "$SCRIPT_DIR/lib-wapp.sh"
 
 WANTED=${1:-./build/cmd/wanted-cli}
-CONFIG=${2:-./test/selftest-config.json}
+
+# The supervisor config depends on what the engine under test can do: only a
+# build carrying the listen role can be handed listening sockets, and a config
+# naming one it cannot serve fails the launch by design. The extra config is
+# the base one plus the server/client pairs the listen checks need.
+default_config() {
+    local cfgdir
+    cfgdir=$(dirname "$(dirname "$WANTED")")
+    if grep -qx 'CONFIG_WANTED_VFS_SOCKET_LISTEN=y' "$cfgdir/.config" 2>/dev/null
+    then
+        echo ./test/selftest-listen-config.json
+    else
+        echo ./test/selftest-config.json
+    fi
+}
+CONFIG=${2:-$(default_config)}
 REGISTRY_ROOT=${REGISTRY_ROOT:-./registry}
 VOLUME_ROOT=${VOLUME_ROOT:-./data}
 # Host dir backing the /host `platform` bind mount (an absolute host path, as the

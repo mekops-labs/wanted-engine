@@ -3,6 +3,7 @@
 #include "unity_fixture.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <vfs-drivers.h>
@@ -213,14 +214,12 @@ TEST(vfs_socket_driver, SockAccept_NullNewFd_ReturnsEinval) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->SockAccept(drv->ctx, 0, 0, NULL));
 }
 
-TEST(vfs_socket_driver, SockAccept_ReturnsNewFd) {
+TEST(vfs_socket_driver, SockAccept_OnConnectRole_ReturnsEnotsup) {
     drv = VfsSocketInit(NULL, "tcp://addr:8080");
     drv->Open(drv->ctx, "/", VFS_O_RDWR);
-    DummyNetSetAcceptResult(7);
 
     int newFd = -1;
-    TEST_ASSERT_EQUAL_INT(7, drv->SockAccept(drv->ctx, 0, 0, &newFd));
-    TEST_ASSERT_EQUAL_INT(7, newFd);
+    TEST_ASSERT_EQUAL_INT(-ENOTSUP, drv->SockAccept(drv->ctx, 0, 0, &newFd));
 }
 
 TEST(vfs_socket_driver, SockRecv_ConnectsThenReceives) {
@@ -272,6 +271,187 @@ TEST(vfs_socket_driver, SockShutdown_ReturnsZero) {
     TEST_ASSERT_EQUAL_INT(0, drv->SockShutdown(drv->ctx, 0, 0));
 }
 
+/* ── Listen role ────────────────────────────────────────────────────────────
+ * The launch config's role/backlog/max_conns fields reach the driver appended
+ * to the address, so the option strings here are what the sockets[] installer
+ * composes from a config entry.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+TEST(vfs_socket_driver, Init_UnknownRole_ReturnsNull) {
+    TEST_ASSERT_NULL(VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=serve"));
+}
+
+TEST(vfs_socket_driver, Init_UnknownParam_ReturnsNull) {
+    TEST_ASSERT_NULL(VfsSocketInit(NULL, "tcp://0.0.0.0:8080;linger=1"));
+}
+
+TEST(vfs_socket_driver, Init_ExplicitConnectRole_Accepted) {
+    drv = VfsSocketInit(NULL, "tcp://addr:8080;role=connect");
+    TEST_ASSERT_NOT_NULL(drv);
+}
+
+TEST(vfs_socket_driver, Init_BacklogOnConnectRole_ReturnsNull) {
+    TEST_ASSERT_NULL(VfsSocketInit(NULL, "tcp://addr:8080;backlog=4"));
+}
+
+#ifdef CONFIG_WANTED_VFS_SOCKET_LISTEN
+
+TEST(vfs_socket_driver, Init_ListenRole_StreamFiletype) {
+    drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen;backlog=2");
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_EQUAL_UINT8(VFS_FILETYPE_SOCKET_STREAM, drv->filetype);
+}
+
+TEST(vfs_socket_driver, Init_ListenSerial_ReturnsNull) {
+    TEST_ASSERT_NULL(VfsSocketInit(NULL, "serial:///dev/ttyACM0;role=listen"));
+}
+
+TEST(vfs_socket_driver, Init_ListenSecure_ReturnsNull) {
+    /* Accept-side TLS has no certificate or key to serve. */
+    TEST_ASSERT_NULL(VfsSocketInit(NULL, "tcps://0.0.0.0:8443;role=listen"));
+}
+
+TEST(vfs_socket_driver, Init_ListenBacklogOnDatagram_ReturnsNull) {
+    TEST_ASSERT_NULL(
+        VfsSocketInit(NULL, "udp://0.0.0.0:5683;role=listen;backlog=2"));
+}
+
+TEST(vfs_socket_driver, Init_MaxConnsAboveCap_ReturnsNull) {
+    char opts[64];
+    snprintf(opts, sizeof(opts), "tcp://0.0.0.0:8080;role=listen;max_conns=%d",
+             CONFIG_WANTED_VFS_SOCKET_MAX_CONNS + 1);
+    TEST_ASSERT_NULL(VfsSocketInit(NULL, opts));
+}
+
+TEST(vfs_socket_driver, Open_Listen_BindsAndReportsReady) {
+    drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen");
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "", VFS_O_RDWR));
+
+    vfs_stat_t st;
+    TEST_ASSERT_EQUAL_INT(0, drv->Stat(drv->ctx, 0, &st));
+    TEST_ASSERT_EQUAL_UINT32(1, st.size); /* size carries the ready flag */
+}
+
+TEST(vfs_socket_driver, Open_Listen_BindFailure_ReturnsError) {
+    drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen");
+    DummyNetSetListenResult(-EADDRINUSE);
+    TEST_ASSERT_EQUAL_INT(-EADDRINUSE, drv->Open(drv->ctx, "", VFS_O_RDWR));
+}
+
+TEST(vfs_socket_driver, Read_OnStreamListener_ReturnsEnotconn) {
+    drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen");
+    drv->Open(drv->ctx, "", VFS_O_RDWR);
+
+    uint8_t buf[4];
+    TEST_ASSERT_EQUAL_INT(-ENOTCONN, drv->Read(drv->ctx, 0, buf, sizeof(buf)));
+}
+
+TEST(vfs_socket_driver, SockAccept_YieldsConnectionFd) {
+    drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen");
+    drv->Open(drv->ctx, "", VFS_O_RDWR);
+
+    int newFd = -1;
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &newFd));
+    TEST_ASSERT_TRUE(newFd > 0);
+
+    /* The accepted connection carries payload the listener never sees. */
+    DummyNetSeedRecv((const uint8_t *)"hi", 2);
+    uint8_t buf[8] = {0};
+    TEST_ASSERT_EQUAL_INT(2, drv->Read(drv->ctx, newFd, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("hi", buf, 2);
+}
+
+TEST(vfs_socket_driver, SockAccept_AcceptFailure_ReturnsError) {
+    drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen");
+    drv->Open(drv->ctx, "", VFS_O_RDWR);
+    DummyNetSetAcceptResult(-ECONNABORTED);
+
+    int newFd = -1;
+    TEST_ASSERT_EQUAL_INT(-ECONNABORTED,
+                          drv->SockAccept(drv->ctx, 0, 0, &newFd));
+}
+
+TEST(vfs_socket_driver, SockAccept_ConnectionsStayIsolated) {
+    drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen");
+    drv->Open(drv->ctx, "", VFS_O_RDWR);
+
+    int a = -1, b = -1;
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &a));
+    void *aSock = DummyNetLastSock();
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &b));
+    void *bSock = DummyNetLastSock();
+    TEST_ASSERT_TRUE(a != b);
+
+    DummyNetSeedRecvOn(aSock, (const uint8_t *)"alpha", 5);
+    DummyNetSeedRecvOn(bSock, (const uint8_t *)"beta", 4);
+
+    uint8_t buf[8] = {0};
+    TEST_ASSERT_EQUAL_INT(5, drv->Read(drv->ctx, a, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("alpha", buf, 5);
+    memset(buf, 0, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT(4, drv->Read(drv->ctx, b, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("beta", buf, 4);
+
+    /* A write reaches only the connection it was addressed to. */
+    TEST_ASSERT_EQUAL_INT(2, drv->Write(drv->ctx, a, "ok", 2));
+    uint8_t sent[8] = {0};
+    TEST_ASSERT_EQUAL_size_t(2, DummyNetGetSentOn(aSock, sent, sizeof(sent)));
+    TEST_ASSERT_EQUAL_size_t(0, DummyNetGetSentOn(bSock, sent, sizeof(sent)));
+
+    /* Closing one leaves the other readable. */
+    TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, a));
+    TEST_ASSERT_EQUAL_INT(-EBADF, drv->Read(drv->ctx, a, buf, sizeof(buf)));
+    DummyNetSeedRecvOn(bSock, (const uint8_t *)"still", 5);
+    TEST_ASSERT_EQUAL_INT(5, drv->Read(drv->ctx, b, buf, sizeof(buf)));
+}
+
+TEST(vfs_socket_driver, SockAccept_PastMaxConns_ReturnsEnfile) {
+    drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen;max_conns=1");
+    drv->Open(drv->ctx, "", VFS_O_RDWR);
+
+    int a = -1, b = -1;
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &a));
+    TEST_ASSERT_EQUAL_INT(-ENFILE, drv->SockAccept(drv->ctx, 0, 0, &b));
+
+    /* A closed connection frees its slot for the next accept. */
+    TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, a));
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &b));
+}
+
+TEST(vfs_socket_driver, Udp_Listen_RecvAndSendOnBoundSocket) {
+    drv = VfsSocketInit(NULL, "udp://0.0.0.0:5683;role=listen");
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "", VFS_O_RDWR));
+
+    /* A bound datagram socket has no accept step: it reads and answers on the
+     * socket itself. */
+    DummyNetSeedRecv((const uint8_t *)"ping", 4);
+    uint8_t buf[8] = {0};
+    TEST_ASSERT_EQUAL_INT(4, drv->Read(drv->ctx, 0, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("ping", buf, 4);
+
+    TEST_ASSERT_EQUAL_INT(4, drv->Write(drv->ctx, 0, "pong", 4));
+    uint8_t sent[8] = {0};
+    TEST_ASSERT_EQUAL_size_t(4, DummyNetGetSent(sent, sizeof(sent)));
+    TEST_ASSERT_EQUAL_STRING_LEN("pong", sent, 4);
+}
+
+TEST(vfs_socket_driver, Udp_Listen_SockAccept_ReturnsEnotsup) {
+    drv = VfsSocketInit(NULL, "udp://0.0.0.0:5683;role=listen");
+    drv->Open(drv->ctx, "", VFS_O_RDWR);
+
+    int newFd = -1;
+    TEST_ASSERT_EQUAL_INT(-ENOTSUP, drv->SockAccept(drv->ctx, 0, 0, &newFd));
+}
+
+#else /* the listen role is not compiled in */
+
+TEST(vfs_socket_driver, Init_ListenRole_RejectedWithoutSupport) {
+    TEST_ASSERT_NULL(VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen"));
+}
+
+#endif
+
 TEST_GROUP_RUNNER(vfs_socket_driver) {
     RUN_TEST_CASE(vfs_socket_driver, Init_Tcp_StreamFiletype);
     RUN_TEST_CASE(vfs_socket_driver, Init_Udp_DgramFiletype);
@@ -297,10 +477,32 @@ TEST_GROUP_RUNNER(vfs_socket_driver) {
     RUN_TEST_CASE(vfs_socket_driver, Stat_NullStat_ReturnsEinval);
     RUN_TEST_CASE(vfs_socket_driver, Stat_ReportsTypeAndPort);
     RUN_TEST_CASE(vfs_socket_driver, SockAccept_NullNewFd_ReturnsEinval);
-    RUN_TEST_CASE(vfs_socket_driver, SockAccept_ReturnsNewFd);
+    RUN_TEST_CASE(vfs_socket_driver, SockAccept_OnConnectRole_ReturnsEnotsup);
     RUN_TEST_CASE(vfs_socket_driver, SockRecv_ConnectsThenReceives);
     RUN_TEST_CASE(vfs_socket_driver, SockRecv_ConnectFailure_ReturnsError);
     RUN_TEST_CASE(vfs_socket_driver, SockSend_ConnectsThenSends);
     RUN_TEST_CASE(vfs_socket_driver, SockSend_ConnectFailure_ReturnsError);
     RUN_TEST_CASE(vfs_socket_driver, SockShutdown_ReturnsZero);
+    RUN_TEST_CASE(vfs_socket_driver, Init_UnknownRole_ReturnsNull);
+    RUN_TEST_CASE(vfs_socket_driver, Init_UnknownParam_ReturnsNull);
+    RUN_TEST_CASE(vfs_socket_driver, Init_ExplicitConnectRole_Accepted);
+    RUN_TEST_CASE(vfs_socket_driver, Init_BacklogOnConnectRole_ReturnsNull);
+#ifdef CONFIG_WANTED_VFS_SOCKET_LISTEN
+    RUN_TEST_CASE(vfs_socket_driver, Init_ListenRole_StreamFiletype);
+    RUN_TEST_CASE(vfs_socket_driver, Init_ListenSerial_ReturnsNull);
+    RUN_TEST_CASE(vfs_socket_driver, Init_ListenSecure_ReturnsNull);
+    RUN_TEST_CASE(vfs_socket_driver, Init_ListenBacklogOnDatagram_ReturnsNull);
+    RUN_TEST_CASE(vfs_socket_driver, Init_MaxConnsAboveCap_ReturnsNull);
+    RUN_TEST_CASE(vfs_socket_driver, Open_Listen_BindsAndReportsReady);
+    RUN_TEST_CASE(vfs_socket_driver, Open_Listen_BindFailure_ReturnsError);
+    RUN_TEST_CASE(vfs_socket_driver, Read_OnStreamListener_ReturnsEnotconn);
+    RUN_TEST_CASE(vfs_socket_driver, SockAccept_YieldsConnectionFd);
+    RUN_TEST_CASE(vfs_socket_driver, SockAccept_AcceptFailure_ReturnsError);
+    RUN_TEST_CASE(vfs_socket_driver, SockAccept_ConnectionsStayIsolated);
+    RUN_TEST_CASE(vfs_socket_driver, SockAccept_PastMaxConns_ReturnsEnfile);
+    RUN_TEST_CASE(vfs_socket_driver, Udp_Listen_RecvAndSendOnBoundSocket);
+    RUN_TEST_CASE(vfs_socket_driver, Udp_Listen_SockAccept_ReturnsEnotsup);
+#else
+    RUN_TEST_CASE(vfs_socket_driver, Init_ListenRole_RejectedWithoutSupport);
+#endif
 }
