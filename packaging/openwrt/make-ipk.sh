@@ -1,8 +1,8 @@
 #!/bin/sh
 # Assemble an OpenWRT .ipk from a cross-built engine. Installed layout and the
 # supervisor model: packaging/openwrt/README.md.
-# Usage: make-ipk.sh <opkg_arch> <wanted-cli> <supervisor.tar> <version> <out_dir>
-#                    [config.json]
+# Usage: make-ipk.sh <opkg_arch> <wanted-cli> <supervisor.tar> <version>
+#                    <out_dir> [config.json]
 set -eu
 
 ARCH="$1"; BIN="$2"; SUP="$3"; VER="$4"; OUT="$5"

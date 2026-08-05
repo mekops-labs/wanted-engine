@@ -1,24 +1,7 @@
 #!/bin/bash
-# Engine smoke test for the production supervisor wapp.
-#
-# Boots wanted-cli with the supervisor TAR image and asserts the engine
-# loads it without crashing. Specifically:
-#   1. The CLI exits with a non-crash code — 0 (supervisor proc_exit'd and
-#      PlatformWappLoop returned because all wapps drained) or 124 (timeout
-#      hit while supervisor was still running / being respawned).
-#   2. No fatal-load markers appear in the output (only meaningful when the
-#      binary is built with WANTED_DEBUG_TRACES=ON; if traces are off the
-#      engine is silent on success and the exit-code check is the only gate).
-#
-# Output checks are deliberately loose because the production stdio teardown
-# closes host fd 1, dropping any "All wapps ended" message the CLI tries to
-# print after WantedStart returns. The real correctness signal is the absence
-# of a crash plus the absence of fatal markers.
-#
-# When run with a Sheriff supervisor that writes its clock-quality byte
-# (and traces are off), the byte will be the only thing on stdout — we report
-# it but do not gate on it because the checked-in supervisor TAR may predate
-# that change.
+# Engine smoke test for the production supervisor wapp: boot wanted-cli with the
+# supervisor TAR image and assert a non-crash exit code and no fatal-load
+# markers. Output checks are loose, since the stdio teardown closes host fd 1.
 
 set -u
 

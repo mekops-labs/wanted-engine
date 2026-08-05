@@ -16,7 +16,7 @@ if ! grep "${USER_ID}:${GROUP_ID}" /etc/passwd >/dev/null 2>&1; then
         useradd -m -s /bin/bash -u $USER_ID -g $GROUP_ID -G sudo -c "builder account" $USER_NAME 
     fi 
     
-    #cp -rnT /var/config/defaulthome/ /home/$USER_NAME/ # Always return 0. There may be some directories mountes as read-only 
+    # Always returns 0; some directories may be mounted read-only.
     
     chown -Rf $USER_NAME:$USER_NAME /home/$USER_NAME || : 
     

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Resolve an OpenWRT SDK and export the cross-build environment for it.
-# Sourced (not executed) by openwrt-package.sh and test/selftest-qemu.sh.
+# Resolve an OpenWRT SDK and export the cross-build environment for it. Sourced
+# rather than executed, by openwrt-package.sh and test/selftest-qemu.sh.
 #
 # In:  SDK_ARG   — an architecture keyword (aarch64 | mipsel), an SDK URL, or
 #                  an already-extracted SDK directory
@@ -13,9 +13,8 @@ SDK_CACHE="$REPO/.openwrt-sdk"
 
 log() { printf '\n=== %s ===\n' "$*"; }
 
-# Generic per-architecture SDKs. Deliberately board-independent targets: armsr
-# is "ARM SystemReady" and malta is the QEMU reference board, so a lane built
-# from these proves the architecture rather than one router. Same release and
+# Generic per-architecture SDKs, deliberately board-independent, so a lane built
+# from them proves the architecture rather than one router. Same release and
 # toolchain for both, so a difference between them is a difference in the arch.
 OPENWRT_RELEASE="24.10.0"
 openwrt_sdk_url() { # $1 = target path, $2 = target slug
@@ -45,12 +44,9 @@ elif printf '%s' "$SDK_ARG" | grep -qE '^https?://'; then
         else
             wget --progress=dot:mega -O "$SDK_CACHE/$fname" "$SDK_ARG"
         fi
-        # --no-same-owner: the SDK tarballs carry the build farm's uid (999).
-        # Extracting as root preserves it, and the SDK then belongs to a user
-        # that does not exist here — the OpenSSL stage below cannot create
-        # feeds/ inside it and dies with perl's bare exit 13. Non-root tar
-        # already defaults to this; making it explicit means the cache is owned
-        # by the extracting user either way.
+        # --no-same-owner: the SDK tarballs carry the build farm's uid, which
+        # extracting as root preserves, leaving the SDK owned by a user that
+        # does not exist here and breaking the OpenSSL stage below.
         log "extracting SDK ($(du -h "$SDK_CACHE/$fname" | cut -f1), takes a minute)"
         case "$fname" in
             *.tar.zst) tar --zstd --no-same-owner -xf "$SDK_CACHE/$fname" -C "$SDK_CACHE" ;;
@@ -79,15 +75,9 @@ case "$cross" in
 esac
 log "target: cross=$cross opkg_arch=$OPKG_ARCH wamr_arch=$wamr_arch"
 
-# Loader root for the cross-built binary — where qemu's -L resolves the dynamic
-# linker and shared libraries.
-#
-# A board SDK stages a populated target rootfs (staging_dir/target-*/root-<x>).
-# A generic one (armsr, malta) has no board to stage for and ships none, but its
-# toolchain sysroot carries the musl loader and libc, which is all the engine
-# needs. Prefer the rootfs when present, fall back to the toolchain.
-# `|| true`: with no match the pipeline fails, and the caller runs under
-# `set -eo pipefail`, so the assignment alone would abort before the fallback.
+# Loader root for the cross-built binary, where qemu's -L resolves the dynamic
+# linker and shared libraries: a board SDK's staged target rootfs when present,
+# otherwise the toolchain sysroot. `|| true` or `pipefail` aborts on no match.
 SDK_TARGET_ROOT="$(ls -d "$SDK/staging_dir/$tgt_dir"/root-* 2>/dev/null | head -1 || true)"
 if [ -z "$SDK_TARGET_ROOT" ]; then
     SDK_TARGET_ROOT="$SDK/staging_dir/$tc_dir"

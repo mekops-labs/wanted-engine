@@ -1,10 +1,9 @@
 #!/bin/bash
 # Build a production OpenWRT .ipk: download/extract the SDK, stage libopenssl,
-# cross-build with TLS, package. See packaging/openwrt/README.md.
-# Usage: openwrt-package.sh <sdk-url-or-dir> [supervisor.tar]
+# cross-build with TLS, package. Configuration is the build dir's .config, with
+# no defconfig applied implicitly. See packaging/openwrt/README.md.
 #
-# Configuration is the build dir's .config, whatever `just menuconfig` last
-# wrote; no defconfig is applied implicitly. WANTED_CONFIG/BUILD_DIR selects it.
+# Usage: openwrt-package.sh <sdk-url-or-dir> [supervisor.tar]
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -75,7 +74,7 @@ fi
 mkdir -p "$bdir"
 printf '%s\n' "$SDK" > "$stamp"
 
-# `.config.src` records what was copied, so an unchanged source stays incremental.
+# `.config.src` records what was copied, so an unchanged source is incremental.
 if ! cmp -s "$DOTCONFIG" "$bdir/.config.src"; then
     log "configuration: $DOTCONFIG"
     cp "$DOTCONFIG" "$bdir/.config"

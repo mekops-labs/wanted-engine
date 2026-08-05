@@ -2,18 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Registry version for the flasher image, derived from the tree it is built
-# from. A registry version field is bounded and follows the image-tag grammar
-# ([A-Za-z0-9_] then [A-Za-z0-9._-]); a `git describe` string satisfies
-# neither. The version is reduced to what identifies the source:
-#
-#   0.3.3          built at a tag
-#   0.3.3-abc123   built past a tag: the tag plus the 6-character commit
-#
-# A tag's leading `v` is dropped, so the version is bare semver. A dirty tree
-# carries no marker: the character is needed for double-digit version
-# components, and a build worth seeding is a committed one.
+# from. A registry version field follows a bounded image-tag grammar, which a
+# `git describe` string does not, and a tag's leading `v` is dropped.
 #
 # Usage: registry-version.sh <repo>
+#   0.3.3          built at a tag
+#   0.3.3-abc123   built past a tag: the tag plus the 6-character commit
 
 set -euo pipefail
 cd "${1:?usage: registry-version.sh <repo>}"

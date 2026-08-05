@@ -1,8 +1,7 @@
 #!/bin/bash
 # Package the ESP-IDF factory-seed images: wapps/<name>/<name>.wasm becomes
-# <out>/<name>.wapp, embedded into the firmware by project/main/CMakeLists.txt at
-# configure time. The .wasm inputs come from `make wapps`; absent ones are
-# reported, not built.
+# <out>/<name>.wapp, embedded into the firmware at configure time. The .wasm
+# inputs come from `make wapps`; an absent one is reported, not built.
 #
 # Usage: registry-seed.sh <repo-root> <out-dir> <name>...
 set -euo pipefail

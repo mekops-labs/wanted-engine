@@ -1,11 +1,7 @@
 #!/bin/bash
-# Build the toolchain images (docker/Dockerfile, Containerfile.wapp-sdk) as
-# multi-arch manifest lists and push them. CI has no Docker-in-Docker, so images
-# are built out-of-band with this script; CI only pulls them.
-#
-# The version tag comes from each Containerfile's own `LABEL version=`, so it
-# can never drift from the image definition. Needs qemu-user-static +
-# binfmt-qemu-static for the foreign arch; the arm64 leg is emulated and slow.
+# Build the toolchain images as multi-arch manifest lists and push them; CI has
+# no Docker-in-Docker and only pulls them. Each version tag comes from the
+# Containerfile's own `LABEL version=`, so it cannot drift.
 #
 # Usage: docker/publish-images.sh [-a AUTHFILE] [build|wapp-sdk ...]
 #   -a AUTHFILE   push (podman --authfile); omitted, only build + verify.

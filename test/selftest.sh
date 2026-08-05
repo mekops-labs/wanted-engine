@@ -1,11 +1,7 @@
 #!/bin/bash
-# Run the in-WASM selftest supervisor and check its TAP output.
-#
-# The selftest supervisor (wasm/supervisor/selftest) boots, asserts the engine
-# from inside WASM, launches the test wapp and checks the
-# engine contains it, and prints TAP to stdout (the platform console). This
-# runner stages the launched test wapps into the registry, boots the engine,
-# and checks the TAP: a plan line and no `not ok`.
+# Run the in-WASM selftest supervisor and check its TAP output. This runner
+# stages the launched test wapps into the registry, boots the engine, and checks
+# the TAP for a plan line and no `not ok`.
 #
 # Usage: test/selftest.sh [wanted-cli] [config]
 set -u
@@ -19,9 +15,8 @@ cd "$ROOT"
 WANTED=${1:-./build/cmd/wanted-cli}
 
 # The supervisor config depends on what the engine under test can do: only a
-# build carrying the listen role can be handed listening sockets, and a config
-# naming one it cannot serve fails the launch by design. The extra config is
-# the base one plus the server/client pairs the listen checks need.
+# build carrying the listen role can be handed listening sockets, since a config
+# naming one it cannot serve fails the launch by design.
 default_config() {
     local cfgdir
     cfgdir=$(dirname "$(dirname "$WANTED")")
@@ -35,10 +30,9 @@ default_config() {
 CONFIG=${2:-$(default_config)}
 REGISTRY_ROOT=${REGISTRY_ROOT:-./registry}
 VOLUME_ROOT=${VOLUME_ROOT:-./data}
-# Host dir backing the /host `platform` bind mount (an absolute host path, as the
-# mount parser requires), and a secret outside it the planted symlink points at —
-# the bind-mount escape check (a symlink inside the mount that escapes it must not
-# resolve). Must match `src=` in selftest-config.json.
+# Host dir backing the /host `platform` bind mount, and a secret outside it that
+# the planted symlink points at, for the bind-mount escape check. Must match
+# `src=` in selftest-config.json.
 BIND_HOST_DIR=${BIND_HOST_DIR:-/tmp/wanted-selftest-host}
 BIND_SECRET=${BIND_SECRET:-/tmp/wanted-selftest-secret}
 
@@ -55,11 +49,10 @@ mkdir -p "$REGISTRY_ROOT"
 TEST_WAPPS="trapper:0.0.1-1 looper:0.0.1-1 stackbomb:0.0.1-1 membomb:0.0.1-1 cpuhog:0.0.1-1 blocker:0.0.1-1 pblock:0.0.1-1 escaper:0.0.1-1 fdhog:0.0.1-1 crasher:0.0.1-1 argenv:0.0.1-1 duplex:0.0.1-1 volcheck:0.0.1-1 bigmem:0.0.1-1 biginit:0.0.1-1 observer:0.0.1-1"
 
 staged=""
-# stage <name>:<ver>
-# Package wapps/<name> into the registry as <name>@<ver>.wapp (the registry
-# version separator is '@'; the <name>:<ver> argument here is just this script's
-# token format). An image is just app.wasm (+ any TarFS payload); identity comes
-# from the registry filename.
+# Package wapps/<name> into the registry as <name>@<ver>.wapp. An image is just
+# app.wasm plus any TarFS payload, and identity comes from the filename.
+#
+# Usage: stage <name>:<ver>
 stage() {
     local name=${1%%:*} ver=${1#*:}
     wapp_build "$name"
@@ -100,11 +93,9 @@ for w in $TEST_WAPPS; do stage "$w"; done
 # wasm that the loop above already built).
 ./test/stage-malformed.sh "$REGISTRY_ROOT" wapps/trapper/trapper.wasm
 
-# The engine keeps running after the test supervisor finishes (a cleanly exited
-# supervisor is respawned), so run it in the background and stop as soon as the
-# TAP plan line appears rather than waiting out a timeout. tail -f streams the
-# console live so the TAP and phase lines appear as they happen instead of all at
-# once at the end.
+# A cleanly exited supervisor is respawned, so the engine keeps running: run it
+# in the background and stop as soon as the TAP plan line appears, with tail -f
+# streaming the console live rather than buffering it.
 LOG=$(mktemp)
 "$WANTED" "$CONFIG" >"$LOG" 2>&1 &
 WPID=$!

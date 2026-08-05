@@ -1,15 +1,7 @@
 #!/bin/bash
-# Run the in-WASM selftest suite against a cross-built engine under qemu
-# user-mode emulation — the non-x86 lane, without router hardware.
-#
-# The engine is cross-built from an OpenWRT SDK (the same toolchain the .ipk
-# uses), then driven by test/selftest.sh through a wrapper that execs it under
-# qemu with the SDK's target rootfs as the loader root. The suite itself is
-# arch-independent: wapps and the supervisor are WASM, loaded by path at
-# runtime, so only the engine binary changes.
-#
-# Emulation is faithful enough to reproduce arch-specific engine faults that x86
-# does not exhibit — which is the point of this lane.
+# Run the in-WASM selftest suite against an engine cross-built from an OpenWRT
+# SDK, under qemu user-mode emulation: the non-x86 lane, without hardware. The
+# suite is arch-independent, so only the engine binary changes.
 #
 # Usage: test/selftest-qemu.sh <sdk-url-or-dir> [config]
 set -euo pipefail
@@ -32,17 +24,14 @@ command -v "$QEMU" >/dev/null 2>&1 || {
     exit 1
 }
 
-# TLS off: the lane exercises engine/wapp lifecycle, and skipping it avoids the
-# SDK's one-time OpenSSL stage. Secure sockets are a configuration symbol, so
-# turn them off there — the old -DSECURE_SOCKETS=OFF no longer reaches the
-# build, which would have pulled OpenSSL back in.
+# TLS off: this lane exercises engine and wapp lifecycle, and skipping it avoids
+# the SDK's one-time OpenSSL stage. Secure sockets are a configuration symbol,
+# so they are turned off there.
 log "cross-building selftest engine for $OPKG_ARCH"
 bdir="$REPO/build-selftest-$OPKG_ARCH"
-# WAMR detects stack overflow with guard pages and a SIGSEGV handler. qemu-user
-# emulates that imperfectly and the outcome depends on the host kernel's mmap
-# behaviour, so the runtime can take a real SIGSEGV before the supervisor emits
-# anything. Software bound checking costs a little speed and keeps the lane
-# testing the engine rather than the emulator.
+# WAMR detects stack overflow with guard pages and a SIGSEGV handler, which
+# qemu-user emulates imperfectly, so the runtime can take a real SIGSEGV first.
+# Software bound checking keeps the lane testing the engine, not the emulator.
 mkdir -p "$bdir"
 PYTHONPATH="$REPO/tools/kconfiglib" KCONFIG_CONFIG="$bdir/.config" \
     python3 "$REPO/tools/kconfiglib/olddefconfig.py" "$REPO/Kconfig" >/dev/null
