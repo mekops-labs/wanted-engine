@@ -162,7 +162,7 @@ A wapp that needs a console, drivers, mounts, or sockets has its config written 
     "err": { "name": "log" }
   },
   "drivers": [
-    { "name": "gpio" }
+    { "name": "gpio", "options": "pins=led:21:out" }
   ],
   "mounts": [
     { "name": "platform", "path": "/var/lib/app" },

@@ -80,7 +80,7 @@ configured `WASM_WORKER_STACK_SIZE` after the platform's `PTHREAD_STACK_MIN`
 floor); `max_drivers` / `max_options` size each launch-config drivers/mounts/sockets
 section and the per-entry options blob. `drivers` lists the driver names a launch
 config can request on this build — the platform-agnostic core plus the drivers
-the running platform implements (e.g. `gpio wifi` on NuttX) and any linked in
+the running platform implements (e.g. `wifi ota` on ESP-IDF) and any linked in
 from an out-of-tree tree (see the [Platform Guide](platform-guide.md)); naming
 any other driver fails the launch with `-ENODEV`.
 
@@ -117,7 +117,8 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `sha256` | `drivers[]` | `/dev/sha256` | Streaming SHA-256 digest device; see below. |
 | `ed25519` | `drivers[]` | `/dev/ed25519` | Ed25519 signature-verification device; see below. |
 | `inflate` | `drivers[]` | `/dev/inflate` | Streaming gzip decompression device; see below. |
-| `gpio` | `drivers[]` | `/dev/gpio` | A GPIO pin as a text level node — `write "1"/"0"` drives it high/low, `read` returns `"0\n"/"1\n"`. The engine does the GPIO ioctl; the wapp uses only WASI. Backed by the host GPIO character device on NuttX (default `/dev/gpio0`, overridable via `options`). NuttX only — naming it on a platform without GPIO (Linux) fails the launch with `-ENODEV`. |
+| `gpio` | `drivers[]` | `/dev/gpio/<name>/` | Digital I/O, one subtree per granted pin; see below. Backed by ESP-IDF and NuttX. On Linux the grant fails the launch with `-ENOSYS` until the libgpiod backing lands. |
+| `uart` | `drivers[]` | `/dev/uart/<port>/` | A serial port: a `data` byte stream plus writable `baud` and `format`; see below. Backed by ESP-IDF and Linux. On NuttX the grant fails the launch with `-ENOSYS`. |
 | `wifi` | `drivers[]` | `/dev/wifi` | Wi-Fi station control as a text node. `write "scan"` starts a scan (following reads stream one `<ssid> <bssid> <rssi>` line per AP, then EOF); `write "connect <ssid> <pass>"` associates (WPA2-PSK) and runs DHCP; `write "disconnect"` drops the association; a plain `read` returns one status line — `connected <ssid> <ip>` or `disconnected`. The engine drives the radio (WAPI on NuttX, `esp_wifi` on ESP-IDF); the wapp stays pure WASI. NuttX and ESP-IDF only — `-ENODEV` elsewhere. |
 | `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `abort` / `confirm` / `rollback`), `read` drains a status snapshot (active slot, confirmed state, pending swap); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. End every `begin`: `commit` makes the staged image bootable, `abort` discards it. A session left open holds the slot, and every later `begin` answers `-EBUSY` until the board reboots. `rollback` reverts a booted image and reboots the board; it does not end a streaming write. ESP-IDF only (`esp_ota_ops`) — `-ENODEV` elsewhere. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
@@ -209,6 +210,93 @@ and finish deterministically. Callers always know the compressed size (a
 fetched blob's length, a file's size). The 32 KiB DEFLATE history window lives
 in engine memory for the lifetime of the open — the wapp carries neither the
 window nor the inflate code.
+
+### `gpio` — digital I/O
+
+A `gpio` grant maps wapp-visible pin names onto the board's lines. Each granted
+pin gets a subtree:
+
+```
+/dev/gpio/
+  <name>/
+    value      (rw on an output, r on an input)  "0" | "1"
+    direction  (r)                               "in" | "out"
+```
+
+The grant names every pin, and nothing else is reachable:
+
+```json
+{ "name": "gpio", "options": "pins=boot0:4:out,nrst:5:out,btn:2:in" }
+```
+
+Each `pins=` entry is three colon-separated fields, `<name>:<address>:<direction>`,
+optionally followed by `pull=up|down|none` and `drive=pp|od`. The address is the
+backing's business — a GPIO number on ESP-IDF, a character-device path such as
+`/dev/gpio0` on NuttX — and a wapp never sees it. It is one field, and `:` and
+`,` are reserved: they separate fields and entries, so a backing addressing a
+line as a chip plus an offset spells it `/dev/gpiochip0/17`, not `0:17`. A wapp built against
+`/dev/gpio/boot0/value` therefore runs unchanged on every target: repinning a
+board changes the launch config, not the image.
+
+- `readdir /dev/gpio` lists exactly the granted pins. An ungranted name returns
+  `-ENOENT` from every path beneath it. There is no default pin, and a missing,
+  malformed, or empty `pins=` clause fails the launch.
+- A `value` read returns `"0\n"` or `"1\n"`, then EOF on that descriptor. The
+  value regenerates on a fresh open.
+- A `value` write takes `"0"` or `"1"`, with or without a trailing newline. On a
+  pin the grant made an input it returns `-EPERM`; any other payload is
+  `-EINVAL`.
+- Direction, pull, and drive are fixed by the grant. `direction` is read-only,
+  so a wapp cannot turn an input into an output and drive a line an external
+  device is already driving. A backing that cannot honour a requested pull or
+  drive mode fails the launch rather than serving `-ENOTSUP` in the field.
+- Pin exclusivity across wapps is not enforced by the engine. Two wapps granted
+  one line both configure it. Issue non-overlapping grants.
+
+### `uart` — serial port
+
+A `uart` grant hands one port to one wapp:
+
+```
+/dev/uart/
+  <port>/
+    data    (rw)  raw byte stream
+    baud    (rw)  decimal rate, e.g. "921600"
+    format  (rw)  <databits><parity><stopbits>, e.g. "8N1", "8E1", "7E2"
+```
+
+```json
+{ "name": "uart", "options": "port=1,tx=1,rx=2,baud=57600,format=8E1" }
+```
+
+`port=` is required and names both the backing's port and the wapp-visible
+directory. `baud=` and `format=` set the initial line configuration, defaulting
+to `115200` and `8N1`. Every other key is platform addressing: `tx=`/`rx=` GPIO
+numbers on ESP-IDF, `dev=/dev/ttyUSB0` on Linux. A key meaningless on the
+running platform is rejected at launch, not ignored.
+
+- A `data` read blocks until at least one byte arrives and returns **short** —
+  it never waits to fill the caller's buffer. Open with `O_NONBLOCK` to get
+  `-EAGAIN` on an empty receive buffer instead.
+- **A blocking read has no wall-clock cap.** It returns on a byte or on
+  `-EINTR`. An idle line is a UART's normal state and carries no information
+  about a fault, so there is no elapsed time a timeout could be inferred from. A
+  wapp that wants a deadline uses `O_NONBLOCK` around its own clock.
+- A `data` write queues bytes and returns the count accepted, which may be
+  short.
+- `baud` and `format` are writable at runtime, because one link can carry two
+  settings — a bootloader sync at 57600 8E1 and the framed channel that follows
+  at 921600 8N1. A write drains the transmit buffer first, so a reconfiguration
+  cannot truncate a byte already on the wire.
+- **A write to `baud` or `format` discards the receive buffer.** Bytes received
+  under the previous settings cannot be decoded under the new ones. A wapp that
+  reconfigures mid-stream loses whatever was queued.
+- A rate or format the backing cannot produce returns `-EINVAL`. The backing
+  never selects the nearest achievable rate: that yields a link that looks
+  configured and corrupts data.
+- One wapp holds a port, exclusively; a second grant on a held port fails the
+  launch. Routing several logical users onto one physical link is a broker
+  wapp's job — it holds the grant and its peers reach it over `/dev/pipe`.
 
 ### `socket` — the `/net/` network namespace
 

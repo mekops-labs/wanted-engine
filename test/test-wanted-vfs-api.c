@@ -109,10 +109,9 @@ TEST(wanted_vfs_api, WantedParseWappConfigImagePinnedTag) {
     TEST_ASSERT_EQUAL_STRING("duplex:stable", cfg.image);
 }
 
-/* A launch config naming a driver the platform does not provide fails the
- * install with -ENODEV. The dummy test platform registers no platform drivers,
- * so `gpio` is unresolvable here — the engine rejects the launch rather than
- * silently no-op'ing, and survives. */
+/* A launch config naming a driver no table offers fails the install with
+ * -ENODEV. The engine rejects the launch rather than silently no-op'ing, and
+ * survives. */
 TEST(wanted_vfs_api, InstallUnavailableDriverReturnsEnodev) {
     vfs_ctx_t c = VfsInit();
     TEST_ASSERT_NOT_NULL(c);
@@ -121,7 +120,7 @@ TEST(wanted_vfs_api, InstallUnavailableDriverReturnsEnodev) {
     TEST_ASSERT_NOT_NULL(w);
     memset(w, 0, sizeof(*w));
 
-    int ret = WantedInstallDriver(c, w, "gpio", "/dev/gpio", NULL);
+    int ret = WantedInstallDriver(c, w, "nosuchdriver", "/dev/nosuch", NULL);
     TEST_ASSERT_EQUAL_INT(-ENODEV, ret);
 
     WantedFree(w);
@@ -136,8 +135,11 @@ TEST(wanted_vfs_api, ListDriversReportsCoreDrivers) {
     TEST_ASSERT_GREATER_THAN_INT(0, n);
     TEST_ASSERT_NOT_NULL(strstr(buf, "wanted"));
     TEST_ASSERT_NOT_NULL(strstr(buf, "null"));
-    /* The dummy platform contributes no drivers, so gpio is absent here. */
-    TEST_ASSERT_NULL(strstr(buf, "gpio"));
+    /* gpio is a core driver: its tree and grant grammar are the same on every
+     * target, and only the line behind it is per-platform. */
+    TEST_ASSERT_NOT_NULL(strstr(buf, "gpio"));
+    /* The dummy platform contributes no platform drivers of its own. */
+    TEST_ASSERT_NULL(strstr(buf, "wifi"));
 }
 
 TEST_GROUP_RUNNER(wanted_vfs_api) {

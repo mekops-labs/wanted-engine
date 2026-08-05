@@ -44,6 +44,12 @@ endif()
 if(CONFIG_WANTED_VFS_INFLATE)
     list(APPEND vfs-srcs "vfs/vfs-inflate.c")
 endif()
+if(CONFIG_WANTED_VFS_GPIO)
+    list(APPEND vfs-srcs "vfs/vfs-gpio.c")
+endif()
+if(CONFIG_WANTED_VFS_UART)
+    list(APPEND vfs-srcs "vfs/vfs-uart.c")
+endif()
 if(CONFIG_WANTED_VFS_WANTED)
     list(APPEND vfs-srcs
         "vfs/vfs-wanted.c"

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -24,6 +25,32 @@ void DummyRegistryReset(void);
  * path: the real PlatformRegistryWrite streams an image to a host file under an
  * install ref, which the dummy platform cannot do. */
 int DummyRegistrySeed(const reg_entry_t *entries, size_t count);
+
+/* ── GPIO fake control (dummy-gpio.c) ───────────────────────────────────── */
+
+/* Release every fake GPIO line. Call in TEST_SETUP. */
+void DummyGpioReset(void);
+
+/* Drive the fake line at `address`, so a test can present an input level.
+ * Returns -ENOENT when no grant opened that address. */
+int DummyGpioSetLevel(const char *address, bool level);
+
+/* Read the fake line at `address`, so a test can observe what a wapp drove.
+ * Returns -ENOENT when no grant opened that address. */
+int DummyGpioGetLevel(const char *address, bool *level);
+
+/* ── UART loopback fake control (dummy-uart.c) ───────────────────────────── */
+
+/* Release the fake port and empty its ring. Call in TEST_SETUP. */
+void DummyUartReset(void);
+
+/* Report the line settings the driver last applied. Returns -ENOENT when no
+ * grant opened the port. Pass NULL for a field a test does not check. */
+int DummyUartGetLine(uint32_t *baud, uint8_t *databits, uint8_t *parity,
+                     uint8_t *stopbits);
+
+/* Bytes waiting in the loopback ring, or -ENOENT when the port is closed. */
+int DummyUartRxLen(void);
 
 /* ── Wapp runtime-state mock control (dummy-wapps.c) ────────────────────── */
 

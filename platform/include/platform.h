@@ -188,6 +188,92 @@ int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
 int PlatformFsMkdir(int fd, const char *path);
 int PlatformFsRmdir(int fd, const char *path);
 
+/* GPIO backing for the core /dev/gpio driver (src/vfs/vfs-gpio.c).
+ *
+ * The driver owns the wapp-facing tree, the grant grammar, and the name-to-line
+ * mapping; the platform owns only the line itself. `address` is the grant's
+ * middle field and is interpreted here and nowhere else: a decimal pin number
+ * on ESP-IDF, a host character-device path such as "/dev/gpio0" on NuttX. A
+ * wapp never sees it.
+ *
+ * PlatformGpioOpen configures the line and returns a handle. It returns
+ * -ENOSYS where the target drives no GPIO, -EINVAL on an address this backing
+ * cannot parse, and -ENOTSUP for a pull or drive mode it cannot honour. The
+ * driver turns any of these into a failed launch, so a wapp never sees a
+ * configuration the board did not apply. */
+typedef struct platform_gpio_t platform_gpio_t;
+
+#define PLAT_GPIO_DIR_IN 0
+#define PLAT_GPIO_DIR_OUT 1
+
+#define PLAT_GPIO_PULL_NONE 0
+#define PLAT_GPIO_PULL_UP 1
+#define PLAT_GPIO_PULL_DOWN 2
+
+#define PLAT_GPIO_DRIVE_PP 0 /* push-pull */
+#define PLAT_GPIO_DRIVE_OD 1 /* open-drain */
+
+typedef struct plat_gpio_cfg_t {
+    const char *address;
+    uint8_t direction; /* PLAT_GPIO_DIR_* */
+    uint8_t pull;      /* PLAT_GPIO_PULL_* */
+    uint8_t drive;     /* PLAT_GPIO_DRIVE_*, output only */
+} plat_gpio_cfg_t;
+
+int PlatformGpioOpen(const plat_gpio_cfg_t *cfg, platform_gpio_t **out);
+int PlatformGpioRead(const platform_gpio_t *g, bool *level);
+int PlatformGpioWrite(platform_gpio_t *g, bool level);
+void PlatformGpioClose(platform_gpio_t *g);
+
+/* UART backing for the core /dev/uart driver (src/vfs/vfs-uart.c).
+ *
+ * The driver owns the wapp-facing tree, the grant grammar, the blocking
+ * policy, and the line-setting text format. The platform owns the port.
+ *
+ * `port` is the grant's port= value and names the port to the backing: a UART
+ * number on ESP-IDF. `options` carries every grant key the driver did not
+ * consume, comma separated and in the order written — "tx=1,rx=2" on ESP-IDF,
+ * "dev=/dev/ttyUSB0" on Linux. Reject an unknown key rather than ignoring it,
+ * so a grant meaningless on this target fails the launch.
+ *
+ * The backing must make the port exclusive. ESP-IDF gets this for free, since
+ * uart_driver_install refuses a port already installed. Linux does not: two
+ * opens of one tty both succeed, so the backing takes TIOCEXCL itself. */
+typedef struct platform_uart_t platform_uart_t;
+
+typedef struct plat_uart_cfg_t {
+    const char *port;
+    const char *options;
+    uint32_t baud;
+    uint8_t databits; /* 5..8 */
+    uint8_t parity;   /* 'N', 'E', or 'O' */
+    uint8_t stopbits; /* 1..2 */
+} plat_uart_cfg_t;
+
+/* Open the port and apply the initial line configuration. Returns -ENOSYS
+ * where the target drives no UART, -EINVAL on an unusable port, address, or
+ * line setting, and -EBUSY when the port is already held. */
+int PlatformUartOpen(const plat_uart_cfg_t *cfg, platform_uart_t **out);
+
+/* Apply a new baud rate and frame format to a live port. Drain the transmit
+ * buffer first, so a reconfiguration cannot truncate a byte already on the
+ * wire, then discard the receive buffer, because bytes received under the old
+ * settings cannot be decoded under the new ones. Returns -EINVAL when the
+ * backing cannot produce the requested rate or format. Never select the
+ * nearest achievable rate — that produces a link that looks configured and
+ * corrupts data. */
+int PlatformUartConfigure(platform_uart_t *u, const plat_uart_cfg_t *cfg);
+
+/* Non-blocking. Returns the byte count read, 0 when nothing is buffered, or a
+ * negative errno. The driver builds its blocking read on top of this. */
+int PlatformUartRead(platform_uart_t *u, void *buf, size_t nbyte);
+
+/* Non-blocking. Returns the byte count accepted, which may be short, 0 when
+ * the transmit buffer is full, or a negative errno. */
+int PlatformUartWrite(platform_uart_t *u, const void *buf, size_t nbyte);
+
+void PlatformUartClose(platform_uart_t *u);
+
 /* One transport endpoint, owned by the platform. Opaque to the engine. */
 struct netCtx;
 

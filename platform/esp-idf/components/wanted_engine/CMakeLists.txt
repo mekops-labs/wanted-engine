@@ -23,7 +23,7 @@ set(vfs_srcs
     vfs-stdio.c vfs-tarfs.c vfs-socket.c
     vfs-wanted.c vfs-wanted-config.c vfs-wanted-wapps.c
     vfs-wanted-registry.c vfs-virtual.c
-    vfs-sha256.c vfs-ed25519.c vfs-inflate.c
+    vfs-sha256.c vfs-ed25519.c vfs-inflate.c vfs-gpio.c vfs-uart.c
 )
 list(TRANSFORM vfs_srcs PREPEND ${ENGINE}/src/vfs/)
 
@@ -60,8 +60,10 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/registry_flash.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-wifi.c
-    # /dev/gpio: drive a board pin (default GPIO21, the ESP32 One LED).
-    ${ENGINE}/platform/esp-idf/vfs/vfs-gpio.c
+    # PlatformGpio* over esp_driver_gpio, backing the core /dev/gpio driver.
+    ${ENGINE}/platform/esp-idf/gpio.c
+    # PlatformUart* over esp_driver_uart, backing the core /dev/uart driver.
+    ${ENGINE}/platform/esp-idf/uart.c
     # PlatformOta* on esp_ota_ops + the /dev/ota VFS driver.
     ${ENGINE}/platform/esp-idf/ota.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-ota.c
