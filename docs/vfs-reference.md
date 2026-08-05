@@ -53,7 +53,7 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/wapps/<name>/memory` | r | yes | Per-wapp WASM linear-memory accounting: `linear_cur` / `linear_max` (bytes) and `pages_cur` / `pages_max`. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`; `store_free` / `store_total`; `wasm_pages_free` — free WASM linear-memory pages, summed across every loaded wapp's headroom to its own ceiling. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
@@ -62,6 +62,7 @@ Each entry reads its value in one shot; a second read on the same fd returns EOF
 ```text
 platform:	linux
 version:	0.8.0+gf0d012c.20260713121818
+supervisor_abi:	3
 max_wapps:	3
 max_wapp_name:	15 B
 max_path:	256 B
@@ -90,7 +91,9 @@ exact bytes that booted, thus a control plane confirming a firmware update
 compares it rather than `version`, which two builds of one source tree can
 share. The line is absent on a platform that stamps no digest.
 
-`platform` is the build target (`linux`, `nuttx`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
+`supervisor_abi` is the version of the contract between the engine and a supervisor wapp: the shape of the `/dev/wanted` control plane, its verbs, and the wapp states it reports. It is bumped only when a supervisor built against an earlier value would misread this engine — never for an ordinary release, and never for an addition an older supervisor can ignore. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value; an engine reporting no ABI line at all is assumed compatible.
+
+`platform` is the build target (`linux`, `nuttx`, `esp-idf`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
 
 ## `/` — TarFS application space
 

@@ -28,6 +28,7 @@ The `wanted` driver is a device singleton: it mounts at its canonical `/dev/want
 /dev/wanted/
   ctl                       root verbs: "create <name>" | "delete <name>"
                             | "poweroff" | "reboot" | "reload-supervisor"
+                            | "rollback-supervisor"
   wapps/                    enumerable directory — one entry per known instance
     <name>/                 <name> is the instance name (set by create)
       ctl       (w)         per-wapp verb: "start [<image>]" | "stop"
@@ -41,7 +42,7 @@ The `wanted` driver is a device singleton: it mounts at its canonical `/dev/want
 
 | Path | Access | Description |
 |------|--------|-------------|
-| `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `delete <name>` releases a slot — a `create` reservation or a terminal (`exited`/`failure`) wapp — so the name leaves `wapps/` and its nodes return `-ENOENT` again. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). `reload-supervisor` arms a supervisor image reload, applied at the next respawn. |
+| `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `delete <name>` releases a slot — a `create` reservation or a terminal (`exited`/`failure`) wapp — so the name leaves `wapps/` and its nodes return `-ENOENT` again. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). `reload-supervisor` arms a supervisor image reload, applied at the next respawn. `rollback-supervisor` pins the compiled-in supervisor image and reloads it, answering `-EALREADY` when that image is what already runs. |
 | `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`, plus the declared linear-memory profile — see below) synthesized from the registry, peeking only the image header. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image. The version is an opaque tag; each ref component must match `[A-Za-z0-9_][A-Za-z0-9._-]*` or the open is rejected. A plain read of the directory itself returns `-EISDIR`. |
 | `/dev/wanted/config` | r | Supervisor bootstrap meta-config. |
 
@@ -56,7 +57,7 @@ The registry descriptor reports each image's **declared** linear-memory envelope
 
 The memory fields are the declared envelope, not a runtime prediction; they are omitted when the image header cannot be read or declares no memory of its own (e.g. an imported memory).
 
-The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, `reboot`, and `reload-supervisor`; any other token returns `-EINVAL`. The root ctl does **not** launch wapps — `start` and `stop` exist only per-wapp (`wapps/<name>/ctl`). `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.
+The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, `reboot`, `reload-supervisor`, and `rollback-supervisor`; any other token returns `-EINVAL`. The root ctl does **not** launch wapps — `start` and `stop` exist only per-wapp (`wapps/<name>/ctl`). `poweroff` and `reboot` take no argument and are the only writes that end the engine's run loop: a supervisor that exits on its own is respawned.
 
 ### Releasing a slot (`delete`)
 
@@ -216,6 +217,10 @@ Child wapps are untouched throughout; no state is handed over — the new superv
 
 **Rollback.** A staged image that cannot launch falls back to the compiled-in one and the engine keeps serving. The fallback pins the built-in image for the rest of the run, so a bad staged image cannot put the engine into a respawn loop. If the built-in image also fails, the configuration itself is broken and the engine stops loudly.
 
+A staged image that **starts and exits at once** counts toward the same ceiling. An incompatible supervisor loads cleanly, decides it cannot work with this engine, and leaves — which no load-failure check can see, so only the lifetime distinguishes it. A supervisor must be observed running for a short healthy span before its exit is treated as an ordinary one (a reboot, a poweroff, a live update). This judgement applies only while a staged image is what runs: the compiled-in image has nothing to fall back to, and quitting an interactive supervisor must not end the engine.
+
+**Deterministic rollback.** A supervisor that reads `supervisor_abi` from `/proc/wanted` and finds a value it cannot support does not have to wait for that ceiling. It writes `rollback-supervisor` and exits, which pins the compiled-in image and arms a reload immediately. Writing it when the compiled-in image is already what runs returns `-EALREADY`, since there is nothing to fall back to.
+
 ## Driving it from wsh
 
 The `wsh` debug supervisor wraps the raw node operations as builtins:
@@ -231,6 +236,7 @@ The `wsh` debug supervisor wraps the raw node operations as builtins:
 | `stop <name>` | Write `stop` to `wapps/<name>/ctl`. |
 | `poweroff` / `reboot` | Drain child wapps, then write the verb to the root `ctl`. |
 | live update | Stage the new image, then `write /dev/wanted/ctl reload-supervisor` and exit. |
+| rollback | `write /dev/wanted/ctl rollback-supervisor` and exit, to hand the node back to the compiled-in supervisor. |
 
 The filesystem builtins (`ls`, `cat`, `write`) operate on any node directly — e.g. `cat /proc/wapps/app1/state` or `ls /dev/wanted/wapps`. A wapp's log is read through its `log` mount (e.g. `cat /log/app1`).
 
