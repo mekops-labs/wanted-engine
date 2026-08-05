@@ -20,7 +20,8 @@
  * (vfs-wanted-wapps.c) driven directly through its vtable, backed by the dummy
  * in-memory wapp-state and registry mocks. Path carries identity; reads are
  * plain text; the start config is the only JSON.
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 extern const vfs_driver_t WantedWappsDriver; /* mounted at /dev/wanted/wapps */
 extern const vfs_driver_t WantedCtlDriver;   /* mounted at /dev/wanted/ctl   */
@@ -37,8 +38,8 @@ static wapp_state_t MakeState(const char *name, uint8_t id, status_t status,
     s.id = id;
     s.status = status;
     /* version is an opaque tag string. */
-    snprintf(s.version, WAPP_MAX_VERSION_LEN, "%u.%u.%u-%u", major, minor, patch,
-             pkg);
+    snprintf(s.version, WAPP_MAX_VERSION_LEN, "%u.%u.%u-%u", major, minor,
+             patch, pkg);
     return s;
 }
 
@@ -54,9 +55,7 @@ TEST_SETUP(vfs_wanted_wapps) {
     drv->Destroy((vfs_driver_t *)drv); /* clear fd table + pending configs */
 }
 
-TEST_TEAR_DOWN(vfs_wanted_wapps) {
-    drv->Destroy((vfs_driver_t *)drv);
-}
+TEST_TEAR_DOWN(vfs_wanted_wapps) { drv->Destroy((vfs_driver_t *)drv); }
 
 static int OpenLeaf(const char *path) {
     return drv->Open(drv->ctx, path, VFS_O_RDONLY);
@@ -161,8 +160,9 @@ TEST(vfs_wanted_wapps, ReadEof_IsPerFd) {
     char buf[32];
 
     TEST_ASSERT_TRUE(drv->Read(drv->ctx, a, buf, sizeof(buf)) > 0);
-    TEST_ASSERT_EQUAL_INT(0, drv->Read(drv->ctx, a, buf, sizeof(buf))); /* EOF */
-    TEST_ASSERT_TRUE(drv->Read(drv->ctx, b, buf, sizeof(buf)) > 0); /* fresh */
+    TEST_ASSERT_EQUAL_INT(0,
+                          drv->Read(drv->ctx, a, buf, sizeof(buf))); /* EOF */
+    TEST_ASSERT_TRUE(drv->Read(drv->ctx, b, buf, sizeof(buf)) > 0);  /* fresh */
 }
 
 TEST(vfs_wanted_wapps, ReadWriteOnlyNode_ReturnsEinval) {
@@ -221,8 +221,7 @@ TEST(vfs_wanted_wapps, CtlOversizedWrite_ReturnsEmsgsize) {
     int c = OpenLeaf("alpha/ctl");
     char big[64];
     memset(big, 'x', sizeof(big));
-    TEST_ASSERT_EQUAL_INT(-EMSGSIZE,
-                          drv->Write(drv->ctx, c, big, sizeof(big)));
+    TEST_ASSERT_EQUAL_INT(-EMSGSIZE, drv->Write(drv->ctx, c, big, sizeof(big)));
 }
 
 /* config + root ctl */
@@ -244,11 +243,11 @@ TEST(vfs_wanted_wapps, ConfigWrite_MalformedJsonRejected) {
 }
 
 /* The root ctl does not launch wapps — `start` is not a root verb; a wapp is
- * started through its own wapps/<name>/ctl (see CtlStart_NoImageReturnsEnosys). */
+ * started through its own wapps/<name>/ctl (see CtlStart_NoImageReturnsEnosys).
+ */
 TEST(vfs_wanted_wapps, RootCtlStartRejected_ReturnsEinval) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
-    TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          ctl->Write(ctl->ctx, fd, "start alpha", 11));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, ctl->Write(ctl->ctx, fd, "start alpha", 11));
 }
 
 TEST(vfs_wanted_wapps, RootCtlGarbage_ReturnsEinval) {
@@ -324,8 +323,7 @@ TEST(vfs_wanted_wapps, CtlStartWithImage_CreatedWithoutConfig_ReachesLoader) {
     TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create ghost", 12) > 0);
 
     int c = OpenLeaf("ghost/ctl");
-    TEST_ASSERT_EQUAL_INT(-ENOSYS,
-                          drv->Write(drv->ctx, c, "start duplex", 12));
+    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, c, "start duplex", 12));
 }
 
 /* Two distinct instances can be created and bound to a single image via config
@@ -357,8 +355,7 @@ TEST(vfs_wanted_wapps, RootCtlCreateTooLongName_ReturnsEinval) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
     /* 16-char name exceeds WAPP_MAX_NAME_LEN (15). */
     const char *cmd = "create aaaaaaaaaaaaaaaa";
-    TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          ctl->Write(ctl->ctx, fd, cmd, strlen(cmd)));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, ctl->Write(ctl->ctx, fd, cmd, strlen(cmd)));
 }
 
 /* Write "create w<i>" and return the driver's result. The slot pool is sized by
@@ -434,7 +431,8 @@ TEST(vfs_wanted_wapps, RootCtlDelete_RunningRejectedEbusy) {
 
 TEST(vfs_wanted_wapps, RootCtlDelete_UnknownReturnsEnoent) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
-    TEST_ASSERT_EQUAL_INT(-ENOENT, ctl->Write(ctl->ctx, fd, "delete ghost", 12));
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          ctl->Write(ctl->ctx, fd, "delete ghost", 12));
 }
 
 TEST(vfs_wanted_wapps, RootCtlDeleteNoName_ReturnsEinval) {
@@ -442,7 +440,8 @@ TEST(vfs_wanted_wapps, RootCtlDeleteNoName_ReturnsEinval) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, ctl->Write(ctl->ctx, fd, "delete ", 7));
 }
 
-/* delete frees a pending slot back to the pool, so a new name fits afterwards. */
+/* delete frees a pending slot back to the pool, so a new name fits afterwards.
+ */
 TEST(vfs_wanted_wapps, RootCtlDelete_FreesPoolSlot) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
     for (int i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++)
@@ -482,8 +481,10 @@ TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlStartRejected_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlGarbage_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlRead_ReturnsEinval);
-    RUN_TEST_CASE(vfs_wanted_wapps, RootCtlCreate_MakesWappCreatedAndEnumerable);
-    RUN_TEST_CASE(vfs_wanted_wapps, ConfigWriteAfterCreate_TransitionsToNotStarted);
+    RUN_TEST_CASE(vfs_wanted_wapps,
+                  RootCtlCreate_MakesWappCreatedAndEnumerable);
+    RUN_TEST_CASE(vfs_wanted_wapps,
+                  ConfigWriteAfterCreate_TransitionsToNotStarted);
     RUN_TEST_CASE(vfs_wanted_wapps, StartCreatedWithoutConfig_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps,
                   CtlStartWithImage_CreatedWithoutConfig_ReachesLoader);

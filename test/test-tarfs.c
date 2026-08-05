@@ -522,8 +522,8 @@ TEST_GROUP_RUNNER(tarfs_whiteout) {
 /***************************************/
 
 /* Path that exceeds the 100-char ustar name field limit. */
-#define PAX_LONG_PATH \
-    "level01/level02/level03/level04/level05/level06/" \
+#define PAX_LONG_PATH                                                          \
+    "level01/level02/level03/level04/level05/level06/"                         \
     "level07/level08/level09/level10/level11/level12/data.txt"
 
 /* Compute the self-referential PAX record length for "path=<path>\n". */
@@ -532,7 +532,10 @@ static size_t PaxRecordLen(size_t path_len) {
         size_t n = (size_t)digits + 1 + 5 + path_len + 1;
         size_t tmp = n;
         int nd = 0;
-        do { nd++; tmp /= 10; } while (tmp > 0);
+        do {
+            nd++;
+            tmp /= 10;
+        } while (tmp > 0);
         if (nd == digits)
             return n;
     }
@@ -546,8 +549,8 @@ static void BuildPaxBlock(uint8_t *out, const char *path, uint32_t pax_size) {
     memset(pax_data, 0, sizeof(pax_data));
     size_t path_len = strlen(path);
     size_t rec_len = PaxRecordLen(path_len);
-    int written = snprintf(pax_data, sizeof(pax_data), "%zu path=%s\n",
-                           rec_len, path);
+    int written =
+        snprintf(pax_data, sizeof(pax_data), "%zu path=%s\n", rec_len, path);
     if (pax_size > 0) {
         /* Append "NN size=DDDD\n" */
         char size_rec[64];
@@ -556,9 +559,16 @@ static void BuildPaxBlock(uint8_t *out, const char *path, uint32_t pax_size) {
         /* overwrite the "size=" key length calculation: digits+1+5+val+1 */
         for (int d = 1; d <= 6; d++) {
             size_t n = (size_t)d + 1 + 5 + sz_val_len + 1;
-            size_t tmp = n; int nd = 0;
-            do { nd++; tmp /= 10; } while (tmp > 0);
-            if (nd == d) { sz_rec_len = n; break; }
+            size_t tmp = n;
+            int nd = 0;
+            do {
+                nd++;
+                tmp /= 10;
+            } while (tmp > 0);
+            if (nd == d) {
+                sz_rec_len = n;
+                break;
+            }
         }
         snprintf(pax_data + written, sizeof(pax_data) - (size_t)written,
                  "%zu size=%u\n", sz_rec_len, pax_size);
@@ -578,7 +588,8 @@ static void BuildGnuLBlock(uint8_t *out, const char *path) {
     memcpy(out + 512, path, path_len);
 }
 
-static uint8_t pc_layer[512 * 12]; /* enough for pax+data+file+data+2 zero blks */
+static uint8_t
+    pc_layer[512 * 12]; /* enough for pax+data+file+data+2 zero blks */
 static uint8_t pc_layerB[512 * 8];
 static vfs_tarfs_ctx_t *pc_ctx;
 

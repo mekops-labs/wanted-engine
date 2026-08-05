@@ -4,8 +4,8 @@
 
 #include <errno.h>
 
-#include <vfs.h>
 #include <vfs-drivers.h>
+#include <vfs.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * vfs_9p_driver — no-socket paths of the 9P driver (vfs-9p.c).
@@ -17,7 +17,8 @@
  * guards, the pure _Seek math, the _OpenAt reject, driver init, and teardown.
  * The MAX_OPENED_FILES cap is 10, so fd 11 / -1 are out of range; fd 10 is NOT
  * (it is not > 10) and would reach the socket, so it is avoided here.
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 TEST_GROUP(vfs_9p_driver);
 
@@ -72,7 +73,8 @@ TEST(vfs_9p_driver, Seek_Cur_Accumulates) {
 TEST(vfs_9p_driver, Seek_End_LeavesOffsetUnchanged) {
     long pos = -1;
     drv->Seek(drv->ctx, 1, 42, VFS_SEEK_SET, &pos);
-    /* SEEK_END is a no-op in this driver: it just reports the current offset. */
+    /* SEEK_END is a no-op in this driver: it just reports the current offset.
+     */
     TEST_ASSERT_EQUAL_INT(0, drv->Seek(drv->ctx, 1, 999, VFS_SEEK_END, &pos));
     TEST_ASSERT_EQUAL_INT(42, pos);
 }
@@ -80,17 +82,20 @@ TEST(vfs_9p_driver, Seek_End_LeavesOffsetUnchanged) {
 TEST(vfs_9p_driver, Seek_BadWhence_ReturnsEinval) {
     long pos = 0;
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-        drv->Seek(drv->ctx, 1, 0, (vfs_whence_t)99, &pos));
+                          drv->Seek(drv->ctx, 1, 0, (vfs_whence_t)99, &pos));
 }
 
 TEST(vfs_9p_driver, Seek_BadFd_ReturnsEbadf) {
     long pos = 0;
-    TEST_ASSERT_EQUAL_INT(-EBADF, drv->Seek(drv->ctx, 11, 0, VFS_SEEK_SET, &pos));
-    TEST_ASSERT_EQUAL_INT(-EBADF, drv->Seek(drv->ctx, -1, 0, VFS_SEEK_SET, &pos));
+    TEST_ASSERT_EQUAL_INT(-EBADF,
+                          drv->Seek(drv->ctx, 11, 0, VFS_SEEK_SET, &pos));
+    TEST_ASSERT_EQUAL_INT(-EBADF,
+                          drv->Seek(drv->ctx, -1, 0, VFS_SEEK_SET, &pos));
 }
 
 TEST(vfs_9p_driver, Close_Fd0_IsNoOpSuccess) {
-    /* fd 0 is the attach root: Close skips the clunk round trip and succeeds. */
+    /* fd 0 is the attach root: Close skips the clunk round trip and succeeds.
+     */
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, 0));
 }
 
@@ -121,10 +126,10 @@ TEST(vfs_9p_driver, ReadDir_BadFd_ReturnsEbadf) {
     uint8_t buf[64];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(-EBADF,
-        drv->ReadDir(drv->ctx, 11, buf, sizeof(buf), &cookie, &used));
-    TEST_ASSERT_EQUAL_INT(-EBADF,
-        drv->ReadDir(drv->ctx, -1, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        -EBADF, drv->ReadDir(drv->ctx, 11, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        -EBADF, drv->ReadDir(drv->ctx, -1, buf, sizeof(buf), &cookie, &used));
 }
 
 TEST(vfs_9p_driver, Unlink_BadFd_ReturnsEbadf) {

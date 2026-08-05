@@ -15,11 +15,12 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * platform_registry — in-memory registry store exercised via PlatformRegistry*
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 TEST_GROUP(platform_registry);
 
-TEST_SETUP(platform_registry)    { DummyRegistryReset(); }
+TEST_SETUP(platform_registry) { DummyRegistryReset(); }
 TEST_TEAR_DOWN(platform_registry) {}
 
 TEST(platform_registry, ReadEmpty_ReturnsZero) {
@@ -39,7 +40,7 @@ TEST(platform_registry, ReadCountQuery_NullListReturnsCount) {
 TEST(platform_registry, SeedThenRead_RoundTrip) {
     reg_entry_t seed[2] = {
         MakeEntry("sensor", "0.3.1", 128),
-        MakeEntry("relay",  "1.2.0", 256),
+        MakeEntry("relay", "1.2.0", 256),
     };
     TEST_ASSERT_EQUAL_INT(2, DummyRegistrySeed(seed, 2));
 
@@ -57,7 +58,7 @@ TEST(platform_registry, SeedThenRead_RoundTrip) {
 }
 
 TEST(platform_registry, UpsertByName_ReplacesVersion) {
-    reg_entry_t first  = MakeEntry("app", "1.0.0", 10);
+    reg_entry_t first = MakeEntry("app", "1.0.0", 10);
     reg_entry_t second = MakeEntry("app", "1.1.0", 99);
     TEST_ASSERT_EQUAL_INT(1, DummyRegistrySeed(&first, 1));
     TEST_ASSERT_EQUAL_INT(1, DummyRegistrySeed(&second, 1));
@@ -107,7 +108,8 @@ TEST(platform_registry, Remove_Nonexistent_ReturnsEnoent) {
 }
 
 TEST(platform_registry, Overfill_ReturnsEnospc) {
-    /* The table holds 8 entries; seeding 9 distinct names must report -ENOSPC. */
+    /* The table holds 8 entries; seeding 9 distinct names must report -ENOSPC.
+     */
     reg_entry_t seed[9];
     for (int i = 0; i < 9; i++) {
         char name[WAPP_MAX_NAME_LEN];
@@ -127,4 +129,3 @@ TEST_GROUP_RUNNER(platform_registry) {
     RUN_TEST_CASE(platform_registry, Remove_Nonexistent_ReturnsEnoent);
     RUN_TEST_CASE(platform_registry, Overfill_ReturnsEnospc);
 }
-

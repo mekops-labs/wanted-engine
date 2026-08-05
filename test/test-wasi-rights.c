@@ -9,14 +9,16 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * wasi_rights — per-preopen capability masks, seed grants, non-binding lookup
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 TEST_GROUP(wasi_rights);
 
 TEST_SETUP(wasi_rights) {}
 TEST_TEAR_DOWN(wasi_rights) {}
 
-/* The read-only grant is the full grant with exactly the write class removed. */
+/* The read-only grant is the full grant with exactly the write class removed.
+ */
 TEST(wasi_rights, ReadonlyClearsTheWriteClassOnly) {
     TEST_ASSERT_EQUAL_UINT64(0, WASI_RIGHTS_READONLY & WASI_RIGHTS_WRITE);
     TEST_ASSERT_EQUAL_UINT64(WASI_RIGHTS_ALL & ~WASI_RIGHTS_WRITE,
@@ -32,7 +34,8 @@ TEST(wasi_rights, ReadonlyClearsTheWriteClassOnly) {
     TEST_ASSERT_FALSE(WASI_RIGHTS_READONLY & __WASI_RIGHTS_FD_WRITE);
     TEST_ASSERT_FALSE(WASI_RIGHTS_READONLY & __WASI_RIGHTS_PATH_CREATE_FILE);
     TEST_ASSERT_FALSE(WASI_RIGHTS_READONLY & __WASI_RIGHTS_PATH_UNLINK_FILE);
-    TEST_ASSERT_FALSE(WASI_RIGHTS_READONLY & __WASI_RIGHTS_PATH_REMOVE_DIRECTORY);
+    TEST_ASSERT_FALSE(WASI_RIGHTS_READONLY &
+                      __WASI_RIGHTS_PATH_REMOVE_DIRECTORY);
 }
 
 /* The audited mutate set holds every write-class bit and none of the read or
@@ -43,7 +46,8 @@ TEST(wasi_rights, WriteClassMembership) {
         __WASI_RIGHTS_FD_ALLOCATE | __WASI_RIGHTS_PATH_CREATE_DIRECTORY |
         __WASI_RIGHTS_PATH_CREATE_FILE | __WASI_RIGHTS_PATH_LINK_SOURCE |
         __WASI_RIGHTS_PATH_LINK_TARGET | __WASI_RIGHTS_PATH_RENAME_SOURCE |
-        __WASI_RIGHTS_PATH_RENAME_TARGET | __WASI_RIGHTS_PATH_FILESTAT_SET_SIZE |
+        __WASI_RIGHTS_PATH_RENAME_TARGET |
+        __WASI_RIGHTS_PATH_FILESTAT_SET_SIZE |
         __WASI_RIGHTS_PATH_FILESTAT_SET_TIMES |
         __WASI_RIGHTS_FD_FILESTAT_SET_SIZE |
         __WASI_RIGHTS_FD_FILESTAT_SET_TIMES | __WASI_RIGHTS_PATH_SYMLINK |

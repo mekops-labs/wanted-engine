@@ -5,8 +5,8 @@
 #include <errno.h>
 #include <string.h>
 
-#include <vfs.h>
 #include <vfs-drivers.h>
+#include <vfs.h>
 
 #include "dummy-fs.h"
 
@@ -16,7 +16,8 @@
  *
  * Address format parsed by VfsSocketInit: a URL "<scheme>://<host>:<port>",
  * where scheme is tcp/udp (plain) or tcps/udps (secure TLS/DTLS).
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 TEST_GROUP(vfs_socket_driver);
 
@@ -165,7 +166,8 @@ TEST(vfs_socket_driver, Read_ConnectFailure_ReturnsError) {
     DummyNetSetConnectResult(-ECONNREFUSED);
 
     uint8_t buf[8];
-    TEST_ASSERT_EQUAL_INT(-ECONNREFUSED, drv->Read(drv->ctx, 0, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_INT(-ECONNREFUSED,
+                          drv->Read(drv->ctx, 0, buf, sizeof(buf)));
 }
 
 TEST(vfs_socket_driver, Write_ConnectsThenSends) {
@@ -240,7 +242,8 @@ TEST(vfs_socket_driver, SockRecv_ConnectFailure_ReturnsError) {
 
     uint8_t buf[8];
     vfs_roflags_t oflags = 0;
-    TEST_ASSERT_EQUAL_INT(-ECONNREFUSED,
+    TEST_ASSERT_EQUAL_INT(
+        -ECONNREFUSED,
         drv->SockRecv(drv->ctx, 0, buf, sizeof(buf), 0, &oflags));
 }
 

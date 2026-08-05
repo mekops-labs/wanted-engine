@@ -8,15 +8,16 @@
 #include "test-utils.h"
 
 #include <platform.h>
-#include <vfs.h>
 #include <vfs-drivers.h>
+#include <vfs.h>
 #include <wasi.h>
 
 #include "dummy-fs.h"
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * vfs_platform_driver — driver vtable exercised directly, no WASM layer
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 TEST_GROUP(vfs_platform_driver);
 
@@ -132,11 +133,12 @@ TEST(vfs_platform_driver, ReadDir_ListsDirectChildren) {
     uint8_t buf[512];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(0, drv->ReadDir(drv->ctx, dir_fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, drv->ReadDir(drv->ctx, dir_fd, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(used > 0);
     TEST_ASSERT_TRUE(HasBytes(buf, used, "a.txt", 5));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "b.txt", 5));
-    TEST_ASSERT_TRUE(HasBytes(buf, used, "sub",   3));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "sub", 3));
     /* nested.txt is grandchild — must not appear */
     TEST_ASSERT_FALSE(HasBytes(buf, used, "nested.txt", 10));
 
@@ -155,7 +157,7 @@ TEST(vfs_platform_driver, Rename_MovesFile) {
     TEST_ASSERT_EQUAL_INT(0, ret);
 
     TEST_ASSERT_EQUAL_INT(-ENOENT,
-        drv->Open(drv->ctx, "/rendir/old.txt", VFS_O_RDONLY));
+                          drv->Open(drv->ctx, "/rendir/old.txt", VFS_O_RDONLY));
 
     int new_fd = drv->Open(drv->ctx, "/rendir/new.txt", VFS_O_RDONLY);
     TEST_ASSERT_TRUE(new_fd >= 0);
@@ -169,7 +171,8 @@ TEST(vfs_platform_driver, Mkdir_CreatesSubdir) {
 
     TEST_ASSERT_EQUAL_INT(0, drv->Mkdir(drv->ctx, dir_fd, "sub"));
 
-    int sub_fd = drv->Open(drv->ctx, "/mktest/sub", VFS_O_RDONLY | VFS_O_DIRECTORY);
+    int sub_fd =
+        drv->Open(drv->ctx, "/mktest/sub", VFS_O_RDONLY | VFS_O_DIRECTORY);
     TEST_ASSERT_TRUE(sub_fd >= 0);
 
     vfs_stat_t st;
@@ -189,7 +192,8 @@ TEST(vfs_platform_driver, Mkdir_DuplicateReturnsEexist) {
 
 TEST_GROUP_RUNNER(vfs_platform_driver) {
     RUN_TEST_CASE(vfs_platform_driver, Open_CreateFile_ReturnsValidFd);
-    RUN_TEST_CASE(vfs_platform_driver, Open_NonexistentWithoutCreat_ReturnsEnoent);
+    RUN_TEST_CASE(vfs_platform_driver,
+                  Open_NonexistentWithoutCreat_ReturnsEnoent);
     RUN_TEST_CASE(vfs_platform_driver, Open_ExclOnExisting_ReturnsEexist);
     RUN_TEST_CASE(vfs_platform_driver, WriteAndRead_RoundTrip);
     RUN_TEST_CASE(vfs_platform_driver, Stat_File);
@@ -204,16 +208,17 @@ TEST_GROUP_RUNNER(vfs_platform_driver) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * wasi_preopen_fs — VfsRename / VfsMkdir through a preopen-backed VFS
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 TEST_GROUP(wasi_preopen_fs);
 
 static wasi_ctx_t *wctx;
-static vfs_ctx_t   vfs;
+static vfs_ctx_t vfs;
 
 TEST_SETUP(wasi_preopen_fs) {
     DummyFsReset();
-    vfs  = VfsInit();
+    vfs = VfsInit();
     wctx = InitWasiContext();
     wctx->vfsCtx = vfs;
 }
@@ -296,9 +301,8 @@ TEST(wasi_preopen_fs, Rmdir_RemovesDirectory) {
 
 TEST(wasi_preopen_fs, Rmdir_NonEmptyDirectoryRejected) {
     int host_fd = PlatformOpenStateDir("/var/lib/rmdir-full", false);
-    TEST_ASSERT_EQUAL_INT(
-        0,
-        WasiCtxAddPreopen(wctx, "/var/lib/rmdir-full", NULL, host_fd, false));
+    TEST_ASSERT_EQUAL_INT(0, WasiCtxAddPreopen(wctx, "/var/lib/rmdir-full",
+                                               NULL, host_fd, false));
     int vfs_fd = wctx->preopens[wctx->preopens_cnt - 1].fd;
     TEST_ASSERT_TRUE(vfs_fd >= 0);
 
@@ -320,19 +324,19 @@ TEST(wasi_preopen_fs, Rename_MovesFileInPreopen) {
     int vfs_fd = wctx->preopens[wctx->preopens_cnt - 1].fd;
     TEST_ASSERT_TRUE(vfs_fd >= 0);
 
-    int f = VfsOpenAt(vfs, vfs_fd, "desired.json.tmp",
-                      VFS_O_CREAT | VFS_O_RDWR);
+    int f =
+        VfsOpenAt(vfs, vfs_fd, "desired.json.tmp", VFS_O_CREAT | VFS_O_RDWR);
     TEST_ASSERT_TRUE(f >= 0);
     VfsWrite(vfs, f, "{\"generation\":1}", 16);
     VfsClose(vfs, f);
 
-    int ret = VfsRename(vfs, vfs_fd, "desired.json.tmp",
-                        vfs_fd, "desired.json");
+    int ret =
+        VfsRename(vfs, vfs_fd, "desired.json.tmp", vfs_fd, "desired.json");
     TEST_ASSERT_EQUAL_INT(0, ret);
 
     /* tmp path gone */
-    TEST_ASSERT_EQUAL_INT(-ENOENT,
-        VfsOpenAt(vfs, vfs_fd, "desired.json.tmp", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -ENOENT, VfsOpenAt(vfs, vfs_fd, "desired.json.tmp", VFS_O_RDONLY));
 
     /* target path exists and preserves content */
     int final = VfsOpenAt(vfs, vfs_fd, "desired.json", VFS_O_RDONLY);
@@ -347,11 +351,11 @@ TEST(wasi_preopen_fs, Rename_MovesFileInPreopen) {
 }
 
 TEST(wasi_preopen_fs, ReadOnlyMount_RejectsWrites) {
-    /* Seed the backing dir with a file through a writable bind, then re-bind the
-     * same host dir read-only. */
+    /* Seed the backing dir with a file through a writable bind, then re-bind
+     * the same host dir read-only. */
     int rw_fd = PlatformOpenStateDir("/ro", false);
-    TEST_ASSERT_EQUAL_INT(
-        0, WasiCtxAddPreopen(wctx, "/rw", NULL, rw_fd, false));
+    TEST_ASSERT_EQUAL_INT(0,
+                          WasiCtxAddPreopen(wctx, "/rw", NULL, rw_fd, false));
     int rw_vfs = wctx->preopens[wctx->preopens_cnt - 1].fd;
     int seed = VfsOpenAt(vfs, rw_vfs, "data.txt", VFS_O_CREAT | VFS_O_RDWR);
     TEST_ASSERT_TRUE(seed >= 0);
@@ -360,8 +364,7 @@ TEST(wasi_preopen_fs, ReadOnlyMount_RejectsWrites) {
 
     int ro_fd = PlatformOpenStateDir("/ro", true);
     TEST_ASSERT_TRUE(ro_fd >= 0);
-    TEST_ASSERT_EQUAL_INT(
-        0, WasiCtxAddPreopen(wctx, "/ro", NULL, ro_fd, true));
+    TEST_ASSERT_EQUAL_INT(0, WasiCtxAddPreopen(wctx, "/ro", NULL, ro_fd, true));
     int ro_vfs = wctx->preopens[wctx->preopens_cnt - 1].fd;
     TEST_ASSERT_TRUE(ro_vfs >= 0);
 

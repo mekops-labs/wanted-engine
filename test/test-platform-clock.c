@@ -11,11 +11,12 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * platform_clock — deterministic monotonic counter
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 TEST_GROUP(platform_clock);
 
-TEST_SETUP(platform_clock)    { DummyClockReset(); }
+TEST_SETUP(platform_clock) { DummyClockReset(); }
 TEST_TEAR_DOWN(platform_clock) {}
 
 TEST(platform_clock, Res_ReturnsOneMsForRealtimeAndMonotonic) {
@@ -86,11 +87,12 @@ TEST_GROUP_RUNNER(platform_clock) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * platform_rng — deterministic xorshift32
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 TEST_GROUP(platform_rng);
 
-TEST_SETUP(platform_rng)    { DummyClockReset(); }
+TEST_SETUP(platform_rng) { DummyClockReset(); }
 TEST_TEAR_DOWN(platform_rng) {}
 
 TEST(platform_rng, FillsBuffer_NonZeroOutput) {
@@ -100,7 +102,10 @@ TEST(platform_rng, FillsBuffer_NonZeroOutput) {
 
     int all_zero = 1;
     for (int i = 0; i < 8; i++) {
-        if (buf[i] != 0) { all_zero = 0; break; }
+        if (buf[i] != 0) {
+            all_zero = 0;
+            break;
+        }
     }
     TEST_ASSERT_FALSE(all_zero);
 }
@@ -113,7 +118,7 @@ TEST(platform_rng, TwoCallsProduce_DifferentBytes) {
 }
 
 TEST(platform_rng, DeterministicAfterReset) {
-    uint8_t first[4]  = {0};
+    uint8_t first[4] = {0};
     uint8_t second[4] = {0};
     PlatfromGetRandom(first, sizeof(first));
     DummyClockReset();

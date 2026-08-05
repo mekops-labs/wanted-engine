@@ -22,8 +22,8 @@ TEST(wasm_meta, MinOnly) {
     const uint8_t m[] = {MAGIC, 0x05, 0x03, 0x01, 0x00, 0x01};
     uint32_t init = 0, max = 0xdead;
     bool has_max = true;
-    TEST_ASSERT_EQUAL_INT(0, WantedWasmMemoryProfile(m, sizeof(m), &init,
-                                                     &has_max, &max));
+    TEST_ASSERT_EQUAL_INT(
+        0, WantedWasmMemoryProfile(m, sizeof(m), &init, &has_max, &max));
     TEST_ASSERT_EQUAL_UINT32(1, init);
     TEST_ASSERT_FALSE(has_max);
 }
@@ -33,8 +33,8 @@ TEST(wasm_meta, MinAndMax) {
     const uint8_t m[] = {MAGIC, 0x05, 0x04, 0x01, 0x01, 0x01, 0x08};
     uint32_t init = 0, max = 0;
     bool has_max = false;
-    TEST_ASSERT_EQUAL_INT(0, WantedWasmMemoryProfile(m, sizeof(m), &init,
-                                                     &has_max, &max));
+    TEST_ASSERT_EQUAL_INT(
+        0, WantedWasmMemoryProfile(m, sizeof(m), &init, &has_max, &max));
     TEST_ASSERT_EQUAL_UINT32(1, init);
     TEST_ASSERT_TRUE(has_max);
     TEST_ASSERT_EQUAL_UINT32(8, max);
@@ -45,8 +45,8 @@ TEST(wasm_meta, SkipsEarlierSections) {
     const uint8_t m[] = {MAGIC, 0x01, 0x01, 0x00, 0x05, 0x03, 0x01, 0x00, 0x02};
     uint32_t init = 0, max = 0;
     bool has_max = true;
-    TEST_ASSERT_EQUAL_INT(0, WantedWasmMemoryProfile(m, sizeof(m), &init,
-                                                     &has_max, &max));
+    TEST_ASSERT_EQUAL_INT(
+        0, WantedWasmMemoryProfile(m, sizeof(m), &init, &has_max, &max));
     TEST_ASSERT_EQUAL_UINT32(2, init);
     TEST_ASSERT_FALSE(has_max);
 }
@@ -56,8 +56,8 @@ TEST(wasm_meta, MultiByteLeb) {
     const uint8_t m[] = {MAGIC, 0x05, 0x04, 0x01, 0x00, 0x80, 0x01};
     uint32_t init = 0, max = 0;
     bool has_max = true;
-    TEST_ASSERT_EQUAL_INT(0, WantedWasmMemoryProfile(m, sizeof(m), &init,
-                                                     &has_max, &max));
+    TEST_ASSERT_EQUAL_INT(
+        0, WantedWasmMemoryProfile(m, sizeof(m), &init, &has_max, &max));
     TEST_ASSERT_EQUAL_UINT32(128, init);
 }
 
@@ -66,16 +66,16 @@ TEST(wasm_meta, NoMemorySection) {
     const uint8_t m[] = {MAGIC, 0x01, 0x01, 0x00};
     uint32_t init = 0, max = 0;
     bool has_max = false;
-    TEST_ASSERT_EQUAL_INT(-ENOENT, WantedWasmMemoryProfile(m, sizeof(m), &init,
-                                                           &has_max, &max));
+    TEST_ASSERT_EQUAL_INT(
+        -ENOENT, WantedWasmMemoryProfile(m, sizeof(m), &init, &has_max, &max));
 }
 
 TEST(wasm_meta, BadMagic) {
     const uint8_t m[] = {0, 0, 0, 0, 1, 0, 0, 0, 0x05, 0x03, 0x01, 0x00, 0x01};
     uint32_t init = 0, max = 0;
     bool has_max = false;
-    TEST_ASSERT_EQUAL_INT(-EINVAL, WantedWasmMemoryProfile(m, sizeof(m), &init,
-                                                          &has_max, &max));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, WantedWasmMemoryProfile(m, sizeof(m), &init, &has_max, &max));
 }
 
 TEST(wasm_meta, TruncatedMemorySection) {
@@ -83,8 +83,8 @@ TEST(wasm_meta, TruncatedMemorySection) {
     const uint8_t m[] = {MAGIC, 0x05, 0x03, 0x01};
     uint32_t init = 0, max = 0;
     bool has_max = false;
-    TEST_ASSERT_EQUAL_INT(-EINVAL, WantedWasmMemoryProfile(m, sizeof(m), &init,
-                                                          &has_max, &max));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, WantedWasmMemoryProfile(m, sizeof(m), &init, &has_max, &max));
 }
 
 TEST(wasm_meta, ShortWindowBeforeMemoryIsAbsent) {
@@ -93,8 +93,8 @@ TEST(wasm_meta, ShortWindowBeforeMemoryIsAbsent) {
     const uint8_t m[] = {MAGIC, 0x03, 0x40, 0x00, 0x00};
     uint32_t init = 0, max = 0;
     bool has_max = false;
-    TEST_ASSERT_EQUAL_INT(-ENOENT, WantedWasmMemoryProfile(m, sizeof(m), &init,
-                                                          &has_max, &max));
+    TEST_ASSERT_EQUAL_INT(
+        -ENOENT, WantedWasmMemoryProfile(m, sizeof(m), &init, &has_max, &max));
 }
 
 TEST_GROUP_RUNNER(wasm_meta) {

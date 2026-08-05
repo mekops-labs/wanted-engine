@@ -29,9 +29,7 @@ TEST_SETUP(vfs_sha256) {
     TEST_ASSERT_NOT_NULL(drv);
 }
 
-TEST_TEAR_DOWN(vfs_sha256) {
-    TEST_ASSERT_EQUAL(0, drv->Destroy(drv));
-}
+TEST_TEAR_DOWN(vfs_sha256) { TEST_ASSERT_EQUAL(0, drv->Destroy(drv)); }
 
 static void digestOf(const char *msg, size_t len, char hex[65]) {
     int fd = TRY_DRV(drv, Open, "", 0);

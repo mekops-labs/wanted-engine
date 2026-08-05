@@ -18,7 +18,8 @@ static int _ReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
     const char data[] = "info-data";
     size_t n = sizeof(data) - 1;
-    if (n > bufLen) n = bufLen;
+    if (n > bufLen)
+        n = bufLen;
     memcpy(buf, data, n);
     return (int)n;
 }
@@ -27,7 +28,8 @@ static int _ReadPriv(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
     const char data[] = "secret";
     size_t n = sizeof(data) - 1;
-    if (n > bufLen) n = bufLen;
+    if (n > bufLen)
+        n = bufLen;
     memcpy(buf, data, n);
     return (int)n;
 }
@@ -41,22 +43,26 @@ TEST_SETUP(procfs_register) { vfs = VfsInit(); }
 TEST_TEAR_DOWN(procfs_register) { VfsDestroy(&vfs); }
 
 TEST(procfs_register, RejectsInvalidArgs) {
-    TEST_ASSERT_EQUAL_INT(-EINVAL, ProcFs_Register(NULL,  "x", _ReadInfo, false));
-    TEST_ASSERT_EQUAL_INT(-EINVAL, ProcFs_Register(vfs,   NULL, _ReadInfo, false));
-    TEST_ASSERT_EQUAL_INT(-EINVAL, ProcFs_Register(vfs,   "",  _ReadInfo, false));
-    TEST_ASSERT_EQUAL_INT(-EINVAL, ProcFs_Register(vfs,   "x", NULL,      false));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          ProcFs_Register(NULL, "x", _ReadInfo, false));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          ProcFs_Register(vfs, NULL, _ReadInfo, false));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, ProcFs_Register(vfs, "", _ReadInfo, false));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, ProcFs_Register(vfs, "x", NULL, false));
 }
 
 TEST(procfs_register, RejectsNameTooLong) {
     char long_name[MAX_ENTRY_NAME_LEN + 2];
     memset(long_name, 'a', sizeof(long_name) - 1);
     long_name[sizeof(long_name) - 1] = '\0';
-    TEST_ASSERT_EQUAL_INT(-ENAMETOOLONG, ProcFs_Register(vfs, long_name, _ReadInfo, false));
+    TEST_ASSERT_EQUAL_INT(-ENAMETOOLONG,
+                          ProcFs_Register(vfs, long_name, _ReadInfo, false));
 }
 
 TEST(procfs_register, RejectsDuplicate) {
     TEST_ASSERT_EQUAL_INT(0, ProcFs_Register(vfs, "info", _ReadInfo, false));
-    TEST_ASSERT_EQUAL_INT(-EEXIST, ProcFs_Register(vfs, "info", _ReadInfo, false));
+    TEST_ASSERT_EQUAL_INT(-EEXIST,
+                          ProcFs_Register(vfs, "info", _ReadInfo, false));
 }
 
 TEST(procfs_register, RejectsTableFull) {
@@ -232,7 +238,7 @@ TEST_GROUP(procfs_readdir);
 
 TEST_SETUP(procfs_readdir) {
     vfs = VfsInit();
-    ProcFs_Register(vfs, "info",   _ReadInfo, false);
+    ProcFs_Register(vfs, "info", _ReadInfo, false);
     ProcFs_Register(vfs, "status", _ReadInfo, false);
     ProcFs_Register(vfs, "secret", _ReadPriv, true);
 }
@@ -248,12 +254,13 @@ TEST(procfs_readdir, UnprivilegedListOmitsPrivileged) {
     uint8_t buf[256];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(0, ProcFs_ReadDir(vfs, h, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, ProcFs_ReadDir(vfs, h, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(used > 0);
 
     /* Only "info" and "status" should appear — "secret" is privileged. */
     TEST_ASSERT_FALSE(HasBytes(buf, used, "secret", 6));
-    TEST_ASSERT_TRUE(HasBytes(buf, used, "info",   4));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "info", 4));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "status", 6));
 
     ProcFs_Close(vfs, h);
@@ -268,10 +275,11 @@ TEST(procfs_readdir, PrivilegedListIncludesAll) {
     uint8_t buf[256];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(0, ProcFs_ReadDir(vfs, h, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, ProcFs_ReadDir(vfs, h, buf, sizeof(buf), &cookie, &used));
 
     TEST_ASSERT_TRUE(HasBytes(buf, used, "secret", 6));
-    TEST_ASSERT_TRUE(HasBytes(buf, used, "info",   4));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "info", 4));
 
     ProcFs_Close(vfs, h);
 }
@@ -284,7 +292,8 @@ TEST(procfs_readdir, NonRootHandleReturnsEbadf) {
     uint8_t buf[64];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(-EBADF, ProcFs_ReadDir(vfs, h, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        -EBADF, ProcFs_ReadDir(vfs, h, buf, sizeof(buf), &cookie, &used));
 
     ProcFs_Close(vfs, h);
 }
@@ -301,7 +310,7 @@ TEST_GROUP(procfs_via_vfs);
 
 TEST_SETUP(procfs_via_vfs) {
     vfs = VfsInit();
-    ProcFs_Register(vfs, "info",   _ReadInfo, false);
+    ProcFs_Register(vfs, "info", _ReadInfo, false);
     ProcFs_Register(vfs, "secret", _ReadPriv, true);
 }
 
@@ -362,8 +371,7 @@ TEST_GROUP(procfs_clock_quality);
 
 TEST_SETUP(procfs_clock_quality) {
     vfs = VfsInit();
-    ProcFs_Register(vfs, "clock_quality",
-                    WantedProcReadClockQuality, false);
+    ProcFs_Register(vfs, "clock_quality", WantedProcReadClockQuality, false);
     WantedSetClockQuality(WANTED_CLOCK_UNCALIBRATED);
 }
 
@@ -408,8 +416,7 @@ TEST(procfs_clock_quality, ReflectsCalibrationUpdate) {
 TEST(procfs_clock_quality, RejectsOutOfRangeWrite) {
     WantedSetClockQuality(WANTED_CLOCK_HARDWARE_RTC);
     WantedSetClockQuality(99); /* must be ignored */
-    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_HARDWARE_RTC,
-                            WantedGetClockQuality());
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_HARDWARE_RTC, WantedGetClockQuality());
 }
 
 TEST_GROUP_RUNNER(procfs_clock_quality) {
@@ -511,8 +518,8 @@ TEST(procfs_dir, LeafOpensAndReads) {
 TEST(procfs_dir, UnknownChildReturnsEnoent) {
     TEST_ASSERT_EQUAL_INT(-ENOENT,
                           VfsOpen(vfs, "/proc/things/gamma", VFS_O_RDONLY));
-    TEST_ASSERT_EQUAL_INT(
-        -ENOENT, VfsOpen(vfs, "/proc/things/alpha/z", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpen(vfs, "/proc/things/alpha/z", VFS_O_RDONLY));
 }
 
 TEST(procfs_dir, FlatEntryRejectsSubpath) {
@@ -526,8 +533,8 @@ TEST(procfs_dir, RootReadDirListsChildren) {
     uint8_t buf[128];
     size_t used = 0;
     uint64_t cookie = 0;
-    TEST_ASSERT_EQUAL_INT(0,
-                          VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "alpha", 5));
     VfsClose(vfs, fd);
 }
@@ -538,8 +545,8 @@ TEST(procfs_dir, SubdirReadDirListsLeaves) {
     uint8_t buf[128];
     size_t used = 0;
     uint64_t cookie = 0;
-    TEST_ASSERT_EQUAL_INT(0,
-                          VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "x", 1));
     VfsClose(vfs, fd);
 }
@@ -551,8 +558,8 @@ TEST(procfs_dir, RootListingMarksDirEntry) {
     uint8_t buf[256];
     size_t used = 0;
     uint64_t cookie = 0;
-    TEST_ASSERT_EQUAL_INT(0,
-                          VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "things", 6));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "info", 4));
     VfsClose(vfs, fd);

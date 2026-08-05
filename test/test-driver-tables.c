@@ -6,8 +6,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <vfs.h>
 #include <vfs-drivers.h>
+#include <vfs.h>
 #include <wanted-vfs-api.h>
 #include <wanted_malloc.h>
 
@@ -19,7 +19,8 @@
  * build with -DWANTED_EXTRA_DRIVERS_DIR=test/extra-drivers to exercise the
  * populated case; without it ExtraDriverTable() is NULL and the extra-specific
  * assertions do not apply.
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 TEST_GROUP(driver_tables);
 

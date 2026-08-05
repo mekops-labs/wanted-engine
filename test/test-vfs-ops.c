@@ -20,7 +20,8 @@ static int _ProcReadVersion(vfs_ctx_t c, void *buf, size_t len) {
     (void)c;
     const char data[] = "1.0";
     size_t n = sizeof(data) - 1;
-    if (n > len) n = len;
+    if (n > len)
+        n = len;
     memcpy(buf, data, n);
     return (int)n;
 }
@@ -120,7 +121,8 @@ TEST(vfs_seek_ops, InvalidFdReturnsEbadf) {
 TEST(vfs_seek_ops, NullPosReturnsEinval) {
     int fd = VfsOpen(vfs_seek, "/data.bin", VFS_O_RDONLY);
     TEST_ASSERT_TRUE(fd >= 0);
-    TEST_ASSERT_EQUAL_INT(-EINVAL, VfsSeek(vfs_seek, fd, 0, VFS_SEEK_SET, NULL));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          VfsSeek(vfs_seek, fd, 0, VFS_SEEK_SET, NULL));
     VfsClose(vfs_seek, fd);
 }
 
@@ -169,7 +171,8 @@ TEST(vfs_seek_ops, ProcfdSeekNotSupported) {
     TEST_ASSERT_TRUE(fd >= 0);
 
     long pos = 0;
-    TEST_ASSERT_EQUAL_INT(-ENOTSUP, VfsSeek(vfs_seek, fd, 0, VFS_SEEK_SET, &pos));
+    TEST_ASSERT_EQUAL_INT(-ENOTSUP,
+                          VfsSeek(vfs_seek, fd, 0, VFS_SEEK_SET, &pos));
 
     VfsClose(vfs_seek, fd);
 }
@@ -197,7 +200,8 @@ TEST(vfs_readdir_root, InvalidFdReturnsEbadf) {
     uint8_t buf[64];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(-EBADF, VfsReadDir(vfs_rd, 99, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        -EBADF, VfsReadDir(vfs_rd, 99, buf, sizeof(buf), &cookie, &used));
 }
 
 TEST(vfs_readdir_root, NullArgsReturnEinval) {
@@ -208,9 +212,12 @@ TEST(vfs_readdir_root, NullArgsReturnEinval) {
     uint64_t cookie = 0;
     size_t used = 0;
 
-    TEST_ASSERT_EQUAL_INT(-EINVAL, VfsReadDir(vfs_rd, fd, NULL, sizeof(buf), &cookie, &used));
-    TEST_ASSERT_EQUAL_INT(-EINVAL, VfsReadDir(vfs_rd, fd, buf,  sizeof(buf), NULL,    &used));
-    TEST_ASSERT_EQUAL_INT(-EINVAL, VfsReadDir(vfs_rd, fd, buf,  sizeof(buf), &cookie, NULL));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, VfsReadDir(vfs_rd, fd, NULL, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, VfsReadDir(vfs_rd, fd, buf, sizeof(buf), NULL, &used));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, VfsReadDir(vfs_rd, fd, buf, sizeof(buf), &cookie, NULL));
 
     VfsClose(vfs_rd, fd);
 }
@@ -229,8 +236,8 @@ TEST(vfs_readdir_root, RootListsDataBinAndMountDirs) {
     /* TarFS file. */
     TEST_ASSERT_TRUE(HasBytes(buf, used, "data.bin", 8));
     /* Mount-table directories (dev, net, proc). */
-    TEST_ASSERT_TRUE(HasBytes(buf, used, "dev",  3));
-    TEST_ASSERT_TRUE(HasBytes(buf, used, "net",  3));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "dev", 3));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "net", 3));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "proc", 4));
 
     VfsClose(vfs_rd, fd);
@@ -239,8 +246,8 @@ TEST(vfs_readdir_root, RootListsDataBinAndMountDirs) {
 TEST(vfs_readdir_root, SubdirListsOnlyTarfsChildren) {
     /* Add a subdirectory to the tarfs to test non-root readdir path. */
     memset(tar_layer, 0, sizeof(tar_layer));
-    TarHeader(tar_layer,         "sub/file.txt", 3, '0');
-    memcpy(tar_layer + 512,      "txt", 3);
+    TarHeader(tar_layer, "sub/file.txt", 3, '0');
+    memcpy(tar_layer + 512, "txt", 3);
 
     uint8_t *layers[1] = {tar_layer};
     size_t lens[1] = {sizeof(tar_layer)};
@@ -253,12 +260,13 @@ TEST(vfs_readdir_root, SubdirListsOnlyTarfsChildren) {
     uint8_t buf[256];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(0, VfsReadDir(vfs_rd, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(vfs_rd, fd, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(used > 0);
 
     /* Only "file.txt" should appear — no mount dirs inside a subdir. */
     TEST_ASSERT_TRUE(HasBytes(buf, used, "file.txt", 8));
-    TEST_ASSERT_FALSE(HasBytes(buf, used, "dev",  3));
+    TEST_ASSERT_FALSE(HasBytes(buf, used, "dev", 3));
 
     VfsClose(vfs_rd, fd);
 }
@@ -278,7 +286,7 @@ static vfs_ctx_t vfs_priv;
 
 TEST_SETUP(vfs_privileged) {
     vfs_priv = VfsInit();
-    ProcFs_Register(vfs_priv, "pub",  _ProcReadVersion, false);
+    ProcFs_Register(vfs_priv, "pub", _ProcReadVersion, false);
     ProcFs_Register(vfs_priv, "priv", _ProcReadVersion, true);
 }
 
