@@ -171,8 +171,10 @@ build:
         ;;
     esac
 
-# Run the unit + smoke suite via ctest (JUnit report emitted for CI).
-test:
+# Run the unit + smoke suite via ctest (JUnit report emitted for CI). Builds
+# first: ctest runs whatever binary is already there, so a stale one silently
+# passes a run it should fail.
+test: build
     cd {{build_dir}} && ctest -j"$(nproc)" --output-on-failure --output-junit rspec.xml
 
 # Build and test with an out-of-tree driver tree linked in
