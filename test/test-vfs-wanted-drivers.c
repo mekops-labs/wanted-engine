@@ -15,11 +15,11 @@ extern const vfs_driver_t WantedConfigDriver;
 
 /* Call a driver function pointer directly with NULL ctx — valid because
  * WantedConfigDriver does not dereference the ctx argument. */
-#define CFG_OPEN(flags)          WantedConfigDriver.Open(NULL, "", (flags))
-#define CFG_CLOSE()              WantedConfigDriver.Close(NULL, 0)
-#define CFG_READ(buf, n)         WantedConfigDriver.Read(NULL, 0, (buf), (n))
-#define CFG_WRITE(buf, n)        WantedConfigDriver.Write(NULL, 0, (buf), (n))
-#define CFG_STAT(st)             WantedConfigDriver.Stat(NULL, 0, (st))
+#define CFG_OPEN(flags) WantedConfigDriver.Open(NULL, "", (flags))
+#define CFG_CLOSE() WantedConfigDriver.Close(NULL, 0)
+#define CFG_READ(buf, n) WantedConfigDriver.Read(NULL, 0, (buf), (n))
+#define CFG_WRITE(buf, n) WantedConfigDriver.Write(NULL, 0, (buf), (n))
+#define CFG_STAT(st) WantedConfigDriver.Stat(NULL, 0, (st))
 
 /***************************************/
 TEST_GROUP(wanted_config_driver);
@@ -33,7 +33,9 @@ TEST_SETUP(wanted_config_driver) {
     WantedConfigDriver.Open(NULL, "", 0);
     char drain[128];
     int r;
-    do { r = WantedConfigDriver.Read(NULL, 0, drain, sizeof(drain)); } while (r > 0);
+    do {
+        r = WantedConfigDriver.Read(NULL, 0, drain, sizeof(drain));
+    } while (r > 0);
     WantedConfigDriver.Close(NULL, 0);
 }
 

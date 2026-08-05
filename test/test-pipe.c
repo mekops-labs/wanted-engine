@@ -11,12 +11,13 @@
 #include <vfs-pipe.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
+#include <wanted-autoconf.h>
 
 /* Each test group that needs a VFS with a pipe driver gets its own fixture.
  * The pipe storage now lives in a shared pipe_store_t the fixture owns; the
  * driver only references it, so the store is freed separately in teardown. */
-static vfs_ctx_t      vfs;
-static pipe_store_t  *store;
+static vfs_ctx_t vfs;
+static pipe_store_t *store;
 
 static void SetupPipeVfs(void) {
     vfs = VfsInit();
@@ -48,9 +49,7 @@ TEST(pipe_create, ReturnsNonNull) {
     PipeStoreFree(st);
 }
 
-TEST_GROUP_RUNNER(pipe_create) {
-    RUN_TEST_CASE(pipe_create, ReturnsNonNull);
-}
+TEST_GROUP_RUNNER(pipe_create) { RUN_TEST_CASE(pipe_create, ReturnsNonNull); }
 
 /***************************************/
 TEST_GROUP(pipe_open_close);
@@ -179,17 +178,17 @@ TEST(pipe_rw, DataPersistsAfterWriterCloses) {
 }
 
 TEST(pipe_rw, WriteToFullBufferReturnsEagain) {
-    /* 4096-byte ring buffer: write 4096 bytes then one more. */
+    /* Fill the ring, then write one byte past it. */
     int writer = VfsOpen(vfs, "/dev/pipe/full", VFS_O_WRONLY);
     int reader = VfsOpen(vfs, "/dev/pipe/full", VFS_O_RDONLY);
     TEST_ASSERT_TRUE(writer >= 0);
     TEST_ASSERT_TRUE(reader >= 0);
 
-    static uint8_t payload[4096];
+    static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
     memset(payload, 0xAB, sizeof(payload));
 
     int n = VfsWrite(vfs, writer, payload, sizeof(payload));
-    TEST_ASSERT_EQUAL_INT(4096, n);
+    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_PIPE_BUF_SIZE, n);
 
     /* Buffer is full — any further write returns -EAGAIN. */
     uint8_t extra = 0xFF;
@@ -281,7 +280,8 @@ TEST(pipe_readdir, EmptyDirectoryReturnsZeroUsed) {
     uint8_t buf[128];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(0, VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_EQUAL_size_t(0, used);
 
     VfsClose(vfs, fd);
@@ -298,7 +298,8 @@ TEST(pipe_readdir, OpenedPipeAppearsInListing) {
     uint8_t buf[128];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(0, VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(used > 0);
     TEST_ASSERT_TRUE(HasBytes(buf, used, "listed", 6));
 
@@ -319,13 +320,13 @@ TEST_GROUP(pipe_shared);
  * each wapp has its own /dev/pipe driver + handle table, but the named pipes
  * live in the engine-owned store both reference. */
 static pipe_store_t *shared;
-static vfs_ctx_t     vfs_a;
-static vfs_ctx_t     vfs_b;
+static vfs_ctx_t vfs_a;
+static vfs_ctx_t vfs_b;
 
 TEST_SETUP(pipe_shared) {
     shared = PipeStoreNew();
-    vfs_a  = VfsInit();
-    vfs_b  = VfsInit();
+    vfs_a = VfsInit();
+    vfs_b = VfsInit();
     DevFs_Register(vfs_a, "pipe", PipeDriverCreate(shared));
     DevFs_Register(vfs_b, "pipe", PipeDriverCreate(shared));
 }
@@ -377,7 +378,8 @@ TEST(pipe_shared, ReaderSeesEofAfterWriterInOtherWappCloses) {
 TEST(pipe_shared, NonblockReadBeforeAnyWriterReturnsEagain) {
     /* No writer has ever attached → writer_seen is false → not EOF. O_NONBLOCK
      * surfaces the would-block as -EAGAIN instead of polling. */
-    int reader = VfsOpen(vfs_b, "/dev/pipe/early", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    int reader =
+        VfsOpen(vfs_b, "/dev/pipe/early", VFS_O_RDONLY | VFS_O_NONBLOCK);
     TEST_ASSERT_TRUE(reader >= 0);
 
     char buf[8];

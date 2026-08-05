@@ -19,7 +19,8 @@
 /* ═══════════════════════════════════════════════════════════════════════════
  * vfs_registry_driver — the "reg" virtual driver (vfs-wanted-registry.c) driven
  * directly through its vtable, backed by the dummy in-memory registry.
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
 extern const vfs_driver_t WantedRegistryDriver;
 
@@ -41,7 +42,8 @@ TEST_SETUP(vfs_registry_driver) {
 }
 
 TEST_TEAR_DOWN(vfs_registry_driver) {
-    /* Leave the driver closed so the function-static EOF flag in _Read resets. */
+    /* Leave the driver closed so the function-static EOF flag in _Read resets.
+     */
     drv->Close(drv->ctx, 0);
 }
 
@@ -146,8 +148,8 @@ TEST(vfs_registry_driver, ReadDir_ListsNameVersionPairs) {
     uint8_t buf[256];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(0,
-        drv->ReadDir(drv->ctx, 0, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, drv->ReadDir(drv->ctx, 0, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(used > 0);
     TEST_ASSERT_TRUE(HasBytes(buf, used, "app1", 4));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "2.3.4", 5));
@@ -169,8 +171,8 @@ TEST(vfs_registry_driver, Write_NotOpened_ReturnsEbadf) {
 TEST(vfs_registry_driver, OpenForWrite_ByRef_ReturnsWriteFd) {
     /* Opening a "<name>:<ver>" path for write is an install: it names the image
      * by the ref and returns the root write fd (0). */
-    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "newapp:1.0.0-1",
-                                       VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(0,
+                          drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY));
 }
 
 TEST(vfs_registry_driver, WriteRootNoRef_ReturnsErofs) {
@@ -191,26 +193,34 @@ TEST(vfs_registry_driver, WriteByRef_Chunk_Unsupported) {
  * and within its length bound. */
 TEST(vfs_registry_driver, OpenForWrite_InvalidRef_ReturnsEinval) {
     /* whitespace is not in the grammar (name and tag halves) */
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "bad name:1.0", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:bad tag", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app name", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "bad name:1.0", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "app:bad tag", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "app name", VFS_O_WRONLY));
     /* a tag carries no second separator */
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:1:2", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "app:1:2", VFS_O_WRONLY));
     /* empty name or empty tag */
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, ":1.0", VFS_O_WRONLY));
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:", VFS_O_WRONLY));
     /* component may not start with a separator-class char */
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "-app:1.0", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:.1.0", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "-app:1.0", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "app:.1.0", VFS_O_WRONLY));
     /* a stray punctuation char outside the class */
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:tag!", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "ap/p:1.0", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "app:tag!", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "ap/p:1.0", VFS_O_WRONLY));
     /* name at/over its length bound (16 ≥ WAPP_MAX_NAME_LEN) */
-    TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "aaaaaaaaaaaaaaaa:1", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, drv->Open(drv->ctx, "aaaaaaaaaaaaaaaa:1", VFS_O_WRONLY));
     /* tag at/over its length bound (16 ≥ WAPP_MAX_VERSION_LEN) */
-    TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app:aaaaaaaaaaaaaaaa", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, drv->Open(drv->ctx, "app:aaaaaaaaaaaaaaaa", VFS_O_WRONLY));
 }
 
 /* In-grammar refs are accepted — bare name (first-match) and pinned tags,
@@ -219,7 +229,8 @@ TEST(vfs_registry_driver, OpenForWrite_ValidRefs_Accepted) {
     TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "app", VFS_O_WRONLY));
     TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "app:1.0.0-1", VFS_O_WRONLY));
     TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "app:stable", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "my_app.v2:latest", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(
+        0, drv->Open(drv->ctx, "my_app.v2:latest", VFS_O_WRONLY));
 }
 
 TEST(vfs_registry_driver, Read_FdBeyondEntries_ReturnsEinval) {
@@ -241,7 +252,7 @@ TEST(vfs_registry_driver, ReadDir_NullBuf_ReturnsEinval) {
     uint64_t cookie = 0;
     size_t used = 0;
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-        drv->ReadDir(drv->ctx, 0, NULL, 0, &cookie, &used));
+                          drv->ReadDir(drv->ctx, 0, NULL, 0, &cookie, &used));
 }
 
 TEST(vfs_registry_driver, ReadDir_NotOpened_ReturnsEbadf) {
@@ -251,8 +262,8 @@ TEST(vfs_registry_driver, ReadDir_NotOpened_ReturnsEbadf) {
     uint8_t buf[64];
     uint64_t cookie = 0;
     size_t used = 0;
-    TEST_ASSERT_EQUAL_INT(-EBADF,
-        drv->ReadDir(drv->ctx, 0, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        -EBADF, drv->ReadDir(drv->ctx, 0, buf, sizeof(buf), &cookie, &used));
 }
 
 TEST(vfs_registry_driver, Unlink_ByNameVersion_RemovesEntry) {

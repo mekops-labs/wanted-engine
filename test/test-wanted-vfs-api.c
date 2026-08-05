@@ -66,9 +66,8 @@ TEST(wanted_vfs_api, WantedParseCtrlActionTest) {
 
 /* The decomposed config node carries a bare params object (no envelope). */
 TEST(wanted_vfs_api, WantedParseWappConfigArgsEnvs) {
-    const char *cfg_json =
-        "{\"args\":[\"one\",\"two\",\"three\"],"
-        "\"envs\":[\"A=1\",\"B=2\"]}";
+    const char *cfg_json = "{\"args\":[\"one\",\"two\",\"three\"],"
+                           "\"envs\":[\"A=1\",\"B=2\"]}";
     wapp_config_t cfg;
 
     int ret = WantedParseWappConfigJson(cfg_json, strlen(cfg_json), &cfg);

@@ -63,8 +63,8 @@ TEST(procfs_wapps, EnumeratesRunningWapps) {
     uint8_t buf[256];
     size_t used = 0;
     uint64_t cookie = 0;
-    TEST_ASSERT_EQUAL_INT(0,
-                          VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "w1", 2));
     VfsClose(vfs, fd);
 }
@@ -78,8 +78,8 @@ TEST(procfs_wapps, WappDirListsLeaves) {
     uint8_t buf[256];
     size_t used = 0;
     uint64_t cookie = 0;
-    TEST_ASSERT_EQUAL_INT(0,
-                          VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(vfs, fd, buf, sizeof(buf), &cookie, &used));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "state", 5));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "memory", 6));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "exit_code", 9));
@@ -154,8 +154,8 @@ TEST(procfs_wapps, UnknownWappReturnsEnoent) {
 TEST(procfs_wapps, UnknownLeafReturnsEnoent) {
     wapp_state_t s = mkstate("w1");
     DummyWappStateSeed(&s, 1);
-    TEST_ASSERT_EQUAL_INT(
-        -ENOENT, VfsOpen(vfs, "/proc/wapps/w1/bogus", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpen(vfs, "/proc/wapps/w1/bogus", VFS_O_RDONLY));
 }
 
 TEST(procfs_wapps, UnprivilegedCannotOpen) {

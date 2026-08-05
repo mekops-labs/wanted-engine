@@ -100,8 +100,7 @@ TEST(logmount, WriteOpenRejected) {
     seed("lm_a", "a");
     drv = VfsLogMountInit(NULL, NULL);
     TEST_ASSERT_NOT_NULL(drv);
-    TEST_ASSERT_EQUAL_INT(-EROFS,
-                          drv->Open(drv->ctx, "/lm_a", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EROFS, drv->Open(drv->ctx, "/lm_a", VFS_O_WRONLY));
     /* The driver exposes no write entry point. */
     TEST_ASSERT_NULL(drv->Write);
 }

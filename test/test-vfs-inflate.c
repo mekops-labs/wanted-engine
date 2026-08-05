@@ -22,9 +22,7 @@ TEST_SETUP(vfs_inflate) {
     TEST_ASSERT_NOT_NULL(drv);
 }
 
-TEST_TEAR_DOWN(vfs_inflate) {
-    TEST_ASSERT_EQUAL(0, drv->Destroy(drv));
-}
+TEST_TEAR_DOWN(vfs_inflate) { TEST_ASSERT_EQUAL(0, drv->Destroy(drv)); }
 
 /* Feed `len` stream bytes in `chunk`-sized writes, draining reads whenever the
  * device pushes back, collecting decompressed output into `out`. */
@@ -87,9 +85,8 @@ TEST(vfs_inflate, SmallMemberRoundTrip) {
 
     prefixFor(sizeof(small_gz), prefix);
     TEST_ASSERT_EQUAL(4, TRY_DRV(drv, Write, fd, prefix, 4));
-    size_t got =
-        pushPull(fd, small_gz, sizeof(small_gz), sizeof(small_gz), out,
-                 sizeof(out));
+    size_t got = pushPull(fd, small_gz, sizeof(small_gz), sizeof(small_gz), out,
+                          sizeof(out));
 
     TEST_ASSERT_EQUAL(SMALL_PLAIN_LEN, got);
     TEST_ASSERT_EQUAL_MEMORY(small_plain, out, SMALL_PLAIN_LEN);

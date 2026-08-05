@@ -28,9 +28,7 @@ TEST_SETUP(vfs_ed25519) {
     TEST_ASSERT_NOT_NULL(drv);
 }
 
-TEST_TEAR_DOWN(vfs_ed25519) {
-    TEST_ASSERT_EQUAL(0, drv->Destroy(drv));
-}
+TEST_TEAR_DOWN(vfs_ed25519) { TEST_ASSERT_EQUAL(0, drv->Destroy(drv)); }
 
 TEST(vfs_ed25519, ReadBeforeFullHeaderRejected) {
     uint8_t hdr[HDR_LEN] = {0};
@@ -38,10 +36,12 @@ TEST(vfs_ed25519, ReadBeforeFullHeaderRejected) {
 
     int fd = TRY_DRV(drv, Open, "", 0);
     TEST_ASSERT_EQUAL(0, fd);
-    TEST_ASSERT_EQUAL(-EINVAL, TRY_DRV(drv, Read, fd, verdict, sizeof(verdict)));
+    TEST_ASSERT_EQUAL(-EINVAL,
+                      TRY_DRV(drv, Read, fd, verdict, sizeof(verdict)));
 
     TEST_ASSERT_EQUAL(HDR_LEN - 1, TRY_DRV(drv, Write, fd, hdr, HDR_LEN - 1));
-    TEST_ASSERT_EQUAL(-EINVAL, TRY_DRV(drv, Read, fd, verdict, sizeof(verdict)));
+    TEST_ASSERT_EQUAL(-EINVAL,
+                      TRY_DRV(drv, Read, fd, verdict, sizeof(verdict)));
     TEST_ASSERT_EQUAL(0, TRY_DRV(drv, Close, fd));
 }
 
@@ -53,7 +53,8 @@ TEST(vfs_ed25519, BackendErrorPropagates) {
     TEST_ASSERT_EQUAL(HDR_LEN, TRY_DRV(drv, Write, fd, hdr, HDR_LEN));
     TEST_ASSERT_EQUAL(5, TRY_DRV(drv, Write, fd, "hello", 5));
     /* The dummy platform has no backend: the verdict read reports that. */
-    TEST_ASSERT_EQUAL(-ENOSYS, TRY_DRV(drv, Read, fd, verdict, sizeof(verdict)));
+    TEST_ASSERT_EQUAL(-ENOSYS,
+                      TRY_DRV(drv, Read, fd, verdict, sizeof(verdict)));
     TEST_ASSERT_EQUAL(0, TRY_DRV(drv, Close, fd));
 }
 

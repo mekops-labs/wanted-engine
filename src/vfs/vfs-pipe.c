@@ -10,6 +10,7 @@
 #include <platform.h>
 #include <vfs-pipe.h>
 #include <vfs.h>
+#include <wanted-autoconf.h>
 #include <wanted_malloc.h>
 
 /* Named pipe DevFS sub-driver for /dev/pipe/<name>.
@@ -25,9 +26,6 @@
  * the inter-wapp IPC channel. Every access to that shared storage is bracketed
  * by store->lock. The per-wapp handle table (in bridge_state_t) is touched only
  * by its own wapp's thread and needs no lock. */
-
-#define CONFIG_WANTED_PIPE_BUF_SIZE 4096
-#define CONFIG_WANTED_PIPE_MAX_PIPES 8
 
 /* Blocking-read poll cadence. A read with no data sleeps unlocked between
  * rechecks (cancellation-safe, unlike a cond_wait that could be cancelled while
