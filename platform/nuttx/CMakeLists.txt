@@ -4,6 +4,7 @@ set(sources
     api/clock-sleep.c
     api/gpio.c
     api/uart.c
+    api/ota.c
     api/extram.c
     api/random.c
     ${CMAKE_SOURCE_DIR}/platform/posix/clock.c

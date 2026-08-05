@@ -24,9 +24,9 @@ Every platform implements the contract in `platform/include/platform.h`. A confo
 | Random | `PlatfromGetRandom` |
 | Memory | `PlatformMemoryStats`; `PlatformExtram*` (`Malloc` / `Realloc` / `Free` / `EarlyInit`) — the external-RAM (PSRAM) heap backing the engine's large allocations (image cache, WAMR runtime) where one exists |
 | Concurrency | `PlatformMutexNew` / `Lock` / `Unlock` / `Free` |
-| Drivers | `PlatformDriverTable` — the platform's additions to the launch-config driver names (`wifi` on NuttX, `wifi`/`ota` on ESP-IDF, none on Linux). `gpio` and `uart` are core drivers instead: their tree and grant grammar are identical everywhere, and only the line or port behind them is per-platform, behind `PlatformGpio*`/`PlatformUart*`. A build may add a third table from a tree outside this repo; see [Out-of-tree drivers](#out-of-tree-drivers) |
+| Drivers | `PlatformDriverTable` — the platform's additions to the launch-config driver names (`wifi` on NuttX and ESP-IDF, none on Linux). `gpio`, `uart` and `ota` are core drivers instead: their tree and grant grammar are identical everywhere, and only the line, port or slot behind them is per-platform, behind `PlatformGpio*`/`PlatformUart*`/`PlatformOta*`. A build may add a third table from a tree outside this repo; see [Out-of-tree drivers](#out-of-tree-drivers) |
 | Crypto | `PlatformSha256New` / `Update` / `Final` / `Free` — streaming digest behind `/dev/sha256` (software body in `posix/sha256.c`; ESP32-S3 uses the SHA peripheral; no `-ENOSYS` path). `PlatformEd25519Verify` — the one seam symbol allowed to report an absent backend (`-ENOSYS`); the `/dev/ed25519` verdict read surfaces it to the wapp. Real on Linux (OpenSSL) and NuttX (vendored `orlp/ed25519`); the ESP-IDF port still uses the dummy backend |
-| Firmware update | `PlatformOtaInit` / `Confirm` / `GetBootState` / `BeginWrite` / `Write` / `Commit` / `Rollback` — the A/B OTA seam behind `/dev/ota`; real on ESP-IDF (`esp_ota_ops`), a fixed single-slot stub elsewhere |
+| Firmware update | `PlatformOtaInit` / `Confirm` / `GetBootState` / `BeginWrite` / `Write` / `Commit` / `Abort` / `Rollback` — the A/B OTA seam behind `/dev/ota`; real on ESP-IDF (`esp_ota_ops`) and Linux (slot directories, see below), `-ENOSYS` on NuttX |
 | Power / process | `PlatformSetProcessArgs`, `PlatformRequestShutdown`, `PlatformRequestReboot`, `PlatformName` |
 
 The invariants every platform must honour: a wapp runs on its own thread; `PlatformWappStop` must interrupt a wapp that is blocked in a host syscall (not merely set a flag and wait); `PlatformWappLoop` blocks until an explicit shutdown/reboot request and respawns a supervisor that exits on its own; memory stats report heap usage; the registry resolves a wapp image by name.
@@ -74,6 +74,35 @@ just supervisor-variant wsh && just build   # ...with the wsh debug supervisor
 - **Registry** — a host-filesystem directory (`./registry/`) scanned for `<name>@<version>.wapp` images.
 - **TLS** — OpenSSL-backed secure sockets (`T`/`U` socket options).
 - **Memory stats** — `mallinfo2`.
+- **Firmware update** — A/B slot directories on a filesystem, see below.
+
+### Firmware slots on a host
+
+`/dev/ota` stages into a directory tree the bootloader reads, rooted at
+`CONFIG_WANTED_OTA_SLOT_ROOT` (default `/boot`):
+
+```
+<root>/
+  active_slot.txt      # os_prefix=slot_a/  — the committed slot
+  tryboot.txt          # os_prefix=slot_b/  — present only while a trial boot is armed
+  slot_a/<image>
+  slot_b/<image>       # <image> is CONFIG_WANTED_OTA_IMAGE_NAME, default zImage
+```
+
+`begin` opens the inactive slot's image under a `.staging` name and `commit`
+renames it into place, so a crash mid-write cannot leave a short image where
+the bootloader looks. `commit` then writes `tryboot.txt`; the staged slot does
+not become active until `confirm` flips `active_slot.txt`. `rollback` removes
+`tryboot.txt`, cancelling a trial that has not been confirmed.
+
+Two limits are worth stating plainly:
+
+- **Nothing here reboots into the staged slot.** Arming the trial boot is the
+  engine's part; performing it belongs to the board's bootloader integration.
+- **`last_failed_slot` and `boot_attempts` are always empty.** No host
+  bootloader reports a failed trial back to the engine, so a caller cannot use
+  them to detect a reverted boot on this platform.
+
 
 CMake options of note: `WANTED_PLATFORM` (the platform layer) and `WANTED_DEFCONFIG` (seed the configuration from `configs/<name>_defconfig`). Everything else is Kconfig — see [Build configuration](#build-configuration). TLS is `CONFIG_WANTED_VFS_SOCKET_TLS`: the engine states the intent and the host supplies the backend (OpenSSL here, mbedTLS on NuttX and ESP-IDF), so a host that cannot provide one fails the build rather than silently handing back a binary whose secure sockets are rejected at launch.
 

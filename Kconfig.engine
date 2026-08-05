@@ -152,6 +152,14 @@ config WANTED_VFS_UART
 	  PlatformUart* backing — present on ESP-IDF and Linux, absent on NuttX,
 	  where a grant fails the launch.
 
+config WANTED_VFS_OTA
+	bool "ota — A/B firmware update"
+	default y
+	help
+	  /dev/ota control node plus /dev/ota/slot image sink, over PlatformOta*.
+	  Deselect on a target with no A/B mechanism to update into — an OpenWRT
+	  host is updated by its own package manager, not through this driver.
+
 config WANTED_VFS_WANTED
 	bool "wanted — the control-plane namespace"
 	default y
@@ -197,6 +205,23 @@ config WANTED_UART_BUF_SIZE
 	  Receive and transmit ring the backing installs for a granted port. The
 	  receive ring bounds how far a wapp can fall behind a talking peer before
 	  bytes are lost.
+
+config WANTED_OTA_SLOT_ROOT
+	string "OTA slot directory (host backings)"
+	depends on WANTED_VFS_OTA
+	default "/boot"
+	help
+	  Directory holding slot_a/, slot_b/ and the active_slot.txt pointer. Used
+	  by backings that stage into a filesystem; ignored where the slots are
+	  flash partitions.
+
+config WANTED_OTA_IMAGE_NAME
+	string "Image filename inside a slot"
+	depends on WANTED_VFS_OTA
+	default "zImage"
+	help
+	  Filename written inside slot_a/ or slot_b/. The bootloader picks the slot
+	  by directory, so this name is the same in both.
 
 config WANTED_LOG_CAP
 	int "Bytes retained per wapp log"

@@ -50,6 +50,9 @@ endif()
 if(CONFIG_WANTED_VFS_UART)
     list(APPEND vfs-srcs "vfs/vfs-uart.c")
 endif()
+if(CONFIG_WANTED_VFS_OTA)
+    list(APPEND vfs-srcs "vfs/vfs-ota.c")
+endif()
 if(CONFIG_WANTED_VFS_WANTED)
     list(APPEND vfs-srcs
         "vfs/vfs-wanted.c"

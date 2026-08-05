@@ -39,6 +39,17 @@ int DummyGpioSetLevel(const char *address, bool level);
  * Returns -ENOENT when no grant opened that address. */
 int DummyGpioGetLevel(const char *address, bool *level);
 
+/* ── OTA A/B fake control (dummy-ota.c) ──────────────────────────────────── */
+
+/* Reset to a confirmed slot 'a' with nothing staged. Call in TEST_SETUP. */
+void DummyOtaReset(void);
+
+/* The slot the fake is running from. */
+char DummyOtaActiveSlot(void);
+
+/* Bytes committed to the staged slot, or -1 when nothing is staged. */
+int DummyOtaStagedLen(void);
+
 /* ── UART loopback fake control (dummy-uart.c) ───────────────────────────── */
 
 /* Release the fake port and empty its ring. Call in TEST_SETUP. */

@@ -80,7 +80,7 @@ Entry shapes per section:
 
 ## Driver name registry
 
-`name` selects one of the engine's built-in drivers. Some are platform-specific (`wifi` exists on NuttX and ESP-IDF, `ota` on ESP-IDF); naming a driver the running platform does not implement fails the launch with `-ENODEV`. `gpio` and `uart` resolve everywhere, but each needs a backing for the hardware behind it: a grant on a target with none fails the launch with `-ENOSYS`. Read `/proc/wanted` (`drivers` field) for the names available on a given build.
+`name` selects one of the engine's built-in drivers. Some are platform-specific (`wifi` exists on NuttX and ESP-IDF); naming a driver the running platform does not implement fails the launch with `-ENODEV`. `gpio`, `uart` and `ota` resolve everywhere they are built in, but each needs a backing for the hardware behind it: a grant on a target with none fails the launch with `-ENOSYS`. Read `/proc/wanted` (`drivers` field) for the names available on a given build.
 
 | `name` | Section | Purpose | `options` example |
 |--------|---------|---------|-------------------|
@@ -91,7 +91,7 @@ Entry shapes per section:
 | `gpio` | `drivers` | Digital I/O at `/dev/gpio/<name>/`, one subtree per granted pin, each with `value` and a read-only `direction`. `pins=` is required: a missing, malformed, or empty clause fails the launch. Backed by ESP-IDF and NuttX. | `pins=led:21:out,btn:2:in` |
 | `uart` | `drivers` | A serial port at `/dev/uart/<port>/`: a `data` byte stream plus writable `baud` and `format`. `port=` is required and names exactly one port. Remaining keys are platform addressing — `tx=`/`rx=` on ESP-IDF, `dev=` on Linux. Backed by ESP-IDF and Linux. | `port=1,tx=1,rx=2,baud=57600,format=8E1` |
 | `wifi` | `drivers` | Wi-Fi station control at `/dev/wifi` as a text node: `write "scan"` / `"connect <ssid> <pass>"` / `"disconnect"`; reads stream scan results or a status line. NuttX and ESP-IDF only. | — |
-| `ota` | `drivers` | A/B firmware update: `/dev/ota` control/status node (`begin`/`commit`/`confirm`/`rollback`), `/dev/ota/slot` streaming image sink. ESP-IDF only. | — |
+| `ota` | `drivers` | A/B firmware update: `/dev/ota` control/status node (`begin`/`commit`/`abort`/`confirm`/`rollback`), `/dev/ota/slot` streaming image sink. Backed by ESP-IDF and Linux; `-ENOSYS` on NuttX. | — |
 | `log` | console slot | Ring-buffer console; output captured per-wapp and read back through a `log` mount. | — |
 | `log` | `mounts` | Read-only directory view of per-wapp captured logs at `path`: `<path>/<name>` reads wapp `<name>`'s ring. Grantable independently of `/dev/wanted`. | `name=app1` |
 | `pipe` | console slot | Live console: backs the slot with a named pipe in the shared store, so a peer wapp reads the stream at `/dev/pipe/<name>`. The pipe is auto-named `<wapp>.<slot>` (e.g. `app.out`) unless `options` pins `name=`. `out`/`err` are lossy (drop oldest on a full ring so an unread console never wedges the wapp); `in` reads a peer's writes. | `name=feed` |

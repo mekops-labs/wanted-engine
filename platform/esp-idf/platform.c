@@ -48,7 +48,6 @@ int PlatformWappLoad(const char *name, wapp_t *wapp) {
 
 static const vfs_driver_table_t esp_driver_table[] = {
     {"wifi", VfsWifiInit},
-    {"ota", VfsOtaInit},
     {NULL, NULL},
 };
 
