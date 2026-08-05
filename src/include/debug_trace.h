@@ -4,21 +4,17 @@
 
 #include <wanted-autoconf.h>
 
-/* CONFIG_WANTED_DEBUG_TRACES, not a build-system -DDEBUG: the generated header
- * is the one place a configured value comes from, so every host that compiles
- * these sources -- including NuttX and ESP-IDF, which run no CMake of ours --
- * gets the switch with no glue of its own. */
+/* CONFIG_WANTED_DEBUG_TRACES: the generated header is the one place a
+ * configured value comes from, so every host compiling these sources gets the
+ * switch with no glue of its own. */
 #if defined(CONFIG_WANTED_DEBUG_TRACES) && CONFIG_WANTED_DEBUG_TRACES
 #include <stdarg.h>
 #include <stdio.h>
 #include <unistd.h>
 
-/* Emit one debug line with a raw write() rather than fprintf(stdout). On some
- * targets the C stdout FILE stream is not bound to the console fd — e.g. the
- * NuttX sim init task, where stdout/stderr FILE writes go nowhere but a raw
- * write() to fd 1 always reaches the console. Formatting into a stack buffer
- * and writing once keeps the line intact and works on Linux, the NuttX sim,
- * and hardware over UART. */
+/* Emit one debug line with a raw write() rather than fprintf(stdout): on some
+ * targets the stdout FILE stream is not bound to the console fd, while a raw
+ * write to fd 1 always reaches it. Formatting once keeps the line intact. */
 static inline void DebugTraceEmit(const char *file, int line, const char *func,
                                   const char *fmt, ...) {
     char buf[256];

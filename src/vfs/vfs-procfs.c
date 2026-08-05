@@ -11,16 +11,9 @@
 #include <vfs.h>
 #include <wanted_malloc.h>
 
-/* ProcFS — read-only virtual filesystem under "/proc".
- *
- * Each entry is registered at wapp-setup time as one of two shapes:
- *   - a flat file (name, read_fn): /proc/<name>, read in one shot;
- *   - a directory (name, dir_ops): /proc/<name>/... whose children are
- *     resolved dynamically by the ops table (e.g. /proc/wapps/<wapp>/<leaf>).
- * Privileged entries are hidden and return -EACCES unless vfs_ctx_t.privileged
- * is set. A file read_fn / dir_ops->read fills the caller's buffer in one call;
- * the handle latches that the call was made so subsequent reads return 0 (EOF).
- */
+/* ProcFS — read-only virtual filesystem under "/proc". An entry is either a
+ * flat file (name, read_fn) or a directory (name, dir_ops) whose children
+ * resolve dynamically. A privileged entry is hidden and -EACCES without it. */
 
 /* Holds an entry's sub-path for a directory open: "" (the entry dir itself),
  * "<wapp>", or "<wapp>/<leaf>". Bounds the two path segments below the entry
@@ -100,11 +93,9 @@ void ProcFs_Destroy(vfs_ctx_t c) {
     c->procfs_cnt = 0;
 }
 
-/* Split `suffix` into its first path segment and the remainder. `seg` receives
- * the first segment (bounded by MAX_ENTRY_NAME_LEN); *rest points at the tail
- * after the separating '/', or "" when there is none. Returns -ENAMETOOLONG if
- * the first segment does not fit. A leading '/' is not expected here — the VFS
- * router hands ProcFS the path below "/proc/". */
+/* Split `suffix` into its first path segment and the remainder. `seg` takes the
+ * segment (bounded by MAX_ENTRY_NAME_LEN); *rest points past the '/', or "".
+ * Returns -ENAMETOOLONG if the first segment does not fit. */
 static int splitFirst(const char *suffix, char *seg, const char **rest) {
     size_t n = 0;
     while (suffix[n] != '\0' && suffix[n] != '/')

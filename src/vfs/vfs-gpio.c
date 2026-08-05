@@ -15,35 +15,9 @@
 #include <wanted-autoconf.h>
 #include <wanted_malloc.h>
 
-/* GPIO device driver: a per-pin subtree under /dev/gpio.
- *
- *   /dev/gpio/
- *     <name>/
- *       value      "0" | "1"   read on any pin, write on an output
- *       direction  "in" | "out"  read-only
- *
- * <name> is a wapp-visible label, not a pin number. The launch-config grant
- * maps each label onto a platform address:
- *
- *   { "name": "gpio", "options": "pins=boot0:4:out,nrst:5:out,btn:2:in" }
- *
- * The address is the backing's business (see PlatformGpioOpen), so a wapp built
- * against /dev/gpio/boot0/value runs unchanged on every target. readdir lists
- * exactly the granted pins, and an ungranted name returns -ENOENT — the grant
- * is enforced by existence, not by a check.
- *
- * An address is one field, and ':' and ',' are reserved: they separate fields
- * and entries. A backing whose native addressing uses either spells it another
- * way — a libgpiod line is "/dev/gpiochip0/17", not "0:17". Keeping them out is
- * what holds an entry at three fields, so arity is never inferred from a field
- * count in the parse that enforces the capability boundary.
- *
- * A missing, malformed, or empty pins= clause fails the launch. There is no
- * default pin.
- *
- * Direction, pull, and drive are fixed by the grant. A wapp cannot turn an
- * input into an output, so it cannot drive a line an external device is
- * already driving. */
+/* GPIO device driver: a per-pin subtree under /dev/gpio. <name> is a
+ * wapp-visible label the grant maps onto a platform address, and ':' and ','
+ * are reserved as field and entry separators. See the VFS reference. */
 
 static const char id[] = {'G', 'p', 'i', 'o'};
 

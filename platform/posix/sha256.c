@@ -1,9 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Portable software SHA-256 (FIPS 180-4) — the PlatformSha256* backend for
- * targets without a hardware digest peripheral. Moved here unchanged from
- * src/vfs/vfs-sha256.c, which used to carry this algorithm inline; the
- * driver is now platform-agnostic and calls this seam instead. */
+/* Portable software SHA-256 (FIPS 180-4) — the PlatformSha256* backend for a
+ * target with no hardware digest peripheral. */
 
 #include <stdint.h>
 #include <string.h>

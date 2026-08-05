@@ -1,12 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* NuttX platform wapp registry.
- *
- * The sim backs the registry on a hostfs directory. Reads enumerate it with
- * opendir/readdir (scandir is optional on NuttX, gated by CONFIG_LIBC_SCANDIR,
- * so it is avoided) and sort the result; the writer stages incoming bytes to a
- * temp file then renames it into place under the install ref ("<name>:<ver>")
- * once the stream completes. */
+/* NuttX platform wapp registry; the sim backs it on a hostfs directory. Reads
+ * enumerate with opendir/readdir and sort, since scandir is optional on NuttX.
+ * The writer stages to a temp file and renames it under the install ref. */
 
 #include <dirent.h>
 #include <errno.h>
@@ -64,11 +60,9 @@ static void parseEntry(reg_entry_t *out, const char *dname, size_t size) {
     out->size = size;
 }
 
-/* Lexicographic comparison: safe (both fields are always null-terminated by
- * parseEntry), but version ordering is wrong for multi-digit fields —
- * "1.10.0-1" sorts before "1.9.0-1" because '1' < '9'. Acceptable while all
- * version fields remain single-digit; a numeric comparator is needed otherwise.
- */
+/* Lexicographic comparison. Safe, since parseEntry null-terminates both fields,
+ * but version ordering is wrong for multi-digit fields: "1.10.0-1" sorts before
+ * "1.9.0-1". A numeric comparator is needed past single-digit versions. */
 static int compareEntries(const void *a, const void *b) {
     const reg_entry_t *ea = (const reg_entry_t *)a;
     const reg_entry_t *eb = (const reg_entry_t *)b;
@@ -126,20 +120,9 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     return count;
 }
 
-/* In-RAM image cache.
- *
- * On ESP32 an SPI-flash read returns corrupt data (LittleFS reports
- * LFS_ERR_CORRUPT) while another wapp holds live PSRAM — so the registry image
- * files cannot be read off flash once a wapp is running. The cache reads every
- * image into RAM the first time a wapp is started (when only the supervisor is
- * live, so the flash reads are safe) and serves every later launch from RAM, so
- * a second concurrent wapp never touches flash. Masters are kept for the device
- * lifetime; each launch gets its own copy (freed by PlatformWappUnload), so the
- * cache stays intact while instances come and go.
- *
- * Limit: an image installed *after* the first launch, then started while
- * another wapp runs, still falls back to a flash read (and can fail). Caching
- * on install is the matching follow-up. */
+/* In-RAM image cache, because an ESP32 SPI-flash read returns corrupt data
+ * while another wapp holds live PSRAM. Masters live for the device lifetime and
+ * each launch gets its own copy. See the platform guide for the limits. */
 typedef struct {
     char ref[WAPP_MAX_IMAGE_REF_LEN]; /* "<name>:<version>" */
     uint8_t *data;
@@ -222,10 +205,9 @@ static void cachePreload(void) {
     WantedFree(list);
 }
 
-/* Preload the image cache from the boot shim, before the supervisor (and thus
- * WAMR/PSRAM) starts — the only moment ESP32 flash reads are reliably safe.
- * Idempotent; the lazy path in PlatformRegistryWappLoad covers platforms whose
- * shim does not call this (e.g. the sim). */
+/* Preload the image cache from the boot shim, before the supervisor and thus
+ * PSRAM starts, which is the only moment ESP32 flash reads are reliably safe.
+ * Idempotent; the lazy path covers a platform whose shim does not call it. */
 void RegistryCachePreload(void) {
     if (!imageCachePreloaded)
         cachePreload();
@@ -275,10 +257,9 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     if (c == NULL)
         return -ENOENT;
 
-    /* Hand the launch its own copy of the cached image (RAM-to-RAM, no flash);
-     * the master stays cached for the next launch. PSRAM-backed (freed by
-     * PlatformWappUnload) so the per-launch image copy stays out of internal
-     * RAM, which is reserved for task stacks. */
+    /* Hand the launch its own RAM-to-RAM copy of the cached image; the master
+     * stays cached for the next one. PSRAM-backed, so the per-launch copy stays
+     * out of internal RAM, which is reserved for task stacks. */
     copy = (uint8_t *)PlatformExtramMalloc(c->len);
     if (copy == NULL)
         return -ENOMEM;

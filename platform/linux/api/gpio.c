@@ -6,12 +6,9 @@
 
 #include <platform.h>
 
-/* Linux has no GPIO backing yet. The real one is libgpiod v2 over
- * /dev/gpiochipN, which takes a "chip:offset" address; the legacy sysfs GPIO
- * interface is removed from current kernels and is not an option.
- *
- * Returning -ENOSYS fails a launch that grants `gpio` on this target. A wapp
- * therefore never reaches a line the host did not configure. */
+/* Linux has no GPIO backing. The real one is libgpiod v2 over /dev/gpiochipN,
+ * taking a "chip:offset" address. Returning -ENOSYS fails a launch granting
+ * `gpio`, so a wapp never reaches a line the host did not configure. */
 
 int PlatformGpioOpen(const plat_gpio_cfg_t *cfg, platform_gpio_t **out) {
     (void)cfg;

@@ -1,24 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* NuttX WiFi station driver, exposed to a wapp as a text command/status node.
- *
- * A wapp granted the `wifi` driver gets /dev/wifi in its namespace; the engine
- * drives the radio on the wapp's behalf and exposes only a text contract, so
- * the wapp stays pure WASI (WASI has no ioctl):
- *   write "scan"                  -> start a scan; following reads stream one
- *                                    "<ssid> <bssid> <rssi>\n" line per AP,
- *                                    then EOF
- *   write "connect <ssid> <pass>" -> associate (WPA2-PSK/CCMP) and run DHCP
- *   write "disconnect"            -> drop the association
- *   read (no pending scan)        -> one status line: "disconnected\n" or
- *                                    "connected <ssid> <ip>\n" (<ip> is the
- *                                    DHCP lease, or 0.0.0.0 if none)
- *
- * The radio is reached through the NuttX WAPI library on the wlan0 interface.
- * On builds without the WAPI/wireless stack (the Linux sim, or the host-only
- * scaffolding build) the WAPI/NuttX wireless headers and symbols are absent, so
- * the node holds state in memory; the real path compiles only when
- * CONFIG_WIRELESS_WAPI is set (the ESP32 board). */
+/* NuttX WiFi station driver, exposed to a wapp as the text command/status node
+ * /dev/wifi, so the wapp stays pure WASI. The radio is reached through the WAPI
+ * library on wlan0; see the VFS reference for the wire text. */
 
 #include <errno.h>
 #include <stdbool.h>
@@ -31,13 +15,9 @@
 #include <nuttx/config.h>
 #endif
 
-/* The real radio path needs the NuttX WAPI library (the wapi_ and
- * wpa_driver_wext_ calls) and netlib (ifup/DHCP). Those exist only on a
- * wireless-capable config -- the ESP32 board (CONFIG_WIRELESS_WAPI=y) -- not
- * the Linux sim, which builds NuttX with __NuttX__ defined but no wireless
- * stack. Gate the hardware path on CONFIG_WIRELESS_WAPI so the sim (and the
- * host scaffolding build) link against the in-memory stub instead of the
- * absent wapi/netlib symbols. */
+/* The real radio path needs the WAPI library and netlib, which exist only on a
+ * wireless-capable config. Gate it on CONFIG_WIRELESS_WAPI so the sim links the
+ * in-memory stub rather than absent symbols. */
 #if defined(__NuttX__) && defined(CONFIG_WIRELESS_WAPI)
 #define WIFI_HW 1
 #else
@@ -120,10 +100,8 @@ vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options) {
     ctx->state = WIFI_DISCONNECTED;
 
     /* Bring the interface up as part of driver setup: scan and connect both
-     * need the WiFi station started (ifup -> esp_wifi_start), else
-     * esp_wifi_scan_start / association return ESP_ERR_WIFI_NOT_STARTED.
-     * Idempotent — a no-op once wlan0 is up. Done here (not per-op) so every
-     * wifi operation a granted wapp makes finds the radio started. */
+     * need the station started, or they fail with WIFI_NOT_STARTED. Idempotent,
+     * and done here so every operation finds the radio started. */
 #if WIFI_HW
     netlib_ifup(ctx->ifname);
 #endif

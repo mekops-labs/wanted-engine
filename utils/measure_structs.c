@@ -1,25 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Resource-footprint measurement TU for the WANTED engine.
- *
- * Reports the byte size of the engine's per-wapp and fixed structures for the
- * resource limits it is compiled with, so each defconfig (configs/<name>_defconfig)
- * can be annotated with an exact memory cost.
- *
- * It pulls the real engine headers and the generated wanted-autoconf.h, so the
- * figures track the actual structs and the configured limits — there is nothing
- * to keep in sync by hand.
- *
- * Mechanism: each measured number is emitted as the *size of a global symbol*
- * (an uninitialised char array). A compile-only build (-c) is therefore enough
- * to read every figure back from the object's symbol table with `readelf -sW`;
- * no program is run and no target libc/runtime is required. That lets the same
- * source be compiled for the 32-bit embedded ABI with a freestanding
- * cross-target (clang -ffreestanding -target i386-...), which would otherwise
- * fail to link. utils/measure-sizes.sh generates a header per defconfig and
- * drives this for both the host (LP64) and 32-bit (ILP32) models; see
- * `make sizes`.
- */
+/* Resource-footprint measurement TU: the byte size of the engine's per-wapp and
+ * fixed structures for the limits it is compiled with. Each figure is the size
+ * of a global symbol, so a compile-only build reads it with `readelf -sW`. */
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -38,7 +21,8 @@ struct measured_wamr_t {
     uint8_t *wasm_bytes;
 };
 
-/* Per-wapp log ring slot, mirrored from log-store.c (CONFIG_WANTED_LOG_CAP bytes retained per
+/* Per-wapp log ring slot, mirrored from log-store.c (CONFIG_WANTED_LOG_CAP
+ * bytes retained per
  * wapp plus the ring bookkeeping). The store reserves one per wapp. */
 struct measured_log_slot_t {
     char name[WAPP_MAX_NAME_LEN];
@@ -67,11 +51,9 @@ EMIT(log_slot_t, sizeof(struct measured_log_slot_t));
 /* Engine-fixed structures */
 EMIT(wantedConfig_t, sizeof(wantedConfig_t));
 
-/* Active resource limits, so the report states what it measured and the driving
- * script needs no second source for them. The symbol keeps the short name; the
- * value comes from the generated configuration. EMIT floors at 1, so a limit
- * configured to 0 (an uncapped linear memory) reads back as 1 — the caller
- * distinguishes the two, see measure-sizes.sh. */
+/* Active resource limits, so the report states what it measured. EMIT floors at
+ * 1, so a limit configured to 0 reads back as 1 and the caller distinguishes
+ * the two; see measure-sizes.sh. */
 EMIT(MAX_WAPPS, CONFIG_WANTED_MAX_WAPPS);
 EMIT(MAX_PATH_LEN, CONFIG_WANTED_MAX_PATH_LEN);
 EMIT(WASM_STACK_SIZE, CONFIG_WANTED_WASM_STACK_SIZE);

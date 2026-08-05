@@ -5,13 +5,8 @@
 #include <wanted-autoconf.h>
 
 /* Consistency checks for a host that builds the engine as an external package
- * (OpenWrt), where no shared Kconfig namespace cross-checks the two. Hosts that
- * compile engine sources into their own tree get this from Kconfig instead.
- *
- * A preprocessor sees defines, not the image around it: it catches a
- * self-contradictory configuration or a missing Kconfig step, never a missing
- * host library — that surfaces at link time.
- */
+ * (OpenWrt), where no shared Kconfig namespace cross-checks the two. A
+ * preprocessor catches a contradictory config, never a missing host library. */
 
 /* The generated header must have reached this TU; without it every limit would
  * compile as 0 or fail much later with a confusing error. */

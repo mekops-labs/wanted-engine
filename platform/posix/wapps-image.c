@@ -1,15 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Shared wapp image load/unload: expose a wapp image file as the single TarFS
- * layer. These touch no platform lifecycle state, so they are common to every
- * POSIX target; the thread/stop lifecycle stays per-platform.
- *
- * Linux maps the file (zero-copy). NuttX copies it into a heap buffer: its mmap
- * is a full RAM copy anyway, and the heap may extend into PSRAM. On ESP32 the
- * image lives in SPI flash (LittleFS) and the destination may be PSRAM-backed;
- * a single large read straight into a PSRAM buffer corrupts (the SPI-flash MTD
- * read target cannot be PSRAM), so the bytes are read through a small
- * internal-RAM bounce buffer and copied into the image buffer with the CPU. */
+/* Shared wapp image load/unload, exposing an image file as the single TarFS
+ * layer. Linux maps the file zero-copy; NuttX copies it into a heap buffer
+ * through an internal-RAM bounce buffer. See the platform guide. */
 
 #include <errno.h>
 #include <stdint.h>
@@ -38,12 +31,9 @@
 
 #ifdef __NuttX__
 
-/* Bounce buffer for image reads. Static so it lives in .bss — internal RAM,
- * never PSRAM: the SPI-flash read target stays in internal RAM and the bytes
- * are copied into the (possibly PSRAM) image buffer with the CPU. The registry
- * cache (platform/nuttx/api/registry.c) is what guarantees these reads run only
- * while no wapp is active — an ESP32 SPI-flash read returns corrupt data while
- * another task holds live PSRAM. A mutex serialises the shared buffer. */
+/* Bounce buffer for image reads. Static, so it lives in .bss and therefore
+ * internal RAM, which an SPI-flash read target must be. A mutex serialises the
+ * shared buffer. */
 #define IMAGE_READ_CHUNK 2048
 static uint8_t g_image_bounce[IMAGE_READ_CHUNK];
 static pthread_mutex_t g_image_bounce_lock = PTHREAD_MUTEX_INITIALIZER;

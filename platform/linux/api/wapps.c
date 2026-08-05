@@ -1,16 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Linux platform wapp lifecycle.
- *
- * A stopped wapp is terminated cooperatively. PlatformWappStop sets the
- * per-instruction terminate flag (WantedWappTerminate) and sends the worker a
- * signal (WAPP_STOP_SIGNAL) to wake any host call it is blocked in; the
- * interrupted call returns EINTR and unwinds to the interpreter, which sees the
- * terminate flag, aborts the in-flight WASM call, and lets the worker unwind
- * via WA_threadEnd. This terminates a wapp busy in a pure compute loop and one
- * parked indefinitely in I/O alike, and every teardown runs on the worker's own
- * stack at a point the runtime chose.
- */
+/* Linux platform wapp lifecycle. A stopped wapp is terminated cooperatively:
+ * the terminate flag plus a signal that wakes any blocked host call, so every
+ * teardown runs on the worker's own stack. See the platform guide. */
 
 #include <errno.h>
 #include <limits.h>
@@ -83,18 +75,16 @@ void WA_threadEnd(void *ptr) {
 }
 
 /* Stop signal handler. Its only job is to interrupt the worker's in-flight
- * blocking host call so it returns EINTR; the thread then unwinds normally
- * through WA_threadEnd, honouring the terminate flag. It deliberately runs no
- * engine or WAMR code — none of it is async-signal-safe. */
+ * blocking host call so it returns EINTR. It deliberately runs no engine or
+ * WAMR code, none of which is async-signal-safe. */
 static void stopSigHandler(int sig) { (void)sig; }
 
 void *WA_thread(void *ptr) {
     wapp_data_t *d = (wapp_data_t *)ptr;
 
-    /* Install the stop handler (SA_RESTART cleared) and unblock the stop signal
-     * on this worker so PlatformWappStop's pthread_kill can interrupt a blocked
-     * host call. The disposition is process-wide and idempotent; the mask is
-     * per-thread. */
+    /* Install the stop handler with SA_RESTART cleared and unblock the signal
+     * on this worker, so pthread_kill can interrupt a blocked host call. The
+     * disposition is process-wide and idempotent; the mask is per-thread. */
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sigemptyset(&sa.sa_mask);
@@ -126,12 +116,9 @@ void *WA_thread(void *ptr) {
  * in that task). Wapps run at this base; the supervisor one step above it. */
 static int basePriority = -1;
 
-/* Worker thread's native C stack. Set explicitly (not the 8 MB glibc default)
- * so every platform sizes it the same way — the WAMR classic interpreter is
- * recursive and the WASI/VFS host calls add frames (see
- * CONFIG_WANTED_WASM_WORKER_STACK_SIZE from Kconfig). Floored at
- * PTHREAD_STACK_MIN so a tight configuration cannot drop below what the C
- * library accepts. */
+/* Worker thread's native C stack, set explicitly from
+ * CONFIG_WANTED_WASM_WORKER_STACK_SIZE and floored at PTHREAD_STACK_MIN so a
+ * tight configuration cannot drop below what the C library accepts. */
 static size_t worker_stacksize(void) {
     size_t ss = CONFIG_WANTED_WASM_WORKER_STACK_SIZE;
 #ifdef PTHREAD_STACK_MIN
@@ -144,13 +131,8 @@ static size_t worker_stacksize(void) {
 size_t PlatformWorkerStackSize(void) { return worker_stacksize(); }
 
 /* Start a worker thread for a wapp. The supervisor runs one scheduling step
- * above the wapps it manages so it can always preempt and terminate a runaway
- * (e.g. a never-yielding wapp). Priorities are set explicitly rather than
- * inherited: a wapp is launched from the supervisor's own (elevated) thread, so
- * inheriting would lift it to the supervisor's priority and defeat preemption.
- * A host that forbids real-time scheduling (Linux without CAP_SYS_NICE) returns
- * EPERM, so all threads fall back to default scheduling, where the host
- * scheduler time-slices regardless. */
+ * above the wapps it manages, and priorities are set explicitly rather than
+ * inherited. See the platform guide for why, and for the EPERM fallback. */
 static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
     pthread_attr_t attr;
     struct sched_param sp;
@@ -206,11 +188,9 @@ int PlatformWappStart(wapp_t *wapp) {
         return -ENOSPC;
     }
 
-    /* The slot owns the previous occupant's wapp_t for its whole lifetime
-     * (StartWapp hands ownership here, not freeing at the call site). Its
-     * thread has fully terminated by the time the slot is reusable, so release
-     * the image + struct now. The supervisor's image is a persistent singleton
-     * reused across respawns — never free that one. */
+    /* The slot owns the previous occupant's wapp_t, whose thread has fully
+     * terminated by the time the slot is reusable, so release image and struct
+     * now. The supervisor's image is a singleton reused across respawns. */
     wapp_t *prev = state.threads[slot].data.wapp;
     if (prev != NULL && prev != wapp && prev != WantedGetCurrentSupervisor()) {
         PlatformWappUnload(prev);
@@ -254,10 +234,9 @@ int PlatformWappStop(const char *name) {
         return -ENOENT;
     }
 
-    /* Cooperative stop. Set the terminate flag so wasm_runtime_call_wasm
-     * returns false at the next instruction boundary, then signal the worker to
-     * EINTR any host call it is currently blocked in so that boundary is
-     * reached promptly. The thread unwinds through WA_threadEnd. */
+    /* Cooperative stop: set the terminate flag so wasm_runtime_call_wasm
+     * returns false at the next instruction boundary, then signal the worker so
+     * a blocked host call EINTRs and that boundary is reached promptly. */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
     worker = state.threads[slot].t;
 
@@ -293,21 +272,18 @@ int PlatformWappRelease(const char *name) {
         return -ENOENT;
     }
 
-    /* Only a terminal slot can be released. A running/starting wapp must be
-     * stopped first — its worker still dereferences the slot, so freeing the
-     * image here would be a use-after-free. The terminal status (set by
-     * updateState after the worker unwound) guarantees the thread is gone. */
+    /* Only a terminal slot can be released: a running or starting wapp still
+     * has a worker dereferencing it, so freeing the image would be a
+     * use-after-free. A terminal status guarantees the thread is gone. */
     if (state.threads[slot].status != EXITED &&
         state.threads[slot].status != FAILURE) {
         pthread_mutex_unlock(&state_mtx);
         return -EBUSY;
     }
 
-    /* Free the mapped image + struct. The supervisor image is a persistent
-     * singleton reused across respawns — never free that one. state.n was
-     * already decremented when the worker reached its terminal status, so the
-     * slot does not count against the pool and must not be decremented again.
-     */
+    /* Free the mapped image and struct; the supervisor image is a singleton
+     * reused across respawns. state.n was decremented when the worker reached
+     * its terminal status, so it must not be decremented again. */
     wapp_t *w = state.threads[slot].data.wapp;
     if (w != NULL && w != WantedGetCurrentSupervisor()) {
         PlatformWappUnload(w);

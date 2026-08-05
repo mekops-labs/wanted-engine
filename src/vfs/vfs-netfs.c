@@ -12,11 +12,9 @@
 #include <vfs.h>
 #include <wanted_malloc.h>
 
-/* NetFs — direct table-backed lookup.
- *
- * Mirrors DevFs: WantedInstallDriver registers each "/net/<name>" driver into
- * the per-wapp table; NetFs_Open exact-matches the suffix and forwards into
- * the matched driver's Open. Driver lifetime is owned by NetFs. */
+/* NetFs — direct table-backed lookup, mirroring DevFs. NetFs_Open exact-matches
+ * the suffix against the per-wapp table and forwards into the matched driver's
+ * Open. NetFs owns driver lifetime. */
 
 typedef struct netfs_handle_t {
     const vfs_driver_t *drv;

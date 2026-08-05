@@ -1,19 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP32 init shim.
- *
- * On ESP32 there is no host filesystem to stage the supervisor image onto (the
- * sim uses hostfs; see wanted_sim_main.c). The supervisor OCI TAR is therefore
- * bundled into the firmware as a ROMFS image and mounted read-only at /rom;
- * CONFIG_SYSTEM_WANTED_SUPERVISOR_IMAGE points the engine at
- * "/rom/wanted/supervisor.tar". CONFIG_FS_RAMMAP lets the existing mmap-based
- * loader (platform/posix/wapps-image.c) copy the image into the (PSRAM) heap —
- * the documented RAM-copy fallback for targets without execute-in-place flash.
- *
- * Installed wapps live on a writable LittleFS registry mounted by the board
- * bring-up; this shim only owns the read-only supervisor ROMFS. Selected via
- * CONFIG_INIT_ENTRYPOINT=wanted_esp32_main; the NSH built-in entry stays
- * wanted_main. */
+/* ESP32 init shim. The supervisor OCI TAR is bundled into the firmware as a
+ * ROMFS image mounted read-only at /rom, since there is no host filesystem to
+ * stage it on. This shim owns only that ROMFS. */
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -30,26 +19,17 @@
 #define ROMFS_DEVPATH "/dev/ram" /* + minor */
 #define ROMFS_MOUNTPT "/rom"
 
-/* Writable persistent registry storage — on an external SD card, FAT. On the
- * classic ESP32 the registry must NOT live on internal SPI flash: a flash read
- * disables the flash/PSRAM cache globally and corrupts live PSRAM (the
- * coexistence bug), which is exactly what blocks the WASM runtime from running
- * out of PSRAM. An SD card is a separate SPI peripheral whose reads never
- * disable that cache, so registry reads (preload + launch) cannot corrupt
- * PSRAM. The board late-init (esp32_bringup -> board_sdmmc_initialize) creates
- * /dev/mmcsd0 over SPI; this shim mounts the FAT volume and chdir's into it so
- * the engine's relative REGISTRY_ROOT ("./registry") persists across reboots.
- * Installed wapps live here; the supervisor image is the read-only ROMFS at
- * /rom (a cache-window read, coherent with PSRAM). */
+/* Writable persistent registry storage, FAT on an external SD card: a separate
+ * SPI peripheral whose reads never disable the flash/PSRAM cache. This shim
+ * mounts it and chdirs in so the relative registry root persists. */
 #define SDCARD_DEVPATH "/dev/mmcsd0"
 #define REGISTRY_VOLUME "/sd"
 
 int wanted_main(int argc, char *argv[]);
 
-/* Read all registry images into RAM now, while no wapp (hence no WAMR/PSRAM
- * activity) is running. On ESP32 an SPI-flash read returns corrupt data once a
- * wapp holds live PSRAM, so the engine must not read image files off flash at
- * launch time; the cache (platform/nuttx/api/registry.c) serves launches. */
+/* Read all registry images into RAM now, while no wapp and therefore no PSRAM
+ * activity is running, which is the only moment an ESP32 flash read is safe.
+ * The cache then serves every launch. */
 void RegistryCachePreload(void);
 
 #define SEED_DIR                                                               \
@@ -79,9 +59,8 @@ static void seed_copy(const char *src, const char *dst) {
 }
 
 /* First-boot factory seed: copy any /rom/registry/*.wapp the firmware bundles
- * into the writable flash registry, skipping ones already installed (O_EXCL).
- * Lets a freshly-flashed board start its bundled wapps with no network; on
- * later boots the persisted copies win and nothing is re-seeded. */
+ * into the writable registry, skipping those already installed. A freshly
+ * flashed board can then start its bundled wapps with no network. */
 static void seed_registry(void) {
     DIR *d = opendir(SEED_DIR);
     if (!d)
@@ -114,10 +93,9 @@ int wanted_esp32_main(int argc, char *argv[]) {
         perror("mount " ROMFS_MOUNTPT);
     }
 
-    /* Mount the SD card holding the writable registry (FAT over the SPI slot
-     * the board late-init brought up). Reads from here do not disable the
-     * flash/PSRAM cache, so they are safe while the WASM runtime holds live
-     * PSRAM. */
+    /* Mount the SD card holding the writable registry. Reads from here do not
+     * disable the flash/PSRAM cache, so they are safe while the runtime holds
+     * live PSRAM. */
     if (mount(SDCARD_DEVPATH, REGISTRY_VOLUME, "vfat", 0, NULL) < 0)
         perror("mount " REGISTRY_VOLUME);
 

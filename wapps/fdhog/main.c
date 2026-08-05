@@ -1,14 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* fdhog — exhausts a sandbox resource (file descriptors).
- *
- * Opens a read-only image file (app.wasm) over and over without closing, until
- * the open fails or a hard probe cap is reached, then reports on its log
- * console. The
- * engine must bound the wapp (open eventually errors) and stay up — the abuse
- * must be contained to the wapp, never crash or exhaust the host. The selftest
- * supervisor asserts the wapp is reaped and the supervisor survives, and the
- * verdict (bounded vs. cap reached) is reported as a diagnostic. */
+/* fdhog — opens a read-only image file repeatedly without closing, until the
+ * open fails or a probe cap is reached. The engine must bound the wapp and stay
+ * up, containing the abuse rather than exhausting the host. */
 
 #include <fcntl.h>
 #include <string.h>

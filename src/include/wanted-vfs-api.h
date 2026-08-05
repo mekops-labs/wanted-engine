@@ -13,11 +13,9 @@
 int WantedInstallDriver(vfs_ctx_t c, const wapp_t *w, const char *name,
                         const char *path, const char *options);
 
-/* Write the space-separated names of every resolvable driver (core table then
- * the platform table) into buf, truncated to bufLen. Iterates the same tables
- * WantedInstallDriver resolves against, so /proc/wanted reports exactly what a
- * launch config can request on this build. Returns bytes written, or a negative
- * errno on bad args. */
+/* Write the space-separated names of every resolvable driver into buf,
+ * truncated to bufLen, iterating the same tables WantedInstallDriver resolves
+ * against. Returns bytes written, or a negative errno on bad args. */
 int WantedListDrivers(char *buf, size_t bufLen);
 
 int WantedParseConfig(const char *buf, size_t bufLen);
@@ -33,26 +31,20 @@ int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen);
 
 /* Parse a wasm module's declared linear-memory limits from the leading `len`
- * bytes of its `app.wasm`. On success fills *init (initial pages), *has_max,
- * and *max (declared max pages, valid only when *has_max) and returns 0.
- * Returns -ENOENT when the bytes hold no memory section (an imported memory, or
- * the window stopped short of it) and -EINVAL on a bad/truncated header.
- * Allocation-free; reads only the (memory) section — no module load. */
+ * bytes of its app.wasm, filling *init, *has_max and *max. -ENOENT when those
+ * bytes hold no memory section, -EINVAL on a bad header. Allocation-free. */
 int WantedWasmMemoryProfile(const uint8_t *buf, size_t len, uint32_t *init,
                             bool *has_max, uint32_t *max);
 
 const char *StatusToString(status_t state);
 
 /* /proc/wapps/<name>/<leaf> — read-only per-wapp observability directory,
- * registered by the engine as a privileged ProcFS directory entry. Leaves
- * (state, image, version, id, memory, exit_code) are rendered from
- * PlatformWappGetState. */
+ * registered as a privileged ProcFS directory entry. Its leaves are rendered
+ * from PlatformWappGetState. */
 extern const proc_dir_ops_t WappsProcDirOps;
 
 /* Upper bound (including NUL) on a control/config JSON payload the engine
- * copies onto the stack to parse, sizing the fixed parse buffer. The
- * compiled-in supervisor bootstrap config and any per-wapp launch config sit
- * comfortably under this. */
+ * copies onto the stack to parse, which sizes the fixed parse buffer. */
 #define WANTED_CTRL_JSON_MAX 2048
 
 int WantedParseCtrlAction(json_t const *json, char *wappName,
@@ -65,16 +57,9 @@ int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
 int WantedParseWappConfigJson(const char *buf, size_t bufLen,
                               wapp_config_t *cfg);
 
-/* Engine clock-quality state. The byte exposed at /proc/clock_quality
- * reflects how the platform clock is calibrated. Wapp readers (e.g. agents
- * deciding whether to trust the wall clock for security decisions) consume
- * it as authoritative. Byte values:
- *   0 = HARDWARE_RTC         backed by a battery-backed RTC
- *   1 = SNTP_CALIBRATED      synced via SNTP
- *   2 = SIMPLE_CALIBRATION   set by a host-side time provider (no RTC, no NTP)
- *   3 = UNCALIBRATED         default; wall clock is meaningless
- * Updaters (RTC probe, SNTP daemon, host time provider) call
- * WantedSetClockQuality whenever the calibration state changes. */
+/* Engine clock-quality state, exposed as one byte at /proc/clock_quality and
+ * read as authoritative by a wapp deciding whether to trust the wall clock. An
+ * updater calls WantedSetClockQuality whenever the calibration changes. */
 #define WANTED_CLOCK_HARDWARE_RTC 0
 #define WANTED_CLOCK_SNTP_CALIBRATED 1
 #define WANTED_CLOCK_SIMPLE_CALIBRATION 2

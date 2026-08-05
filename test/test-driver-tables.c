@@ -11,16 +11,9 @@
 #include <wanted-vfs-api.h>
 #include <wanted_malloc.h>
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * driver_tables — the resolver's core → platform → extra search order.
- *
- * The extra table lets a build link drivers from a source tree outside this
- * repo. It is searched last, so a core name it claims must lose. Configure a
- * build with -DWANTED_EXTRA_DRIVERS_DIR=test/extra-drivers to exercise the
- * populated case; without it ExtraDriverTable() is NULL and the extra-specific
- * assertions do not apply.
- * ═══════════════════════════════════════════════════════════════════════════
- */
+/* driver_tables — the resolver's core → platform → extra search order. Build
+ * with -DWANTED_EXTRA_DRIVERS_DIR=test/extra-drivers for the populated case;
+ * without it ExtraDriverTable() is NULL and those assertions do not apply. */
 
 TEST_GROUP(driver_tables);
 

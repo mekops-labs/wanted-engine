@@ -17,10 +17,9 @@
 
 /* Registry capacity: the most image entries a single mount tracks. */
 #define MAX_REG_ENTRIES 50
-/* The wapp-visible image-reference separator: an install/lookup ref is
- * "<name>[:<version>]". The loader maps the resolved name/version onto the
- * on-disk filename, which uses REGISTRY_VERSION_SEPARATOR ('@',
- * platform-config.h). */
+/* The wapp-visible image-reference separator: a ref is "<name>[:<version>]".
+ * The loader maps the resolved pair onto the on-disk filename, which uses
+ * REGISTRY_VERSION_SEPARATOR. */
 static const char VERSION_SEPARATOR = ':';
 
 /* Longest install ref "<name>:<version>" (+NUL) the driver buffers between an
@@ -117,10 +116,9 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
             return ret;
         d->nEntries = ret;
     } else if (flags & (VFS_O_WRONLY | VFS_O_RDWR)) {
-        /* Install by ref: opening a (possibly not-yet-existing) "<name>:<ver>"
-         * path for write names the image. The ref travels to the platform
-         * writer, which names the stored file by it — the ref is the image's
-         * identity. The image bytes are written to the root write fd (0). */
+        /* Install by ref: opening a "<name>:<ver>" path for write names the
+         * image. The ref travels to the platform writer, which names the stored
+         * file by it. Image bytes go to the root write fd (0). */
         if (path[0] == '\0' || strlen(path) >= REG_REF_MAX)
             return -ENAMETOOLONG;
         if (!validInstallRef(path))

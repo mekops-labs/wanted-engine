@@ -1,20 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* NuttX platform wapp lifecycle.
- *
- * Threading mirrors the Linux platform (detached pthreads, one slot per wapp),
- * but the stop path differs: instead of pthread_cancel — unreliable on NuttX —
- * a stopped wapp is terminated cooperatively. PlatformWappStop sets the
- * per-instruction terminate flag (WantedWappTerminate) and sends the worker a
- * signal (WAPP_STOP_SIGNAL) to wake any host call it is blocked in. The handler
- * records the interrupt on the worker's slot; PlatformClockNanoSleep turns that
- * into EINTR (NuttX wakes the sleep but reports success, so the timer return
- * cannot signal it alone), which unwinds the host call — including the pipe
- * driver's poll loop — back to the interpreter. The interpreter then sees the
- * terminate flag, aborts the in-flight WASM call, and the worker unwinds via
- * WA_threadEnd. This makes a wapp parked indefinitely in I/O (a read on an
- * empty pipe, a long sleep) promptly terminable — not just one executing WASM.
- */
+/* NuttX platform wapp lifecycle: detached pthreads, one slot per wapp, and a
+ * cooperative stop built from the terminate flag plus a signal that wakes a
+ * blocked host call. See the platform guide. */
 
 #include <errno.h>
 #include <limits.h>
@@ -41,10 +29,9 @@
 
 pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
 
-/* Signal used to interrupt a worker blocked in a host syscall so the
- * cooperative stop can take effect. SIGUSR2, because WAMR reserves SIGUSR1 for
- * its own blocking-op wakeup and keeps it masked on every wasm thread, so a
- * SIGUSR1 sent here would never be delivered to the worker. */
+/* Signal used to interrupt a worker blocked in a host syscall. SIGUSR2, because
+ * WAMR reserves SIGUSR1 for its own wakeup and keeps it masked on every wasm
+ * thread, so a SIGUSR1 sent here would never reach the worker. */
 #define WAPP_STOP_SIGNAL SIGUSR2
 
 #define FATAL(err, msg, ...)                                                   \
@@ -89,13 +76,9 @@ void WA_threadEnd(void *ptr) {
     updateState(d->id, d->lastStatus);
 }
 
-/* Stop signal handler. Delivery wakes the worker's in-flight blocking host call
- * early; it records the interrupt on this worker's slot so
- * PlatformClockNanoSleep can report EINTR (NuttX reports the woken sleep as
- * success, so the timer return cannot signal it). The thread then unwinds
- * normally through WA_threadEnd, honouring the terminate flag — we deliberately
- * do NOT pthread_exit from here (fragile with live WAMR state) nor
- * pthread_cancel (unreliable on NuttX). */
+/* Stop signal handler. Delivery wakes the worker's blocking host call early and
+ * records the interrupt on its slot, so PlatformClockNanoSleep can report
+ * EINTR. It deliberately neither pthread_exits nor pthread_cancels. */
 static void stopSigHandler(int sig) {
     (void)sig;
     pthread_t self = pthread_self();
@@ -126,10 +109,9 @@ bool PlatformStopInterruptConsume(void) {
 void *WA_thread(void *ptr) {
     wapp_data_t *d = (wapp_data_t *)ptr;
 
-    /* Install the stop handler (SA_RESTART cleared) and unblock the stop signal
-     * on this worker so PlatformWappStop's pthread_kill can interrupt a blocked
-     * host call. The disposition is process-wide and idempotent; the mask is
-     * per-thread. */
+    /* Install the stop handler with SA_RESTART cleared and unblock the signal
+     * on this worker, so pthread_kill can interrupt a blocked host call. The
+     * disposition is process-wide and idempotent; the mask is per-thread. */
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sigemptyset(&sa.sa_mask);
@@ -150,12 +132,9 @@ void *WA_thread(void *ptr) {
     d->lastStatus = 0;
     d->lastStatus = WantedWappRun(d);
 
-    /* The stop path is cooperative (WantedWappTerminate aborts the in-flight
-     * WASM call), never pthread_cancel, so the worker always reaches here on a
-     * normal return — call the teardown directly. A pthread_cleanup handler
-     * would not run anyway: it is a no-op unless CONFIG_PTHREAD_CLEANUP is set,
-     * and without it the wapp would never be marked dead and the supervisor
-     * loop would spin forever. */
+    /* The stop path is cooperative, so the worker always reaches here on a
+     * normal return and the teardown is called directly. A pthread_cleanup
+     * handler is a no-op unless CONFIG_PTHREAD_CLEANUP is set. */
     WA_threadEnd(d);
 
     pthread_exit(NULL);
@@ -165,12 +144,9 @@ void *WA_thread(void *ptr) {
  * in that task). Wapps run at this base; the supervisor one step above it. */
 static int basePriority = -1;
 
-/* Worker thread's native C stack. Set explicitly so every platform sizes it the
- * same way — the WAMR classic interpreter is recursive and the WASI/VFS host
- * calls add frames, and the NuttX per-thread default
- * (CONFIG_PTHREAD_STACK_DEFAULT, ~2 KB) overflows the moment real wasm runs
- * (see CONFIG_WANTED_WASM_WORKER_STACK_SIZE from Kconfig). Floored at
- * PTHREAD_STACK_MIN for safety. */
+/* Worker thread's native C stack, set explicitly from
+ * CONFIG_WANTED_WASM_WORKER_STACK_SIZE and floored at PTHREAD_STACK_MIN. The
+ * NuttX per-thread default overflows the moment real wasm runs. */
 static size_t worker_stacksize(void) {
     size_t ss = CONFIG_WANTED_WASM_WORKER_STACK_SIZE;
 #ifdef PTHREAD_STACK_MIN
@@ -183,14 +159,8 @@ static size_t worker_stacksize(void) {
 size_t PlatformWorkerStackSize(void) { return worker_stacksize(); }
 
 /* Start a worker thread for a wapp. The supervisor runs one scheduling step
- * above the wapps it manages so it can always preempt and terminate a runaway
- * (e.g. a never-yielding wapp). Priorities are set explicitly rather than
- * inherited: a wapp is launched from the supervisor's own (elevated) thread, so
- * inheriting would lift it to the supervisor's priority and defeat preemption.
- * NuttX honours SCHED_RR priorities directly; if host forbids real-time
- * scheduling, it returns EPERM, so all threads fall
- * back to default scheduling, where the host scheduler time-slices regardless.
- */
+ * above the wapps it manages, and priorities are set explicitly rather than
+ * inherited. See the platform guide for why, and for the EPERM fallback. */
 static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
     pthread_attr_t attr;
     struct sched_param sp;
@@ -246,11 +216,9 @@ int PlatformWappStart(wapp_t *wapp) {
         return -ENOSPC;
     }
 
-    /* The slot owns the previous occupant's wapp_t for its whole lifetime
-     * (StartWapp hands ownership here, not freeing at the call site). Its
-     * thread has fully terminated by the time the slot is reusable, so release
-     * the image + struct now. The supervisor's image is a persistent singleton
-     * reused across respawns — never free that one. */
+    /* The slot owns the previous occupant's wapp_t, whose thread has fully
+     * terminated by the time the slot is reusable, so release image and struct
+     * now. The supervisor's image is a singleton reused across respawns. */
     wapp_t *prev = state.threads[slot].data.wapp;
     if (prev != NULL && prev != wapp && prev != WantedGetCurrentSupervisor()) {
         PlatformWappUnload(prev);
@@ -267,9 +235,8 @@ int PlatformWappStart(wapp_t *wapp) {
                          (wapp_data_t *)&state.threads[slot].data,
                          wapp == WantedGetCurrentSupervisor());
     if (rc != 0) {
-        /* pthread_create failed both attempts (see startWorker): leave no
-         * thread ever running to move the slot past STARTING. Free the slot
-         * for reuse and report the failure - the caller owns unloading
+        /* pthread_create failed both attempts, so nothing will ever move the
+         * slot past STARTING. Free it for reuse; the caller owns unloading
          * `wapp` on a negative return, so this must not touch it further. */
         state.threads[slot].status = NOT_STARTED;
         state.threads[slot].data.wapp = NULL;
@@ -306,11 +273,9 @@ int PlatformWappStop(const char *name) {
         return -ENOENT;
     }
 
-    /* Cooperative stop. Set the terminate flag so wasm_runtime_call_wasm
-     * returns false at the next instruction boundary, then signal the worker to
-     * EINTR any host call it is currently blocked in so that boundary is
-     * reached promptly. The thread unwinds through WA_threadEnd; no
-     * pthread_cancel. */
+    /* Cooperative stop: set the terminate flag so wasm_runtime_call_wasm
+     * returns false at the next instruction boundary, then signal the worker so
+     * a blocked host call EINTRs and that boundary is reached promptly. */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
     worker = state.threads[slot].t;
 
@@ -346,21 +311,18 @@ int PlatformWappRelease(const char *name) {
         return -ENOENT;
     }
 
-    /* Only a terminal slot can be released. A running/starting wapp must be
-     * stopped first — its worker still dereferences the slot, so freeing the
-     * image here would be a use-after-free. The terminal status (set by
-     * updateState after the worker unwound) guarantees the thread is gone. */
+    /* Only a terminal slot can be released: a running or starting wapp still
+     * has a worker dereferencing it, so freeing the image would be a
+     * use-after-free. A terminal status guarantees the thread is gone. */
     if (state.threads[slot].status != EXITED &&
         state.threads[slot].status != FAILURE) {
         pthread_mutex_unlock(&state_mtx);
         return -EBUSY;
     }
 
-    /* Free the mapped image + struct. The supervisor image is a persistent
-     * singleton reused across respawns — never free that one. state.n was
-     * already decremented when the worker reached its terminal status, so the
-     * slot does not count against the pool and must not be decremented again.
-     */
+    /* Free the mapped image and struct; the supervisor image is a singleton
+     * reused across respawns. state.n was decremented when the worker reached
+     * its terminal status, so it must not be decremented again. */
     wapp_t *w = state.threads[slot].data.wapp;
     if (w != NULL && w != WantedGetCurrentSupervisor()) {
         PlatformWappUnload(w);

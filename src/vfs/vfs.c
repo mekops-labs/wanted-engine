@@ -16,15 +16,9 @@
 #include <vfs-tarfs.h>
 #include <vfs.h>
 
-/* Stateless prefix router on top of a single typed-FD table.
- *
- * All opens go through vfsResolvePath before routing, so trailing slashes,
- * '.' and '..' are resolved universally via cwk_path_normalize. A mount table
- * in vfs_ctx_t replaces the hardcoded if/else prefix chain; route_open
- * iterates it for the longest matching prefix. Root VfsReadDir emits
- * mount-table entries after the TarFS phase so /dev, /net and /proc appear in
- * 'ls /'. VfsOpenAt uses the parent fd's stored path to resolve relative
- * paths. */
+/* Stateless prefix router on top of a single typed-FD table. Every open goes
+ * through vfsResolvePath first, so trailing slashes, '.' and '..' resolve
+ * universally; route_open then takes the longest matching mount prefix. */
 
 /* ── Path normalisation ──────────────────────────────────────────────────── */
 
@@ -143,11 +137,9 @@ static int findFirstClosedFd(const struct vfs_ctx_t *c) {
 
 /* ── Route open (mount-table dispatch) ───────────────────────────────────── */
 
-/* Longest-prefix match against the mount table. Fills `type` and `mount_drv`,
- * and points `suffix` at the driver-relative path (past the mount prefix and
- * any leading slash; empty = the mount root). No side effects: unlike
- * route_open it never opens the resolved node, so callers that only need the
- * routing decision (e.g. stat) can avoid an open with side effects. */
+/* Longest-prefix match against the mount table, filling `type` and `mount_drv`
+ * and pointing `suffix` at the driver-relative path. No side effects, so a
+ * caller needing only the routing decision (stat) avoids opening the node. */
 static int routeMatch(vfs_ctx_t c, const char *path, vfs_fd_type_t *type,
                       const vfs_driver_t **mount_drv, const char **suffix) {
     vfs_fd_type_t t = VFS_TYPE_NONE;
@@ -185,10 +177,9 @@ static int routeMatch(vfs_ctx_t c, const char *path, vfs_fd_type_t *type,
     return 0;
 }
 
-/* True if `path` is a strict ancestor (at a component boundary) of some mount
- * prefix without being a mount itself — e.g. "/etc" when "/etc/config" is
- * mounted. Such a path has no backing driver but must still stat and list as a
- * directory, since it appears as a synthetic entry in the parent's readdir. */
+/* True if `path` is a strict ancestor, at a component boundary, of some mount
+ * prefix without being a mount itself. Such a path has no backing driver but
+ * must still stat and list as a directory. */
 static bool isMountAncestor(vfs_ctx_t c, const char *path) {
     size_t len = strlen(path);
     for (uint8_t i = 0; i < c->mounts_cnt; i++) {
@@ -302,10 +293,9 @@ static int route_open(vfs_ctx_t c, const char *path, vfs_oflags_t flags) {
 vfs_ctx_t VfsInit(void) {
     struct vfs_ctx_t *c;
 
-    /* Internal RAM, not WantedMalloc: the fd/mount/devfs/netfs/procfs tables
-     * here are dereferenced on every VFS call a running wapp makes, so this
-     * stays off the (slower on ESP-IDF) PSRAM allocator even where one is
-     * configured. */
+    /* Internal RAM, not WantedMalloc: these tables are dereferenced on every
+     * VFS call a running wapp makes, so they stay off the slower PSRAM
+     * allocator even where one is configured. */
     c = (struct vfs_ctx_t *)malloc(sizeof(*c));
     if (!c)
         return c;
@@ -334,12 +324,9 @@ static void destroyStreamFd(vfs_ctx_t c, unsigned fd) {
     c->fds[fd].driver = NULL;
 }
 
-/* PLATFORM-type slots can either be preopens (own the driver — Destroy on
- * teardown) or children produced by OpenAt against a preopen (share the
- * parent's driver — close only the host fd). Distinguish via the `driver`
- * pointer being shared with another slot of higher precedence. To keep this
- * simple we Destroy the driver only once: walk the table, dedup driver
- * pointers, and Destroy each unique driver after closing all slots. */
+/* A PLATFORM slot either owns its driver (a preopen) or shares the parent's (a
+ * child from OpenAt). Destroy each driver exactly once: walk the table, dedup
+ * driver pointers, and Destroy each unique one after closing every slot. */
 static void destroyPlatformFds(vfs_ctx_t c) {
     /* First pass: close every host fd. */
     for (int i = 0; i < VFS_MAX_FDS; i++) {
@@ -461,10 +448,9 @@ int VfsAttachTarfs(vfs_ctx_t c, vfs_tarfs_ctx_t *tarfs) {
     return 0;
 }
 
-/* VfsRegister wires up stdio only. TARFS owns root and the mount table owns
- * /dev, /net, /proc. Callers who hand us anything else lose the driver they
- * built; the registry layer in vfs-wanted-ctrl.c filters those before they
- * reach here, but we destroy defensively so a stale call can't leak. */
+/* VfsRegister wires up stdio only: TARFS owns root and the mount table owns
+ * /dev, /net and /proc. Anything else is destroyed defensively here, so a
+ * stale call cannot leak the driver it built. */
 int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver) {
     if (NULL == driver || NULL == c)
         return -EINVAL;
@@ -605,12 +591,9 @@ int VfsClose(vfs_ctx_t c, int fd) {
     }
     case VFS_TYPE_PLATFORM: {
         const vfs_driver_t *drv = c->fds[fd].driver;
-        /* Preopen slots (those registered via VfsBindPlatformFd) are torn down
-         * by VfsDestroy — closing them mid-wapp would orphan the preopen and
-         * break Zig's openDirAbsolute lookup. Detect a preopen by checking if
-         * the slot's path matches a registered preopen path. Simpler: if drv
-         * is shared with another live PLATFORM slot, this one is a child fd
-         * created by OpenAt and safe to close fully. */
+        /* A preopen slot is torn down by VfsDestroy; closing it mid-wapp would
+         * orphan the preopen. A driver shared with another live PLATFORM slot
+         * marks this one as an OpenAt child, safe to close fully. */
         bool is_preopen = false;
         for (int i = 0; i < VFS_MAX_FDS; i++) {
             if (i != fd && c->fds[i].type == VFS_TYPE_PLATFORM &&
@@ -646,10 +629,9 @@ int VfsStatAt(vfs_ctx_t c, int fd, const char *path, vfs_stat_t *stat) {
     if (!checkFd(c, fd))
         return -EBADF;
 
-    /* A /net node is stat'd by name: opening a socket node has the side effect
-     * of creating the socket, so report the registered driver's filetype
-     * directly. A PLATFORM parent never routes to /net (its relative paths
-     * resolve against a host directory), so skip the fast path there. */
+    /* A /net node is stat'd by name, because opening a socket node creates the
+     * socket. A PLATFORM parent never routes to /net, so skip the fast path
+     * there. */
     bool platform_parent =
         (c->fds[fd].type == VFS_TYPE_PLATFORM && path[0] != '/');
     if (!platform_parent) {
@@ -799,14 +781,9 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
  * so the spaces don't overlap. */
 #define MOUNT_PHASE_BIT (UINT64_C(1) << 63)
 
-/* Pack synthetic directory entries for the mounts that live immediately below
- * `base` (an absolute path; "" with baselen 0 means root). For each such mount
- * the first path component past `base` is emitted as a directory, deduplicating
- * components shared by sibling mounts (e.g. "/etc/config" and "/etc/secrets"
- * both surface a single "etc" under root). `*idx` is the mount index to resume
- * from and is advanced as entries are consumed; `cookieBit` is OR'd into the
- * stored cursor so callers can multiplex this phase with another (the root fd
- * runs a TarFS phase first). Returns the bytes written into `mbuf`. */
+/* Pack synthetic directory entries for the mounts immediately below `base` ("",
+ * baselen 0, means root), deduplicating components shared by sibling mounts.
+ * `*idx` resumes and advances; `cookieBit` lets callers multiplex phases. */
 static size_t mountChildren(vfs_ctx_t c, const char *base, size_t baselen,
                             uint8_t *mbuf, size_t mspace, uint64_t *idx,
                             uint64_t cookieBit) {
@@ -838,10 +815,9 @@ static size_t mountChildren(vfs_ctx_t c, const char *base, size_t baselen,
             continue;
         if (mused + sizeof(vfs_dirent_t) + namlen > mspace)
             break;
-        /* A leaf component (no further path below) is the mount itself, so it
-         * reports the bound driver's filetype — e.g. a config-map mounted at a
-         * file path lists as a regular file. An intermediate component is a
-         * synthetic parent directory. Fixed namespaces have no driver. */
+        /* A leaf component is the mount itself and reports the bound driver's
+         * filetype; an intermediate component is a synthetic parent directory.
+         * A fixed namespace has no driver. */
         vfs_filetype_t ftype = VFS_FILETYPE_DIRECTORY;
         if (slash == NULL && c->mounts[i].drv != NULL)
             ftype = c->mounts[i].drv->filetype;
@@ -892,13 +868,9 @@ int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
                                  cookie, bufUsed);
         }
 
-        /* Root fd: TarFS phase first, then mount-table phase.
-         *
-         * WASI fd_readdir contract: bufUsed < bufLen means "directory
-         * exhausted". We must therefore emit mount entries in the SAME call
-         * that TarFS returns its final batch, appending to the unused tail of
-         * the buffer. We only hand off to a pure mount phase on subsequent
-         * calls where cookie already has MOUNT_PHASE_BIT set. */
+        /* Root fd: TarFS phase first, then mount-table phase. WASI fd_readdir
+         * reads bufUsed < bufLen as "exhausted", so mount entries go into the
+         * unused tail of the call where TarFS returns its final batch. */
         if (!(*cookie & MOUNT_PHASE_BIT)) {
             int r = TarFs_ReadDir(c->tarfs, c->fds[fd].internal_ctx, buf,
                                   bufLen, cookie, bufUsed);

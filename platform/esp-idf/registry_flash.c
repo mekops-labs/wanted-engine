@@ -57,11 +57,8 @@ static void *flashHelperMain(void *arg) {
 }
 
 /* Lazily starts the helper thread on first use. No esp_pthread_set_cfg call
- * here — that config only ever applies to the next pthread_create on the
- * calling thread, so this picks up esp-idf's plain default (internal-DRAM)
- * stack regardless of what the caller's own thread previously configured for
- * itself (e.g. a wapp worker's own PSRAM cfg, already consumed by its own
- * creation in platform/esp-idf/wapps.c). */
+ * here: that config applies only to the next pthread_create on the calling
+ * thread, so this picks up the plain internal-DRAM default. */
 static bool flashHelperEnsureStarted(void) {
     if (g_flashHelperStarted)
         return true;
@@ -169,11 +166,9 @@ static int scanUsedSlots(bool used[WAPP_IMAGE_MAX_SLOTS]) {
         if (!ext || ext == de->d_name || strcmp(ext, REGISTRY_EXT) != 0)
             continue;
 
-        /* de->d_name's declared width (255) exceeds WAPP_REG_PATH_MAX, but a
+        /* de->d_name's declared width exceeds WAPP_REG_PATH_MAX, but a
          * ".wapp"-suffixed name reaching here is always one of our own short
-         * ones; a would-be-truncated entry is not — skip it defensively
-         * rather than sizing the buffer to the dirent's theoretical worst
-         * case. */
+         * ones. Skip a would-be-truncated entry rather than sizing for it. */
         int n =
             snprintf(path, sizeof(path), "%s/%s", REGISTRY_ROOT, de->d_name);
         if (n < 0 || (size_t)n >= sizeof(path))
@@ -342,10 +337,9 @@ int PlatformRegistryRemove(const reg_entry_t *entry) {
     return 0;
 }
 
-/* Tracks live esp_partition_mmap()s by their returned pointer, so
- * PlatformWappUnload can find the matching handle to unmap. Sized to
- * WAPP_IMAGE_MAX_SLOTS — the same bound on concurrently loaded images as on
- * installed ones. */
+/* Tracks live esp_partition_mmap()s by returned pointer, so PlatformWappUnload
+ * finds the handle to unmap. Sized to WAPP_IMAGE_MAX_SLOTS, which therefore
+ * bounds concurrently loaded images as well as installed ones. */
 static struct {
     bool used;
     const void *ptr;

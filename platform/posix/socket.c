@@ -116,9 +116,7 @@ int PlatformNetFree(struct netCtx *c) {
 
 /* Put a termios into raw mode: no input translation or flow control, no output
  * post-processing, no canonical buffering, echo or signal generation, 8-bit
- * characters with no parity. This is what cfmakeraw() does, written out because
- * that function is a BSD extension some libcs (ESP-IDF's newlib) do not
- * declare; every flag used here is POSIX. */
+ * characters with no parity. Every flag used here is POSIX. */
 static void makeRaw(struct termios *t) {
     t->c_iflag &= ~(tcflag_t)(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR |
                               IGNCR | ICRNL | IXON);
@@ -143,16 +141,9 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
             return -errno;
         }
 
-        /* The engine opens a serial:// socket fresh for every request/response
-         * round (Sheriff's connection-per-fetch model). Put the line into raw
-         * mode so an HTTP byte stream is delivered verbatim (no canonical line
-         * buffering, no CR/LF translation, VMIN=1 so read() blocks for at least
-         * one byte), and flush any bytes left in the RX buffer from a prior
-         * round: without this a partially-drained or late-arriving previous
-         * response desyncs the next fetch, which then reads a
-         * headers-mid-stream fragment with no HTTP status line and fails to
-         * parse. Best-effort — a port that doesn't support termios (a pty in
-         * the host tests) just keeps its default discipline. */
+        /* A serial:// socket is opened fresh for every request/response round,
+         * so put the line into raw mode and flush the RX buffer: a late or
+         * partially-drained previous response would desync the next fetch. */
         struct termios tio;
         if (tcgetattr(fd, &tio) == 0) {
             makeRaw(&tio);

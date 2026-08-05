@@ -42,13 +42,8 @@ void PlatformStorageStats(size_t *free_b, size_t *total_b) {
 const char *PlatformName(void) { return "esp-idf"; }
 
 /* The toolchain stamps the ELF SHA-256 into the image descriptor at build time,
- * thus this reads a digest rather than computing one.
- *
- * The raw descriptor field is hex-encoded here rather than read through
- * esp_app_get_elf_sha256(): that call serves a RAM copy sized by
- * CONFIG_APP_RETRIEVE_LEN_ELF_SHA, which holds 9 of the 64 hex digits by
- * default and truncates to it silently. A prefix compares cleanly and would
- * confirm the wrong image. */
+ * so this reads a digest rather than computing one. The raw field is encoded
+ * here because esp_app_get_elf_sha256() truncates; see the platform guide. */
 int PlatformFirmwareDigest(char *buf, size_t bufLen) {
     static const char hex[] = "0123456789abcdef";
     const esp_app_desc_t *desc = esp_app_get_description();

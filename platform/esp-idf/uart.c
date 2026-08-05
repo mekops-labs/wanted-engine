@@ -10,15 +10,9 @@
 #include <platform.h>
 #include <wanted-autoconf.h>
 
-/* ESP-IDF UART backing over esp_driver_uart.
- *
- * The grant's port= value is the UART number. The platform keys are tx= and
- * rx=, GPIO numbers routed through the GPIO matrix, so a board wires a port to
- * any usable pins.
- *
- * uart_driver_install refuses a port that is already installed, which makes a
- * second grant on one port fail the launch. That is the exclusivity the driver
- * relies on, at no cost. */
+/* ESP-IDF UART backing over esp_driver_uart. The grant's port= is the UART
+ * number; tx= and rx= are GPIO numbers routed through the matrix.
+ * uart_driver_install refuses an installed port, giving exclusivity free. */
 
 #define ESP_UART_MAX_PORTS 2
 

@@ -1,11 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* NuttX built-in application entry point.
- *
- * Mirrors cmd/main.c: load a JSON config from argv[1] when given, otherwise use
- * the compiled-in default, then run the engine via WantedStart. NuttX builds no
- * standalone cmd/ executable; this is registered as the "wanted" built-in app.
- */
+/* NuttX built-in application entry point, mirroring cmd/main.c: load a JSON
+ * config from argv[1] when given, else the compiled-in default, then run
+ * WantedStart. Registered as the "wanted" built-in app. */
 
 #include <errno.h>
 #include <stdbool.h>

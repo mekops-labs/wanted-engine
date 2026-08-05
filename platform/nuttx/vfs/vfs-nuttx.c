@@ -1,13 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* NuttX platform VFS driver. Maps the engine's root filesystem onto native
- * NuttX file operations; on the sim this is hostfs, identical in behaviour to
- * the Linux driver.
- *
- * NuttX exposes the POSIX.1-2008 dirent (d_type) and stat (st_atim) members and
- * fdopendir/seekdir/telldir unconditionally, so it needs no feature-test macro.
- * The host glibc used by the sim scaffolding build hides them behind one, so
- * enable it there only; real NuttX builds define __NuttX__ and skip it. */
+/* NuttX platform VFS driver, mapping the engine's root filesystem onto native
+ * NuttX file operations; on the sim that is hostfs. NuttX exposes the
+ * POSIX.1-2008 dirent and stat members with no feature-test macro. */
 #ifndef __NuttX__
 #define _DEFAULT_SOURCE
 #endif
@@ -171,10 +166,9 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
     if (d->readonly && VFS_O_IS_WRITE(flags))
         return -EROFS;
-    /* `fd` is the preopen directory's host fd and `path` is already relative to
-     * it, so the kernel resolves against `fd` directly. Prepending d->rootPath
-     * would be both redundant and wrong (cwk_path_change_root drops the
-     * separator, yielding e.g. "/dir" + "file" → "/dirfile"). */
+    /* `fd` is the preopen directory's host fd and `path` is already relative
+     * to it, so the kernel resolves against `fd`. Prepending d->rootPath would
+     * be redundant and wrong: the separator is dropped. */
     int fl = convertVfsFlags(flags);
 
     DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, path);
@@ -189,11 +183,9 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
     (void)d;
-    /* The console stream slots borrow the engine's native stdio (fd 0/1/2). The
-     * VFS does not own those — they belong to the process and must survive a
-     * supervisor teardown so the respawned supervisor still has a console.
-     * Files this driver opens always get fd >= 3, so this only spares borrowed
-     * stdio. */
+    /* The console stream slots borrow the process's own stdio (fd 0/1/2),
+     * which must survive a supervisor teardown so the respawned one still has
+     * a console. This driver's own files always get fd >= 3. */
     if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO)
         return 0;
     int ret = close(fd);

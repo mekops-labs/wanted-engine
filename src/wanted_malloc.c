@@ -7,14 +7,9 @@
 #ifndef WANTED_CUSTOM_MALLOC
 static size_t allocated;
 
-/* The engine's general allocator routes through the platform external-RAM heap
- * (PSRAM on ESP32, plain malloc elsewhere). Now that the wapp registry lives on
- * an SD card, no cache-disabling internal-flash read runs while a wapp holds
- * live PSRAM, so all engine bookkeeping (TarFS index, launch config, VFS
- * namespace, wapp structs) is safe in PSRAM — which keeps scarce internal DRAM
- * for the things that *must* be internal: worker stacks and WiFi/net DMA. An
- * allocation that genuinely needs internal RAM should call malloc() directly
- * rather than WantedMalloc(). */
+/* The engine's general allocator routes through the platform external-RAM heap,
+ * so engine bookkeeping stays out of scarce internal DRAM, which is reserved
+ * for worker stacks and DMA. An allocation needing internal RAM uses malloc. */
 void *WantedMalloc(size_t s) {
     void *p = PlatformExtramMalloc(s + sizeof(size_t));
     if (p != NULL) {

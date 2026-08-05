@@ -16,14 +16,9 @@
 
 #include <platform.h>
 
-/* Linux UART backing over termios.
- *
- * The grant's platform key is dev=, a tty path such as "/dev/ttyUSB0". The
- * port= value names the port to the wapp and is not a device path here.
- *
- * Two opens of one tty both succeed on Linux and then silently interleave, so
- * this backing takes TIOCEXCL to make the port exclusive. ESP-IDF gets that
- * from uart_driver_install for nothing. */
+/* Linux UART backing over termios. The grant's platform key is dev=, a tty
+ * path; port= names the port to the wapp. Two opens of one tty both succeed
+ * here and then interleave, so this backing takes TIOCEXCL itself. */
 
 #define LINUX_UART_MAX_PORTS 2
 #define LINUX_UART_PATH_MAX 64

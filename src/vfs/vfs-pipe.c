@@ -13,24 +13,13 @@
 #include <wanted-autoconf.h>
 #include <wanted_malloc.h>
 
-/* Named pipe DevFS sub-driver for /dev/pipe/<name>.
- *
- * Each named pipe is a fixed-size ring buffer. Write creates the pipe if
- * absent; read creates it too (idempotent). A pipe is destroyed when the last
- * reader and last writer close and no data remains buffered. The driver itself
- * is a directory driver registered under the name "pipe" in DevFS; DevFS
- * prefix-matches "/dev/pipe/t" → sub_path "t" and calls PipeDriver_Open("t").
- *
- * The ring buffers live in a process-wide pipe_store_t shared by every wapp's
- * driver instance, so a pipe opened by one wapp is visible to another — this is
- * the inter-wapp IPC channel. Every access to that shared storage is bracketed
- * by store->lock. The per-wapp handle table (in bridge_state_t) is touched only
- * by its own wapp's thread and needs no lock. */
+/* Named pipe DevFS sub-driver for /dev/pipe/<name>: each pipe is a fixed-size
+ * ring in a process-wide store shared by every wapp, which is what makes it an
+ * inter-wapp channel. Every access to that store is guarded by store->lock. */
 
 /* Blocking-read poll cadence. A read with no data sleeps unlocked between
- * rechecks (cancellation-safe, unlike a cond_wait that could be cancelled while
- * holding the lock). The cap bounds the wait so a never-arriving peer becomes a
- * test failure (-EAGAIN) rather than a process hang. */
+ * rechecks, which is cancellation-safe. The cap bounds the wait so a
+ * never-arriving peer becomes -EAGAIN rather than a hang. */
 #define PIPE_POLL_INTERVAL_NS 1000000ULL /* 1 ms */
 #define PIPE_POLL_MAX_ITERS 5000         /* ~5 s safety cap */
 
@@ -262,8 +251,7 @@ int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
             return -EAGAIN;
         /* Sleep UNLOCKED so a worker torn down here cannot strand the shared
          * mutex. A signalled stop interrupts the sleep (EINTR); return it so
-         * the read unwinds to the interpreter and the terminate flag is
-         * honoured, instead of polling out the safety cap. */
+         * the read unwinds and the terminate flag is honoured. */
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
             return -EINTR;
@@ -327,11 +315,9 @@ int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
 /* ── DevFS integration bridge ────────────────────────────────────────────────
  */
 
-/* The pipe driver is registered in DevFS under the name "pipe". DevFS calls the
- * generic vfs_driver_t interface with integer fds, so this thin wrapper maps an
- * fd to a heap pipe_handle_t through a per-driver handle table and forwards to
- * the typed functions above. The shared pipe_store_t is passed through a
- * temporary vfs_driver_t whose ctx is the store. */
+/* The pipe driver is registered in DevFS under "pipe". DevFS calls the generic
+ * vfs_driver_t interface with integer fds, so this wrapper maps an fd to a heap
+ * pipe_handle_t through a per-driver table and forwards to the typed calls. */
 
 #define BRIDGE_MAX_HANDLES 16
 
@@ -436,10 +422,9 @@ static int _bDestroy(vfs_driver_t *drv) {
         return 0;
     bridge_state_t *s = (bridge_state_t *)drv->ctx;
     if (s) {
-        /* Close any handles this wapp left open before freeing its table.
-         * Sharing the store makes this mandatory: an exiting writer that leaks
-         * its `writers` count would keep readers in other wapps from ever
-         * reaching EOF. PipeDriver_Close takes store->lock per handle. */
+        /* Close any handles this wapp left open before freeing its table. An
+         * exiting writer that leaked its `writers` count would keep readers in
+         * other wapps from ever reaching EOF. */
         vfs_driver_t tmp;
         buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
         for (int i = 0; i < BRIDGE_MAX_HANDLES; i++) {
@@ -454,14 +439,9 @@ static int _bDestroy(vfs_driver_t *drv) {
     return 0;
 }
 
-/* ── Pipe console driver ─────────────────────────────────────────────────────
- *
- * Backs a wapp's console slot (in/out/err) with a named pipe in the shared
- * store, so a peer wapp can read the stream live at /dev/pipe/<name>. Bound to
- * one pipe at creation (no Open — VfsRegister installs it directly as the
- * stream fd). out/err are lossy writers: when the ring is full they drop the
- * oldest bytes and report the whole write consumed, so a console with no reader
- * can never wedge the wapp. in is a reader, mirroring PipeDriver_Read. */
+/* Pipe console driver — backs a console slot with a named pipe in the shared
+ * store, so a peer wapp reads the stream live. out/err are lossy writers: a
+ * full ring drops oldest bytes, so an unread console cannot wedge the wapp. */
 
 typedef struct {
     pipe_store_t *store;

@@ -5,10 +5,8 @@
 #include <stdint.h>
 
 /* On-disk record for one registry entry's flash-partition placement. The
- * LittleFS index file "<name>@<version>.wapp" (registry.c) holds exactly this
- * struct — not the TAR bytes, which live in the "wapps" raw partition slot
- * this record names. registry_flash.c is the only writer/reader of the slot
- * field; registry.c reads `size` to answer PlatformRegistryRead. */
+ * LittleFS index file holds exactly this struct; the TAR bytes live in the raw
+ * partition slot it names. registry_flash.c is the only user of `slot`. */
 typedef struct {
     uint32_t magic;
     uint32_t slot;
@@ -17,10 +15,7 @@ typedef struct {
 
 #define WAPP_IMAGE_META_MAGIC 0x57415049u /* "WAPI" */
 
-/* Registry metadata filename buffer: REGISTRY_ROOT + '/' + name + '@' +
- * version + REGISTRY_EXT + NUL, generously bounded above that fixed shape.
- * Deliberately not PATH_MAX (4096 on this newlib/xtensa toolchain) — these are
- * small, fixed-shape filenames, not arbitrary paths, and a PATH_MAX stack
- * buffer alone exceeds the main task's default stack (the "stack overflow in
- * task main" this replaced). */
+/* Registry metadata filename buffer, bounded generously above the fixed shape
+ * REGISTRY_ROOT/name@version.wapp. Deliberately not PATH_MAX: 4096 on this
+ * toolchain, and one such stack buffer alone overflows the main task. */
 #define WAPP_REG_PATH_MAX 96

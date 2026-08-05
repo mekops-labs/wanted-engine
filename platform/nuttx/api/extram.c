@@ -1,19 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* External-RAM (PSRAM) heap for large engine buffers.
- *
- * On the ESP32 a task stack can only live in internal DRAM (it must stay
- * reachable while the cache is disabled for flash ops / ISRs), so internal RAM
- * is the scarce resource and must be reserved for worker stacks. The big engine
- * buffers — the wapp image cache and WAMR's linear memory — are plain data that
- * is happy in PSRAM. This carves a private NuttX `mm` heap out of one large
- * allocation: anything bigger than internal RAM can only be satisfied from the
- * PSRAM region of the common heap, so the pool is guaranteed PSRAM-backed. The
- * engine then allocates image/linear buffers from this heap, leaving internal
- * RAM for stacks.
- *
- * On the host-scaffolding build (no PSRAM) the calls fall back to the ordinary
- * heap. */
+/* External-RAM (PSRAM) heap for large engine buffers, carved as a private NuttX
+ * `mm` heap out of one allocation too big for internal RAM, which guarantees it
+ * is PSRAM-backed. Without PSRAM the calls fall back to the ordinary heap. */
 
 #include <stdlib.h>
 
@@ -70,11 +59,9 @@ static void extram_init(void) {
     g_extram_tried = true;
 
 #if defined(CONFIG_RP23XX_PSRAM_HEAP_SEPARATE)
-    /* PSRAM is its own independent mm_heap_s (see up_extraheaps_init() in
-     * rp23xx_heaps.c) - not merged with SRAM/flash-MTD's heap at all, unlike
-     * CONFIG_RP23XX_PSRAM_HEAP_SINGLE below. No malloc()-probe dance needed:
-     * the whole 8 MB region is already known and already initialized by the
-     * arch layer before this ever runs. */
+    /* PSRAM is its own independent mm_heap_s here, so no malloc()-probe dance
+     * is needed: the whole region is already known and initialized by the arch
+     * layer before this runs. */
     g_extram = rp23xx_psram_heap();
     if (g_extram != NULL) {
         g_extram_lo = PSRAM_LO;
@@ -86,11 +73,9 @@ static void extram_init(void) {
     return;
 #endif
 
-    /* Grab as much PSRAM as possible from the common heap so almost no external
-     * RAM is left there — the common heap then hands out internal RAM only,
-     * which keeps WiFi DMA (esp_malloc_internal rejects PSRAM) and task stacks
-     * on internal RAM without needing a separate DMA iheap. Try from near the
-     * full HEAP2 size down. */
+    /* Grab as much PSRAM as possible from the common heap, so that heap then
+     * hands out internal RAM only and WiFi DMA and task stacks stay there
+     * without a separate DMA iheap. Try from near the full HEAP2 size down. */
     static const size_t try_sizes[] = {
         0x3F0000, 0x3E0000, 0x3C0000, 0x380000, 0x300000, 0x200000, 0x100000,
     };
@@ -121,13 +106,9 @@ static void extram_init(void) {
     DEBUG_TRACE("extram: PSRAM heap @ %p (%u bytes)", pool, (unsigned)got);
 }
 
-/* Forces the PSRAM grab as early in boot as possible. On RP2350 the merged
- * SRAM+PSRAM heap (CONFIG_MM_REGIONS=2, one segregated-fit allocator) starts
- * fragmenting the instant any other subsystem allocates, chipping the one
- * giant PSRAM free node into pieces well under 1 MiB before extram_init()'s
- * multi-MB malloc() probes ever run. Calling this before any other heap
- * activity avoids the fragmentation. Not needed on ESP32, whose PSRAM lives
- * in its own separate heap_caps pool from boot. */
+/* Forces the PSRAM grab as early in boot as possible, before RP2350's merged
+ * SRAM+PSRAM heap fragments its one giant free node. Not needed on ESP32; see
+ * the platform guide. */
 void PlatformExtramEarlyInit(void) { extram_init(); }
 
 void *PlatformExtramMalloc(size_t size) {

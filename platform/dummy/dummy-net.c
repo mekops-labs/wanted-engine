@@ -9,18 +9,9 @@
 
 #include "dummy-fs.h"
 
-/* ── In-memory network mock ──────────────────────────────────────────────────
- * Deterministic stand-in for the host network stack. The VFS socket driver
- * delegates every operation to PlatformNet*, so this mock is what makes that
- * driver unit-testable: PlatformNetOpen hands out pool slots, Recv drains a
- * test-seeded inbound buffer, Send captures bytes for inspection, and the
- * connect/listen/accept results are test-controllable.
- *
- * Buffers are per socket, so a listener and the connections accepted from it
- * carry their own streams and a test can assert they stay apart. The buffer
- * helpers without an explicit context act on the most recently opened socket,
- * which for a single-connection test is the only one there is.
- * ───────────────────────────────────────────────────────────────────────── */
+/* In-memory network mock — a deterministic stand-in for the host stack, which
+ * is what makes the VFS socket driver unit-testable. Buffers are per socket,
+ * so a listener and its connections carry streams a test can keep apart. */
 
 #define DUMMY_NET_MAX_SOCKS 8
 #define DUMMY_NET_BUF 256

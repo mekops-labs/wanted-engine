@@ -19,10 +19,9 @@
 #define ROOT_FD 3
 #define MAX_DRIVERS 10
 
-/* Typed FD table — the only dispatch path. The table sits directly on
- * vfs_ctx_t and is indexed by the WASI fd; types pick which subsystem owns
- * the slot. STREAM fds carry an embedded driver pointer + internal fd so
- * stdio can stay driver-backed. */
+/* Typed FD table — the only dispatch path. It sits on vfs_ctx_t, is indexed by
+ * the WASI fd, and its type picks the owning subsystem. A STREAM fd carries an
+ * embedded driver pointer and internal fd, so stdio stays driver-backed. */
 #define VFS_MAX_FDS 32
 
 /* Maximum length (including NUL) of a path stored on a vfs_fd_t.
@@ -40,19 +39,17 @@ typedef enum {
     VFS_TYPE_NET,
     VFS_TYPE_PROC,
     VFS_TYPE_STREAM,
-    /* Host-backed fd reached via a WASI preopen. All ops delegate to a driver
-     * (typically PlatformFs) using drv_fd as the host kernel fd. OpenAt against
-     * a PLATFORM fd bypasses the mount table — the driver resolves relative
-     * paths against the host directory directly. */
+    /* Host-backed fd reached via a WASI preopen; all ops delegate to a driver
+     * using drv_fd as the host kernel fd. OpenAt against a PLATFORM fd bypasses
+     * the mount table, since the driver resolves relative paths itself. */
     VFS_TYPE_PLATFORM,
     /* A single file/backend driver bound at an arbitrary mount prefix (e.g. a
      * config-map at "/etc/config"). The mount entry owns the driver; ops
      * delegate through it using drv_fd as the driver-internal fd. */
     VFS_TYPE_DRIVER,
-    /* Synthetic intermediate directory: a path that is not itself a mount but
-     * is a strict ancestor of one (e.g. "/etc" when "/etc/config" is mounted).
-     * It has no backing driver; stat reports a directory and readdir enumerates
-     * the immediate child components of the mounts beneath it. */
+    /* Synthetic intermediate directory: a path that is a strict ancestor of a
+     * mount without being one. It has no backing driver; stat reports a
+     * directory and readdir enumerates the components beneath it. */
     VFS_TYPE_MOUNTDIR,
 } vfs_fd_type_t;
 
@@ -78,10 +75,8 @@ typedef struct vfs_entry_t {
  * without pulling vfs-tarfs.h into every translation unit. */
 struct vfs_tarfs_ctx_t;
 
-/* Direct DevFs/NetFs registration tables. Drivers under "/dev/<name>"
- * and "/net/<name>" are registered into these per-ctx tables by
- * WantedInstallDriver. The prefix router resolves opens by exact-matching
- * the suffix against `name`. */
+/* Direct DevFs/NetFs registration tables, filled by WantedInstallDriver. The
+ * prefix router resolves an open by exact-matching a suffix against `name`. */
 #define VFS_DEVFS_MAX_ENTRIES 10
 
 /* ProcFS registration table — flat read-only entries under "/proc". */

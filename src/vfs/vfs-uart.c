@@ -15,38 +15,9 @@
 #include <wanted-autoconf.h>
 #include <wanted_malloc.h>
 
-/* UART device driver: a per-port subtree under /dev/uart.
- *
- *   /dev/uart/
- *     <port>/
- *       data    raw byte stream
- *       baud    decimal rate, e.g. "921600"
- *       format  <databits><parity><stopbits>, e.g. "8N1"
- *
- * The grant names one port and its initial line configuration:
- *
- *   { "name": "uart", "options": "port=1,tx=1,rx=2,baud=57600,format=8E1" }
- *
- * port= is both the backing's port identity and the wapp-visible directory
- * name. Every remaining key is platform addressing and goes to the backing
- * untouched, so a wapp built against /dev/uart/1/data runs unchanged on every
- * target.
- *
- * baud and format are writable at runtime, because one link carries two
- * settings: a bootloader sync and the framed channel that follows it disagree
- * on both rate and parity. A write drains the transmit buffer, then discards
- * the receive buffer — bytes clocked in under the old settings cannot be
- * decoded under the new ones.
- *
- * One wapp holds a port, exclusively. Multiplexing several logical users onto
- * one physical link is a broker wapp's job, not the engine's: the engine would
- * need this peripheral's framing and correlation-ID scheme to do it, and that
- * knowledge is useless to every other UART device.
- *
- * A blocking read on `data` returns on a byte or on -EINTR, with no wall-clock
- * cap. An idle line is a UART's normal state and says nothing about a fault,
- * so there is no elapsed time from which a timeout could be inferred. A wapp
- * that wants a deadline opens with O_NONBLOCK and runs its own clock. */
+/* UART device driver: a per-port subtree under /dev/uart, one port per wapp.
+ * `port=` is both the backing's port identity and the directory name; every
+ * other grant key is platform addressing. See the VFS reference for details. */
 
 static const char id[] = {'U', 'a', 'r', 't'};
 

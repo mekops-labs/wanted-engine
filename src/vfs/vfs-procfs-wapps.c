@@ -14,11 +14,8 @@
 #include <wanted-vfs-api.h>
 
 /* /proc/wapps/<name>/<leaf> — the read-only observability view of every running
- * wapp. A directory entry of the flat ProcFS (vfs-procfs.c) whose children are
- * resolved here from PlatformWappGetState, the same source the control plane
- * renders state from. This surface carries no control verbs: it is reachable
- * without the /dev/wanted mount, so an observer can watch the fleet without the
- * authority to command it. */
+ * wapp, resolved from PlatformWappGetState. It carries no control verbs and is
+ * reachable without /dev/wanted, so an observer needs no command authority. */
 
 /* Longest leaf token we emit; bounds the per-segment parse buffer. */
 #define WAPP_LEAF_MAX 16
@@ -32,11 +29,9 @@ static const char *const LEAVES[] = {"state", "image",  "version",
                                      "id",    "memory", "exit_code"};
 #define N_LEAVES (sizeof(LEAVES) / sizeof(LEAVES[0]))
 
-/* Split a sub-path into its wapp name and leaf. Accepted forms (no leading
- * slash): "" → both empty (the wapps directory); "<name>" or "<name>/" → name
- * set, leaf empty (a wapp directory); "<name>/<leaf>" → both set. Returns
- * -ENAMETOOLONG if a segment overflows, -ENOENT for a path deeper than a leaf.
- */
+/* Split a sub-path into its wapp name and leaf. Accepted forms, with no leading
+ * slash: "" (the wapps directory), "<name>" or "<name>/", "<name>/<leaf>".
+ * -ENAMETOOLONG if a segment overflows, -ENOENT past a leaf. */
 static int parseSub(const char *sub, char *name, char *leaf) {
     name[0] = '\0';
     leaf[0] = '\0';

@@ -1,12 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* Per-wapp log ring buffers — the backing store for the "log" console driver.
- *
- * Structurally a sibling of the named-pipe store (vfs-pipe.c): a process-wide
- * set of fixed ring buffers guarded by one mutex. Two differences suit a log
- * rather than a pipe: a full ring overwrites its oldest bytes (keep the most
- * recent output) instead of blocking, and reads are non-destructive so the
- * supervisor can poll a wapp's output repeatedly. Keyed by wapp name. */
+ * A full ring overwrites its oldest bytes rather than blocking, and reads are
+ * non-destructive so the supervisor can poll a wapp's output. Keyed by name. */
 
 #include <stdint.h>
 #include <string.h>
@@ -44,11 +40,9 @@ log_store_t *LogStore(void) {
     return store;
 }
 
-/* Caller holds the lock. Find the slot for `name`, allocating one on first use.
- * When the table is full, evict the least-recently-used wapp rather than drop
- * the new output: the store keeps only the most recent activity (it already
- * overwrites the oldest bytes within a slot), and the supervisor reads a wapp's
- * log promptly after launching it, so the live wapps are always retained. */
+/* Caller holds the lock. Find the slot for `name`, allocating on first use.
+ * A full table evicts the least-recently-used wapp rather than dropping new
+ * output, since the supervisor reads a wapp's log promptly after launch. */
 static log_slot_t *slot_for(log_store_t *s, const char *name) {
     int free_idx = -1, lru_idx = 0;
     for (int i = 0; i < CONFIG_WANTED_LOG_SLOTS; i++) {

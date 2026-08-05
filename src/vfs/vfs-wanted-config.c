@@ -7,12 +7,9 @@
 #include <vfs-drivers.h>
 #include <vfs.h>
 
-/* ── WantedConfigDriver ─────────────────────────────────────────────────────
- *
- * Returns a meta-config that tells the supervisor where to find the wapp
- * list.  The supervisor reads this file first, extracts config_file, then
- * opens that path to get the actual wapp array.
- */
+/* WantedConfigDriver — returns a meta-config naming where the wapp list lives.
+ * The supervisor reads this first, extracts config_file, then opens that path
+ * for the actual wapp array. */
 
 #define CONFIG_ID {'W', 'c', 'f', 'g'}
 

@@ -9,13 +9,9 @@
 
 #include <platform.h>
 
-/* ESP-IDF GPIO backing over esp_driver_gpio.
- *
- * The grant's address field is a decimal GPIO number. Direction, pull, and
- * drive come from the grant and are applied once, at open. An output is
- * configured as GPIO_MODE_INPUT_OUTPUT so a read of `value` returns the level
- * on the pad rather than the last value written — an open-drain output held
- * low by an external device reads 0, which is the useful answer. */
+/* ESP-IDF GPIO backing over esp_driver_gpio; the grant's address field is a
+ * decimal GPIO number. An output is GPIO_MODE_INPUT_OUTPUT, so a `value` read
+ * returns the level on the pad rather than the last value written. */
 
 #define ESP_GPIO_MAX_LINES 8
 

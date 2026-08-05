@@ -31,17 +31,9 @@ static const char id[] = {'W', 'i', 'f', 'i'};
 
 struct wifi_fd_t {
     bool used;
-    /* A status read is a one-shot-per-state latch, not one-shot-per-fd: it
-     * re-arms whenever the connection state changes, not only on a fresh
-     * write. A poll loop that holds this fd open across an async connect
-     * (write "connect", then repeated reads with no intervening write —
-     * exactly what wapps/wifi-connect does) must still observe the
-     * disconnected->connected transition; a plain one-shot-per-write latch
-     * (matching the NuttX platform, where connect blocks synchronously so
-     * the very next read already reflects the outcome) went permanently
-     * silent after the first poll here, confirmed on-target: the radio
-     * associated and got a DHCP lease, but wifi-connect's own retry loop
-     * never saw it and timed out. */
+    /* A status read latches per connection state, re-arming whenever that
+     * state changes. A poll loop holding this fd across an async connect must
+     * still see the disconnected->connected transition; see the docs. */
     bool status_done;
     bool last_connected;
     char *scan; /* heap scan-result text, drained by reads */
@@ -87,11 +79,9 @@ static void ipEventHandler(void *arg, esp_event_base_t base, int32_t evId,
     }
 }
 
-/* One-time WiFi station bring-up: NVS (esp_wifi_init needs it for
- * calibration data), the default event loop, the STA netif, the driver, and
- * the event handlers. Idempotent (guarded by g_wifiStarted) so every wapp
- * granted the wifi driver finds the radio ready — matching the NuttX
- * platform's ifup-on-init contract. */
+/* One-time WiFi station bring-up: NVS (needed for calibration data), the
+ * default event loop, the STA netif, the driver and the event handlers.
+ * Idempotent, so every wapp granted the driver finds the radio ready. */
 static bool wifiEnsureStarted(void) {
     if (g_wifiStarted)
         return true;
@@ -197,10 +187,9 @@ static char *scanCollect(void) {
     return out;
 }
 
-/* Configure the target AP and kick off an asynchronous association; the
- * WIFI_EVENT/IP_EVENT handlers above update the module-global connection
- * state as the radio actually associates and leases an address. An empty
- * pass configures an open network. */
+/* Configure the target AP and start an asynchronous association; the event
+ * handlers above update the connection state as the radio associates and
+ * leases an address. An empty pass configures an open network. */
 static int wifiConnect(const char *ssid, const char *pass) {
     wifi_config_t conf;
     memset(&conf, 0, sizeof(conf));
@@ -208,10 +197,9 @@ static int wifiConnect(const char *ssid, const char *pass) {
     strncpy((char *)conf.sta.password, pass, sizeof(conf.sta.password) - 1);
     conf.sta.threshold.authmode =
         (pass[0] == '\0') ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
-    /* WPA2/WPA3-transition APs commonly expect a PMF-capable client even
-     * when not requiring it; leaving pmf_cfg zeroed (not capable) made a
-     * real AP reject the very first 802.11 open-auth frame (AUTH_EXPIRE,
-     * confirmed on-target) before the WPA2 handshake ever started. */
+    /* A WPA2/WPA3-transition AP commonly expects a PMF-capable client even
+     * when it does not require one; a zeroed pmf_cfg gets the first open-auth
+     * frame rejected with AUTH_EXPIRE. */
     conf.sta.pmf_cfg.capable = true;
     conf.sta.pmf_cfg.required = false;
 

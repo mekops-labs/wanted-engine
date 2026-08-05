@@ -12,11 +12,9 @@
 #include <vfs.h>
 #include <wanted_malloc.h>
 
-/* DevFs — direct table-backed lookup.
- *
- * The handle owns no driver state; it just remembers the (drv, drv_fd) pair
- * so subsequent ops can dispatch without rewalking the table. Driver lifetime
- * is owned by DevFs itself: DevFs_Destroy walks the table on VfsDestroy. */
+/* DevFs — direct table-backed lookup. The handle owns no driver state; it just
+ * remembers the (drv, drv_fd) pair so later ops dispatch without rewalking.
+ * DevFs owns driver lifetime and walks the table on VfsDestroy. */
 
 typedef struct devfs_handle_t {
     const vfs_driver_t *drv;

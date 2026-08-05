@@ -6,12 +6,9 @@
 
 #include <platform.h>
 
-/* NuttX has no UART backing yet. The port would be a /dev/ttySN character
- * device driven through termios, the same shape as the Linux backing, but the
- * consumers that set the UART requirements run on ESP-IDF and Linux.
- *
- * Returning -ENOSYS fails a launch that grants `uart` on this target, so a
- * wapp never reaches a port the board did not configure. */
+/* NuttX has no UART backing. The port would be a /dev/ttySN character device
+ * driven through termios, the same shape as the Linux backing. Returning
+ * -ENOSYS fails a launch that grants `uart` on this target. */
 
 int PlatformUartOpen(const plat_uart_cfg_t *cfg, platform_uart_t **out) {
     (void)cfg;

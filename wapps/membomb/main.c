@@ -1,15 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* membomb — allocate until allocation fails.
- *
- * The wapp's linear memory is capped (see Makefile --max-memory), so malloc
- * cannot grow the heap past the sandbox bound: it eventually returns NULL
- * inside this instance instead of exhausting host RAM. Each chunk is linked
- * into an escaping global list so the allocations stay live (the optimizer
- * cannot delete the loop as dead) and the loop terminates the moment malloc
- * returns NULL. The selftest supervisor asserts the bound is per-wapp — the
- * wapp ends in a dead state while the supervisor and host survive (no OOM, no
- * host crash). */
+/* membomb — allocates until allocation fails. Linear memory is capped, so
+ * malloc returns NULL inside this instance rather than exhausting host RAM.
+ * Each chunk escapes into a global list, so the loop is not optimized away. */
 
 #include <stdlib.h>
 #include <string.h>

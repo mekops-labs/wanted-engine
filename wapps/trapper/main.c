@@ -1,13 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* trapper — a deliberately misbehaving test wapp.
- *
- * Prints a marker (captured by the engine's log console, not the platform
- * console), then reads far outside its linear memory (built with a 64 KB max)
- * to force a WASM out-of-bounds trap. The engine must catch the trap, end this
- * wapp in a dead state, and keep the supervisor and other wapps running.
- * Launched by the selftest supervisor, which asserts that containment and taps
- * the captured marker via the control plane. */
+/* trapper — prints a marker, then reads far outside its linear memory to force
+ * a WASM out-of-bounds trap. The engine must catch it, end this wapp in a dead
+ * state, and keep the supervisor and other wapps running. */
 
 #include <stdint.h>
 #include <string.h>

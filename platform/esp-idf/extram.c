@@ -1,15 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF PlatformExtram* backend: routes the engine's general allocator
- * (WantedMalloc, wanted_malloc.c) into PSRAM via heap_caps_malloc. Safe under
- * concurrent flash writes and never ISR-touched. A caller needing internal
- * RAM (hot-path vfs_ctx_t/wasi_ctx_t) calls malloc() directly instead, per
- * wanted_malloc.c's convention.
- *
- * Allocations are explicitly 8-byte aligned: plain heap_caps_malloc on the
- * classic ESP32's PSRAM heap does not guarantee alignment beyond its block
- * granularity (not a multiple of 8), which fails WAMR's GC allocator (it
- * requires 8-byte alignment on its heap-struct buffer). */
+/* ESP-IDF PlatformExtram* backend, routing the engine's general allocator into
+ * PSRAM through heap_caps_malloc. Allocations are explicitly 8-byte aligned,
+ * which WAMR's GC allocator requires; see the platform guide. */
 
 #include <stddef.h>
 #include <string.h>

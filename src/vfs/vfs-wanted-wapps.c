@@ -15,29 +15,15 @@
 #include <wanted-vfs-api.h>
 #include <wanted_malloc.h>
 
-/* ── WantedWappsDriver ───────────────────────────────────────────────────────
- *
- * The per-wapp control namespace mounted at /dev/wanted/wapps. The path
- * carries wapp identity, reads are composable plain text, and only the start
- * config is JSON.
- *
- *   wapps/                 ReadDir → one entry per known (running) wapp
- *     <name>/              synthetic dir; ReadDir → the control files below
- *       ctl       (w)      line verb: "start [<image>]" | "stop"
- *       state     (r)      lifecycle token, e.g. "created" | "running"
- *       config    (w)      JSON start config
- *
- * Every open allocates its own slot in the fd table below; read EOF is latched
- * per-fd, so concurrent readers (the supervisor reopens on every tick) keep
- * independent cursors.
- * ───────────────────────────────────────────────────────────────────────── */
+/* WantedWappsDriver — the per-wapp control namespace at /dev/wanted/wapps. The
+ * path carries wapp identity; reads are plain text and only the start config is
+ * JSON. Every open gets its own fd slot, so readers keep separate cursors. */
 
 #define ID {'W', 'a', 'p', 'p'}
 
-/* Longest control verb / read token we emit; bounds the write line buffer so
- * a write() never drives an unbounded (VLA) stack allocation. The widest root
- * verbs are "create <name>" / "delete <name>" (name ≤ WAPP_MAX_NAME_LEN), which
- * fit comfortably. */
+/* Longest control verb / read token emitted; bounds the write line buffer so a
+ * write() never drives an unbounded stack allocation. The widest root verbs are
+ * "create <name>" and "delete <name>". */
 #define WAPPS_LINE_MAX 32
 
 typedef enum {
@@ -59,11 +45,8 @@ typedef struct {
 } wapps_fd_t;
 
 /* Config written to wapps/<name>/config is buffered here until the matching
- * "start" verb is written to wapps/<name>/ctl. Bounded by
- * CONFIG_WANTED_MAX_WAPPS — the same ceiling the runtime imposes on live wapps.
- * `configured` distinguishes a bare `create` reservation (slot exists, no
- * config yet → state `created`) from one whose config has been written (→ state
- * `not_started`, ready to start). */
+ * "start". Bounded by CONFIG_WANTED_MAX_WAPPS. `configured` separates a bare
+ * `create` reservation from one whose config has been written. */
 typedef struct {
     bool valid;
     bool configured;
@@ -73,11 +56,9 @@ typedef struct {
 
 static struct vfs_driver_ctx_t {
     wapps_fd_t fds[WAPPS_MAX_OPEN];
-    /* CONFIG_WANTED_MAX_WAPPS launch-config slots, lazily heap-allocated on
-     * first `create`. wapp_config_t is large (driver/mount/socket slot tables),
-     * so this is kept off static .bss to spare internal RAM on constrained
-     * targets; the engine heap may extend into PSRAM. NULL means no slot has
-     * been reserved yet. */
+    /* CONFIG_WANTED_MAX_WAPPS launch-config slots, heap-allocated on first
+     * `create`. wapp_config_t is large, so this stays off static .bss to spare
+     * internal RAM; the engine heap may extend into PSRAM. */
     wapps_pending_t *pending;
 } ctx;
 
@@ -217,22 +198,17 @@ static bool lookupState(const char *name, wapp_state_t *out) {
 }
 
 /* Create-and-launch a wapp by name, applying a buffered config if present.
- * Instance identity comes from `name` (supplied by the path). The image the
- * instance runs is resolved in priority order: an explicit `image` argument
- * (from `start <image>`), else the buffered config's `image` field, else the
- * instance name. The launch config — console, argv[1..] (`args`), the
- * environment (`envs`) — is whatever was buffered at wapps/<name>/config. */
+ * Instance identity comes from `name`; the image is the explicit `start`
+ * argument, else the buffered config's `image`, else the instance name. */
 static int startWapp(struct vfs_driver_ctx_t *d, const char *name,
                      const char *image) {
     int ret;
     reg_entry_t e;
     bool haveImage = (image != NULL && image[0] != '\0');
 
-    /* A wapp reserved via `create` must name an image before it can start —
-     * either by a prior config write or by an explicit `start <image>`. A bare
-     * `create` followed by a bare `start` (neither) cannot transition straight
-     * to starting and is rejected. A name with no reservation still starts with
-     * defaults, as before. */
+    /* A wapp reserved via `create` must name an image before it can start,
+     * through a config write or an explicit `start <image>`; a bare `create`
+     * then a bare `start` is rejected. An unreserved name still runs. */
     wapps_pending_t *pend = pending_find(d, name);
     if (pend != NULL && !pend->configured && !haveImage)
         return -EINVAL;
@@ -245,30 +221,23 @@ static int startWapp(struct vfs_driver_ctx_t *d, const char *name,
     strncpy(wapp->name, name, WAPP_MAX_NAME_LEN - 1);
 
     /* The launch attempt owns the reservation: copy its config onto the wapp
-     * and clear the slot now, so a failed load/start frees the pending pool and
-     * a later start never silently reuses stale config. (A bare `created` slot
-     * is rejected by the gate above and is left intact for a later
-     * config+start.) */
+     * and clear the slot now, so a failed load frees the pending pool and a
+     * later start never silently reuses stale config. */
     if (pend != NULL) {
         wapp->cfg = pend->cfg;
         memset(pend, 0, sizeof(*pend));
     }
 
-    /* Instance identity (wapp->name) is the path-supplied `name`. The image it
-     * runs is the explicit `start <image>` argument, else the config's `image`,
-     * else the instance name — so an unconfigured single-instance wapp runs its
-     * like-named image, while many instances can share one image. The loader
-     * resolves the image's registry entry and stamps image identity (image +
-     * version) onto the wapp; it never touches wapp->name. */
+    /* Instance identity (wapp->name) is the path-supplied `name`; the loader
+     * resolves the image's registry entry and stamps image identity onto the
+     * wapp, never touching wapp->name. */
     const char *img = image;
     if (!haveImage)
         img = wapp->cfg.image[0] ? wapp->cfg.image : name;
 
-    /* An image reference is "<name>[:<tag>]": a bare name resolves to the first
-     * matching entry (empty version), a "<name>:<tag>" pins the version
-     * exactly. The ':' is the wapp-visible ref separator; the loader maps the
-     * resolved name/version onto the on-disk filename
-     * (REGISTRY_VERSION_SEPARATOR). */
+    /* An image reference is "<name>[:<tag>]": a bare name takes the first
+     * match, a tag pins the version. ':' is the wapp-visible separator; the
+     * loader maps the pair onto REGISTRY_VERSION_SEPARATOR on disk. */
     memset(&e, 0, sizeof(e));
     const char *colon = strchr(img, ':');
     if (colon != NULL) {
@@ -294,10 +263,8 @@ static int startWapp(struct vfs_driver_ctx_t *d, const char *name,
         goto UNLOAD;
 
     /* Ownership of `wapp` and its mapped image transfers to the platform
-     * thread slot; the worker thread dereferences it for the wapp's whole
-     * lifetime. The slot releases it when later reused (see PlatformWappStart).
-     * Freeing here would be a use-after-free against the just-spawned thread.
-     */
+     * thread slot, which releases it when reused. Freeing here would be a
+     * use-after-free against the just-spawned thread. */
     return ret;
 
 UNLOAD:
@@ -333,11 +300,9 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     if (ret < 0)
         return ret;
 
-    /* A wapp's directory and every node under it exist only once the wapp has
-     * been brought into being by `create` (or is already live). Opening any of
-     * them for an unknown name returns ENOENT rather than synthesising a
-     * default — a name cannot be probed by guessing its path, and config/start
-     * are reachable only from a directory that `create` actually made. */
+    /* A wapp's directory and its nodes exist only once `create` has brought
+     * the wapp into being. An unknown name returns ENOENT, so a name cannot be
+     * probed by guessing its path. */
     if (node != NODE_ROOT && !wappKnown(d, name))
         return -ENOENT;
 
@@ -389,10 +354,9 @@ static size_t renderRead(wapp_node_t node, const char *name, char *out,
 
     switch (node) {
     case NODE_STATE: {
-        /* For a wapp the platform doesn't run yet, the reservation
-         * distinguishes a bare `create` (slot exists, no config → created) from
-         * one whose config has been written (→ not_started, ready to start). An
-         * unknown name (no reservation) is the not_started default. */
+        /* For a wapp the platform does not run yet, the reservation separates
+         * a bare `create` (no config → created) from one whose config has been
+         * written (→ not_started). An unknown name is that same default. */
         status_t s;
         if (live) {
             s = st.status;
@@ -588,32 +552,9 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     return -ENOTDIR;
 }
 
-/* ── WantedCtlDriver ─────────────────────────────────────────────────────────
- *
- * The root /dev/wanted/ctl node. Write-only engine command channel:
- *
- *   write /dev/wanted/ctl create <name>   register a per-wapp namespace
- *   write /dev/wanted/ctl delete <name>   release a wapp slot (→ -ENOENT again)
- *   write /dev/wanted/ctl poweroff        stop the engine (no respawn)
- *   write /dev/wanted/ctl reboot          restart the engine / reset the board
- *   write /dev/wanted/ctl reload-supervisor
- *                                         adopt a newly staged supervisor
- *                                         image at the next respawn
- *   write /dev/wanted/ctl rollback-supervisor
- *                                         pin the compiled-in supervisor image
- *                                         and reload it
- *
- * (wsh has no shell redirection; its `write` builtin joins its trailing tokens
- * with single spaces and writes them to the node in one write().)
- *
- * The root ctl does not launch wapps — a wapp is started through its own
- * wapps/<name>/ctl after `create` and an optional config write. `create`
- * reserves the namespace and `delete` frees it (identity travels in the verb
- * argument, not a JSON payload); poweroff/reboot take no argument. This node is
- * the supervisor's
- * capability: it is reachable only by a wapp whose launch grants the
- * /dev/wanted driver, so an ordinary wapp cannot issue these commands.
- * ───────────────────────────────────────────────────────────────────────── */
+/* WantedCtlDriver — the root /dev/wanted/ctl node, a write-only command channel
+ * reachable only by a wapp granted the /dev/wanted driver. It does not launch
+ * wapps; that is wapps/<name>/ctl. Verbs: see the control-plane doc. */
 
 #define CTL_ID {'W', 'c', 't', 'l'}
 
@@ -672,8 +613,7 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
 
     /* System control: no argument. The engine respawns a vanished supervisor
      * forever, so these are the only paths that end the run loop. Match the
-     * whole token (sizeof includes the NUL) so the bounded line buffer is never
-     * read past its terminator. */
+     * whole token so the bounded line buffer is never read past its NUL. */
     if (strncmp(line, "poweroff", sizeof("poweroff")) == 0) {
         PlatformRequestShutdown();
         return (int)nbyte;
@@ -689,11 +629,9 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
         return (int)nbyte;
     }
 
-    /* Pin the compiled-in supervisor image and arm a reload. A supervisor that
-     * finds it cannot support this engine writes this, then exits: the fallback
-     * is deterministic, rather than waiting on the respawn loop's failure
-     * ceiling. -EALREADY when the compiled-in image is what is running, thus
-     * there is nothing to fall back to. */
+    /* Pin the compiled-in supervisor image and arm a reload, so a supervisor
+     * that cannot support this engine falls back deterministically instead of
+     * waiting on the respawn loop's ceiling. -EALREADY when it already runs. */
     if (strncmp(line, "rollback-supervisor", sizeof("rollback-supervisor")) ==
         0) {
         if (WantedSupervisorRollback() != 0)
@@ -702,9 +640,8 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
     }
 
     /* "create <name>": register the per-wapp namespace ahead of a config write
-     * and start, without launching anything. Reserves a pending slot (zeroed
-     * config) so wapps/<name>/ enumerates and a later config write targets it.
-     */
+     * and start, without launching. Reserves a zeroed slot so wapps/<name>/
+     * enumerates and a later config write targets it. */
     static const char CREATE_VERB[] = "create ";
     size_t clen = sizeof(CREATE_VERB) - 1;
     if (strncmp(line, CREATE_VERB, clen) == 0) {
@@ -727,10 +664,8 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
     }
 
     /* "delete <name>": release a wapp slot so the name leaves wapps/ and its
-     * nodes return -ENOENT again. Frees a `create` reservation and/or a
-     * terminal (exited/failure) platform slot. A running wapp is rejected with
-     * -EBUSY — it must be stopped first (no implicit stop-then-delete). An
-     * unknown name (no reservation, no platform slot) is -ENOENT. */
+     * nodes return -ENOENT again. Frees a reservation and/or a terminal
+     * platform slot; a running wapp is -EBUSY, an unknown name -ENOENT. */
     static const char DELETE_VERB[] = "delete ";
     size_t dlen = sizeof(DELETE_VERB) - 1;
     if (strncmp(line, DELETE_VERB, dlen) == 0) {
@@ -746,10 +681,9 @@ static int _ctl_Write(vfs_driver_ctx_t d, int fd, const void *buf,
         if (!live && p == NULL)
             return -ENOENT;
 
-        /* Release the platform slot first: a running wapp returns -EBUSY, which
-         * leaves the reservation (if any) intact so the caller can retry after
-         * a stop rather than losing buffered config to a half-applied delete.
-         */
+        /* Release the platform slot first: a running wapp returns -EBUSY and
+         * leaves the reservation intact, so a retry after a stop does not lose
+         * buffered config to a half-applied delete. */
         if (live) {
             int ret = PlatformWappRelease(dname);
             if (ret < 0)

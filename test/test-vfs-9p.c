@@ -7,18 +7,9 @@
 #include <vfs-drivers.h>
 #include <vfs.h>
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * vfs_9p_driver — no-socket paths of the 9P driver (vfs-9p.c).
- *
- * The 9P driver is a protocol client over a real TCP/UDP socket: Open/Read/
- * Write/Stat/ReadDir/Unlink each do a round trip against a live peer, so they
- * cannot be unit-tested without a loopback 9P server. This group covers only
- * the deterministic paths that return before any socket I/O: the fd-range
- * guards, the pure _Seek math, the _OpenAt reject, driver init, and teardown.
- * The MAX_OPENED_FILES cap is 10, so fd 11 / -1 are out of range; fd 10 is NOT
- * (it is not > 10) and would reach the socket, so it is avoided here.
- * ═══════════════════════════════════════════════════════════════════════════
- */
+/* vfs_9p_driver — the paths of the 9P driver that return before any socket I/O:
+ * fd-range guards, the pure _Seek math, the _OpenAt reject, init, teardown.
+ * fd 10 is inside MAX_OPENED_FILES and would reach the socket, so it is out. */
 
 TEST_GROUP(vfs_9p_driver);
 

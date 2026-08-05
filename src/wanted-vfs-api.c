@@ -18,10 +18,9 @@
 
 #include <tiny-json.h>
 
-/* The engine's parsed bootstrap config. Heap-allocated on first parse rather
- * than living in static .bss: wantedConfig_t embeds a wapp_config_t (the
- * supervisor's launch config, with its driver/mount/socket slot tables), which
- * is large on constrained targets; the engine heap may extend into PSRAM. */
+/* The engine's parsed bootstrap config, heap-allocated on first parse rather
+ * than living in static .bss: it embeds a wapp_config_t, which is large on
+ * constrained targets, and the engine heap may extend into PSRAM. */
 static wantedConfig_t *currentConfig = NULL;
 
 /* Bounded copy of a (possibly NULL) JSON string value into a fixed-size config
@@ -30,11 +29,9 @@ static void copyField(char *dst, size_t dstsz, const char *src) {
     snprintf(dst, dstsz, "%s", src ? src : "");
 }
 
-/* Engine clock-quality byte. Defaults to UNCALIBRATED so wapps that consult
- * it before any platform timing subsystem has come up get the safe answer.
- * The byte is single-aligned so reads/writes are naturally atomic on every
- * relevant target; `volatile` prevents the compiler from caching a stale
- * value across the boundary between updater and reader threads. */
+/* Engine clock-quality byte, defaulting to UNCALIBRATED so a wapp reading it
+ * before any timing subsystem is up gets the safe answer. Single-aligned, so
+ * access is naturally atomic; `volatile` stops a stale value being cached. */
 static volatile uint8_t clockQuality = WANTED_CLOCK_UNCALIBRATED;
 
 void WantedSetClockQuality(uint8_t q) {
@@ -197,11 +194,9 @@ int WantedWasmMemoryProfile(const uint8_t *buf, size_t len, uint32_t *init,
     const uint8_t *p = buf + sizeof(MAGIC);
     const uint8_t *end = buf + len;
 
-    /* Sections are emitted in ascending id order; the memory section is id 5.
-     * Walk section headers (id byte + uLEB length), entering id 5 and skipping
-     * the rest. A section whose declared length runs past the buffer means the
-     * caller's window stopped short of the memory section — report "absent"
-     * (ENOENT) so the descriptor omits the fields rather than guessing. */
+    /* Sections are emitted in ascending id order and the memory section is id
+     * 5. A declared length running past the buffer means the caller's window
+     * stopped short of it, so report ENOENT rather than guessing. */
     while (p < end) {
         uint8_t id = *p++;
         uint32_t secLen;
@@ -323,13 +318,9 @@ static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
     return VfsPlatformFsInit(wapp, options, false);
 }
 
-/* Core driver table — the platform-agnostic drivers, identical on every target
- * `gpio` is core because its tree, grant grammar, and name-to-line mapping
- * are identical everywhere — only the line itself is per-platform, behind
- * PlatformGpio*. Drivers a target may lack outright (wifi, ota) still come
- * from PlatformDriverTable() instead. Core names
- * are reserved: this table is searched first, so no other table can shadow a
- * security-relevant driver such as `wanted`. */
+/* Core driver table — the drivers whose tree and grammar are identical on every
+ * target, with only the line, port or slot behind them per-platform. Searched
+ * first, so no other table can shadow a security-relevant name. */
 static const vfs_driver_table_t core_driver_table[] = {
     {"null", VfsNullInit},
     {"log", VfsLogInit},
@@ -367,10 +358,9 @@ static const vfs_driver_table_t core_driver_table[] = {
     {NULL, NULL},
 };
 
-/* The tables a driver name resolves against, in search order: core names are
- * reserved, the platform contributes what the target implements, and an
- * out-of-tree tree may append its own. Lowest priority last, so neither a
- * platform nor an extra table can shadow a core driver. */
+/* The tables a driver name resolves against, in search order: core, then the
+ * platform's, then an out-of-tree tree's. Lowest priority last, so neither can
+ * shadow a core driver. */
 static const vfs_driver_table_t *driverTables(size_t i) {
     switch (i) {
     case 0:
@@ -423,14 +413,9 @@ int WantedListDrivers(char *buf, size_t bufLen) {
     return w;
 }
 
-/* Route a resolved driver to its mount target:
- *   /dev/<x>  → DevFs registration table   (device singletons)
- *   /net/<x>  → NetFs registration table   (sockets)
- *   <stdio>   → STREAM slot in the typed-FD table (console)
- *   /<abs>    → general single-driver mount (file/backend drivers)
- * A malformed path (relative, or an unknown <stdio> token) is rejected and the
- * driver destroyed: a misconfigured launch config fails loudly at install time
- * rather than silently at first open. */
+/* Route a resolved driver to its mount target: /dev/<x> to DevFs, /net/<x> to
+ * NetFs, a stdio token to a STREAM slot, any other absolute path to a general
+ * mount. A malformed path destroys the driver and fails the launch loudly. */
 static int installTo(struct vfs_ctx_t *c, const char *path,
                      const vfs_driver_t *drv) {
     if (strncmp(path, "/dev/", 5) == 0)
@@ -474,10 +459,9 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
     return installTo(c, path, drv);
 }
 
-/* Parse one launch-config resource section ("drivers"/"mounts"/"sockets") into
- * `arr`. Each entry reads "name", "path", and the section's options field
- * (`optKey`, "options" or "address"). A field a section forbids is still read
- * here so install-time validation can reject it loudly. */
+/* Parse one launch-config resource section into `arr`. Each entry reads "name",
+ * "path", and the section's options field (`optKey`). A field a section forbids
+ * is still read here, so install-time validation can reject it loudly. */
 static void parseResourceArray(json_t const *params, const char *section,
                                const char *optKey, wapp_driver_t *arr,
                                size_t *cnt) {
@@ -501,12 +485,9 @@ static void parseResourceArray(json_t const *params, const char *section,
     *cnt = i;
 }
 
-/* Append ";<key>=<value>" to a socket entry's address. The socket driver reads
- * its remaining launch-config fields — role, backlog, max_conns — from there:
- * a driver is handed one option string, and this keeps the JSON shape the
- * config actually declares from leaking a field into every other section's
- * entry. A value that does not fit is left off, and the driver rejects the
- * truncated entry rather than serving a half-configured socket. */
+/* Append ";<key>=<value>" to a socket entry's address, which is where the
+ * socket driver reads role, backlog and max_conns from. A value that does not
+ * fit is left off, and the driver rejects the truncated entry. */
 static void appendSocketParam(char *opts, size_t cap, const char *key,
                               const char *val) {
     size_t used = strlen(opts);
@@ -542,18 +523,13 @@ static void parseSocketRoles(json_t const *params, wapp_driver_t *arr,
     }
 }
 
-/* Parse the launch-config body — console redirections plus the drivers/mounts/
- * sockets resource sections — out of `params`. Shared by the {action,params}
- * bootstrap envelope (WantedParseCtrlAction) and the per-wapp config node
- * (WantedParseWappConfigJson), where the object passed in *is* the config.
- * Wapp identity is not read here — for the config node it travels in the
- * path. */
+/* Parse the launch-config body — console redirections plus the resource
+ * sections — out of `params`. Shared by the bootstrap envelope and the per-wapp
+ * config node. Wapp identity is not read here; it travels in the path. */
 static void parseWappParams(json_t const *params, wapp_config_t *cfg) {
-    /* image: the registry image this instance runs, as a reference
-     * "<name>[:<tag>]". Optional — when omitted the launch path defaults it to
-     * the instance name, so a single-instance wapp needs no config change. A
-     * bare name resolves to the first match; a pinned tag resolves exactly.
-     * Lets N instances share one image. */
+    /* image: the registry image this instance runs, as "<name>[:<tag>]".
+     * Optional — the launch path defaults it to the instance name. A bare name
+     * takes the first match, a pinned tag resolves exactly. */
     const char *image = json_getPropertyValue(params, "image");
     if (image != NULL) {
         strncpy(cfg->image, image, WAPP_MAX_IMAGE_REF_LEN - 1);
@@ -588,12 +564,8 @@ static void parseWappParams(json_t const *params, wapp_config_t *cfg) {
     }
 
     /* The launch config addresses resources through three purpose-specific
-     * sections, each parsed into its own array:
-     *   - drivers[] — device singletons (`name`), mounted at "/dev/<name>".
-     *   - mounts[]  — file/backend drivers bound at an arbitrary `path`.
-     *   - sockets[] — sockets at "/net/<name>"; transport in "address".
-     * Per-section validation (forbidden fields, required path) happens at
-     * install time; here we only read the fields each section may carry. */
+     * sections, each parsed into its own array. Per-section validation happens
+     * at install time; here only the fields a section may carry are read. */
     parseResourceArray(params, "drivers", "options", cfg->drivers,
                        &cfg->driversCnt);
     parseResourceArray(params, "mounts", "options", cfg->mounts,

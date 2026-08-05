@@ -43,16 +43,12 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed);
 static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 
-/*
- * Negotiated 9P transport message size (the Tversion msize). Bounds the read
- * and write buffers; the size[4] length prefix is counted within it.
- */
+/* Negotiated 9P transport message size (the Tversion msize). Bounds the read
+ * and write buffers; the size[4] length prefix counts within it. */
 #define MSIZE 8192u
 
-/*
- * Bytes of an Rread message body that precede the payload: type[1] + tag[2] +
- * count[4]. The read data begins at this offset within rBuf.
- */
+/* Bytes of an Rread message body preceding the payload: type[1] + tag[2] +
+ * count[4]. The read data begins at this offset within rBuf. */
 #define RREAD_HDR_LEN 7u
 
 /* Connection state, held as a bitmask in C9aux.flags. */
@@ -65,10 +61,8 @@ enum conn_state {
 /* Per-mount open-file table: each 9P mount reserves this many fd slots. */
 #define MAX_OPENED_FILES 10
 
-/*
- * Mount address grammar: "<scheme>://<rest>". The inet schemes take
- * "<host>:<port>"; the local scheme takes a filesystem socket path.
- */
+/* Mount address grammar: "<scheme>://<rest>". The inet schemes take
+ * "<host>:<port>"; the local scheme takes a filesystem socket path. */
 #define SCHEME_SEP "://"
 #define SCHEME_TCP "tcp"
 #define SCHEME_UDP "udp"
@@ -83,8 +77,7 @@ typedef struct C9aux {
     size_t wOff;
     /* Copied out of the response callback's frame: c9proc hands the parsed
      * C9stat by pointer into its own stack, which is gone by the time _Stat
-     * reads it. The string fields still point into rBuf and stay valid until
-     * the next round trip; only the scalars are read here. */
+     * reads it. Only the scalars are read here. */
     C9stat lastStat;
     uint8_t haveStat;
     C9qid lastQid;
@@ -116,13 +109,9 @@ static int findFirstClosedFd(vfs_driver_ctx_t d) {
     return -EMFILE;
 }
 
-/*
- * Split a '/'-separated path into its components for c9walk. The 9P protocol
- * caps a single walk at C9maxpathel (16) elements, so out must hold that many
- * plus the trailing NULL terminator c9walk requires. buf must be a writable
- * copy of the path (strtok mutates it). Returns the component count, or
- * -ENAMETOOLONG when the path has more elements than one walk can carry.
- */
+/* Split a '/'-separated path into components for c9walk, which caps one walk at
+ * C9maxpathel elements, so out holds that many plus c9walk's NULL terminator.
+ * buf must be a writable copy. -ENAMETOOLONG when one walk cannot carry it. */
 static int splitPath(char *buf, const char *out[C9maxpathel + 1]) {
     int n = 0;
     for (char *tok = strtok(buf, "/"); tok != NULL; tok = strtok(NULL, "/")) {
@@ -264,12 +253,9 @@ static int dialInet(const char *hostPort, int socktype, int protocol) {
     return f;
 }
 
-/*
- * Connect to a driver server listening on a filesystem socket, so an on-box
- * server needs no loopback port. Reachability is then the socket's own
- * filesystem permissions. Compiled in only where the platform offers local
- * sockets — the lwIP-based targets do not.
- */
+/* Connect to a driver server listening on a filesystem socket, so an on-box
+ * server needs no loopback port; reachability is then the socket's own
+ * permissions. Compiled in only where the platform offers local sockets. */
 static int dialLocal(const char *path) {
 #ifdef WANTED_9P_UNIX_TRANSPORT
     struct sockaddr_un addr;
@@ -340,15 +326,10 @@ static void ctxprocR(C9ctx *ctx, C9r *r) {
     case Rattach:
         DEBUG_TRACE("Rattach");
         a->flags = CONN_ATTACHED;
-        // path[0] = channel;
-        // path[1] = NULL;
-        // c9walk(ctx, &tag, Rootfid, Chatfid, path);
-        // needopen = 1;
         break;
 
     case Rwalk:
         DEBUG_TRACE("Rwalk");
-        // needopen = needopen && c9open(ctx, &tag, Chatfid, C9rdwr);
         break;
 
     case Rread:
@@ -363,12 +344,6 @@ static void ctxprocR(C9ctx *ctx, C9r *r) {
     case Ropen:
         DEBUG_TRACE("Ropen");
         a->lastQid = r->qid[0];
-        // if ((a->flags & Joined) == 0 && printjoin) {
-        // 	c9write(ctx, &tag, Chatfid, 0, buf, snprintf(buf, sizeof(buf),
-        // "JOIN %s to chat\n", nick)); 	a->flags |= Joined;
-        // }
-        // c9read(ctx, &tag, Chatfid, chatoff, chatoff < skipuntil ?
-        // skipuntil-chatoff : Msize);
         break;
 
     case Rclunk:
@@ -608,11 +583,9 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
     (void)flags;
     (void)fd;
     (void)path;
-    /*
-     * The VFS core dispatches OpenAt only to PLATFORM-type parent fds; a 9P
-     * mount resolves relative paths through the router, which calls Open. This
-     * slot is therefore never reached — reject rather than fake success.
-     */
+    /* The VFS core dispatches OpenAt only to PLATFORM-type parent fds, and a
+     * 9P mount resolves relative paths through the router, which calls Open.
+     * This slot is never reached, so reject rather than fake success. */
     return -ENOTSUP;
 }
 

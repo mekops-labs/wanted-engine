@@ -17,13 +17,7 @@
 
 /* Version of the contract between the engine and a supervisor wapp: the shape
  * of the /dev/wanted control plane, its verbs, and the wapp states it reports.
- * Reported at /proc/wanted as `supervisor_abi`.
- *
- * Bump only when a supervisor built against an earlier value would misread this
- * engine — not for an ordinary release, and not for an addition an older
- * supervisor can ignore. A supervisor reads it before acting on anything else
- * and writes `rollback-supervisor` when it cannot support the value, which
- * hands the node back to the compiled-in image. */
+ * Bump only when a supervisor built against an earlier value would misread. */
 #define WANTED_SUPERVISOR_ABI 1
 
 #define WAPP_MAX_NAME_LEN 15
@@ -58,15 +52,9 @@
 
 struct wamrData_t;
 
-/* A launch-config resource entry. The three launch-config sections share this
- * shape but use it differently:
- *   - drivers[] — device singletons; `name` only, mounted at "/dev/<name>".
- *   - mounts[]  — file/backend drivers bound at an arbitrary absolute `path`.
- *   - sockets[] — sockets at "/net/<name>"; the transport spec is carried in
- *                 `options` (the JSON "address" field, plus the entry's
- *                 role/backlog/max_conns appended as ";key=value").
- * Where a section forbids a field, a value present there is rejected at install
- * time. */
+/* A launch-config resource entry, shared by drivers[], mounts[] and sockets[]
+ * with per-section rules — see the configuration reference. A field a section
+ * forbids is rejected at install time. */
 typedef struct wapp_driver_t {
     char name[WAPP_MAX_NAME_LEN];
     char path[CONFIG_WANTED_MAX_PATH_LEN];
@@ -75,10 +63,9 @@ typedef struct wapp_driver_t {
 
 typedef struct wapp_config_t {
     bool valid;
-    /* Registry image this instance runs, as an image reference "<name>:<tag>"
-     * (the tag is optional → first-match). Empty means "same as the instance
-     * name" — preserving single-instance wapps that never set it. Set from the
-     * launch config's "image" field; it lets N instances share one image. */
+    /* Registry image this instance runs, as "<name>[:<tag>]"; an absent tag
+     * is a first-match. Empty means the instance name, so N instances share one
+     * image while a single-instance wapp need never set it. */
     char image[WAPP_MAX_IMAGE_REF_LEN];
     wapp_driver_t console[3];
     /* Device singletons, mounted at "/dev/<name>". */
@@ -118,10 +105,9 @@ typedef struct wapp_data_t {
     vfs_ctx_t vfs;
     struct wamrData_t *wamr;
     int lastStatus;
-    /* WASI exit code captured from the run, or WAPP_EXIT_CODE_NONE if the wapp
-     * trapped (never reached proc_exit). Authoritative only when the slot's
-     * status is EXITED. Embedded in each platform's persistent wapp slot, so it
-     * survives the run and feeds PlatformWappGetState. */
+    /* WASI exit code from the run, or WAPP_EXIT_CODE_NONE on a trap.
+     * Authoritative only when the slot's status is EXITED. Lives in each
+     * platform's persistent wapp slot, so it survives the run. */
     int32_t exit_code;
 } wapp_data_t;
 
@@ -154,11 +140,9 @@ typedef struct wapp_state_t {
     size_t mem_bytes_max;   /* mem_pages_max in bytes */
 } wapp_state_t;
 
-/* Sample a running WAMR instance's linear-memory accounting into *out's mem_*
- * fields (zeroed when the slot has no live instance); other fields are left
- * untouched. The platform owns the wapp slot and its opaque wamrData_t pointer,
- * but the WAMR runtime types live in the engine core — so the platform calls
- * this from PlatformWappGetState rather than dereferencing wamrData_t. */
+/* Sample a running instance's linear-memory accounting into *out's mem_* fields
+ * (zeroed with no live instance). WAMR types live in the engine core, so the
+ * platform calls this rather than dereferencing its opaque wamrData_t. */
 void WantedWappMemStats(const struct wamrData_t *wamr, wapp_state_t *out);
 
 typedef struct reg_entry_t {
@@ -175,73 +159,57 @@ typedef struct wantedConfig_t {
 } wantedConfig_t;
 
 /**
- * Load and run a wapp to completion on the calling worker thread.
- *
- * Instantiates the WAMR module from the wapp's TarFS layer stack, builds its
- * WASI context and VFS from the launch config, and invokes the entry point.
- * Blocks until the wapp exits or traps. The WASI exit code (or
- * WAPP_EXIT_CODE_NONE on a trap) is written to @p ctx->exit_code; instance
- * teardown is the caller's responsibility via WantedWappStop().
+ * Load and run a wapp to completion on the calling worker thread. Blocks until
+ * it exits or traps, writing the WASI exit code to @p ctx->exit_code; teardown
+ * is the caller's, through WantedWappStop().
  *
  * @param ctx  Wapp slot to run (image, VFS, and WAMR state). Must be non-NULL.
- * @return 0 on a completed run; negative on a setup failure (NULL ctx, WAMR
- *         init, per-thread env, load, or instantiation) before the wapp ran.
+ * @return 0 on a completed run; negative on a setup failure before it ran.
  */
 int WantedWappRun(wapp_data_t *ctx);
 
 /**
- * Tear down the instance WantedWappRun() built for @p ctx.
- *
- * Destroys the VFS, WASI context, WAMR exec-env/instance/module, and image
- * bytes, then unwinds the per-thread WAMR env. Idempotent on the failure path
- * (a failed run has already unwound its instance), so it is safe to call on
- * every worker-thread exit.
+ * Tear down the instance WantedWappRun() built for @p ctx, then unwind the
+ * per-thread WAMR env. Idempotent on the failure path, so every worker-thread
+ * exit can call it.
  *
  * @param ctx  Wapp slot previously passed to WantedWappRun().
  */
 void WantedWappStop(wapp_data_t *ctx);
 
 /**
- * Asynchronously abort a running wapp's in-flight WASM execution.
- *
- * Signals the WAMR instance so the worker thread's call returns and unwinds
- * through WantedWappStop(). This is the cooperative stop path for platforms
- * that cannot force thread cancellation. Self-guards when the wapp has no live
- * instance.
+ * Asynchronously abort a running wapp's in-flight WASM execution, so the worker
+ * thread's call returns and unwinds through WantedWappStop(). The cooperative
+ * stop path for platforms that cannot force thread cancellation.
  *
  * @param ctx  Wapp slot to terminate; a NULL ctx or dead instance is a no-op.
  */
 void WantedWappTerminate(wapp_data_t *ctx);
 
 /**
- * Return the process-wide supervisor wapp descriptor.
+ * Return the process-wide supervisor wapp descriptor, built on first call from
+ * the operator config or the compiled-in default. A reload armed beforehand
+ * re-reads the image from the configured path first.
  *
- * Lazily constructs the descriptor on first call from the operator config, or
- * the compiled-in default config when none is valid. With a reload armed, the
- * image is re-read from the configured path before the descriptor is returned.
- *
- * @return The cached supervisor descriptor, or NULL if the config cannot be
- *         parsed.
+ * @return The cached descriptor, or NULL if the config cannot be parsed.
  */
 wapp_t *WantedGetCurrentSupervisor(void);
 
 /**
- * Arm a supervisor image reload, applied at the next respawn. Nothing is
- * stopped: the running supervisor decides when to exit, child wapps keep
- * running across the swap. Stage the new image by atomic rename — the engine
- * holds the current one mapped, so an in-place overwrite changes what the
- * next respawn reads.
+ * Arm a supervisor image reload, applied at the next respawn; nothing is
+ * stopped and child wapps keep running across the swap. Stage the new image by
+ * atomic rename, since the engine holds the current one mapped.
  *
  * @return 0.
  */
 int WantedSupervisorReload(void);
 
 /**
- * Fall back to the compiled-in supervisor image after a staged one fails.
- * Pins the built-in image for the rest of the run and arms a reload.
+ * Fall back to the compiled-in supervisor image after a staged one fails,
+ * pinning it for the rest of the run and arming a reload.
  *
- * @return 0 when a fallback is available, -1 when the engine already runs the
- *         built-in image and the caller must report the failure itself.
+ * @return 0 when a fallback is available, -1 when the built-in image already
+ *         runs and the caller must report the failure itself.
  */
 int WantedSupervisorRollback(void);
 
@@ -261,14 +229,8 @@ typedef enum {
 
 /**
  * Judge supervisor health once per run-loop iteration and count bad starts
- * toward the rollback ceiling. Holds the counters, so a platform run loop keeps
- * only the respawn itself.
- *
- * Call every iteration with what the platform's wapp slots report for the
- * supervisor: whether any is RUNNING, whether any is in FAILURE (a launch error
- * or a trap), and whether any has EXITED. An exit is judged by how long the
- * supervisor ran first — an image that leaves immediately counts as a bad
- * start, one that leaves after working does not.
+ * toward the rollback ceiling, so a platform run loop keeps only the respawn.
+ * An exit is judged by how long the supervisor ran first.
  *
  * @param running  a supervisor slot is RUNNING.
  * @param failed   a supervisor slot is in FAILURE.

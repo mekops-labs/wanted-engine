@@ -13,10 +13,9 @@
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
 
-/* /dev/uart: the per-port subtree, the grant grammar, and runtime line
- * reconfiguration. The dummy platform loops transmitted bytes back into the
- * receive ring, so a test covers short reads and the reconfiguration discard
- * without a peer on the wire. */
+/* /dev/uart: the per-port subtree, the grant grammar and runtime line
+ * reconfiguration. The dummy platform loops transmitted bytes back, so short
+ * reads and the reconfiguration discard are covered with no peer. */
 
 static vfs_ctx_t vfs;
 static vfs_driver_t *drv;

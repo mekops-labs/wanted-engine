@@ -103,11 +103,9 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
             continue;
         }
 
-        /* de->d_name's declared width (255) exceeds WAPP_REG_PATH_MAX, but
-         * every name reaching here already passed hasRegistryExt's ".wapp"
-         * check, so it is one of ours and always short; a would-be-truncated
-         * entry is not — skip it defensively instead of sizing the buffer to
-         * the dirent's theoretical worst case. */
+        /* de->d_name's declared width exceeds WAPP_REG_PATH_MAX, but a name
+         * reaching here passed the ".wapp" check and is always short. Skip a
+         * would-be-truncated entry rather than sizing for the worst case. */
         int n =
             snprintf(path, sizeof(path), "%s/%s", REGISTRY_ROOT, de->d_name);
         if (n < 0 || (size_t)n >= sizeof(path)) {

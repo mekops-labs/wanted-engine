@@ -1,10 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Shared POSIX clock conversions between the platform clock ABI
- * (plat_clk_id_t / plat_timestamp_t) and <time.h> types. Used by the shared
- * platform/posix/clock.c (PlatformClockGetRes / PlatformClockGetTime) and by
- * each platform's PlatformClockNanoSleep, which stays per-platform — NuttX
- * consumes a per-worker stop interrupt to report EINTR. */
+/* Shared POSIX clock conversions between the platform clock ABI and <time.h>
+ * types. PlatformClockNanoSleep stays per-platform, because NuttX consumes a
+ * per-worker stop interrupt to report EINTR. */
 
 #ifndef PLATFORM_CLOCK_POSIX_H
 #define PLATFORM_CLOCK_POSIX_H

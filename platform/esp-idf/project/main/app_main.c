@@ -380,10 +380,8 @@ static void seedWapp(const char *ref, const uint8_t *start,
 }
 
 /* Route the console VFS through the interrupt-driven driver so read(stdin)
- * blocks. Without this the default VFS console is non-blocking: the
- * supervisor shell's getline() spins returning nothing and never assembles a
- * command line. The peripheral differs by board -- USB-Serial/JTAG on the S3,
- * UART on the classic part -- but both need their blocking driver installed. */
+ * blocks; the default console is non-blocking and a shell's getline() then
+ * spins forever. The peripheral differs by board, the requirement does not. */
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
 static void consoleUseBlockingDriver(void) {
     usb_serial_jtag_driver_config_t cfg =

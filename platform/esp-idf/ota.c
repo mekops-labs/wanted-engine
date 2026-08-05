@@ -44,18 +44,15 @@ static char slotLetter(const esp_partition_t *part) {
 
 static void revertTimerFired(void *arg) {
     (void)arg;
-    /* Runs on the esp_timer service task, whose stack is the ordinary
-     * internal-DRAM default (only wapp worker threads opt into a PSRAM
-     * stack), so this call needs no helper-thread indirection. Does not
-     * return on success: marks the running (still-PENDING_VERIFY) slot
-     * invalid, reverts the boot partition to the other slot, reboots. */
+    /* Runs on the esp_timer service task, whose stack is internal DRAM, so
+     * this needs no helper-thread indirection. Does not return on success: it
+     * invalidates the running slot, reverts the boot partition, and reboots. */
     esp_ota_mark_app_invalid_rollback_and_reboot();
 }
 
-/* Dedicated helper thread, internal-DRAM stack (esp_pthread's plain
- * default): proxies every esp_ota_* call so the cache-freeze safety check
- * never observes a PSRAM-stacked caller, regardless of which thread
- * (wapp worker, main task) invoked the PlatformOta* entry point. */
+/* Dedicated helper thread with an internal-DRAM stack, proxying every esp_ota_*
+ * call so the cache-freeze safety check never observes a PSRAM-stacked caller,
+ * whichever thread invoked the PlatformOta* entry point. */
 typedef void (*ota_job_fn_t)(void *arg);
 
 static pthread_mutex_t g_helperLock = PTHREAD_MUTEX_INITIALIZER;

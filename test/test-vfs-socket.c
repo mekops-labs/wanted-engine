@@ -11,14 +11,9 @@
 
 #include "dummy-fs.h"
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * vfs_socket_driver — the "socket" driver (vfs-socket.c) driven through its
- * vtable, backed by the controllable dummy network mock (dummy-net.c).
- *
- * Address format parsed by VfsSocketInit: a URL "<scheme>://<host>:<port>",
- * where scheme is tcp/udp (plain) or tcps/udps (secure TLS/DTLS).
- * ═══════════════════════════════════════════════════════════════════════════
- */
+/* vfs_socket_driver — the "socket" driver driven through its vtable, backed by
+ * the controllable dummy network mock. VfsSocketInit parses an address as
+ * "<scheme>://<host>:<port>", scheme being tcp/udp or tcps/udps. */
 
 TEST_GROUP(vfs_socket_driver);
 
@@ -271,11 +266,9 @@ TEST(vfs_socket_driver, SockShutdown_ReturnsZero) {
     TEST_ASSERT_EQUAL_INT(0, drv->SockShutdown(drv->ctx, 0, 0));
 }
 
-/* ── Listen role ────────────────────────────────────────────────────────────
- * The launch config's role/backlog/max_conns fields reach the driver appended
- * to the address, so the option strings here are what the sockets[] installer
- * composes from a config entry.
- * ────────────────────────────────────────────────────────────────────────── */
+/* Listen role. The launch config's role/backlog/max_conns fields reach the
+ * driver appended to the address, so the option strings here are what the
+ * sockets[] installer composes from a config entry. */
 
 TEST(vfs_socket_driver, Init_UnknownRole_ReturnsNull) {
     TEST_ASSERT_NULL(VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=serve"));

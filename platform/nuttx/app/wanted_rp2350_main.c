@@ -1,24 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* RP2350 init shim.
- *
- * The supervisor OCI TAR is bundled into the firmware as a ROMFS image,
- * mounted read-only at /rom. CONFIG_SYSTEM_WANTED_SUPERVISOR_IMAGE points
- * the engine at "/rom/wanted/supervisor.tar"; CONFIG_FS_RAMMAP lets the
- * mmap-based loader (platform/posix/wapps-image.c) copy it into the heap.
- *
- * Console: this shim replaces nsh_main as the init entrypoint, so nsh's own
- * USB-CDC console bring-up never runs; bring_up_usb_console() does it here
- * instead. CONFIG_UART0_SERIAL_CONSOLE selects UART0 instead, whose fd 0-2
- * binding is already done by CONFIG_DEV_CONSOLE before this shim runs. The
- * CDC-ACM class driver is connected either way, so a wapp can be granted a
- * `serial://` socket onto CDCACM_DEVPATH.
- *
- * The registry's LittleFS volume (CONFIG_RP23XX_FLASH_MTD) is mounted by
- * board bring-up (rp23xx_common_bringup.c) before this shim runs; it only
- * chdir's into it and seeds bundled factory wapps. Entry point is selected
- * via CONFIG_INIT_ENTRYPOINT=wanted_rp2350_main; the NSH built-in entry
- * stays wanted_main. */
+/* RP2350 init shim. The supervisor OCI TAR is bundled as a ROMFS image at /rom;
+ * board bring-up mounts the registry's LittleFS volume, so this shim chdirs
+ * into it, seeds factory wapps and owns the console. */
 
 #include <dirent.h>
 #include <errno.h>
@@ -81,9 +65,8 @@ static void seed_copy(const char *src, const char *dst) {
 }
 
 /* First-boot factory seed: copy any /rom/registry/*.wapp the firmware bundles
- * into the writable registry, skipping ones already installed (O_EXCL). Lets
- * a freshly-flashed board start its bundled wapps with no network; on later
- * boots the persisted copies win and nothing is re-seeded. */
+ * into the writable registry, skipping those already installed. A freshly
+ * flashed board can then start its bundled wapps with no network. */
 static void seed_registry(void) {
     DIR *d = opendir(SEED_DIR);
     if (!d) {
@@ -104,17 +87,9 @@ static void seed_registry(void) {
     closedir(d);
 }
 
-/* When CONFIG_SYSTEM_WANTED_BOOT_ROMFS_SUPERVISOR is "sheriff", provisions
- * Sheriff's identity and passes a launch config with a `platform` mount and
- * `manager` socket, instead of wanted_main()'s minimal default.
- *
- * Identity is written directly via POSIX calls against the LittleFS volume,
- * since there is no interactive way to write raw CBOR.
- *
- * The pubkey below is a fixed demo key: the Ed25519 pubkey for the all-0x11
- * 32-byte seed used as SHERIFF_E2E_SEED's default in
- * wapps/sheriff/test/e2e-deputy.sh, matching a Deputy instance started with
- * `--signing-seed <the same all-0x11 hex>`. */
+/* Provisions the supervisor's identity and a launch config carrying a
+ * `platform` mount and `manager` socket. Identity is written through POSIX
+ * calls, since there is no interactive way to write raw CBOR. */
 #define SHERIFF_IDENTITY_DIR "sheriff/identity" /* under REGISTRY_VOLUME */
 #define SHERIFF_DEVICE_ID "rp2350-01"
 
@@ -159,20 +134,14 @@ static void provision_sheriff_identity(void) {
                 REGISTRY_VOLUME);
 }
 
-/* Constraints on the shipped config: the `platform` mount needs
- * options=src=REGISTRY_VOLUME "/sheriff" (Sheriff's ROOT_PATH stays
- * "/var/lib/sheriff"; there is no real "/var" here), and the manager socket
- * must be named "manager". Its address depends on the radio, hence one file
- * per case — picking the wrong one fails at runtime, not at build. */
+/* Constraints on the shipped config: the `platform` mount's src must be under
+ * REGISTRY_VOLUME, and the manager socket must be named "manager". Its address
+ * depends on the radio, so picking the wrong file fails at runtime. */
 
 #ifdef CONFIG_RP23XX_INFINEON_CYW43439
-/* Joins Wi-Fi before Sheriff's manager fetch loop starts (SHERIFF_MANAGER_
- * ADDRESS is a tcp:// socket, unreachable until associated). Credentials are
- * read live from the console; never baked into firmware/committed config.
- *
- * Associates directly via the NuttX WAPI library (wpa_driver_wext_associate/
- * netlib_obtain_ipv4addr) - the same calls platform/nuttx/vfs/vfs-wifi.c
- * makes for a wapp's /dev/wifi. */
+/* Joins Wi-Fi before the supervisor's manager fetch loop starts, since that
+ * socket is unreachable until associated. Credentials are read live from the
+ * console and never baked into firmware or committed config. */
 #include <netutils/netlib.h>
 #include <nuttx/wireless/wireless.h>
 #include <wireless/wapi.h>
@@ -182,9 +151,8 @@ static void provision_sheriff_identity(void) {
 #define WIFI_PASS_MAX_LEN 63
 
 /* Read one line, retrying once on an empty result: a "\r\n"-terminated send
- * leaves a bare trailing '\n' in the cooked-mode input queue, which the next
- * prompt's fgets() consumes immediately as an empty line before the real
- * answer arrives. One retry skips exactly that stray line. */
+ * leaves a bare '\n' in the cooked-mode input queue, which the next prompt
+ * consumes as an empty line. One retry skips exactly that stray line. */
 static void read_console_line(const char *prompt, char *buf, size_t bufSz) {
     for (int attempt = 0; attempt < 2; attempt++) {
         printf("%s", prompt);
@@ -280,10 +248,8 @@ static void connect_usb_cdcacm(void) {
 
 #ifndef CONFIG_UART0_SERIAL_CONSOLE
 /* Bring up the USB-CDC console: connect the CDCACM class driver, then block
- * until a host terminal actually opens the port and sends a few carriage
- * returns (same handshake nsh_usbconsole.c uses) before binding it to fd
- * 0-2 - otherwise early engine output races the host terminal attaching and
- * is lost. */
+ * until a host terminal opens the port and sends a few carriage returns before
+ * binding fd 0-2, or early engine output races the terminal attaching. */
 static void bring_up_usb_console(void) {
     connect_usb_cdcacm();
 

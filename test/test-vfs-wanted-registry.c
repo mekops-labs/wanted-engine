@@ -16,11 +16,8 @@
 
 #include "dummy-fs.h"
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * vfs_registry_driver — the "reg" virtual driver (vfs-wanted-registry.c) driven
- * directly through its vtable, backed by the dummy in-memory registry.
- * ═══════════════════════════════════════════════════════════════════════════
- */
+/* vfs_registry_driver — the "reg" virtual driver driven directly through its
+ * vtable, backed by the dummy in-memory registry. */
 
 extern const vfs_driver_t WantedRegistryDriver;
 
