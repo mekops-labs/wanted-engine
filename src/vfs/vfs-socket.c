@@ -8,6 +8,7 @@
 
 #include <debug_trace.h>
 #include <vfs-drivers.h>
+#include <wanted_log.h>
 #include <wanted_malloc.h>
 
 #include <platform.h>
@@ -15,17 +16,46 @@
 /* Socket address buffer length, in bytes, per connection context. */
 #define MAX_ADDR_LEN 32
 
+/* Longest transport spec the option string may carry: scheme, "://", host and
+ * port. */
+#define MAX_SPEC_LEN (MAX_ADDR_LEN + 16)
+
+/* Connections a listener may hold open at once, on top of the slot the
+ * configured socket itself occupies. A build without the listen role has the
+ * one slot and no accept path at all. */
+#ifdef CONFIG_WANTED_VFS_SOCKET_LISTEN
+#define SOCK_MAX_CONNS CONFIG_WANTED_VFS_SOCKET_MAX_CONNS
+#else
+#define SOCK_MAX_CONNS 0
+#endif
+#define SOCK_MAX_SLOTS (1 + SOCK_MAX_CONNS)
+
+/* The slot the configured socket occupies: the outbound connection, or the
+ * listener that accepted connections descend from. */
+#define SOCK_SELF 0
+
+#define DEFAULT_BACKLOG 4
+
 static const char id[] = {'S', 'o', 'c', 'k'};
 
-/* One connection per driver instance: the context holds a single transport's
- * state, so a re-open replaces any prior connection. */
+/* One transport endpoint. A connect-role driver uses the SOCK_SELF slot alone;
+ * a listener holds its bound socket there and one accepted connection per
+ * further slot, each addressed by the fd the accept handed back. */
+struct sock_conn_t {
+    void *netCtx;
+    bool inUse;
+    bool connected;
+};
+
 struct vfs_driver_ctx_t {
     uint8_t type;
     const char addr[MAX_ADDR_LEN];
     uint16_t port;
     vfs_oflags_t flags;
-    bool connected;
-    void *netCtx;
+    bool listening;
+    uint16_t backlog;
+    uint8_t maxConns;
+    struct sock_conn_t conns[SOCK_MAX_SLOTS];
 };
 
 static int _Destroy(struct vfs_driver_t *d);
@@ -59,6 +89,14 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
     }
 }
 
+static bool isStream(uint8_t type) {
+    return type == VFS_SKT_TCP || type == VFS_SKT_STCP;
+}
+
+static bool isSecure(uint8_t type) {
+    return type == VFS_SKT_STCP || type == VFS_SKT_SUDP;
+}
+
 /* Map a URL scheme to a socket transport type. Returns false for an unknown
  * scheme. The "s" suffix selects the secured transport (TLS / DTLS). */
 static bool schemeToType(const char *scheme, size_t len, uint8_t *type) {
@@ -77,10 +115,78 @@ static bool schemeToType(const char *scheme, size_t len, uint8_t *type) {
     return true;
 }
 
+/* Read a bounded decimal parameter value. Returns false on anything that is
+ * not a whole number within [1, max]. */
+static bool parseNum(const char *val, size_t len, long max, long *out) {
+    long v = 0;
+    if (len == 0 || len > 5)
+        return false;
+    for (size_t i = 0; i < len; i++) {
+        if (val[i] < '0' || val[i] > '9')
+            return false;
+        v = v * 10 + (val[i] - '0');
+    }
+    if (v < 1 || v > max)
+        return false;
+    *out = v;
+    return true;
+}
+
+/* Parse the ";key=value" parameters trailing the transport spec — the launch
+ * config's role/backlog/max_conns fields, which the sockets[] installer
+ * appends to the address. Returns false on an unknown key or an unusable
+ * value; the caller rejects the whole entry. */
+static bool parseParams(const char *p, bool *listening, uint16_t *backlog,
+                        uint8_t *maxConns, bool *hasBacklog,
+                        bool *hasMaxConns) {
+    while (*p == ';') {
+        const char *key = p + 1;
+        const char *eq = strchr(key, '=');
+        if (eq == NULL)
+            return false;
+        size_t keyLen = (size_t)(eq - key);
+        const char *val = eq + 1;
+        const char *end = strchr(val, ';');
+        size_t valLen = end ? (size_t)(end - val) : strlen(val);
+        long num;
+
+        if (keyLen == 4 && strncmp(key, "role", 4) == 0) {
+            if (valLen == 6 && strncmp(val, "listen", 6) == 0)
+                *listening = true;
+            else if (valLen == 7 && strncmp(val, "connect", 7) == 0)
+                *listening = false;
+            else
+                return false;
+        } else if (keyLen == 7 && strncmp(key, "backlog", 7) == 0) {
+            if (!parseNum(val, valLen, 64, &num))
+                return false;
+            *backlog = (uint16_t)num;
+            *hasBacklog = true;
+        } else if (keyLen == 9 && strncmp(key, "max_conns", 9) == 0) {
+            if (!parseNum(val, valLen, SOCK_MAX_CONNS ? SOCK_MAX_CONNS : 1,
+                          &num))
+                return false;
+            *maxConns = (uint8_t)num;
+            *hasMaxConns = true;
+        } else {
+            return false;
+        }
+
+        p = end ? end : val + valLen;
+    }
+    return *p == '\0';
+}
+
 vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     uint16_t port;
     vfs_driver_t *driver;
     char addr[MAX_ADDR_LEN];
+    char spec[MAX_SPEC_LEN];
+    bool listening = false;
+    bool hasBacklog = false;
+    bool hasMaxConns = false;
+    uint16_t backlog = DEFAULT_BACKLOG;
+    uint8_t maxConns = SOCK_MAX_CONNS ? SOCK_MAX_CONNS : 1;
 
     (void)wapp;
 
@@ -89,22 +195,64 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
         return NULL;
     }
 
-    /* The address is a URL "<scheme>://<host>:<port>"; the scheme picks the
-     * transport (tcp, tcps, udp, udps, serial). */
-    const char *sep = strstr(options, "://");
+    /* The entry's address is a URL "<scheme>://<host>:<port>"; the scheme picks
+     * the transport (tcp, tcps, udp, udps, serial). The launch config's
+     * remaining socket fields arrive as ";key=value" parameters behind it. */
+    const char *params = strchr(options, ';');
+    size_t specLen = params ? (size_t)(params - options) : strlen(options);
+    if (specLen >= sizeof(spec)) {
+        DEBUG_TRACE("socket address: too long");
+        return NULL;
+    }
+    memcpy(spec, options, specLen);
+    spec[specLen] = '\0';
+
+    if (params != NULL && !parseParams(params, &listening, &backlog, &maxConns,
+                                       &hasBacklog, &hasMaxConns)) {
+        LOG_ERROR("socket '%s': bad role/backlog/max_conns", spec);
+        return NULL;
+    }
+
+    const char *sep = strstr(spec, "://");
     if (NULL == sep) {
         DEBUG_TRACE("socket address: missing scheme");
         return NULL;
     }
 
     uint8_t type;
-    if (!schemeToType(options, (size_t)(sep - options), &type)) {
+    if (!schemeToType(spec, (size_t)(sep - spec), &type)) {
         DEBUG_TRACE("socket address: unknown scheme");
         return NULL;
     }
 
-    if (!SECURE_SOCKETS && (type == VFS_SKT_STCP || type == VFS_SKT_SUDP)) {
+    if (!SECURE_SOCKETS && isSecure(type)) {
         DEBUG_TRACE("no support for secure sockets");
+        return NULL;
+    }
+
+    if (listening) {
+#ifndef CONFIG_WANTED_VFS_SOCKET_LISTEN
+        LOG_ERROR("socket '%s': the listen role is not compiled in", spec);
+        return NULL;
+#else
+        if (type == VFS_SKT_SERIAL) {
+            LOG_ERROR("socket '%s': a serial device cannot listen", spec);
+            return NULL;
+        }
+        if (isSecure(type)) {
+            /* Accept-side TLS needs a server certificate and key, and nothing
+             * supplies them. */
+            LOG_ERROR("socket '%s': a secure transport cannot listen", spec);
+            return NULL;
+        }
+        if (!isStream(type) && (hasBacklog || hasMaxConns)) {
+            LOG_ERROR("socket '%s': backlog/max_conns need a stream transport",
+                      spec);
+            return NULL;
+        }
+#endif
+    } else if (hasBacklog || hasMaxConns) {
+        LOG_ERROR("socket '%s': backlog/max_conns need the listen role", spec);
         return NULL;
     }
 
@@ -166,6 +314,9 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     driver->ctx->type = type;
     strncpy((char *)driver->ctx->addr, addr, MAX_ADDR_LEN);
     driver->ctx->port = port;
+    driver->ctx->listening = listening;
+    driver->ctx->backlog = backlog;
+    driver->ctx->maxConns = maxConns;
     driver->Destroy = _Destroy;
     driver->Open = _Open;
     driver->OpenAt = _OpenAt;
@@ -181,9 +332,30 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     return driver;
 }
 
+/* The slot an fd addresses, or NULL when the fd names no live connection. */
+static struct sock_conn_t *conn(vfs_driver_ctx_t c, int fd) {
+    if (fd < 0 || fd >= SOCK_MAX_SLOTS)
+        return NULL;
+    if (!c->conns[fd].inUse)
+        return NULL;
+    return &c->conns[fd];
+}
+
+static void releaseConn(struct sock_conn_t *s) {
+    if (s->netCtx != NULL) {
+        PlatformNetClose(s->netCtx);
+        PlatformNetFree(s->netCtx);
+    }
+    s->netCtx = NULL;
+    s->inUse = false;
+    s->connected = false;
+}
+
 static int _Destroy(struct vfs_driver_t *d) {
-    PlatformNetClose(d->ctx->netCtx);
-    PlatformNetFree(d->ctx->netCtx);
+    for (int i = 0; i < SOCK_MAX_SLOTS; i++) {
+        if (d->ctx->conns[i].inUse)
+            releaseConn(&d->ctx->conns[i]);
+    }
     WantedFree(d->ctx);
     WantedFree(d);
 
@@ -191,26 +363,36 @@ static int _Destroy(struct vfs_driver_t *d) {
 }
 
 static int _Open(vfs_driver_ctx_t c, const char *path, vfs_oflags_t flags) {
+    struct sock_conn_t *s = &c->conns[SOCK_SELF];
     (void)path;
-    if (c->connected) {
-        return 0;
+
+    if (s->connected) {
+        return SOCK_SELF;
     }
 
-    if (c->netCtx) {
-        // only single connection supported, so close and free old context
-        PlatformNetClose(c->netCtx);
-        PlatformNetFree(c->netCtx);
+    if (s->inUse) {
+        releaseConn(s);
     }
 
-    c->netCtx = PlatformNetOpen(c->type);
-    if (c->netCtx) {
-        c->connected = false;
-        c->flags = flags;
-    } else {
+    s->netCtx = PlatformNetOpen(c->type);
+    if (s->netCtx == NULL) {
         return -ECONNABORTED;
     }
+    s->inUse = true;
+    c->flags = flags;
 
-    return 0;
+    if (c->listening) {
+        int ret = PlatformNetListen(s->netCtx, c->addr, c->port, c->backlog);
+        if (ret < 0) {
+            releaseConn(s);
+            LOG_ERROR("socket: can't bind %s:%u (%d)", c->addr, c->port, ret);
+            return ret;
+        }
+        /* A bound socket is ready to serve; nothing is left to establish. */
+        s->connected = true;
+    }
+
+    return SOCK_SELF;
 }
 
 static int _OpenAt(vfs_driver_ctx_t c, int fd, const char *path,
@@ -220,47 +402,73 @@ static int _OpenAt(vfs_driver_ctx_t c, int fd, const char *path,
 }
 
 static int _Close(vfs_driver_ctx_t c, int fd) {
-    (void)fd;
-    c->connected = false;
-    return PlatformNetClose(c->netCtx);
+    struct sock_conn_t *s = conn(c, fd);
+    if (s == NULL)
+        return -EBADF;
+
+    if (fd == SOCK_SELF) {
+        /* The configured socket outlives a close: reopening it reconnects (or
+         * rebinds) through the same driver instance. */
+        s->connected = false;
+        return PlatformNetClose(s->netCtx);
+    }
+
+    releaseConn(s);
+    return 0;
 }
 
-/* Establish the connection lazily on the first I/O. */
-static int ensureConnected(vfs_driver_ctx_t c) {
-    if (c->connected)
+/* Establish an outbound connection lazily on the first I/O. */
+static int ensureConnected(vfs_driver_ctx_t c, struct sock_conn_t *s) {
+    if (s->connected)
         return 0;
-    int ret = PlatformNetConnect(c->netCtx, c->addr, c->port);
+    int ret = PlatformNetConnect(s->netCtx, c->addr, c->port);
     if (ret < 0)
         return ret;
-    c->connected = true;
+    s->connected = true;
+    return 0;
+}
+
+/* Resolve an fd to a slot ready for payload I/O. A stream listener carries no
+ * payload of its own — only the connections accepted from it do. */
+static int ioConn(vfs_driver_ctx_t c, int fd, struct sock_conn_t **out) {
+    struct sock_conn_t *s = conn(c, fd);
+    if (s == NULL)
+        return -EBADF;
+    if (fd == SOCK_SELF && c->listening && isStream(c->type))
+        return -ENOTCONN;
+    int ret = ensureConnected(c, s);
+    if (ret < 0)
+        return ret;
+    *out = s;
     return 0;
 }
 
 static int _Read(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte) {
-    (void)fd;
-    int ret = ensureConnected(c);
+    struct sock_conn_t *s;
+    int ret = ioConn(c, fd, &s);
     if (ret < 0)
         return ret;
-    return PlatformNetRecv(c->netCtx, buf, nbyte, 0);
+    return PlatformNetRecv(s->netCtx, buf, nbyte, 0);
 }
 
 static int _Write(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte) {
-    (void)fd;
-    int ret = ensureConnected(c);
+    struct sock_conn_t *s;
+    int ret = ioConn(c, fd, &s);
     if (ret < 0)
         return ret;
-    return PlatformNetSend(c->netCtx, buf, nbyte, 0);
+    return PlatformNetSend(s->netCtx, buf, nbyte, 0);
 }
 
 static int _Stat(vfs_driver_ctx_t c, int fd, vfs_stat_t *stat) {
-    (void)fd;
     if (NULL == stat)
         return -EINVAL;
+
+    const struct sock_conn_t *s = conn(c, fd);
 
     stat->dev = *(uint32_t *)id;
     stat->ino = c->port;
     stat->filetype = convertSocketType(c->type);
-    stat->size = c->connected;
+    stat->size = s != NULL && s->connected;
     stat->atim = 0;
     stat->mtim = 0;
     stat->ctim = 0;
@@ -269,54 +477,80 @@ static int _Stat(vfs_driver_ctx_t c, int fd, vfs_stat_t *stat) {
     return 0;
 }
 
+/* `newFd` is an out-parameter of the driver vtable's SockAccept slot; a build
+ * without the listen role writes through it nowhere, which reads as const to
+ * the analysers. */
 static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
+                       /* cppcheck-suppress constParameterCallback */
+                       /* NOLINTNEXTLINE(readability-non-const-parameter) */
                        int *newFd) {
-    (void)fd;
     (void)flags;
-    int ret;
+
     if (newFd == NULL) {
         return -EINVAL;
     }
 
-    /*
-     * The accepted connection is returned as a bare fd, but the driver tracks
-     * a single netCtx, so subsequent I/O ops still target the listening
-     * context rather than the accepted socket. Backing each accepted fd with
-     * its own context is required to make them independently readable.
-     */
-    ret = PlatformNetAccept(c->netCtx);
+#ifndef CONFIG_WANTED_VFS_SOCKET_LISTEN
+    (void)c;
+    (void)fd;
+    return -ENOTSUP;
+#else
+    struct sock_conn_t *l = conn(c, fd);
+    if (l == NULL)
+        return -EBADF;
+    if (fd != SOCK_SELF || !c->listening || !isStream(c->type))
+        return -ENOTSUP;
 
-    if (ret >= 0)
-        *newFd = ret;
+    int slot = -1;
+    int live = 0;
+    for (int i = SOCK_SELF + 1; i < SOCK_MAX_SLOTS; i++) {
+        if (c->conns[i].inUse)
+            live++;
+        else if (slot < 0)
+            slot = i;
+    }
+    if (slot < 0 || live >= c->maxConns)
+        return -ENFILE;
 
-    return ret;
+    struct netCtx *accepted = NULL;
+    int ret = PlatformNetAccept(l->netCtx, &accepted);
+    if (ret < 0)
+        return ret;
+
+    c->conns[slot].netCtx = accepted;
+    c->conns[slot].inUse = true;
+    /* An accepted connection is established the moment it exists. */
+    c->conns[slot].connected = true;
+
+    *newFd = slot;
+    return 0;
+#endif
 }
 
 static int _SockRecv(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte,
                      vfs_riflags_t iflags, vfs_roflags_t *oflags) {
-    (void)fd;
+    struct sock_conn_t *s;
     if (oflags != NULL)
         *oflags = 0;
-    int ret = ensureConnected(c);
+    int ret = ioConn(c, fd, &s);
     if (ret < 0)
         return ret;
-    return PlatformNetRecv(c->netCtx, buf, nbyte, iflags);
+    return PlatformNetRecv(s->netCtx, buf, nbyte, iflags);
 }
 
 static int _SockSend(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte,
                      vfs_sdflags_t flags) {
-    (void)fd;
-    int ret = ensureConnected(c);
+    struct sock_conn_t *s;
+    int ret = ioConn(c, fd, &s);
     if (ret < 0)
         return ret;
-    return PlatformNetSend(c->netCtx, buf, nbyte, flags);
+    return PlatformNetSend(s->netCtx, buf, nbyte, flags);
 }
 
 static int _SockShutdown(vfs_driver_ctx_t c, int fd, vfs_sdflags_t flags) {
-    (void)fd;
-    int ret;
+    struct sock_conn_t *s = conn(c, fd);
+    if (s == NULL)
+        return -EBADF;
 
-    ret = PlatformNetShutdown(c->netCtx, flags);
-
-    return ret;
+    return PlatformNetShutdown(s->netCtx, flags);
 }

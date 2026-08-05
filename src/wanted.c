@@ -701,9 +701,9 @@ int WantedWappRun(wapp_data_t *ctx) {
         ret += WantedInstallDriver(ctx->vfs, wapp, d->name, mount, d->options);
     }
 
-    /* sockets[]: named connections created at /net/<name>. The transport spec
-     * is the entry's address (carried in options); a config-supplied path is
-     * rejected. */
+    /* sockets[]: named sockets created at /net/<name>. The transport spec is
+     * the entry's address (carried in options, with its role and listen bounds
+     * appended); a config-supplied path is rejected. */
     for (size_t i = 0; i < wapp->cfg.socketsCnt; i++) {
         const wapp_driver_t *s = &wapp->cfg.sockets[i];
         if (s->path[0] != '\0') {

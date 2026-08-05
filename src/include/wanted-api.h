@@ -62,8 +62,9 @@ struct wamrData_t;
  * shape but use it differently:
  *   - drivers[] — device singletons; `name` only, mounted at "/dev/<name>".
  *   - mounts[]  — file/backend drivers bound at an arbitrary absolute `path`.
- *   - sockets[] — connections at "/net/<name>"; the transport spec is carried
- *                 in `options` (the JSON "address" field).
+ *   - sockets[] — sockets at "/net/<name>"; the transport spec is carried in
+ *                 `options` (the JSON "address" field, plus the entry's
+ *                 role/backlog/max_conns appended as ";key=value").
  * Where a section forbids a field, a value present there is rejected at install
  * time. */
 typedef struct wapp_driver_t {
@@ -86,7 +87,7 @@ typedef struct wapp_config_t {
     /* File/backend drivers bound at an arbitrary absolute path. */
     size_t mountsCnt;
     wapp_driver_t mounts[CONFIG_WANTED_MAX_DRIVERS_CNT];
-    /* Named connections created at "/net/<name>". */
+    /* Named sockets created at "/net/<name>". */
     size_t socketsCnt;
     wapp_driver_t sockets[CONFIG_WANTED_MAX_DRIVERS_CNT];
     char args[WAPP_MAX_ARGS][WAPP_MAX_ARG_LEN];

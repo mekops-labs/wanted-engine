@@ -490,6 +490,47 @@ static void parseResourceArray(json_t const *params, const char *section,
     *cnt = i;
 }
 
+/* Append ";<key>=<value>" to a socket entry's address. The socket driver reads
+ * its remaining launch-config fields — role, backlog, max_conns — from there:
+ * a driver is handed one option string, and this keeps the JSON shape the
+ * config actually declares from leaking a field into every other section's
+ * entry. A value that does not fit is left off, and the driver rejects the
+ * truncated entry rather than serving a half-configured socket. */
+static void appendSocketParam(char *opts, size_t cap, const char *key,
+                              const char *val) {
+    size_t used = strlen(opts);
+    if (val == NULL || *val == '\0')
+        return;
+    if (used + strlen(key) + strlen(val) + 3 > cap)
+        return;
+    snprintf(opts + used, cap - used, ";%s=%s", key, val);
+}
+
+/* The sockets[] fields beyond name/address: direction and its listen-only
+ * bounds. Read in the same order parseResourceArray filled the array, so entry
+ * i here is entry i there. */
+static void parseSocketRoles(json_t const *params, wapp_driver_t *arr,
+                             size_t cnt) {
+    json_t const *a = json_getProperty(params, "sockets");
+    size_t i = 0;
+
+    if (!a || JSON_ARRAY != json_getType(a))
+        return;
+
+    for (json_t const *e = json_getChild(a); e && i < cnt;
+         e = json_getSibling(e)) {
+        if (JSON_OBJ != json_getType(e))
+            continue;
+        appendSocketParam(arr[i].options, sizeof(arr[i].options), "role",
+                          json_getPropertyValue(e, "role"));
+        appendSocketParam(arr[i].options, sizeof(arr[i].options), "backlog",
+                          json_getPropertyValue(e, "backlog"));
+        appendSocketParam(arr[i].options, sizeof(arr[i].options), "max_conns",
+                          json_getPropertyValue(e, "max_conns"));
+        i++;
+    }
+}
+
 /* Parse the launch-config body — console redirections plus the drivers/mounts/
  * sockets resource sections — out of `params`. Shared by the {action,params}
  * bootstrap envelope (WantedParseCtrlAction) and the per-wapp config node
@@ -539,7 +580,7 @@ static void parseWappParams(json_t const *params, wapp_config_t *cfg) {
      * sections, each parsed into its own array:
      *   - drivers[] — device singletons (`name`), mounted at "/dev/<name>".
      *   - mounts[]  — file/backend drivers bound at an arbitrary `path`.
-     *   - sockets[] — connections at "/net/<name>"; transport in "address".
+     *   - sockets[] — sockets at "/net/<name>"; transport in "address".
      * Per-section validation (forbidden fields, required path) happens at
      * install time; here we only read the fields each section may carry. */
     parseResourceArray(params, "drivers", "options", cfg->drivers,
@@ -548,6 +589,7 @@ static void parseWappParams(json_t const *params, wapp_config_t *cfg) {
                        &cfg->mountsCnt);
     parseResourceArray(params, "sockets", "address", cfg->sockets,
                        &cfg->socketsCnt);
+    parseSocketRoles(params, cfg->sockets, cfg->socketsCnt);
 
     /* args[]: optional command-line arguments, occupying argv[1..]. argv[0] is
      * the wapp name, set by the engine at launch. */

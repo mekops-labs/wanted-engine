@@ -961,9 +961,32 @@ int VfsSockAccept(vfs_ctx_t c, int fd, vfs_oflags_t flags, int *newFd) {
     if (!checkFd(c, fd))
         return -EBADF;
 
-    if (c->fds[fd].type == VFS_TYPE_NET)
-        return NetFs_SockAccept(c, c->fds[fd].internal_ctx, flags, newFd);
-    return -ENOTSOCK;
+    if (c->fds[fd].type != VFS_TYPE_NET)
+        return -ENOTSOCK;
+    if (newFd == NULL)
+        return -EINVAL;
+
+    void *handle = NULL;
+    int ret = NetFs_SockAccept(c, c->fds[fd].internal_ctx, flags, &handle);
+    if (ret < 0)
+        return ret;
+
+    /* The accepted connection is a first-class fd: it reads, writes and closes
+     * like any other, independently of the listener it came from. */
+    int newSlot = findFirstClosedFd(c);
+    if (newSlot < 0) {
+        NetFs_Close(c, handle);
+        return newSlot;
+    }
+
+    c->fds[newSlot].type = VFS_TYPE_NET;
+    c->fds[newSlot].internal_ctx = handle;
+    c->fds[newSlot].flags = flags;
+    strncpy(c->fds[newSlot].path, c->fds[fd].path, VFS_FD_PATH_LEN - 1);
+    c->fds[newSlot].path[VFS_FD_PATH_LEN - 1] = '\0';
+
+    *newFd = newSlot;
+    return 0;
 }
 
 int VfsSockRecv(vfs_ctx_t c, int fd, void *buf, size_t nbyte,

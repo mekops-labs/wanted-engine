@@ -9,6 +9,10 @@ CONFIG_WANTED_MAX_PATH_LEN=512
 CONFIG_WANTED_MAX_DRIVERS_CNT=8
 CONFIG_WANTED_MAX_OPTIONS_SIZE=256
 
+# A router-class node is where a wapp serves: a protocol gateway bound to a
+# datagram port, or a web UI on a TCP one.
+CONFIG_WANTED_VFS_SOCKET_LISTEN=y
+
 # The packaging script pins the image path to where the .ipk installs it.
 CONFIG_WANTED_SUPERVISOR_IMAGE_PATH="/usr/share/wanted/supervisor.tar"
 CONFIG_WANTED_DEFAULT_CONFIG="configs/openwrt.json"
