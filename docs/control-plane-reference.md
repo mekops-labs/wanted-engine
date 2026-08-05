@@ -182,7 +182,7 @@ A wapp that needs a console, drivers, mounts, or sockets has its config written 
 | `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. **Optional**: an unset slot defaults — `in` to `null`, `out`/`err` to `log` — so a wapp launches without an explicit console and its output is captured to the per-wapp log (read through a `log` mount). Override a slot with `log` (capture), `null` (discard), `pipe` (a live stream a peer reads at `/dev/pipe/<wapp>.<slot>`), or `platform` (redirect to the engine's native stdio, fds 0/1/2). The `platform` *name* backs stdio here; in `mounts[]` it is instead a host directory. |
 | `drivers` | array | Up to `MAX_DRIVERS_CNT` (default 6, profile-tunable) device singletons. Each mounts at `/dev/<name>` derived from the name; a `path` is rejected. |
 | `mounts` | array | Up to `MAX_DRIVERS_CNT` file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev`, `/proc` and `/net`. The `platform` backend binds a host directory as a native WASI preopen (a bind mount); the `volume` backend binds an engine-managed persistent store (the wapp names only a volume, the engine owns the host path); other backends mount through the VFS router. `options` are backend-specific — see below. |
-| `sockets` | array | Up to `MAX_DRIVERS_CNT` named connections. Each is created at `/net/<name>`; the transport is the entry's `address`. A `path` is rejected. |
+| `sockets` | array | Up to `MAX_DRIVERS_CNT` named sockets. Each is created at `/net/<name>`; the transport is the entry's `address` and the direction its `role`. A `path` is rejected. |
 | `args` | array | Up to 8 strings (≤63 chars each), the wapp's `argv[1..]`. `argv[0]` is always the instance name, set by the engine. |
 | `envs` | array | Up to 8 POSIX `KEY=VALUE` strings (≤63 chars each), the wapp's `environ`. |
 
@@ -193,7 +193,7 @@ Entry shapes per section:
 | `console.*` | `name`, `options` | `name` is one of `null`, `log`, `pipe`, `platform`. For `pipe`, `options` may pin the pipe name (`name=<pipe>`); otherwise it is `<wapp>.<slot>`. |
 | `drivers[]` | `name`, `options` | `name` is a device driver (e.g. `null`, `wanted`); mounted at `/dev/<name>`. |
 | `mounts[]` | `name`, `path`, `options` | `name` is a file/backend driver (`platform`, `volume`, `config`, `9p`, `log`); `path` is required, absolute, and outside `/dev`/`/net`. |
-| `sockets[]` | `name`, `address` | `name` is the `/net` node label; `address` is a URL — `<scheme>://<host>:<port>` with scheme `tcp`/`udp`/`tcps`/`udps`, or `serial://<device-path>`. |
+| `sockets[]` | `name`, `address`, `role`, `backlog`, `max_conns` | `name` is the `/net` node label; `address` is a URL — `<scheme>://<host>:<port>` with scheme `tcp`/`udp`/`tcps`/`udps`, or `serial://<device-path>`. `role` is `connect` (default, reaches the address) or `listen` (binds it, making the wapp a server); `backlog` and `max_conns` bound a stream listener and are rejected on any other entry. |
 
 A `platform` mount is a bind mount; its `options` accept two comma-separated knobs: `src=<abshostpath>` (the host directory backing the mount — defaults to `path`) and `ro`/`rw` (access mode — defaults to `rw`). A `ro` mount denies every write (`-EROFS`) and requires the host directory to already exist; `path` stays the wapp-visible mount point. A relative/empty `src` or an unrecognised token is rejected at install. Example: `{ "name": "platform", "path": "/cfg", "options": "src=/etc/app,ro" }`.
 

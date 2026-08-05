@@ -212,7 +212,7 @@ window nor the inflate code.
 
 ### `socket` — the `/net/` network namespace
 
-`/net/` routes to the socket driver. A `sockets[]` entry is created at `/net/<name>` (the name is the node label) and bound to the connection described by its `address` — a URL, `<scheme>://<host>:<port>` for the network schemes or `serial://<device-path>` for a local device:
+`/net/` routes to the socket driver. A `sockets[]` entry is created at `/net/<name>` (the name is the node label) and carries the transport described by its `address` — a URL, `<scheme>://<host>:<port>` for the network schemes or `serial://<device-path>` for a local device. The entry's `role` decides the direction: `connect` (the default) reaches the address, `listen` binds it:
 
 | Scheme | Transport |
 |--------|-----------|
@@ -223,6 +223,20 @@ window nor the inflate code.
 | `serial:///dev/ttyACM0` | A local point-to-point byte-stream device — a UART or USB-CDC — in place of a network connection; a bare device path, no host or port |
 
 A wapp `open`s the `/net/<name>` node, then `read`/`write`s the stream and `close`s it; connection parameters come from the entry's `address`, not from the wapp. On NuttX, TLS is available where the board config enables `CONFIG_SYSTEM_WANTED_TLS` (the sim `wanted` config does); a build without it rejects the secure schemes at wapp launch.
+
+#### Serving on a socket
+
+An entry with `"role": "listen"` binds its `address` instead of connecting to it, and the wapp becomes the server. The role is a build option (`CONFIG_WANTED_VFS_SOCKET_LISTEN`); where it is absent, a config asking for it fails the launch.
+
+```json
+{ "name": "http", "address": "tcp://0.0.0.0:8080", "role": "listen", "backlog": 4, "max_conns": 2 }
+```
+
+On a stream transport, `/net/<name>` is the listener: opening it binds and listens, and `sock_accept` returns a **new fd** carrying one connection. That fd is a wapp fd like any other — `fd_read`, `fd_write`, `sock_recv`, `sock_send` and `close` all address the connection alone, so several connections are served at once without interfering, and closing one leaves the rest live. The listener fd itself carries no payload (a read returns `ENOTCONN`), and `max_conns` (up to the build's `VFS_SOCKET_MAX_CONNS`) caps how many connections are open at once; past it, accept returns `ENFILE`.
+
+On a datagram transport there is no accept step: `/net/<name>` is the bound socket, a read takes the next datagram, and a write answers whoever that datagram came from. `backlog`/`max_conns` do not apply and are rejected.
+
+A secure transport cannot listen — accept-side TLS needs a server certificate and key, and the launch config supplies neither, so `tcps`/`udps` with `role: listen` is rejected at launch rather than served unencrypted.
 
 A `serial://` socket puts the device in raw mode and flushes its RX buffer on open, so a request/response exchange starts from a clean stream. It assumes the device delivers a reliable, ordered byte stream (true for a UART or USB-CDC); a lossy, unordered link needs its own framing/retry layer on top. It is how the Sheriff↔Deputy control-plane link runs on a board with no network stack — see the [Platform Guide](platform-guide.md).
 

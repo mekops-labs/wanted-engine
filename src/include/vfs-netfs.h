@@ -28,7 +28,11 @@ int NetFs_Stat(vfs_ctx_t c, void *handle, vfs_stat_t *stat);
 int NetFs_StatPath(vfs_ctx_t c, const char *suffix, vfs_stat_t *stat);
 int NetFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
                   uint64_t *cookie, size_t *bufUsed);
-int NetFs_SockAccept(vfs_ctx_t c, void *handle, vfs_oflags_t flags, int *newFd);
+/* Accept one connection from a listening handle into *newHandle, a handle on
+ * the same driver that the caller binds to an fd of its own (and closes with
+ * NetFs_Close). */
+int NetFs_SockAccept(vfs_ctx_t c, void *handle, vfs_oflags_t flags,
+                     void **newHandle);
 int NetFs_SockRecv(vfs_ctx_t c, void *handle, void *buf, size_t nbyte,
                    vfs_riflags_t iflags, vfs_roflags_t *oflags);
 int NetFs_SockSend(vfs_ctx_t c, void *handle, const void *buf, size_t nbyte,

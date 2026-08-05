@@ -48,12 +48,23 @@ void DummyNetSetOpenFail(int fail);
 /* Set the value PlatformNetConnect returns (0 = success, <0 = failure). */
 void DummyNetSetConnectResult(int result);
 
-/* Set the value PlatformNetAccept returns. */
+/* Set the value PlatformNetListen returns (0 = success, <0 = failure). */
+void DummyNetSetListenResult(int result);
+
+/* Set the value PlatformNetAccept returns; 0 hands out a fresh socket. */
 void DummyNetSetAcceptResult(int result);
 
-/* Seed bytes that PlatformNetRecv will return (drained across calls). */
+/* Seed bytes that PlatformNetRecv will return (drained across calls), and read
+ * back what PlatformNetSend captured. Buffers are per socket: the plain forms
+ * act on the most recently opened one, the -On forms on the socket given. */
 void DummyNetSeedRecv(const uint8_t *buf, size_t len);
+void DummyNetSeedRecvOn(void *ctx, const uint8_t *buf, size_t len);
 
 /* Copy up to `len` captured PlatformNetSend bytes into `buf`; returns the
  * total number of bytes sent. */
 size_t DummyNetGetSent(uint8_t *buf, size_t len);
+size_t DummyNetGetSentOn(void *ctx, uint8_t *buf, size_t len);
+
+/* The socket PlatformNetOpen (or an accept) handed out last — the handle the
+ * -On helpers take, letting a test address one connection of several. */
+void *DummyNetLastSock(void);

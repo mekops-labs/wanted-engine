@@ -68,6 +68,32 @@ config WANTED_VFS_SOCKET_TLS
 	  Certificate verification is not implemented on any backend: connections
 	  are encrypted but unauthenticated.
 
+config WANTED_VFS_SOCKET_LISTEN
+	bool "listening sockets (servers)"
+	depends on WANTED_VFS_SOCKET
+	default n
+	help
+	  Adds the listen role to the sockets[] section: a wapp binds a port and
+	  serves it. A tcp/tcps entry binds, listens and accepts — each accepted
+	  connection becomes its own fd; a udp/udps entry binds a datagram socket
+	  read with recv and answered with send.
+
+	  A leaf sensor node never serves, so this costs it nothing until a target
+	  asks for it. Turn it on for a wapp-served web UI or a protocol gateway.
+
+	  A launch config carrying "role": "listen" on a build without this fails
+	  the wapp's launch rather than silently opening an outbound connection.
+
+config WANTED_VFS_SOCKET_MAX_CONNS
+	int "Accepted connections per listener"
+	depends on WANTED_VFS_SOCKET_LISTEN
+	default 4
+	range 1 32
+	help
+	  Hard cap on connections a listener holds open at once, sizing a table
+	  paid per listening socket. A launch config's max_conns lowers it further;
+	  neither raises it. Accepting past the cap returns -ENFILE.
+
 config WANTED_VFS_SHA256
 	bool "sha256 — streaming digest device"
 	default y

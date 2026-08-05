@@ -198,13 +198,31 @@ int NetFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
 }
 
 int NetFs_SockAccept(vfs_ctx_t c, void *handle, vfs_oflags_t flags,
-                     int *newFd) {
+                     void **newHandle) {
     (void)c;
     netfs_handle_t *h = handle;
-    if (!h) {
+    if (!h || !newHandle) {
         return -EBADF;
     }
-    return TRY_DRV(h->drv, SockAccept, h->drv_fd, flags, newFd);
+
+    int drv_fd = -1;
+    int r = TRY_DRV(h->drv, SockAccept, h->drv_fd, flags, &drv_fd);
+    if (r < 0)
+        return r;
+
+    /* The accepted connection is a node of the same driver, reached by the fd
+     * the driver handed back. */
+    netfs_handle_t *nh = WantedMalloc(sizeof(*nh));
+    if (!nh) {
+        TRY_DRV(h->drv, Close, drv_fd);
+        return -ENOMEM;
+    }
+    nh->drv = h->drv;
+    nh->drv_fd = drv_fd;
+    nh->is_root = false;
+
+    *newHandle = nh;
+    return 0;
 }
 
 int NetFs_SockRecv(vfs_ctx_t c, void *handle, void *buf, size_t nbyte,

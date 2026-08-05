@@ -11,6 +11,8 @@
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
 
+#include "dummy-fs.h"
+
 static vfs_ctx_t vfs;
 static vfs_driver_t *router_dev_drv;
 static vfs_driver_t *router_net_drv;
@@ -85,6 +87,43 @@ TEST(vfs_prefix_router, NetPathTakesTypedFdSlot) {
     TEST_ASSERT_EQUAL_INT(0, VfsClose(vfs, fd));
     TEST_ASSERT_EQUAL_INT(VFS_TYPE_NONE, vfs->fds[fd].type);
 }
+
+#ifdef CONFIG_WANTED_VFS_SOCKET_LISTEN
+/* An accepted connection must be an fd of the wapp's own table — opened,
+ * read, written and closed like the listener it came from, and outliving it
+ * only as far as its own close. */
+TEST(vfs_prefix_router, AcceptTakesItsOwnTypedFdSlot) {
+    DummyNetReset();
+    vfs_driver_t *srv =
+        VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen;max_conns=2");
+    TEST_ASSERT_NOT_NULL(srv);
+    TEST_ASSERT_EQUAL_INT(0, NetFs_Register(vfs, "srv", srv));
+
+    int lfd = VfsOpen(vfs, "/net/srv", VFS_O_RDWR);
+    TEST_ASSERT_TRUE(lfd >= ROOT_FD);
+
+    int cfd = -1;
+    TEST_ASSERT_EQUAL_INT(0, VfsSockAccept(vfs, lfd, VFS_O_RDWR, &cfd));
+    TEST_ASSERT_TRUE(cfd >= ROOT_FD);
+    TEST_ASSERT_TRUE(cfd != lfd);
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_NET, vfs->fds[cfd].type);
+
+    DummyNetSeedRecvOn(DummyNetLastSock(), (const uint8_t *)"req", 3);
+    char buf[8] = {0};
+    vfs_roflags_t oflags = 0;
+    TEST_ASSERT_EQUAL_INT(3,
+                          VfsSockRecv(vfs, cfd, buf, sizeof(buf), 0, &oflags));
+    TEST_ASSERT_EQUAL_STRING_LEN("req", buf, 3);
+    TEST_ASSERT_EQUAL_INT(3, VfsSockSend(vfs, cfd, "res", 3, 0));
+
+    /* Closing the connection frees its slot; the listener keeps serving. */
+    TEST_ASSERT_EQUAL_INT(0, VfsClose(vfs, cfd));
+    TEST_ASSERT_EQUAL_INT(VFS_TYPE_NONE, vfs->fds[cfd].type);
+    int again = -1;
+    TEST_ASSERT_EQUAL_INT(0, VfsSockAccept(vfs, lfd, VFS_O_RDWR, &again));
+    TEST_ASSERT_TRUE(again >= ROOT_FD);
+}
+#endif
 
 /* A net driver whose Open has a side effect (here: counts calls and fails like
  * a socket node on a netless build). Used to prove stat never opens the node.
@@ -189,6 +228,9 @@ TEST_GROUP_RUNNER(vfs_prefix_router) {
     RUN_TEST_CASE(vfs_prefix_router, DevPathTakesTypedFdSlot);
     RUN_TEST_CASE(vfs_prefix_router, NetPathTakesTypedFdSlot);
     RUN_TEST_CASE(vfs_prefix_router, NetStatDoesNotOpenSocket);
+#ifdef CONFIG_WANTED_VFS_SOCKET_LISTEN
+    RUN_TEST_CASE(vfs_prefix_router, AcceptTakesItsOwnTypedFdSlot);
+#endif
     RUN_TEST_CASE(vfs_prefix_router, SyntheticMountDirStatsAndLists);
     RUN_TEST_CASE(vfs_prefix_router, NonRoutedPathReturnsEnoent);
     RUN_TEST_CASE(vfs_prefix_router, MissingDevSuffixReturnsEnoent);
