@@ -15,6 +15,14 @@
 
 #define DUMMY_OTA_SLOT_MAX 512
 
+/* One fixed digest per slot, standing in for the descriptor a real image
+ * carries: it makes the property under test reachable on the host — a staged
+ * image's digest is the one the running image reports once that slot boots. */
+#define DUMMY_DIGEST_A                                                         \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+#define DUMMY_DIGEST_B                                                         \
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
 static struct {
     char active;
     char pending; /* staged slot awaiting confirm, 0 when none */
@@ -37,6 +45,22 @@ int DummyOtaStagedLen(void) {
 
 static char inactive(void) { return DummyOtaActiveSlot() == 'a' ? 'b' : 'a'; }
 
+static const char *slotDigest(char slot) {
+    return slot == 'b' ? DUMMY_DIGEST_B : DUMMY_DIGEST_A;
+}
+
+/* The running slot's image identity, as a real target reads out of its own
+ * image descriptor. */
+int PlatformFirmwareDigest(char *buf, size_t bufLen) {
+    const char *d = slotDigest(DummyOtaActiveSlot());
+    size_t len = strlen(d);
+
+    if (bufLen < len + 1)
+        return -ENOSPC;
+    memcpy(buf, d, len + 1);
+    return (int)len;
+}
+
 int PlatformOtaInit(void) {
     if (g.active == 0)
         g.active = 'a';
@@ -52,6 +76,10 @@ int PlatformOtaGetBootState(platform_ota_state_t *out) {
     out->confirmed = g.pending == 0;
     out->last_failed_slot = '\0';
     out->boot_attempts = 0;
+    out->pending_digest[0] = '\0';
+    if (g.pending != 0)
+        memcpy(out->pending_digest, slotDigest(g.pending),
+               strlen(slotDigest(g.pending)) + 1);
     return 0;
 }
 

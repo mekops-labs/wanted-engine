@@ -110,6 +110,9 @@ int PlatformOtaGetBootState(platform_ota_state_t *out) {
     /* No host bootloader reports a failed trial back to us. */
     out->last_failed_slot = '\0';
     out->boot_attempts = 0;
+    /* No build-time image digest on this target, matching
+     * PlatformFirmwareDigest -- a staged image is identified by version. */
+    out->pending_digest[0] = '\0';
     return 0;
 }
 
