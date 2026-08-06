@@ -23,7 +23,7 @@ set(vfs_srcs
     vfs-stdio.c vfs-tarfs.c vfs-socket.c
     vfs-wanted.c vfs-wanted-config.c vfs-wanted-wapps.c
     vfs-wanted-registry.c vfs-virtual.c
-    vfs-sha256.c vfs-ed25519.c vfs-inflate.c vfs-gpio.c vfs-uart.c vfs-ota.c
+    vfs-sha256.c vfs-ed25519.c vfs-inflate.c
 )
 list(TRANSFORM vfs_srcs PREPEND ${ENGINE}/src/vfs/)
 
@@ -60,12 +60,6 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/registry_flash.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-wifi.c
-    # PlatformGpio* over esp_driver_gpio, backing the core /dev/gpio driver.
-    ${ENGINE}/platform/esp-idf/gpio.c
-    # PlatformUart* over esp_driver_uart, backing the core /dev/uart driver.
-    ${ENGINE}/platform/esp-idf/uart.c
-    # PlatformOta* on esp_ota_ops, backing the core /dev/ota driver.
-    ${ENGINE}/platform/esp-idf/ota.c
     # Shared POSIX primitives (also compiled by the Linux/NuttX builds).
     # platform/posix/fs.c is NOT reused here: its PlatformFsRename/Mkdir call
     # renameat/mkdirat, which esp-idf's newlib declares but never links (no
@@ -110,6 +104,27 @@ include(${ENGINE}/platform/esp-idf/ota-profiles/${OTA_PROFILE}.cmake)
 # The OTA profile above names the engine defconfig; generating it here is what
 # makes CONFIG_WANTED_MAX_WAPPS below the same number the header carries.
 include(${ENGINE}/cmake/Kconfig.cmake)
+
+# Configurable drivers and their backings, gated exactly as src/CMakeLists.txt
+# gates them: a driver left in the build references configuration symbols a
+# deselected driver never generates. Listed after the Kconfig step, which is
+# what defines the symbols read here.
+set(driver_requires "")
+if(CONFIG_WANTED_VFS_GPIO)
+    list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-gpio.c)
+    list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/gpio.c)
+    list(APPEND driver_requires esp_driver_gpio)
+endif()
+if(CONFIG_WANTED_VFS_UART)
+    list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-uart.c)
+    list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/uart.c)
+    list(APPEND driver_requires esp_driver_uart)
+endif()
+if(CONFIG_WANTED_VFS_OTA)
+    list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-ota.c)
+    list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/ota.c)
+    list(APPEND driver_requires app_update)
+endif()
 
 if(WANTED_OTA_LAYOUT STREQUAL "factory")
     # 4 MB flash (classic ESP32): reserved 64 KiB (bootloader + partition
@@ -193,7 +208,7 @@ idf_component_register(
         ${ENGINE}/vendor/cwalk/include
         ${ENGINE}/vendor/uzlib/src
         ${ENGINE}/vendor/ed25519/src
-    REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash mbedtls app_update esp_timer joltwallet__littlefs esp_driver_gpio
+    REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash mbedtls esp_timer joltwallet__littlefs ${driver_requires}
     EMBED_FILES ${_supervisor_tar}
 )
 
