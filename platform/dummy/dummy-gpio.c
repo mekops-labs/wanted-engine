@@ -69,6 +69,7 @@ int PlatformGpioOpen(const plat_gpio_cfg_t *cfg, platform_gpio_t **out) {
         memset(&lines[i], 0, sizeof(lines[i]));
         lines[i].used = true;
         lines[i].output = (cfg->direction == PLAT_GPIO_DIR_OUT);
+        lines[i].level = (cfg->direction == PLAT_GPIO_DIR_OUT) && cfg->init;
         strncpy(lines[i].address, cfg->address, sizeof(lines[i].address) - 1);
         *out = &lines[i];
         return 0;

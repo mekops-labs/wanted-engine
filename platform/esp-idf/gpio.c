@@ -77,10 +77,14 @@ int PlatformGpioOpen(const plat_gpio_cfg_t *cfg, platform_gpio_t **out) {
     }
 
     gpio_reset_pin((gpio_num_t)pin);
+    /* The level goes into the output register before the pad becomes an
+     * output, so a line that must idle high never glitches low. */
+    if (cfg->direction == PLAT_GPIO_DIR_OUT)
+        gpio_set_level((gpio_num_t)pin, cfg->init ? 1 : 0);
     if (gpio_config(&io) != ESP_OK)
         return -EIO;
     if (cfg->direction == PLAT_GPIO_DIR_OUT)
-        gpio_set_level((gpio_num_t)pin, 0);
+        gpio_set_level((gpio_num_t)pin, cfg->init ? 1 : 0);
 
     slot->used = true;
     slot->pin = (gpio_num_t)pin;

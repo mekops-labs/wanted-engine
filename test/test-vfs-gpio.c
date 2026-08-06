@@ -108,11 +108,33 @@ TEST(gpio_grant, DuplicateNameOrAddressFailsLaunch) {
     TEST_ASSERT_NULL(VfsGpioInit(NULL, "pins=led:21:out,lamp:21:out"));
 }
 
+/* A reset line idles high, thus an output takes its level from the grant and
+ * never passes through the opposite one. */
+TEST(gpio_grant, OutputTakesTheLevelOfItsInitClause) {
+    bool level = false;
+
+    DummyGpioReset();
+    TEST_ASSERT_TRUE(setupGrant("pins=nrst:5:out:init=1,boot0:4:out"));
+    TEST_ASSERT_EQUAL_INT(0, DummyGpioGetLevel("5", &level));
+    TEST_ASSERT_TRUE(level);
+    TEST_ASSERT_EQUAL_INT(0, DummyGpioGetLevel("4", &level));
+    TEST_ASSERT_FALSE(level);
+    teardown();
+}
+
+/* An input drives no level. */
+TEST(gpio_grant, InitOnAnInputFailsLaunch) {
+    TEST_ASSERT_NULL(VfsGpioInit(NULL, "pins=btn:2:in:init=1"));
+    TEST_ASSERT_NULL(VfsGpioInit(NULL, "pins=led:21:out:init=2"));
+}
+
 TEST_GROUP_RUNNER(gpio_grant) {
     RUN_TEST_CASE(gpio_grant, MissingPinsClauseFailsLaunch);
     RUN_TEST_CASE(gpio_grant, MalformedEntryFailsLaunch);
     RUN_TEST_CASE(gpio_grant, AddressCarryingASeparatorFailsLaunch);
     RUN_TEST_CASE(gpio_grant, DuplicateNameOrAddressFailsLaunch);
+    RUN_TEST_CASE(gpio_grant, OutputTakesTheLevelOfItsInitClause);
+    RUN_TEST_CASE(gpio_grant, InitOnAnInputFailsLaunch);
 }
 
 /***************************************/

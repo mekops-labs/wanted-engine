@@ -171,6 +171,7 @@ typedef struct plat_gpio_cfg_t {
     uint8_t direction; /* PLAT_GPIO_DIR_* */
     uint8_t pull;      /* PLAT_GPIO_PULL_* */
     uint8_t drive;     /* PLAT_GPIO_DRIVE_*, output only */
+    uint8_t init;      /* the level an output takes at open, 0 or 1 */
 } plat_gpio_cfg_t;
 
 int PlatformGpioOpen(const plat_gpio_cfg_t *cfg, platform_gpio_t **out);

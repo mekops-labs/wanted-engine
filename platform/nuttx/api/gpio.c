@@ -67,6 +67,8 @@ int PlatformGpioOpen(const plat_gpio_cfg_t *cfg, platform_gpio_t **out) {
 #endif
 
     slot->used = true;
+    if (slot->output)
+        PlatformGpioWrite(slot, cfg->init != 0);
     *out = slot;
     return 0;
 }
