@@ -1,0 +1,24 @@
+# XIAO ESP32-S3 (ESP-IDF, octal PSRAM) — the edge MCU of the Telegraph
+# display. Same capacity envelope as xiao_esp32s3, with the serial-port driver
+# built in: the wapp that brokers the link to the display's own MCU holds a
+# uart grant, and that driver is off by default.
+#
+# The supervisor is wsh, because bring-up drives the wapps by hand over the
+# USB console. A deployed board runs the control-plane supervisor instead.
+#
+# The wapps of the device are seeded from another repository — see
+# ota-profiles/s3-telegraph.cmake.
+
+CONFIG_WANTED_MAX_WAPPS=20
+CONFIG_WANTED_WASM_STACK_SIZE=65536
+CONFIG_WANTED_WASM_HEAP_SIZE=0
+CONFIG_WANTED_WASM_WORKER_STACK_SIZE=65536
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=2
+CONFIG_WANTED_MAX_PATH_LEN=256
+CONFIG_WANTED_MAX_DRIVERS_CNT=6
+CONFIG_WANTED_MAX_OPTIONS_SIZE=128
+
+CONFIG_WANTED_VFS_UART=y
+
+CONFIG_WANTED_SUPERVISOR_WSH=y
+CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-esp32s3-telegraph.json"
