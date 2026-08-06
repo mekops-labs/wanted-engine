@@ -233,7 +233,7 @@ The grant names every pin, and nothing else is reachable:
 ```
 
 Each `pins=` entry is three colon-separated fields, `<name>:<address>:<direction>`,
-optionally followed by `pull=up|down|none` and `drive=pp|od`. The address is the
+optionally followed by `pull=up|down|none`, `drive=pp|od` and `init=0|1`. The address is the
 backing's business — a GPIO number on ESP-IDF, a character-device path such as
 `/dev/gpio0` on NuttX — and a wapp never sees it. It is one field, and `:` and
 `,` are reserved: they separate fields and entries, so a backing addressing a
@@ -249,6 +249,11 @@ board changes the launch config, not the image.
 - A `value` write takes `"0"` or `"1"`, with or without a trailing newline. On a
   pin the grant made an input it returns `-EPERM`; any other payload is
   `-EINVAL`.
+- `init=` is the level an output takes as the grant opens it, defaulting to
+  `0`, and the backing writes it before the pad becomes an output. A line whose
+  idle level is high — a reset line, a chip select — needs it: without it the
+  pin drives low from the moment the wapp launches and holds the device it is
+  wired to. On a pin the grant made an input it fails the launch.
 - Direction, pull, and drive are fixed by the grant. `direction` is read-only,
   so a wapp cannot turn an input into an output and drive a line an external
   device is already driving. A backing that cannot honour a requested pull or
