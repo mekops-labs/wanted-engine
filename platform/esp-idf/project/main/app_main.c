@@ -346,6 +346,9 @@ extern const uint8_t _binary_blink_wapp_end[];
 extern const uint8_t _binary_flasher_wapp_start[];
 extern const uint8_t _binary_flasher_wapp_end[];
 
+/* Generated from the board's WANTED_EXTRA_SEEDS; empty when it names none. */
+#include "extra-seeds-decl.inc"
+
 /* True when the registry already holds `ref` ("<name>" or "<name>:<version>").
  */
 static bool registryHasRef(const char *ref) {
@@ -512,6 +515,7 @@ void app_main(void) {
          * runs. */
         seedWapp(WANTED_FLASHER_REF, _binary_flasher_wapp_start,
                  _binary_flasher_wapp_end);
+#include "extra-seeds-call.inc"
     }
 
     /* Starts lwIP's tcpip thread; required before any socket() call. */

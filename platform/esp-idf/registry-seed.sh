@@ -3,7 +3,10 @@
 # <out>/<name>.wapp, embedded into the firmware at configure time. The .wasm
 # inputs come from `make wapps`; an absent one is reported, not built.
 #
-# Usage: registry-seed.sh <repo-root> <out-dir> <name>...
+# An argument of the form <name>=<path> takes the .wasm from that path, which
+# is how a board seeds a wapp built outside this repository.
+#
+# Usage: registry-seed.sh <repo-root> <out-dir> <name>[=<path>]...
 set -euo pipefail
 
 REPO="${1:?usage: registry-seed.sh <repo-root> <out-dir> <name>...}"
@@ -11,8 +14,11 @@ OUT="${2:?usage: registry-seed.sh <repo-root> <out-dir> <name>...}"
 shift 2
 
 mkdir -p "$OUT"
-for n in "$@"; do
-    src="$REPO/wapps/$n/$n.wasm"
+for a in "$@"; do
+    case "$a" in
+        *=*) n="${a%%=*}"; src="${a#*=}" ;;
+        *)   n="$a"; src="$REPO/wapps/$n/$n.wasm" ;;
+    esac
     if [ ! -f "$src" ]; then
         echo "registry-seed: $src missing — run 'make wapps' first" >&2
         exit 1
