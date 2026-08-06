@@ -9,11 +9,14 @@ Unreleased
 - `/dev/ota` reports a `pending_digest` line: the staged image's own build-time digest, which is what `/proc/wanted`'s `digest` reports once that slot boots. Confirming an update compares these two; the digest of the bytes downloaded hashes a different artifact and can never match. Absent while nothing is staged.
 - An ESP-IDF boot-time Wi-Fi join (`CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN`), for a supervisor that reaches its control plane over the network: nothing else brings the radio up before the supervisor starts. Credentials come from `/data/wifi.conf`, or from a console prompt that writes it, so only a board's first boot needs an operator; the radio keeps them in RAM.
 - An ESP32-S3 board configuration running Sheriff: `OTA_PROFILE=s3-sheriff`, the `s3-wapps` A/B layout with the production supervisor and the boot-time join.
+- A board profile can seed wapps built outside this repository: `WANTED_EXTRA_SEEDS` takes `<ref>=<path to .wasm>` entries, and the declarations and seed calls are generated, so the boot path names no board's wapp.
+- An ESP32-S3 board configuration for the Telegraph display: `OTA_PROFILE=s3-telegraph`, the `s3-wapps` A/B layout with the `uart` driver built in, wsh as the supervisor, and the wapps of the device seeded from the firmware. `TELEGRAPH_WAPPS` gives the directory that holds them.
 
 ### Fixed
 
 - ESP-IDF firmware reported `version: unknown` at `/proc/wanted`: the component compiles the engine core itself and nothing defined the version. A checkout with no reachable tag now fails the build.
-- The ESP-IDF build compiled the `gpio`, `uart` and `ota` drivers unconditionally, so deselecting any of them broke the build, and the `uart` backing had no component requirement to find its header through.
+- The ESP-IDF build compiled the `gpio`, `uart` and `ota` drivers unconditionally, so deselecting any of them broke the build.
+- A build with `CONFIG_WANTED_VFS_UART=y` failed on ESP-IDF: `driver/uart.h` was off the include path. The component requirements of the driver backings are resolved in an expansion pass that runs before the engine's configuration exists, so they are listed unconditionally.
 
 0.12.0 (2026-08-05)
 -------------------

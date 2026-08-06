@@ -184,7 +184,7 @@ make esp32-flash                    # esptool over ESP32_PORT (default /dev/ttyU
 
 - **Threads / stop** — FreeRTOS via the ESP-IDF pthread wrapper; cooperative stop (the WAMR terminate flag aborts the in-flight call).
 - **Registry / PSRAM** — flash-backed LittleFS registry (`registry_flash.c`); PSRAM via `extram.c` (8-byte-aligned allocations — WAMR's GC heap requires it).
-- **Flash layout** — S3: A/B (`ota_0`/`ota_1`) via the `s3-wapps`/`s3-storage` OTA profiles. Classic ESP32: a single `factory` app slot (`esp32-factory` profile), no A/B.
+- **Flash layout** — S3: A/B (`ota_0`/`ota_1`) via the `s3-wapps`/`s3-storage`/`s3-sheriff`/`s3-telegraph` OTA profiles. Classic ESP32: a single `factory` app slot (`esp32-factory` profile), no A/B.
 - **Worker stacks** — S3: PSRAM. Classic ESP32: internal DRAM only — a flash op fully disables the classic part's cache, so a PSRAM stack is unreachable during it.
 - **OTA** — A/B firmware update through `esp_ota_ops` (`ota.c`) on the S3, with a pending-verify / rollback seam. The classic part's single-factory layout has no A/B slot to roll back to.
 - **Secure sockets** — raw mbedTLS with ESP32-S3 hardware AES/SHA/ECC acceleration. No CA bundle is provisioned (`MBEDTLS_SSL_VERIFY_NONE`), so `tcps://` here is encrypted but **unauthenticated** — a demo transport, not production TLS.
@@ -194,7 +194,7 @@ make esp32-flash                    # esptool over ESP32_PORT (default /dev/ttyU
 
 A board that has never been online still needs wapps in its registry, so an image can be **seeded from the firmware**. The mechanism differs by host but the contract does not: a seed image is written into the writable registry only when its ref is absent there, so an image installed over a seeded ref survives the next boot rather than being overwritten on every start.
 
-On ESP-IDF the seed images are embedded into the app binary at configure time; `platform/esp-idf/registry-seed.sh` packages each `wapps/<name>/<name>.wasm` as `<out>/<name>.wapp`, and `make wapps` builds the inputs. On the NuttX boards the firmware carries them in the read-only ROMFS at `/rom/registry/*.wapp` and the boot shim copies them across on first boot.
+On ESP-IDF the seed images are embedded into the app binary at configure time; `platform/esp-idf/registry-seed.sh` packages each `wapps/<name>/<name>.wasm` as `<out>/<name>.wapp`, and `make wapps` builds the inputs. A board whose wapps live in another repository names them in its OTA profile as `WANTED_EXTRA_SEEDS` entries of the form `<ref>=<path to .wasm>`; the extern declarations and the seed calls are generated from that list, so `app_main.c` names no board's wapp. `s3-telegraph` is the worked example — it reads `TELEGRAPH_WAPPS` for the directory holding them, and a build without it carries the engine's own fixtures alone. On the NuttX boards the firmware carries them in the read-only ROMFS at `/rom/registry/*.wapp` and the boot shim copies them across on first boot.
 
 The firmware flasher wapp ships this way. It is seeded as `flasher:<supervisor version>` — the version of the supervisor tree it was built from, a bare semver at a tag (`flasher:0.3.3`) or the tag plus a short commit past one (`flasher:0.3.3-abc123`). It installs an engine firmware image and exits, which is why it must be present before any network is: the thing that would otherwise fetch it is what it exists to update. A version too long for a registry version field fails the build rather than being truncated.
 
@@ -360,6 +360,7 @@ Three engine-controlled regions are passed to WAMR per instance:
 | Board | Host | Notes |
 |---|---|---|
 | `xiao_esp32s3` | ESP-IDF | ESP32-S3, octal PSRAM, app heap off, linear memory capped at 2 pages so a full house fits the 8 MB part; `-storage` variant trades wapp slots for persist space |
+| `xiao_esp32s3-telegraph` | ESP-IDF | The same board driving the Telegraph display: the `uart` driver built in for the wapp that brokers the link to the display's MCU, wsh for bring-up over the USB console |
 | `esp32-esp-idf` | ESP-IDF | classic ESP32, quad PSRAM, 4 MB flash, single-factory-app layout, internal-RAM worker stacks |
 | `openwrt` | OpenWrt | packaged `.ipk`; supervisor read from its install path |
 
