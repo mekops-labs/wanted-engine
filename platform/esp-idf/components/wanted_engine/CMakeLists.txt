@@ -122,21 +122,23 @@ include(${ENGINE}/cmake/Kconfig.cmake)
 # gates them: a driver left in the build references configuration symbols a
 # deselected driver never generates. Listed after the Kconfig step, which is
 # what defines the symbols read here.
-set(driver_requires "")
+# The component requirements of these backings are listed unconditionally.
+# ESP-IDF resolves REQUIRES in an early expansion pass that runs before the
+# Kconfig step below produces the engine's .config, so a requirement behind
+# CONFIG_WANTED_VFS_* never reaches the resolver and its headers stay off the
+# include path.
+set(driver_requires esp_driver_gpio esp_driver_uart app_update)
 if(CONFIG_WANTED_VFS_GPIO)
     list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-gpio.c)
     list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/gpio.c)
-    list(APPEND driver_requires esp_driver_gpio)
 endif()
 if(CONFIG_WANTED_VFS_UART)
     list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-uart.c)
     list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/uart.c)
-    list(APPEND driver_requires esp_driver_uart)
 endif()
 if(CONFIG_WANTED_VFS_OTA)
     list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-ota.c)
     list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/ota.c)
-    list(APPEND driver_requires app_update)
 endif()
 
 if(WANTED_OTA_LAYOUT STREQUAL "factory")
