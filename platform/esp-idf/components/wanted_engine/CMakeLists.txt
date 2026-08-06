@@ -82,6 +82,19 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/extram.c
 )
 
+# Engine version string (git-derived SemVer), surfaced at /proc/wanted. The
+# component compiles the engine core itself, so the top-level CMakeLists that
+# normally supplies this is not in the picture -- without it every board reports
+# "unknown", and a control plane cannot tell one firmware from another.
+include(${ENGINE}/cmake/VersionFromGit.cmake)
+version_from_git(TIMESTAMP "%Y%m%d%H%M%S")
+if(NOT SEMVER)
+    message(FATAL_ERROR
+        "engine version unavailable: no git tag reachable from this checkout. "
+        "A firmware that reports no version cannot be confirmed after an "
+        "update -- tag the tree, or fetch its tags.")
+endif()
+
 # Engine build configuration. The idf.py build is not the engine's top-level
 # project, so point the shared Kconfig step at the engine root and let it
 # generate wanted-autoconf.h here. The OTA profile below selects the envelope,
@@ -229,6 +242,7 @@ endif()
 idf_build_set_property(COMPILE_DEFINITIONS "SECURE_SOCKETS=${_secure_sockets}" APPEND)
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    WANTED_VERSION="${SEMVER}"
     PLATFORM_ESP_IDF=1
     SUPERVISOR_IMAGE_PATH="embedded:supervisor.tar"
 )
