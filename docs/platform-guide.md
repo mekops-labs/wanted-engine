@@ -122,6 +122,9 @@ Two limits are worth stating plainly:
 - **`last_failed_slot` and `boot_attempts` are always empty.** No host
   bootloader reports a failed trial back to the engine, so a caller cannot use
   them to detect a reverted boot on this platform.
+- **`pending_digest` is always empty**, matching `PlatformFirmwareDigest`:
+  nothing stamps a build-time digest into a host image, so a staged image is
+  identified by its version string here.
 
 
 CMake options of note: `WANTED_PLATFORM` (the platform layer) and `WANTED_DEFCONFIG` (seed the configuration from `configs/<name>_defconfig`). Everything else is Kconfig — see [Build configuration](#build-configuration). TLS is `CONFIG_WANTED_VFS_SOCKET_TLS`: the engine states the intent and the host supplies the backend (OpenSSL here, mbedTLS on NuttX and ESP-IDF), so a host that cannot provide one fails the build rather than silently handing back a binary whose secure sockets are rejected at launch.
@@ -463,6 +466,8 @@ The `joltwallet/littlefs` port **hard-asserts and aborts the device** when `lfs_
 On the radio, a WPA2/WPA3-transition AP commonly expects a **PMF-capable** client even when it does not require one; leaving `pmf_cfg` zeroed made a real AP reject the very first 802.11 open-auth frame with `AUTH_EXPIRE`, before the WPA2 handshake started. The `/dev/wifi` status read is also a latch **per connection state, not per fd**: a poll loop that writes `connect` once and then only reads must still observe the disconnected→connected transition, which a plain one-shot-per-write latch misses (that shape works on NuttX only because its connect blocks synchronously).
 
 The firmware digest is read straight out of the image descriptor rather than through `esp_app_get_elf_sha256()`, whose RAM copy is sized by `CONFIG_APP_RETRIEVE_LEN_ELF_SHA` — 9 of the 64 hex digits by default — and truncates silently. A truncated prefix compares cleanly and would confirm the wrong image.
+
+`/dev/ota`'s `pending_digest` comes from the same field of the *staged* slot's descriptor, so it is the exact value `/proc/wanted`'s `digest` reports after that image boots. **It is not the digest of the downloaded bytes**: that hashes the `.bin` an updater fetched, this hashes the ELF the image was built from, and comparing one against the other can only ever fail. Reported only while a swap is scheduled — the inactive slot otherwise holds whatever an older or abandoned write left behind.
 
 Finally, the console VFS is routed through the interrupt-driven driver so `read(stdin)` blocks. With the default non-blocking console, a supervisor shell's `getline()` spins returning nothing and never assembles a command line. The peripheral differs by board — USB-Serial/JTAG on the S3, UART on the classic part — but both need their blocking driver installed.
 
