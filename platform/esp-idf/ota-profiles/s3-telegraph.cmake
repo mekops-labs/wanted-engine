@@ -19,6 +19,7 @@ if(TELEGRAPH_WAPPS)
     set(WANTED_EXTRA_SEEDS
         "tg-broker=${TELEGRAPH_WAPPS}/tg-broker/tg-broker.wasm"
         "tg-probe=${TELEGRAPH_WAPPS}/tg-probe/tg-probe.wasm"
+        "tg-ota=${TELEGRAPH_WAPPS}/tg-ota/tg-ota.wasm"
         CACHE STRING "Seed images from outside this repository" FORCE)
 else()
     message(WARNING

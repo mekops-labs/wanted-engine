@@ -25,13 +25,19 @@ for a in "$@"; do
     fi
     # Rewriting an up-to-date image would re-embed it and relink the firmware
     # on every build.
-    if [ "$OUT/$n.wapp" -nt "$src" ]; then
+    if [ "$OUT/$n.wapp" -nt "$src" ] &&
+       { [ ! -d "$(dirname "$src")/root" ] ||
+         [ -z "$(find "$(dirname "$src")/root" -newer "$OUT/$n.wapp" -print -quit)" ]; }; then
         continue
     fi
     s="$(mktemp -d)"
     cp "$src" "$s/app.wasm"
+    # A wapp that carries data files holds them in a root/ beside its wasm.
+    if [ -d "$(dirname "$src")/root" ]; then
+        cp -r "$(dirname "$src")/root/." "$s/"
+    fi
     tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
-        -C "$s" -cf "$OUT/$n.wapp" app.wasm
+        -C "$s" -cf "$OUT/$n.wapp" .
     rm -rf "$s"
     echo "registry-seed: $OUT/$n.wapp"
 done
