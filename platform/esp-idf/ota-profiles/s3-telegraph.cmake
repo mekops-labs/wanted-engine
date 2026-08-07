@@ -20,6 +20,7 @@ if(TELEGRAPH_WAPPS)
         "tg-broker=${TELEGRAPH_WAPPS}/tg-broker/tg-broker.wasm"
         "tg-probe=${TELEGRAPH_WAPPS}/tg-probe/tg-probe.wasm"
         "tg-ota=${TELEGRAPH_WAPPS}/tg-ota/tg-ota.wasm"
+        "tg-display=${TELEGRAPH_WAPPS}/tg-display/tg-display.wasm"
         CACHE STRING "Seed images from outside this repository" FORCE)
 else()
     message(WARNING
