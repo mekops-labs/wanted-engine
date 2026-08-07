@@ -204,8 +204,70 @@ check $? "a staged supervisor that exits at once rolls back"
 check $? "console works again after a fast-exit rollback"
 rm -f "$ENGINE_OUT"
 
+# 6. the supervisor image comes from the wapp registry. A control plane can
+# install into the registry and nowhere else, thus this is the source a board
+# with no writable image path uses.
+sup_reg="$REGISTRY_ROOT/sup@0.0.1-1.wapp"
+s=$(mktemp -d)
+tar -xf "$WSH_TAR" -C "$s"
+tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
+    -C "$s" -cf "$sup_reg" app.wasm
+rm -rf "$s"
+
+REG_CONFIG="$STAGE_DIR/registry-supervisor.json"
+sed 's|"imagePath": "[^"]*"|"imagePath": "registry:sup"|' "$CONFIG" > "$REG_CONFIG"
+
+ENGINE_OUT=$(mktemp)
+FIFO=$(mktemp -u)
+mkfifo "$FIFO"
+"$WANTED" "$REG_CONFIG" <"$FIFO" >"$ENGINE_OUT" 2>&1 &
+ENGINE_PID=$!
+exec 9>"$FIFO"
+send 2 "help"
+send 1 "exit"
+sleep 2
+kill "$ENGINE_PID" 2>/dev/null
+wait "$ENGINE_PID" 2>/dev/null
+exec 9>&-
+rm -f "$FIFO"
+
+grep -q "Following commands are available" "$ENGINE_OUT"
+check $? "the supervisor runs from a registry image"
+
+! grep -q "failed to load supervisor image" "$ENGINE_OUT"
+check $? "a registry-sourced supervisor needs no fallback to the built-in image"
+rm -f "$ENGINE_OUT"
+
+# 7. a reload adopts what the registry holds now. The replacement exits at
+# once, thus the rollback is what proves the new bytes were read.
+ENGINE_OUT=$(mktemp)
+FIFO=$(mktemp -u)
+mkfifo "$FIFO"
+"$WANTED" "$REG_CONFIG" <"$FIFO" >"$ENGINE_OUT" 2>&1 &
+ENGINE_PID=$!
+exec 9>"$FIFO"
+send 2 "help"
+s=$(mktemp -d)
+cp wapps/hello/hello.wasm "$s/app.wasm"
+tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
+    -C "$s" -cf "$sup_reg.new" app.wasm
+mv -f "$sup_reg.new" "$sup_reg"
+rm -rf "$s"
+send 1  "write /dev/wanted/ctl reload-supervisor"
+send 0.5 "exit"
+send 25 "help"
+sleep 2
+kill "$ENGINE_PID" 2>/dev/null
+wait "$ENGINE_PID" 2>/dev/null
+exec 9>&-
+rm -f "$FIFO"
+
+grep -q "falling back to the built-in image" "$ENGINE_OUT"
+check $? "a reload adopts the image the registry holds now"
+rm -f "$ENGINE_OUT" "$sup_reg"
+
 if [ "$rc" -eq 0 ]; then
-    echo "PASS: live-update (child continuity / image adoption / rollback)"
+    echo "PASS: live-update (child continuity / image adoption / rollback / registry source)"
 else
     echo "FAIL: live-update"
 fi

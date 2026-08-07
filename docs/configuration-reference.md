@@ -45,7 +45,7 @@ A minimal `{"system": {}}` is a valid config.
 | Field | Type | Default | Effect |
 |-------|------|---------|--------|
 | `system.privileged` | boolean | `false` | Enables the privileged `/proc` entries (`wapps`, `memory`). When false they are hidden from reads and enumeration. |
-| `supervisor.imagePath` | string | (build option) | Path to the supervisor TAR image. Overrides the compiled-in default. |
+| `supervisor.imagePath` | string | (build option) | Where the supervisor TAR image comes from: a path, or `registry:<name>[:<version>]` for one the wapp registry holds. Overrides the compiled-in default. |
 | `supervisor.params` | object | (compiled-in) | The supervisor's own launch config — same schema as a wapp `config` node. |
 
 ### `supervisor.imagePath` resolution
@@ -55,6 +55,8 @@ The supervisor image is resolved in priority order:
 1. `supervisor.imagePath` in the config (runtime override, no rebuild).
 2. The `CONFIG_WANTED_SUPERVISOR_*` Kconfig choice (compile-time default), or `CONFIG_WANTED_SUPERVISOR_IMAGE_PATH` when a package installs the image elsewhere.
 3. `./wasm/supervisor/sheriff/supervisor.tar`.
+
+A value of the form `registry:<name>[:<version>]` names an image in the wapp registry instead of a path, resolved the way a launch config's `image` is: a bare name takes the first match, a tag pins the version. This is the source a board uses when its image path is compiled into the firmware — the registry is the one place a control plane can install into — and `reload-supervisor` then adopts whatever the registry holds at that moment. A registry image that fails to load falls back to the compiled-in one, as a staged path does.
 
 ### `supervisor.params` — launch config
 

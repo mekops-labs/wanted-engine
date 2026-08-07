@@ -929,11 +929,57 @@ static const char *supervisorImagePath(const wantedConfig_t *cfg) {
                                                 : SUPERVISOR_IMAGE_PATH;
 }
 
+/* A supervisor image named "registry:<name>[:<version>]" comes from the wapp
+ * registry, which is what a control plane can install into. Anything else is a
+ * platform image path.
+ */
+#define SUPERVISOR_REGISTRY_PREFIX "registry:"
+
+static bool supervisorIsRegistryRef(const char *path) {
+    const size_t prefix = sizeof(SUPERVISOR_REGISTRY_PREFIX) - 1;
+
+    return strncmp(path, SUPERVISOR_REGISTRY_PREFIX, prefix) == 0 &&
+           path[prefix] != '\0';
+}
+
+/* Load a supervisor image the registry holds. The reference is the one a
+ * launch config's `image` uses, thus a supervisor is stored and named as every
+ * other image is.
+ */
+static int loadSupervisorFromRegistry(const char *path, wapp_t *w) {
+    const size_t prefix = sizeof(SUPERVISOR_REGISTRY_PREFIX) - 1;
+    reg_entry_t e;
+    const char *ref = path + prefix;
+    const char *colon;
+
+    memset(&e, 0, sizeof(e));
+    colon = strchr(ref, ':');
+    if (colon != NULL) {
+        size_t nlen = (size_t)(colon - ref);
+
+        if (nlen >= WAPP_MAX_NAME_LEN) {
+            nlen = WAPP_MAX_NAME_LEN - 1;
+        }
+
+        memcpy(e.name, ref, nlen);
+        e.name[nlen] = '\0';
+        strncpy(e.version, colon + 1, WAPP_MAX_VERSION_LEN - 1);
+        e.version[WAPP_MAX_VERSION_LEN - 1] = '\0';
+    } else {
+        strncpy(e.name, ref, WAPP_MAX_NAME_LEN - 1);
+        e.name[WAPP_MAX_NAME_LEN - 1] = '\0';
+    }
+
+    return PlatformRegistryWappLoad(&e, w);
+}
+
 /* Load the supervisor image, falling back to the compiled-in one. */
 static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
     const char *path = supervisorImagePath(cfg);
 
-    int ret = PlatformWappLoad(path, w);
+    int ret = supervisorIsRegistryRef(path) ? loadSupervisorFromRegistry(path, w)
+                                            : PlatformWappLoad(path, w);
+
     if (ret < 0 && strcmp(path, SUPERVISOR_IMAGE_PATH) != 0) {
         DEBUG_TRACE("staged supervisor %s failed (%d); using built-in %s", path,
                     ret, SUPERVISOR_IMAGE_PATH);
