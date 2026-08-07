@@ -9,5 +9,16 @@ set(WANTED_OTA_LAYOUT "ab")
 
 # The wapps of the device arrive from the control plane, into the registry
 # partition. Nothing of them belongs in the app slot, thus this profile seeds
-# none of them: WANTED_EXTRA_SEEDS stays a bootstrap mechanism for a board that
-# must run something before it has ever reached a network.
+# none of them, with one exception.
+#
+# The reader of the logs is seeded: it is what a board with no console answers
+# questions with, and a board whose registry path is broken is exactly when
+# those questions get asked. TELEGRAPH_WAPPS gives the directory that holds it.
+if(NOT TELEGRAPH_WAPPS)
+    set(TELEGRAPH_WAPPS "$ENV{TELEGRAPH_WAPPS}")
+endif()
+
+if(TELEGRAPH_WAPPS)
+    set(WANTED_EXTRA_SEEDS "tg-logs:3=${TELEGRAPH_WAPPS}/tg-logs/tg-logs.wasm"
+        CACHE STRING "Seed images from outside this repository" FORCE)
+endif()
