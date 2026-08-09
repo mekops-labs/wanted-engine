@@ -147,8 +147,7 @@ static int parseEntry(char *entry, struct gpio_pin_t *pin,
         } else if (strcmp(extra, "init=1") == 0) {
             cfg->init = 1;
             sawInit = true;
-        }
-        else
+        } else
             return -EINVAL;
     }
 

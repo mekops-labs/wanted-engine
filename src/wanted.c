@@ -977,8 +977,9 @@ static int loadSupervisorFromRegistry(const char *path, wapp_t *w) {
 static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
     const char *path = supervisorImagePath(cfg);
 
-    int ret = supervisorIsRegistryRef(path) ? loadSupervisorFromRegistry(path, w)
-                                            : PlatformWappLoad(path, w);
+    int ret = supervisorIsRegistryRef(path)
+                  ? loadSupervisorFromRegistry(path, w)
+                  : PlatformWappLoad(path, w);
 
     if (ret < 0 && strcmp(path, SUPERVISOR_IMAGE_PATH) != 0) {
         DEBUG_TRACE("staged supervisor %s failed (%d); using built-in %s", path,
