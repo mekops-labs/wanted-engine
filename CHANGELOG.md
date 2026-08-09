@@ -20,6 +20,8 @@ Unreleased
 
 ### Fixed
 
+- The registry driver kept one set of state for every open descriptor, so a
+  second opener disturbed an install and one close answered for another's writes.
 - An ESP-IDF registry install could take a slot a loaded wapp still runs from,
   erasing flash under it. A mapped slot is never allocated or overwritten.
 - A registry install whose start failed answered `-EBADF` on every later write,
