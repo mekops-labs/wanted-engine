@@ -44,3 +44,7 @@ qemu_*.core
 # Python bytecode from the vendored kconfig tooling
 __pycache__/
 src/include/wanted-config.h
+
+# Bring-up configs carrying a deployment's own addresses and keys.
+configs/local-*.json
+local-wapps/
