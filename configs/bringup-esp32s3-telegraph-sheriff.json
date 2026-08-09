@@ -1,6 +1,7 @@
 {
     "system": { "privileged": true },
     "supervisor": {
+        "imagePath": "registry:supervisor",
         "params": {
             "console": {
                 "in":  {"name": "platform"},
