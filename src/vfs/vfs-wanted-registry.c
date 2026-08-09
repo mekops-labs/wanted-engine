@@ -101,6 +101,36 @@ static bool validInstallRef(const char *ref) {
                              WAPP_MAX_VERSION_LEN);
 }
 
+/* Load the entry table from the platform. Every lookup by ref needs it, and a
+ * lookup is not always preceded by an open of the root — a caller that asks
+ * whether one image is installed never enumerates the directory. */
+static int refreshEntries(vfs_driver_ctx_t d) {
+    int ret = PlatformRegistryRead(d->entries, MAX_REG_ENTRIES);
+
+    if (ret < 0)
+        return ret;
+    d->nEntries = ret;
+
+    return 0;
+}
+
+/* Whether `path` ("<name>[:<version>]") names `e`. The name half is compared
+ * in full, or "tg-broker" answers for "tg-broker-v2"; a versionless ref
+ * matches any version. */
+static bool matchesRef(const reg_entry_t *e, const char *path) {
+    const char *colon = strchr(path, (int)VERSION_SEPARATOR);
+    size_t nameLen = colon != NULL ? (size_t)(colon - path) : strlen(path);
+
+    if (strnlen(e->name, WAPP_MAX_NAME_LEN) != nameLen)
+        return false;
+    if (strncmp(path, e->name, nameLen) != 0)
+        return false;
+    if (colon == NULL)
+        return true;
+
+    return strncmp(colon + 1, e->version, WAPP_MAX_VERSION_LEN) == 0;
+}
+
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     if (path == NULL)
         return -EINVAL;
@@ -111,10 +141,9 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     d->writeRef[0] = '\0';
 
     if (path[0] == '/' && path[1] == '\0') {
-        int ret = PlatformRegistryRead(d->entries, MAX_REG_ENTRIES);
+        int ret = refreshEntries(d);
         if (ret < 0)
             return ret;
-        d->nEntries = ret;
     } else if (flags & (VFS_O_WRONLY | VFS_O_RDWR)) {
         /* Install by ref: opening a "<name>:<ver>" path for write names the
          * image. The ref travels to the platform writer, which names the stored
@@ -127,23 +156,12 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
         d->writeRef[REG_REF_MAX - 1] = '\0';
         return 0;
     } else {
-        for (int i = 0; i < d->nEntries; i++) {
-            const char *ver = strchr(path, (int)VERSION_SEPARATOR);
-            if (ver != NULL) {
-                ver += 1;
-                if (strncmp(path, d->entries[i].name,
-                            strnlen(d->entries[i].name, WAPP_MAX_NAME_LEN)) ==
-                    0) {
-                    if (ver == NULL || strncmp(ver, d->entries[i].version,
-                                               WAPP_MAX_VERSION_LEN) == 0) {
-                        return i + 1;
-                    }
-                }
-            } else {
-                if (strncmp(path, d->entries[i].name, WAPP_MAX_NAME_LEN) == 0) {
-                    return i + 1;
-                }
-            }
+        int ret = refreshEntries(d);
+        if (ret < 0)
+            return ret;
+        for (size_t i = 0; i < d->nEntries; i++) {
+            if (matchesRef(&d->entries[i], path))
+                return (int)i + 1;
         }
         return -ENOENT;
     }
@@ -268,29 +286,19 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
 }
 
 static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
-    int i;
+    int ret;
     (void)fd;
 
-    for (i = 0; i < d->nEntries; i++) {
-        const char *ver = strchr(path, (int)VERSION_SEPARATOR);
-        if (ver != NULL) {
-            ver += 1;
-            if (strncmp(path, d->entries[i].name,
-                        strnlen(d->entries[i].name, WAPP_MAX_NAME_LEN)) == 0) {
-                if (ver == NULL || strncmp(ver, d->entries[i].version,
-                                           WAPP_MAX_VERSION_LEN) == 0) {
-                    break;
-                }
-            }
-        } else {
-            if (strncmp(path, d->entries[i].name, WAPP_MAX_NAME_LEN) == 0) {
-                break;
-            }
-        }
-    }
+    if (path == NULL)
+        return -EINVAL;
 
-    if (i < d->nEntries) {
-        return WantedRegistryRemove(&d->entries[i]);
+    ret = refreshEntries(d);
+    if (ret < 0)
+        return ret;
+
+    for (size_t i = 0; i < d->nEntries; i++) {
+        if (matchesRef(&d->entries[i], path))
+            return WantedRegistryRemove(&d->entries[i]);
     }
 
     return -ENOENT;

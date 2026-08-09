@@ -292,6 +292,38 @@ TEST(vfs_registry_driver, Close_AfterWrite_FinalizesRegistry) {
     TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Close(drv->ctx, 0));
 }
 
+TEST(vfs_registry_driver, OpenEntry_WithoutOpeningRoot_Resolves) {
+    /* A caller asking whether one image is installed never enumerates the
+     * directory, so the lookup must load the entries itself. */
+    SeedTwo();
+    TEST_ASSERT_EQUAL_INT(1, drv->Open(drv->ctx, "app1:1.0.0", VFS_O_RDONLY));
+}
+
+TEST(vfs_registry_driver, OpenEntry_NamePrefix_ReturnsEnoent) {
+    /* "app1" must not answer for a longer name that starts with it. */
+    SeedTwo();
+    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Open(drv->ctx, "app1x", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          drv->Open(drv->ctx, "app1x:1.0.0", VFS_O_RDONLY));
+}
+
+TEST(vfs_registry_driver, OpenEntry_WrongVersion_ReturnsEnoent) {
+    SeedTwo();
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          drv->Open(drv->ctx, "app1:9.9.9", VFS_O_RDONLY));
+}
+
+TEST(vfs_registry_driver, Unlink_WithoutOpeningRoot_RemovesEntry) {
+    SeedTwo();
+    TEST_ASSERT_EQUAL_INT(0, drv->Unlink(drv->ctx, 0, "app2:2.3.4"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Open(drv->ctx, "app2", VFS_O_RDONLY));
+}
+
+TEST(vfs_registry_driver, Unlink_NamePrefix_ReturnsEnoent) {
+    SeedTwo();
+    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Unlink(drv->ctx, 0, "app1x"));
+}
+
 TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, OpenRoot_LoadsEntries);
     RUN_TEST_CASE(vfs_registry_driver, OpenNullPath_ReturnsEinval);
@@ -320,4 +352,9 @@ TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, Unlink_RemovesEntry);
     RUN_TEST_CASE(vfs_registry_driver, Unlink_Unknown_ReturnsEnoent);
     RUN_TEST_CASE(vfs_registry_driver, Close_AfterWrite_FinalizesRegistry);
+    RUN_TEST_CASE(vfs_registry_driver, OpenEntry_WithoutOpeningRoot_Resolves);
+    RUN_TEST_CASE(vfs_registry_driver, OpenEntry_NamePrefix_ReturnsEnoent);
+    RUN_TEST_CASE(vfs_registry_driver, OpenEntry_WrongVersion_ReturnsEnoent);
+    RUN_TEST_CASE(vfs_registry_driver, Unlink_WithoutOpeningRoot_RemovesEntry);
+    RUN_TEST_CASE(vfs_registry_driver, Unlink_NamePrefix_ReturnsEnoent);
 }
