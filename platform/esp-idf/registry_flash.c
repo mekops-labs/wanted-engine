@@ -142,14 +142,19 @@ static bool splitRef(const char *ref, char *name, size_t nameLen, char *version,
     return true;
 }
 
-/* Mark every slot referenced by a valid registry index file as used. Creates
+static bool slotIsMapped(int slot);
+
+/* Mark every slot referenced by a valid registry index file as used, plus every
+ * slot a loaded wapp is mapped from — an index entry can be removed while its
+ * image still runs, and reusing that slot erases flash under it. Creates
  * REGISTRY_ROOT if absent (fresh device), matching PlatformRegistryRead. */
 static int scanUsedSlots(bool used[WAPP_IMAGE_MAX_SLOTS]) {
     DIR *dir;
     const struct dirent *de;
     char path[WAPP_REG_PATH_MAX];
 
-    memset(used, 0, WAPP_IMAGE_MAX_SLOTS * sizeof(bool));
+    for (int i = 0; i < WAPP_IMAGE_MAX_SLOTS; i++)
+        used[i] = slotIsMapped(i);
 
     dir = opendir(REGISTRY_ROOT);
     if (dir == NULL) {
@@ -251,6 +256,10 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
             slot = allocSlot(used);
             if (slot < 0)
                 return slot;
+        } else if (slotIsMapped(slot)) {
+            /* Overwriting in place erases the slot, and this one is still
+             * executing. allocSlot already skips a mapped slot. */
+            return -EBUSY;
         }
 
         esp_err_t err = esp_partition_erase_range(
@@ -343,17 +352,30 @@ int PlatformRegistryRemove(const reg_entry_t *entry) {
 static struct {
     bool used;
     const void *ptr;
+    int slot;
     esp_partition_mmap_handle_t handle;
 } g_mmapTable[WAPP_IMAGE_MAX_SLOTS];
 
-static bool mmapTableAdd(const void *ptr, esp_partition_mmap_handle_t handle) {
+static bool mmapTableAdd(const void *ptr, esp_partition_mmap_handle_t handle,
+                         int slot) {
     for (int i = 0; i < WAPP_IMAGE_MAX_SLOTS; i++) {
         if (!g_mmapTable[i].used) {
             g_mmapTable[i].used = true;
             g_mmapTable[i].ptr = ptr;
+            g_mmapTable[i].slot = slot;
             g_mmapTable[i].handle = handle;
             return true;
         }
+    }
+    return false;
+}
+
+/* Whether a loaded wapp still runs from `slot`. An index entry can be removed
+ * while its image is mapped, so the index alone does not say a slot is free. */
+static bool slotIsMapped(int slot) {
+    for (int i = 0; i < WAPP_IMAGE_MAX_SLOTS; i++) {
+        if (g_mmapTable[i].used && g_mmapTable[i].slot == slot)
+            return true;
     }
     return false;
 }
@@ -421,7 +443,7 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     if (err != ESP_OK)
         return -EIO;
 
-    if (!mmapTableAdd(ptr, handle)) {
+    if (!mmapTableAdd(ptr, handle, (int)meta.slot)) {
         flashHelperMunmap(handle);
         return -ENOMEM;
     }

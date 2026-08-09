@@ -20,6 +20,8 @@ Unreleased
 
 ### Fixed
 
+- An ESP-IDF registry install could take a slot a loaded wapp still runs from,
+  erasing flash under it. A mapped slot is never allocated or overwritten.
 - A registry install whose start failed answered `-EBADF` on every later write,
   hiding the error that stopped it. A full registry read as a bad descriptor.
 - `/dev/wanted/reg/<ref>` and `unlink` answered `-ENOENT` for an image the
