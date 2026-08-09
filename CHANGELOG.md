@@ -1,6 +1,20 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- `/dev/ota` reports a `pending_digest` line: the staged image's own build-time digest, which is what `/proc/wanted`'s `digest` reports once that slot boots. Confirming an update compares these two; the digest of the bytes downloaded hashes a different artifact and can never match. Absent while nothing is staged.
+- An ESP-IDF boot-time Wi-Fi join (`CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN`), for a supervisor that reaches its control plane over the network: nothing else brings the radio up before the supervisor starts. Credentials come from `/data/wifi.conf`, or from a console prompt that writes it, so only a board's first boot needs an operator; the radio keeps them in RAM.
+- An ESP32-S3 board configuration running Sheriff: `OTA_PROFILE=s3-sheriff`, the `s3-wapps` A/B layout with the production supervisor and the boot-time join.
+
+### Fixed
+
+- ESP-IDF firmware reported `version: unknown` at `/proc/wanted`: the component compiles the engine core itself and nothing defined the version. A checkout with no reachable tag now fails the build.
+- The ESP-IDF build compiled the `gpio`, `uart` and `ota` drivers unconditionally, so deselecting any of them broke the build, and the `uart` backing had no component requirement to find its header through.
+
 0.12.0 (2026-08-05)
 -------------------
 

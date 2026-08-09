@@ -245,6 +245,12 @@ typedef struct {
                             * observed) */
     char last_failed_slot; /* 'a', 'b', or '\0' if no slot has ever failed */
     int boot_attempts;     /* boot attempts recorded for active_slot */
+    /* Build-time digest of the staged image, lowercase hex, empty when nothing
+     * is staged or the target stamps none. This is what
+     * PlatformFirmwareDigest reports once that image boots, so it is the value
+     * a control plane compares to tell a staged image took -- not the digest
+     * of the bytes it downloaded, which hashes a different artifact. */
+    char pending_digest[FIRMWARE_DIGEST_HEX_LEN + 1];
 } platform_ota_state_t;
 
 /* Read the current boot state (running slot + otadata/trailer state of both

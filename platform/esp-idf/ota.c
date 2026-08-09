@@ -42,6 +42,17 @@ static char slotLetter(const esp_partition_t *part) {
     return '\0';
 }
 
+/* NUL-terminated lowercase hex of `len` bytes; `out` holds 2*len+1. */
+static void hexEncode(const uint8_t *in, size_t len, char *out) {
+    static const char hex[] = "0123456789abcdef";
+
+    for (size_t i = 0; i < len; i++) {
+        out[2 * i] = hex[in[i] >> 4];
+        out[2 * i + 1] = hex[in[i] & 0x0f];
+    }
+    out[2 * len] = '\0';
+}
+
 static void revertTimerFired(void *arg) {
     (void)arg;
     /* Runs on the esp_timer service task, whose stack is internal DRAM, so
@@ -195,6 +206,14 @@ static void getStateJobFn(void *arg) {
             if (nextState == ESP_OTA_IMG_INVALID ||
                 nextState == ESP_OTA_IMG_ABORTED)
                 out->last_failed_slot = slotLetter(next);
+        }
+        /* Only a scheduled slot holds an image worth naming: the inactive slot
+         * otherwise carries whatever an older or abandoned write left there. */
+        if (out->pending_swap) {
+            esp_app_desc_t desc;
+            if (esp_ota_get_partition_description(next, &desc) == ESP_OK)
+                hexEncode(desc.app_elf_sha256, sizeof(desc.app_elf_sha256),
+                          out->pending_digest);
         }
     }
     j->rc = 0;

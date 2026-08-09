@@ -19,7 +19,7 @@ static const char id[] = {'O', 't', 'a', '\0'};
 
 #define OTA_MAX_FDS 2      /* concurrent opens of either node */
 #define OTA_CMD_MAX 16     /* longest accepted command line ("rollback\n") */
-#define OTA_STATUS_MAX 128 /* status text block */
+#define OTA_STATUS_MAX 256 /* status text block, digest line included */
 
 enum ota_node_t {
     OTA_NODE_CTL,  /* /dev/ota */
@@ -84,6 +84,12 @@ static char *buildStatus(void) {
         WantedFree(out);
         return NULL;
     }
+
+    /* Absent rather than empty where nothing is staged or the target stamps no
+     * digest, so a reader never takes an empty value for an image identity. */
+    if (st.pending_digest[0] != '\0' && n < (int)OTA_STATUS_MAX)
+        snprintf(out + n, OTA_STATUS_MAX - (size_t)n, "pending_digest: %s\n",
+                 st.pending_digest);
     return out;
 }
 

@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -22,7 +23,11 @@
 #include <platform.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
+#include <wanted-autoconf.h>
 #include <wanted.h>
+#if CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN
+#include <wifi-bringup.h>
+#endif
 
 #define TAG "wanted"
 #define LITTLEFS_PARTITION_LABEL "persist"
@@ -379,6 +384,90 @@ static void seedWapp(const char *ref, const uint8_t *start,
              (unsigned)len, w, fin);
 }
 
+#if CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN
+#define WIFI_CONF_PATH "/data/wifi.conf"
+#define WIFI_SSID_MAX 33 /* 32 + NUL */
+#define WIFI_PASS_MAX 64 /* 63 + NUL */
+#define WIFI_JOIN_TIMEOUT_S 20
+
+/* One line, newline-stripped, from the console. Empty on EOF. */
+static void readConsoleLine(const char *prompt, char *out, size_t outLen) {
+    printf("%s", prompt);
+    fflush(stdout);
+    out[0] = '\0';
+    if (fgets(out, (int)outLen, stdin) == NULL) {
+        out[0] = '\0';
+        return;
+    }
+    char *nl = strpbrk(out, "\r\n");
+    if (nl != NULL)
+        *nl = '\0';
+}
+
+/* Two lines: SSID, then passphrase. False when the file is absent or short. */
+static bool readWifiConf(char *ssid, size_t ssidLen, char *pass,
+                         size_t passLen) {
+    FILE *f = fopen(WIFI_CONF_PATH, "r");
+    if (f == NULL)
+        return false;
+
+    bool ok = fgets(ssid, (int)ssidLen, f) != NULL;
+    if (ok && fgets(pass, (int)passLen, f) == NULL)
+        pass[0] = '\0';
+    fclose(f);
+    if (!ok)
+        return false;
+
+    char *nl = strpbrk(ssid, "\r\n");
+    if (nl != NULL)
+        *nl = '\0';
+    nl = strpbrk(pass, "\r\n");
+    if (nl != NULL)
+        *nl = '\0';
+    return ssid[0] != '\0';
+}
+
+static void writeWifiConf(const char *ssid, const char *pass) {
+    FILE *f = fopen(WIFI_CONF_PATH, "w");
+    if (f == NULL) {
+        ESP_LOGW(TAG, "wifi: cannot save credentials to " WIFI_CONF_PATH);
+        return;
+    }
+    fprintf(f, "%s\n%s\n", ssid, pass);
+    fclose(f);
+    ESP_LOGI(TAG, "wifi: credentials saved; later boots need no operator");
+}
+
+/* Join Wi-Fi before the supervisor starts, for a supervisor whose control plane
+ * is on the network. Stored credentials make a reboot unattended -- which an
+ * OTA depends on, since the update reboots the board. */
+static void wifiBringup(void) {
+    char ssid[WIFI_SSID_MAX] = {0};
+    char pass[WIFI_PASS_MAX] = {0};
+
+    bool stored = readWifiConf(ssid, sizeof(ssid), pass, sizeof(pass));
+    if (!stored) {
+        readConsoleLine("wifi ssid: ", ssid, sizeof(ssid));
+        if (ssid[0] == '\0') {
+            ESP_LOGI(TAG, "wifi: no ssid given, starting without the network");
+            return;
+        }
+        readConsoleLine("wifi passphrase: ", pass, sizeof(pass));
+    }
+
+    /* The SSID is deliberately not logged: a boot log is copied into issues and
+     * pastes, and the network a device joins does not need to travel with it.
+     */
+    int rc = EspWifiBringup(ssid, pass, WIFI_JOIN_TIMEOUT_S);
+    ESP_LOGI(TAG, "wifi: join -> rc=%d", rc);
+    if (rc == 0 && !stored)
+        writeWifiConf(ssid, pass);
+
+    memset(ssid, 0, sizeof(ssid));
+    memset(pass, 0, sizeof(pass));
+}
+#endif /* CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN */
+
 /* Route the console VFS through the interrupt-driven driver so read(stdin)
  * blocks; the default console is non-blocking and a shell's getline() then
  * spins forever. The peripheral differs by board, the requirement does not. */
@@ -448,7 +537,13 @@ void app_main(void) {
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || CONFIG_ESP_CONSOLE_UART_DEFAULT
     consoleUseBlockingDriver();
 #endif
-    ESP_LOGI(TAG, "starting WANTED engine (supervisor: wsh, privileged)");
+#if CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN
+    /* After the blocking console driver: the credential prompt reads a line,
+     * and a non-blocking stdin returns EOF instead of waiting for one. */
+    wifiBringup();
+#endif
+    ESP_LOGI(TAG, "starting WANTED engine (supervisor: %s)",
+             CONFIG_WANTED_SUPERVISOR_IMAGE);
     int ret = WantedStart(_binary_wanted_config_json_start,
                           strlen(_binary_wanted_config_json_start));
     ESP_LOGI(TAG, "WantedStart returned %d", ret);

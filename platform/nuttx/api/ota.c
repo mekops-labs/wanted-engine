@@ -23,6 +23,7 @@ int PlatformOtaGetBootState(platform_ota_state_t *out) {
     out->pending_swap = false;
     out->last_failed_slot = '\0';
     out->boot_attempts = 0;
+    out->pending_digest[0] = '\0';
     return 0;
 }
 

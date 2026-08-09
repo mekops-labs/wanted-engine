@@ -1,0 +1,21 @@
+# XIAO ESP32-S3 (ESP-IDF, octal PSRAM) — Sheriff as the supervisor, driven by a
+# control plane over Wi-Fi. Same capacity envelope as xiao_esp32s3; what differs
+# is the supervisor, its launch config, and joining the network at boot, since
+# Sheriff reaches its control plane over TCP and no shell is present to bring the
+# radio up.
+#
+# The launch config's manager address and trusted key are deployment values —
+# point them at your own control plane before flashing.
+
+CONFIG_WANTED_MAX_WAPPS=20
+CONFIG_WANTED_WASM_STACK_SIZE=65536
+CONFIG_WANTED_WASM_HEAP_SIZE=0
+CONFIG_WANTED_WASM_WORKER_STACK_SIZE=65536
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=2
+CONFIG_WANTED_MAX_PATH_LEN=256
+CONFIG_WANTED_MAX_DRIVERS_CNT=6
+CONFIG_WANTED_MAX_OPTIONS_SIZE=128
+
+CONFIG_WANTED_SUPERVISOR_SHERIFF=y
+CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-esp32s3-sheriff.json"
+CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN=y

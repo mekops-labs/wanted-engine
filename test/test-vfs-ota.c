@@ -8,6 +8,7 @@
 #include "test-utils.h"
 
 #include <dummy-fs.h>
+#include <platform.h>
 #include <vfs-devfs.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
@@ -69,12 +70,21 @@ TEST(ota_status, ReportsAConfirmedSlotBeforeAnyUpdate) {
     TEST_ASSERT_NOT_NULL(strstr(buf, "status: confirmed"));
 }
 
+/* Absent, not empty: a reader must never take a blank value for the identity
+ * of an image that is not there. */
+TEST(ota_status, ReportsNoPendingDigestWithNothingStaged) {
+    char buf[256];
+    TEST_ASSERT_GREATER_THAN_INT(0, readStatus(buf, sizeof(buf)));
+    TEST_ASSERT_NULL(strstr(buf, "pending_digest"));
+}
+
 TEST(ota_status, RejectsAnUnknownVerb) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, cmd("frobnicate"));
 }
 
 TEST_GROUP_RUNNER(ota_status) {
     RUN_TEST_CASE(ota_status, ReportsAConfirmedSlotBeforeAnyUpdate);
+    RUN_TEST_CASE(ota_status, ReportsNoPendingDigestWithNothingStaged);
     RUN_TEST_CASE(ota_status, RejectsAnUnknownVerb);
 }
 
@@ -169,6 +179,32 @@ TEST(ota_activate, RollbackDropsThePendingSwap) {
     TEST_ASSERT_NOT_NULL(strstr(buf, "status: confirmed"));
 }
 
+/* The digest a status read reports for the staged slot is the one the running
+ * image reports once that slot boots. That equality is what lets a control
+ * plane confirm an update; the downloaded bytes' digest hashes a different
+ * artifact and could never match. */
+TEST(ota_activate, TheStagedDigestBecomesTheRunningDigest) {
+    char buf[256];
+    stageAnImage();
+    TEST_ASSERT_GREATER_THAN_INT(0, readStatus(buf, sizeof(buf)));
+
+    const char *at = strstr(buf, "pending_digest: ");
+    TEST_ASSERT_NOT_NULL(at);
+    char staged[FIRMWARE_DIGEST_HEX_LEN + 1];
+    memcpy(staged, at + strlen("pending_digest: "), FIRMWARE_DIGEST_HEX_LEN);
+    staged[FIRMWARE_DIGEST_HEX_LEN] = '\0';
+
+    char running[FIRMWARE_DIGEST_HEX_LEN + 1];
+    TEST_ASSERT_GREATER_THAN_INT(
+        0, PlatformFirmwareDigest(running, sizeof(running)));
+    TEST_ASSERT_TRUE(strcmp(staged, running) != 0);
+
+    TEST_ASSERT_GREATER_THAN_INT(0, cmd("confirm"));
+    TEST_ASSERT_GREATER_THAN_INT(
+        0, PlatformFirmwareDigest(running, sizeof(running)));
+    TEST_ASSERT_EQUAL_STRING(staged, running);
+}
+
 TEST(ota_activate, ConfirmWithNothingStagedSucceeds) {
     TEST_ASSERT_GREATER_THAN_INT(0, cmd("confirm"));
     TEST_ASSERT_EQUAL_INT('a', DummyOtaActiveSlot());
@@ -177,5 +213,6 @@ TEST(ota_activate, ConfirmWithNothingStagedSucceeds) {
 TEST_GROUP_RUNNER(ota_activate) {
     RUN_TEST_CASE(ota_activate, ConfirmMakesTheStagedSlotActive);
     RUN_TEST_CASE(ota_activate, RollbackDropsThePendingSwap);
+    RUN_TEST_CASE(ota_activate, TheStagedDigestBecomesTheRunningDigest);
     RUN_TEST_CASE(ota_activate, ConfirmWithNothingStagedSucceeds);
 }

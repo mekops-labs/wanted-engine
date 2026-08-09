@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "esp_event.h"
 #include "esp_log.h"
@@ -22,6 +23,7 @@
 #include <vfs.h>
 #include <wanted-api.h>
 #include <wanted_malloc.h>
+#include <wifi-bringup.h>
 
 static const char id[] = {'W', 'i', 'f', 'i'};
 
@@ -115,6 +117,10 @@ static bool wifiEnsureStarted(void) {
                                             &ipHandle) != ESP_OK)
         return false;
 
+    /* Credentials stay in RAM: a board's flash outlives the session that
+     * typed them, and nothing here needs them again after a reboot. */
+    if (esp_wifi_set_storage(WIFI_STORAGE_RAM) != ESP_OK)
+        return false;
     if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK)
         return false;
     if (esp_wifi_start() != ESP_OK)
@@ -210,6 +216,70 @@ static int wifiConnect(const char *ssid, const char *pass) {
     g_wifiSsid[sizeof(g_wifiSsid) - 1] = '\0';
 
     return (esp_wifi_connect() == ESP_OK) ? 0 : -1;
+}
+
+/* Count the visible APs and say whether `ssid` is among them, without logging
+ * any network's name: a boot log travels, and the answer a bring-up needs is
+ * whether the radio can see the target at all. */
+static void reportVisibility(const char *ssid) {
+    char *aps = scanCollect();
+    if (aps == NULL) {
+        ESP_LOGW(TAG, "bringup: scan failed");
+        return;
+    }
+
+    size_t count = 0;
+    for (const char *p = aps; *p != '\0'; p++) {
+        if (*p == '\n')
+            count++;
+    }
+
+    bool found = false;
+    size_t len = strlen(ssid);
+    for (const char *line = aps; line != NULL && *line != '\0';) {
+        if (strncmp(line, ssid, len) == 0 && line[len] == ' ') {
+            found = true;
+            break;
+        }
+        line = strchr(line, '\n');
+        if (line != NULL)
+            line++;
+    }
+
+    ESP_LOGI(TAG, "bringup: %u APs visible, target present: %s",
+             (unsigned)count, found ? "yes" : "no");
+    /* Only when the target is missing, and only then: the operator needs to see
+     * what the radio can reach — a 5 GHz-only SSID is invisible here, and the
+     * failure otherwise looks identical to a wrong passphrase. */
+    if (!found)
+        ESP_LOGI(TAG, "bringup: visible:\n%s", aps);
+    WantedFree(aps);
+}
+
+int EspWifiBringup(const char *ssid, const char *pass, int timeoutSec) {
+    if (ssid == NULL || ssid[0] == '\0')
+        return -EINVAL;
+    if (!wifiEnsureStarted())
+        return -EIO;
+
+    reportVisibility(ssid);
+
+    /* Association and the lease are both asynchronous; the IP event is what
+     * makes the link usable, so that is what this waits for. A failed
+     * association is not retried by the driver, and a boot that races the AP
+     * coming back must not need an operator, so the request is repeated. */
+    int rc = -ETIMEDOUT;
+    for (int tenths = 0; tenths < timeoutSec * 10; tenths++) {
+        if (tenths % 50 == 0 && !g_wifiConnected) {
+            rc = (wifiConnect(ssid, pass != NULL ? pass : "") != 0)
+                     ? -EIO
+                     : -ETIMEDOUT;
+        }
+        if (g_wifiConnected)
+            return 0;
+        usleep(100 * 1000);
+    }
+    return rc;
 }
 
 static int wifiDisconnectNow(void) {
