@@ -1,11 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF PlatformSha256* backend: mbedtls_sha256_context transparently uses
- * the ESP32-S3 SHA hardware peripheral whenever MBEDTLS_HARDWARE_SHA is
- * enabled (ESP-IDF's default for this SoC) — no separate API, the ordinary
- * mbedtls_sha256_* calls below are the accelerated path. This is a genuine
- * hardware offload, unlike ECDSA/ECC on this chip (no ECC peripheral exists
- * on ESP32-S3; that only ships on the RISC-V parts). */
+/* ESP-IDF PlatformSha256* backend. mbedtls_sha256_context transparently uses
+ * the ESP32-S3 SHA peripheral whenever MBEDTLS_HARDWARE_SHA is set, which is
+ * the SoC default, so the ordinary calls below are the accelerated path. */
 
 #include <stdint.h>
 

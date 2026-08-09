@@ -10,14 +10,9 @@
 
 #include "dummy-fs.h"
 
-/* Loopback UART fake for the unit tests and for CI on a host with no serial
- * hardware. Bytes a wapp writes to `data` land in a ring the same port reads
- * back, so a test exercises the driver's blocking and short-read behaviour
- * without a peer.
- *
- * Line settings are stored and reported, not enforced. A test asserts that a
- * baud or format write reached the backing, and that the reconfiguration
- * discarded the receive ring. */
+/* Loopback UART fake for the unit tests: bytes written to `data` land in a ring
+ * the same port reads back, exercising blocking and short reads with no peer.
+ * Line settings are stored and reported, not enforced. */
 
 #define DUMMY_UART_RING 256
 

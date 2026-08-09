@@ -18,11 +18,8 @@ int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout,
         return -rc;
 
     /* The stop signal wakes this sleep early but NuttX reports success, so the
-     * timer return alone cannot distinguish an interrupt from elapsed time.
-     * Consume the per-worker interrupt flag the stop handler set and report it
-     * as EINTR. This unwinds the host call — including the pipe driver's poll
-     * loop, which bails on EINTR — back to the interpreter, where the terminate
-     * flag is honoured. */
+     * timer return cannot tell an interrupt from an elapsed wait. Consume the
+     * per-worker flag the stop handler set and report EINTR. */
     if (PlatformStopInterruptConsume())
         return -EINTR;
 

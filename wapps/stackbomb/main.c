@@ -1,15 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* stackbomb — unbounded recursion that overflows the WASM stack.
- *
- * Prints a marker (captured by the engine's log console), then recurses without
- * a base case. Each frame keeps a real on-stack buffer and passes its address
- * to the next call, which reads it: because the buffer escapes into the callee,
- * the call is not in a tail position the optimizer can flatten into a loop, so
- * it stays genuine recursion and the C shadow stack grows every call until it
- * crosses the guard. The engine must trap that access, end this wapp in a dead
- * state, and keep the supervisor and other wapps running. Launched by the
- * selftest supervisor, which asserts the containment. */
+/* stackbomb — unbounded recursion that overflows the WASM stack. Each frame's
+ * on-stack buffer escapes into the callee, so the call cannot be flattened into
+ * a loop. The engine must trap it and keep everything else running. */
 
 #include <string.h>
 #include <unistd.h>

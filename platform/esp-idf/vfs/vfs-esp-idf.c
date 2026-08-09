@@ -308,11 +308,9 @@ static int espOpen(const char *path, vfs_oflags_t flags) {
     if (realFd < 0)
         return -errno;
 
-    /* joltwallet/littlefs hard-asserts (aborts the whole device) if
-     * lfs_file_read_/lfs_file_write_ is called on a handle opened without the
-     * matching access bit, rather than returning EBADF like a POSIX
-     * filesystem would. Track the access mode ourselves and reject a
-     * mismatched Read/Write before it reaches the filesystem. */
+    /* joltwallet/littlefs aborts the device on a read or write against a
+     * handle opened without the matching access bit, where POSIX would return
+     * EBADF. Track the mode here and reject a mismatch before it gets there. */
     int accMode = flags & (VFS_O_WRONLY | VFS_O_RDWR);
     bool canRead = accMode != VFS_O_WRONLY;
     bool canWrite = accMode != 0;
@@ -368,13 +366,9 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
     return 0;
 }
 
-/* joltwallet/littlefs's fstat reads the on-disk directory entry
- * (lfs_stat(path)) rather than the open file handle's live size
- * (lfs_file_size()), since esp_vfs's fd->path cache is the only link it has
- * back to the file. A size check against a handle with unflushed writes
- * therefore sees the last-synced size, not the pending one; it only reflects
- * reality once the handle has synced (a Close, or any operation that flushes
- * littlefs's write cache). */
+/* joltwallet/littlefs's fstat reads the on-disk directory entry rather than the
+ * open handle's live size, so a size check against a handle with unflushed
+ * writes sees the last-synced value until something flushes the write cache. */
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
     (void)d;
     bool isDir = false;

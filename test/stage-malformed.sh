@@ -1,8 +1,7 @@
 #!/bin/bash
-# Stage malformed registry images for the loader-robustness checks. The selftest
+# Stage malformed registry images for the loader-robustness checks: the selftest
 # supervisor tries to `start` each and asserts the engine rejects it without
-# crashing. These are hand-crafted (not built from a wapp source) to exercise
-# the loader's rejection paths.
+# crashing. They are hand-crafted, to reach the loader's rejection paths.
 #
 # Usage: stage-malformed.sh <registry-dir> <path-to-a-valid-app.wasm>
 set -u

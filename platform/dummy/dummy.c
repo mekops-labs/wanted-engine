@@ -4,11 +4,9 @@
 
 #include <platform.h>
 
-/* Clock, PRNG, VFS platform driver, and fs functions live in dummy-fs.c.
- * In-memory registry (Read/Remove) lives in dummy-registry.c.
- * In-memory wapp runtime state (Load/Unload/Start/Stop/Loop/GetState) lives
- * in dummy-wapps.c.
- * Network mock (PlatformNet*) lives in dummy-net.c. */
+/* Clock, PRNG, VFS driver and fs calls live in dummy-fs.c; the registry in
+ * dummy-registry.c; wapp runtime state in dummy-wapps.c; PlatformNet* in
+ * dummy-net.c. */
 
 /* The unit-test platform offers no platform-specific drivers; a test that needs
  * one registers a deliberate fake here. A config naming an absent driver fails
@@ -21,10 +19,9 @@ const vfs_driver_table_t *PlatformDriverTable(void) {
     return dummy_driver_table;
 }
 
-/* PlatformRegistryWrite streams an image to a host file and renames it under
- * the install ref; host filesystem writes are out of scope for the dummy, so
- * this remains a stub. PlatformRegistryWappLoad chains a WASM load, also out of
- * scope. Read/Remove are implemented in dummy-registry.c. */
+/* Host filesystem writes and WASM loads are out of scope for the dummy, so
+ * PlatformRegistryWrite and PlatformRegistryWappLoad stay stubs. Read and
+ * Remove are implemented in dummy-registry.c. */
 int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
                           size_t nbytes) {
     (void)s;

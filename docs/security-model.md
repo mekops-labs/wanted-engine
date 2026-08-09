@@ -64,7 +64,7 @@ A device needs a stable, verifiable identity so a control-plane peer (the **Depu
 
 - The **Ed25519** key pair is the unit of device identity. The public key is what the Deputy trusts; the private key never enters the engine's memory in the verified path — the engine only runs `PlatformEd25519Verify`, which is verify-only.
 - The engine holds **no keys**. The `/dev/ed25519` device takes the public key, signature, and message from the wapp that opened it (see [VFS Reference → ed25519](vfs-reference.md#ed25519--signature-verification-device)). Key custody stays with the caller; the engine is a curve-math oracle.
-- The crypto backend is platform-specific: OpenSSL on Linux, the vendored `orlp/ed25519` (verify-only) on NuttX/RP2350, and a dummy stub on the ESP-IDF port (Ed25519 not yet ported there). The seam symbol is the one allowed to report `-ENOSYS`, which the `/dev/ed25519` verdict read surfaces to the wapp — so a build without a real backend fails closed rather than silently passing.
+- The crypto backend is platform-specific: OpenSSL on Linux, and the vendored `orlp/ed25519` (verify-only) on both NuttX/RP2350 and ESP-IDF. The seam symbol is the one allowed to report `-ENOSYS`, which the `/dev/ed25519` verdict read surfaces to the wapp — so a build without a real backend fails closed rather than silently passing.
 
 What this layer guarantees: a wapp can verify a signature without ever holding the verifying key material in its own linear memory, and a build without a crypto backend cannot pretend to verify. What it does not: it does not provision keys, rotate them, or attest to the Deputy — that is the supervisor's job.
 
@@ -144,7 +144,11 @@ What this layer guarantees: a single wapp cannot exhaust engine memory or wedge 
 
 ### 8. Firmware update and rollback (ESP-IDF)
 
-On the ESP32-S3 ESP-IDF port, `/dev/ota` drives an A/B firmware update through `esp_ota_ops` with a pending-verify / rollback seam: a new image is written to the inactive slot, booted once, and must be confirmed or it rolls back on the next boot. This is the recovery story for a bad push — the device always has a known-good slot to fall back to. The RP2350 path uses the offline `picotool` flash flow instead (no in-field OTA yet).
+On the ESP32-S3 ESP-IDF port, `/dev/ota` drives an A/B firmware update through `esp_ota_ops` with a pending-verify / rollback seam: a new image is written to the inactive slot, booted once, and must be confirmed or it rolls back on the next boot. This is the recovery story for a bad push — the device always has a known-good slot to fall back to.
+
+Linux stages the same A/B update for real, into slot directories under `CONFIG_WANTED_OTA_SLOT_ROOT`, arming a trial boot the bootloader reads. Nothing in the engine reboots into the staged slot there and no host bootloader reports a failed trial back, so `last_failed_slot` stays empty on that platform. The classic ESP32's single-factory layout and the RP2350 have no A/B slot to update into; the RP2350 uses the offline `picotool` flash flow.
+
+A streaming write that begins and never commits holds the slot, and every later `begin` answers `-EBUSY` until the board reboots — so `abort` exists to release a session whose image must not become bootable.
 
 What this layer guarantees: a failed or compromised firmware update does not brick the device — the previous slot is retained. What it does not: it does not sign the OTA image (that is the secure-boot layer's job on targets that have it).
 

@@ -1,26 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Secure sockets over raw mbedTLS: network.h's TLS layer, wrapping the
- * plain socket fd platform/posix/socket.c has already created and connected
- * (or accepted) — the same seam Linux fills with OpenSSL
- * (platform/linux/api/ssocket.c). Shared by the mbedTLS platforms (ESP-IDF,
- * NuttX): mbedtls_net_context is a plain `int fd` field the caller may set
- * directly, so the engine keeps socket ownership. Raw mbedTLS rather than a
- * platform wrapper because ESP-IDF's esp-tls cannot wrap an fd it did not
- * open (esp_tls_conn_new_sync's ESP_TLS_INIT state unconditionally opens and
- * connects its own socket, confirmed against the vendored source). ESP32-S3
- * hardware-accelerated AES/SHA/ECC/bignum are that SoC's mbedTLS Kconfig
- * defaults — no extra wiring needed to get them.
- *
- * No CA bundle is provisioned (verification is MBEDTLS_SSL_VERIFY_NONE):
- * this proves the handshake and record layer, matching what the shared
- * platform/posix/socket.c call sites need; certificate-chain verification
- * against a trust store is a follow-up before any production posture.
- *
- * Neither this file's TLSOpenConnection nor Linux's ever branches on
- * direction: both unconditionally run a client-mode handshake. A secure
- * transport therefore cannot serve — PlatformNetListen rejects one, for want
- * of a server certificate and key — and TLSAccept is a parity no-op. */
+/* Secure sockets over raw mbedTLS, wrapping the plain socket fd socket.c has
+ * already connected, so the engine keeps socket ownership. Client-mode only,
+ * with no CA bundle provisioned; see the platform guide. */
 
 #include <errno.h>
 #include <stddef.h>
@@ -150,10 +132,9 @@ int TLSShutdown(void *connIn) {
     return mbedtls_ssl_close_notify(&conn->ssl);
 }
 
-/* Releases the mbedTLS session state only. The socket fd (conn->net.fd) is
- * owned by platform/posix/socket.c's netCtx, which closes it separately —
- * calling mbedtls_net_free here would close a socket this layer never
- * opened, so it is not called; only mbedtls_ssl_free tears down. */
+/* Releases the mbedTLS session state only. The socket fd is owned by socket.c's
+ * netCtx, which closes it separately, so mbedtls_net_free would close a socket
+ * this layer never opened. */
 void TLSFree(void *connIn) {
     tls_conn_t *conn = (tls_conn_t *)connIn;
     if (conn == NULL)

@@ -2,11 +2,9 @@
 
 #pragma once
 
-/*
- * Minimal WASI snapshot-preview1 types — values match wasi-libc spec.
- * Maintained locally because WAMR_BUILD_LIBC_WASI=0 (we have a custom
- * VFS-backed implementation).
- */
+/* Minimal WASI snapshot-preview1 types; values match the wasi-libc spec.
+ * Maintained locally because WAMR_BUILD_LIBC_WASI=0 and the VFS-backed
+ * implementation is our own. */
 
 #include <stdint.h>
 
@@ -121,9 +119,8 @@ typedef uint8_t __wasi_sdflags_t;
 #define __WASI_RIGHTS_SOCK_ACCEPT (1ULL << 29)
 
 /* Write/mutate class cleared from a read-only grant (READONLY = ALL & ~WRITE).
- * Deny-by-subtraction: any right outside this set still passes, so broadening
- * it only tightens. FD_SYNC and FD_FDSTAT_SET_FLAGS stay out — a durability
- * barrier and an fd-flag toggle, harmless on a read-only fd. */
+ * Deny-by-subtraction, so broadening this set only tightens. FD_SYNC and
+ * FD_FDSTAT_SET_FLAGS stay out: both are harmless on a read-only fd. */
 #define WASI_RIGHTS_WRITE                                                      \
     (__WASI_RIGHTS_FD_DATASYNC | __WASI_RIGHTS_FD_WRITE |                      \
      __WASI_RIGHTS_FD_ALLOCATE | __WASI_RIGHTS_PATH_CREATE_DIRECTORY |         \
@@ -177,10 +174,9 @@ typedef struct __wasi_subscription_t {
     } u;
 } __wasi_subscription_t;
 
-/* WASI snapshot-preview1 __wasi_event_t is 32 bytes. poll_oneoff writes it at
- * fixed offsets (see wasi_poll_oneoff in wasi-vfs.c) for a clock subscription;
- * fd_read/fd_write subscriptions return NOSYS. It stays an opaque byte block
- * here. */
+/* WASI snapshot-preview1 __wasi_event_t is 32 bytes, written at fixed offsets
+ * by poll_oneoff for a clock subscription; fd_read/fd_write subscriptions
+ * return NOSYS. It stays an opaque byte block here. */
 typedef struct __wasi_event_t {
     uint8_t _pad[32];
 } __wasi_event_t;

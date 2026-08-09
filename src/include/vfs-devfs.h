@@ -6,12 +6,9 @@
 #include <stdint.h>
 #include <vfs.h>
 
-/* DevFs — prefix-router shim for "/dev/<name>" paths.
- *
- * WantedInstallDriver calls DevFs_Register to insert (name, driver) pairs into
- * the per-wapp table on vfs_ctx_t. DevFs_Open resolves "/dev/<suffix>" by
- * exact-matching `suffix` against the registered names.
- */
+/* DevFs — prefix-router shim for "/dev/<name>" paths. WantedInstallDriver
+ * registers (name, driver) pairs into the per-wapp table; DevFs_Open resolves
+ * a suffix by exact match against the registered names. */
 
 int DevFs_Register(vfs_ctx_t c, const char *name, const vfs_driver_t *driver);
 void DevFs_Destroy(vfs_ctx_t c);

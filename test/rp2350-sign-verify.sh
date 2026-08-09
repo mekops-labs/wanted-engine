@@ -1,13 +1,7 @@
 #!/bin/bash
-# Validates the signed-firmware pipeline entirely offline. Signs the built
-# NuttX/WANTED image with picotool (secp256k1 + SHA-256, RP2350's actual
-# bootrom scheme), confirms the signature verifies, then confirms a tampered
-# copy of the same image reports an invalid signature.
-#
-# Does not touch OTP or a device: no `picotool otp load`, no `--device`.
-# RP2350 OTP fuses are physically one-way (0->1, unrecoverable). This script
-# proves the signing/verification tooling is correct, not that the chip
-# itself would refuse an unsigned image.
+# Validates the signed-firmware pipeline entirely offline: sign the built image
+# with picotool, confirm it verifies, then confirm a tampered copy does not.
+# It touches no OTP and no device, since RP2350 fuses are physically one-way.
 #
 # Usage: test/rp2350-sign-verify.sh [path-to-nuttx.uf2]
 #        (runs in the build container; see `make rp2350-sign`)
@@ -57,10 +51,9 @@ fi
 
 echo "=== tamper a copy and confirm verification fails ==="
 cp "$SIGNED" "$TAMPERED"
-# Flip a byte inside the first UF2 block's actual payload (bytes 32..287 of a
-# 512-byte block; header is bytes 0..31, the rest of the 476-byte payload area
-# past the real 256-byte payload is padding a UF2 reader ignores - flipping a
-# byte there changes nothing and silently defeats this check).
+# Flip a byte inside the first UF2 block's actual payload, bytes 32..287 of the
+# 512-byte block. The rest of the payload area is padding a reader ignores, so
+# flipping a byte there would silently defeat this check.
 python3 -c "
 with open('$TAMPERED', 'r+b') as f:
     f.seek(40)

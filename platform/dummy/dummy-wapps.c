@@ -7,13 +7,9 @@
 
 #include "dummy-fs.h"
 
-/* ── In-memory wapp runtime state ───────────────────────────────────────────
- * Deterministic, dependency-free stand-in for the host wapp supervisor. Backs
- * PlatformWappGetState and is mutated by PlatformWappStart / PlatformWappStop
- * so control-plane round-trips (write a verb, read back state) are testable
- * without a real WASM runtime. Tests seed/clear it via DummyWappStateSeed /
- * DummyWappStateReset.
- * ───────────────────────────────────────────────────────────────────────── */
+/* In-memory wapp runtime state backing PlatformWappGetState, mutated by
+ * PlatformWappStart/Stop so a control-plane round-trip is testable without a
+ * WASM runtime. Tests seed and clear it through DummyWappState*. */
 
 #define DUMMY_WAPP_MAX_ENTRIES CONFIG_WANTED_MAX_WAPPS
 

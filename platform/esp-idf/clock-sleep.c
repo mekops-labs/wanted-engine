@@ -1,10 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF sleep. Resolution + current-time queries are the shared POSIX
- * clock.c; only the sleep is platform-specific. ESP-IDF provides usleep but not
- * nanosleep/clock_nanosleep, so an absolute deadline is converted to a relative
- * wait against the same clock. Interruptible stop (unwinding a blocked wapp on
- * terminate) is not wired here yet. */
+/* ESP-IDF sleep; resolution and current-time queries are the shared POSIX
+ * clock.c. ESP-IDF provides usleep but not clock_nanosleep, so an absolute
+ * deadline becomes a relative wait against the same clock. */
 
 #include <errno.h>
 #include <stdint.h>

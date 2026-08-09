@@ -1,10 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Shared registry install/remove. The writer stages incoming bytes to a temp
- * file then renames it into place once the stream completes, naming it from the
- * install ref ("<name>:<ver>") with the version separator mapped to the stored
- * form; remove deletes a stored image by ref. Registry enumeration
- * (PlatformRegistryRead) is platform-specific. */
+/* Shared registry install and remove. The writer stages incoming bytes to a
+ * temp file and renames it into place once the stream completes, named from the
+ * install ref. Enumeration stays platform-specific. */
 
 #include <errno.h>
 #include <limits.h>

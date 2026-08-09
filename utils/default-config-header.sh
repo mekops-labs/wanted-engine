@@ -1,7 +1,7 @@
 #!/bin/bash
 # Compile the configured launch config into a C header: the CLI's no-argument
-# default, and the only config a target without a filesystem has at boot. xxd
-# rather than a string literal, which is a quoting bug waiting to happen.
+# default, and the only config a target with no filesystem has at boot. xxd,
+# because a string literal is a quoting bug waiting to happen.
 #
 # Usage: default-config-header.sh <repo-root> <config-path> <out-header>
 set -euo pipefail

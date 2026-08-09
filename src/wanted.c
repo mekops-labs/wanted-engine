@@ -56,12 +56,9 @@ void WantedWappMemStats(const struct wamrData_t *wamr, wapp_state_t *out) {
     out->mem_bytes_max = (size_t)(pages_max * bytes_per_page);
 }
 
-/* Default console backing for a stdio slot the launch config leaves unset. All
- * three of a wapp's standard fds must be wired or it fails to launch, so an
- * empty slot resolves to a default rather than to nothing: stdin to `null` (no
- * input source by default), stdout/stderr to `log` (captured to the per-wapp
- * ring buffer and readable through a `log` mount, so a wapp's output is never
- * silently lost). A slot set explicitly overrides its default. */
+/* Default backing for a stdio slot the config leaves unset: `null` for stdin,
+ * `log` for stdout/stderr, so output is captured rather than silently lost.
+ * All three fds must be wired or the wapp fails to launch. */
 #define DEFAULT_CONSOLE_IN "null"
 #define DEFAULT_CONSOLE_OUT "log"
 #define DEFAULT_CONSOLE_ERR "log"
@@ -71,12 +68,9 @@ void WantedWappMemStats(const struct wamrData_t *wamr, wapp_state_t *out) {
 #define WANTED_DEV_MOUNT_FMT "/dev/%s"
 #define WANTED_NET_MOUNT_FMT "/net/%s"
 
-/* A `volume` mount with no `name=` option backs the wapp's single default
- * store. A private volume is namespaced under the wapp instance and unreachable
- * by any other wapp; a `shared` volume lives in a global namespace addressable
- * by name across wapps (the substrate for a producer→processor→publisher
- * pipeline). The fixed `priv`/`shared` segments keep the two namespaces
- * disjoint, so no wapp name can collide with a shared volume. */
+/* Namespace segments for engine-managed volumes. The fixed `priv`/`shared`
+ * segments keep the private and shared namespaces disjoint, so no wapp name
+ * can collide with a shared volume name. */
 #define WANTED_VOLUME_DEFAULT_NAME "default"
 #define WANTED_VOLUME_PRIV_FMT "%s/priv/%s/%s"  /* <root>/priv/<wapp>/<vol> */
 #define WANTED_VOLUME_SHARED_FMT "%s/shared/%s" /* <root>/shared/<vol> */
@@ -116,9 +110,8 @@ static bool consolePipeName(const char *opt, char *out, size_t cap) {
     return false;
 }
 
-/* Install one console slot. A `pipe` backing auto-creates a named pipe
- * (<wapp>.<slot>, or the options' name=) in the shared store and binds the
- * stream fd to it — a live, peer-readable console. Every other backing resolves
+/* Install one console slot. A `pipe` backing auto-creates a named pipe in the
+ * shared store and binds the stream fd to it; every other backing resolves
  * through the driver table. */
 static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
                               const char *fallback, const char *path) {
@@ -148,13 +141,9 @@ static bool isReservedNamespace(const char *path, const char *ns) {
     return strncmp(path, ns, n) == 0 && (path[n] == '\0' || path[n] == '/');
 }
 
-/* Parse a `platform` mount's options string — comma-separated, bind-mount
- * style: src=<abshostpath>   host directory backing the mount (default: the
- * wapp path) ro | rw             access mode (default: rw) `hostBuf` receives
- * the parsed `src` (empty when unset → the caller defaults it to the wapp
- * path); `*readonly` receives the access mode. A relative/empty src, an
- * oversized src, or any unrecognised token is rejected with -EINVAL so a
- * malformed mount fails loudly at install. */
+/* Parse a `platform` mount's options: `src=<abshostpath>` and `ro`/`rw`.
+ * `hostBuf` receives src (empty when unset), `*readonly` the access mode.
+ * A relative, empty or oversized src, or an unknown token, gives -EINVAL. */
 static int parsePlatformMountOptions(const char *options, char *hostBuf,
                                      size_t hostBufLen, bool *readonly) {
     *readonly = false;
@@ -191,9 +180,8 @@ static int parsePlatformMountOptions(const char *options, char *hostBuf,
 }
 
 /* A volume name must be a single safe path component: non-empty, free of '/',
- * and not "." or "..". The engine concatenates it into the host path under the
- * wapp's volume directory, so a name with a separator or parent ref could
- * escape that namespace — reject it. */
+ * and not "." or "..". It is concatenated into a host path, so a separator or
+ * parent ref would escape the wapp's volume namespace. */
 static bool isSafeVolumeName(const char *name) {
     if (name == NULL || name[0] == '\0')
         return false;
@@ -202,14 +190,9 @@ static bool isSafeVolumeName(const char *name) {
     return strchr(name, '/') == NULL;
 }
 
-/* Parse a `volume` mount's options string — comma-separated:
- *   name=<volname>   engine-managed volume name (default: "default")
- *   ro | rw          access mode (default: rw)
- *   shared           place the volume in the cross-wapp shared namespace
- *                    (default: private, namespaced under this wapp)
- * `nameBuf` receives the volume name; `*readonly` the access mode; `*shared`
- * the namespace. An unsafe or oversized name, or any unrecognised token, is
- * rejected with -EINVAL so a malformed mount fails loudly at install. */
+/* Parse a `volume` mount's options: `name=<volname>` (default "default"),
+ * `ro`/`rw` (default rw), and `shared` (default private). An unsafe or
+ * oversized name, or an unknown token, gives -EINVAL. */
 static int parseVolumeMountOptions(const char *options, char *nameBuf,
                                    size_t nameBufLen, bool *readonly,
                                    bool *shared) {
@@ -249,11 +232,9 @@ static int parseVolumeMountOptions(const char *options, char *nameBuf,
     return 0;
 }
 
-/* Build the WASI argv/envp pointer arrays for a wapp. argv[0] is the wapp name;
- * argv[1..] and envp[] point into the wapp's persistent launch-config storage,
- * which outlives the wasi context, so no string copies are made. The pointer
- * arrays themselves are heap allocated here and released by FreeWasiContext.
- * Returns 0 on success or a negative errno. */
+/* Build the WASI argv/envp pointer arrays; argv[0] is the wapp name. Strings
+ * point into the wapp's persistent launch-config storage, which outlives the
+ * wasi context, so none are copied. FreeWasiContext releases the arrays. */
 static int buildWasiArgs(wasi_ctx_t *wasiCtx, const wapp_t *wapp) {
     uint32_t argc = 1 + (uint32_t)wapp->cfg.argsCnt;
     const char **argv = (const char **)WantedMalloc(argc * sizeof(char *));
@@ -284,10 +265,9 @@ static int buildWasiArgs(wasi_ctx_t *wasiCtx, const wapp_t *wapp) {
 
 /* WAMR runtime init is global and one-shot. Called lazily from both
  * WantedStart and WantedWappRun so direct callers (tests) work too. */
-/* WAMR custom-allocator hooks routing every runtime + linear-memory allocation
- * to external RAM (PSRAM on the ESP32), keeping internal RAM for task stacks.
- * The signature varies with WASM_MEM_ALLOC_WITH_USAGE, which the NuttX build
- * enables so linear memory goes through the allocator rather than os_mmap. */
+/* WAMR custom-allocator hooks routing runtime and linear-memory allocation to
+ * external RAM, keeping internal RAM for task stacks. The signature varies with
+ * WASM_MEM_ALLOC_WITH_USAGE, which the NuttX build enables. */
 static void *wamrMalloc(unsigned int size) {
     return PlatformExtramMalloc(size);
 }
@@ -303,10 +283,9 @@ static int ensureWamrInit(void) {
 
     RuntimeInitArgs init_args;
     memset(&init_args, 0, sizeof(init_args));
-    /* Allocate WAMR's runtime + linear memory from external RAM (PSRAM on the
-     * ESP32) so internal RAM is left for worker task stacks, which can only
-     * live in internal RAM. On targets without external RAM these resolve to
-     * the ordinary heap, so behaviour is unchanged. */
+    /* Allocate WAMR's runtime and linear memory from external RAM so internal
+     * RAM is left for worker task stacks, which can only live there. Without
+     * external RAM these resolve to the ordinary heap. */
     init_args.mem_alloc_type = Alloc_With_Allocator;
     init_args.mem_alloc_option.allocator.malloc_func = (void *)wamrMalloc;
     init_args.mem_alloc_option.allocator.realloc_func = (void *)wamrRealloc;
@@ -321,11 +300,9 @@ static int ensureWamrInit(void) {
     return 0;
 }
 
-/* Process-wide pipe store shared by every wapp's /dev/pipe driver — this is
- * what makes named pipes an inter-wapp channel rather than per-wapp scratch.
- * Created lazily on first use, which is the supervisor's thread before any
- * other wapp exists, so the lazy init is race-free. The store lives for the
- * process lifetime (never freed). */
+/* Process-wide pipe store shared by every wapp's /dev/pipe driver, which is
+ * what makes a named pipe an inter-wapp channel. First use is the supervisor's
+ * thread before any other wapp exists, so the lazy init is race-free. */
 static pipe_store_t *wantedPipeStore(void) {
     static pipe_store_t *store = NULL;
     if (!store)
@@ -439,10 +416,8 @@ static vfs_tarfs_ctx_t *wappTarfsInit(const wapp_t *w) {
 
 #if CONFIG_WANTED_WASM_MAX_MEMORY_PAGES > 0
 /* Largest declared initial linear-memory page count among a module's memories,
- * or 0 if none. WAMR's max_memory_pages only bounds memory.grow and is clamped
- * up to a module's initial pages, so a wapp could otherwise sidestep the cap by
- * declaring a large *initial* memory; checking this at load lets the engine
- * refuse such an image up front. */
+ * or 0 if none. WAMR's max_memory_pages bounds only memory.grow and is clamped
+ * up to the initial pages, so this check refuses an image that sidesteps it. */
 static uint32_t wappInitMemoryPages(wasm_module_t module) {
     uint32_t pages = 0, init;
     int32_t i, n;
@@ -529,11 +504,9 @@ int WantedWappRun(wapp_data_t *ctx) {
 
     DEBUG_TRACE("entering thread: %d", ctx->id);
 
-    /* Build the per-wapp tarfs index once. The pre-fetched entrypoint pointer
-     * feeds the wasm load below; the same ctx is later attached to the vfs so
-     * the prefix router can resolve arbitrary paths into the same layer stack.
-     * A wapp image is app.wasm (+ any TarFS payload):
-     * identity comes from the registry entry the loader resolved. */
+    /* Build the per-wapp tarfs index once. The pre-fetched entrypoint feeds
+     * the wasm load below, and the same ctx is attached to the vfs so the
+     * prefix router resolves paths into the same layer stack. */
     tarfs = wappTarfsInit(wapp);
     if (!tarfs) {
         DEBUG_TRACE("Can't initialize tarfs for wapp");
@@ -555,10 +528,9 @@ int WantedWappRun(wapp_data_t *ctx) {
     }
     memset(ctx->wamr, 0, sizeof(struct wamrData_t));
 
-    /* WAMR's loader may modify the buffer in-place (LEB128 patching) and
-     * holds references into it for the module's lifetime. TarFS-mapped layer
-     * memory is shared with other consumers and unsafe to mutate, so copy
-     * to a heap buffer freed after wasm_runtime_unload. */
+    /* WAMR's loader patches the buffer in place and holds references into it
+     * for the module's lifetime. TarFS layer memory is shared with other
+     * consumers, so copy to a heap buffer freed after wasm_runtime_unload. */
     ctx->wamr->wasm_bytes = PlatformExtramMalloc(wasmLen);
     if (!ctx->wamr->wasm_bytes) {
         DEBUG_TRACE("Can't allocate writable wasm buffer");
@@ -716,12 +688,9 @@ int WantedWappRun(wapp_data_t *ctx) {
         ret += WantedInstallDriver(ctx->vfs, wapp, "socket", mount, s->options);
     }
 
-    /* mounts[]: file/backend drivers bound at an arbitrary absolute path,
-     * reachable outside the fixed /dev, /net, and /proc namespaces. The
-     * `platform` backend creates/opens a host directory and binds it as a
-     * native WASI preopen; every other backend mounts through the VFS router.
-     * The path is required, must be absolute, and must not fall under a fixed
-     * namespace. */
+    /* mounts[]: file/backend drivers bound at an arbitrary absolute path. The
+     * path is required, must be absolute, and must not fall under the fixed
+     * /dev, /net or /proc namespaces. */
     for (size_t i = 0; i < wapp->cfg.mountsCnt; i++) {
         const wapp_driver_t *m = &wapp->cfg.mounts[i];
         if (m->path[0] != '/' || isReservedNamespace(m->path, "/dev") ||
@@ -734,10 +703,9 @@ int WantedWappRun(wapp_data_t *ctx) {
             continue;
         }
         if (strcmp(m->name, "platform") == 0) {
-            /* A `platform` mount is a bind mount: `options` carries an optional
-             * host path (`src=`) and access mode (`ro`/`rw`); the host dir is
-             * bound as a WASI preopen at the wapp-visible m->path. A malformed
-             * options string is a config error and fails the launch. */
+            /* A `platform` mount is a bind mount: the host dir named by
+             * `options` is bound as a WASI preopen at m->path. A malformed
+             * options string fails the launch. */
             char hostPath[CONFIG_WANTED_MAX_PATH_LEN];
             bool readonly;
             int rc = parsePlatformMountOptions(m->options, hostPath,
@@ -753,10 +721,9 @@ int WantedWappRun(wapp_data_t *ctx) {
             if (host_fd < 0) {
                 LOG_ERROR("mounts[%zu] '%s': host dir '%s' unusable: %s", i,
                           m->name, src, strerror(-host_fd));
-                /* A read-only mount names host state the wapp must read; a
-                 * missing backing dir is a deployment error, surfaced loudly. A
-                 * read-write mount creates its dir, so an open failure is
-                 * environmental and stays non-fatal. */
+                /* A missing backing dir is a deployment error on a read-only
+                 * mount and surfaced loudly. A read-write mount creates its
+                 * dir, so an open failure there is environmental. */
                 if (readonly)
                     ret += host_fd;
                 continue;
@@ -766,14 +733,9 @@ int WantedWappRun(wapp_data_t *ctx) {
                 DEBUG_TRACE("WasiCtxAddPreopen(%s) failed: %d", m->path, rc);
             }
         } else if (strcmp(m->name, "volume") == 0) {
-            /* A `volume` mount is an engine-managed named store. The engine
-             * owns the host location and binds it as a WASI preopen at the
-             * wapp-visible m->path; the wapp names only the volume (`options`
-             * carries `name=`, `ro`/`rw`, and `shared`), never a host path, so
-             * the store is portable across hosts. A private volume is
-             * namespaced under the instance so one wapp cannot reach another's;
-             * a `shared` volume sits in a global namespace any wapp can name —
-             * a cross-wapp store. */
+            /* A `volume` mount is an engine-managed named store: the engine
+             * owns the host location and the wapp names only the volume, so
+             * the store is portable across hosts. */
             char volName[CONFIG_WANTED_MAX_PATH_LEN];
             bool readonly, shared;
             int rc = parseVolumeMountOptions(
@@ -798,11 +760,9 @@ int WantedWappRun(wapp_data_t *ctx) {
                 ret += -ENAMETOOLONG;
                 continue;
             }
-            /* The engine provisions the volume, so the backing dir is always
-             * created (create-on-first-use) even for a read-only grant; a
-             * provisioning failure is an engine/storage fault and fails the
-             * launch. `readonly` governs only the wapp's access to the store.
-             */
+            /* The engine provisions the volume, so the backing dir is created
+             * even for a read-only grant; `readonly` governs only the wapp's
+             * access. A provisioning failure fails the launch. */
             int host_fd = PlatformOpenStateDir(hostPath, false);
             if (host_fd < 0) {
                 LOG_ERROR("mounts[%zu] '%s': volume dir '%s' unusable: %s", i,
@@ -818,10 +778,8 @@ int WantedWappRun(wapp_data_t *ctx) {
 #ifdef CONFIG_WANTED_VFS_LOGMOUNT
         } else if (strcmp(m->name, "log") == 0) {
             /* A `log` mount is the read-only directory view over the per-wapp
-             * LogStore, bound at the wapp-visible m->path. `options` may carry
-             * `name=<wapp>` to scope the view to a single wapp; absent, it
-             * exposes every wapp's log. Distinct from the console `log` driver
-             * (the write/capture side selected via console:{}). */
+             * LogStore. `options` may carry `name=<wapp>` to scope the view to
+             * one wapp; absent, it exposes every wapp's log. */
             vfs_driver_t *drv = VfsLogMountInit(wapp, m->options);
             if (drv == NULL) {
                 LOG_ERROR("mounts[%zu] '%s': can't create log mount", i,
@@ -941,23 +899,16 @@ void WantedWappStop(wapp_data_t *ctx) {
         DEBUG_TRACE("end");
     }
 
-    /* Tear down the per-thread WAMR env that WantedWappRun initialised on this
-     * worker thread. This runs on every exit (success or failure) and is the
-     * symmetric counterpart to wasm_runtime_init_thread_env(): it restores the
-     * stack guard pages this thread mprotect()'d to PROT_NONE and frees its
-     * signal alternate stack. Skipping it leaves a detached thread's (glibc-
-     * cached, later reused) stack with unreadable guard pages — the next
-     * worker's init_thread_env then faults touching them. The call self-guards
-     * when no env was initialised, so it is safe on the early-failure path. */
+    /* Symmetric counterpart to wasm_runtime_init_thread_env(), run on every
+     * exit path: it restores this thread's stack guard pages and frees its
+     * signal alternate stack. Self-guards when no env was initialised. */
     wasm_runtime_destroy_thread_env();
 }
 
 void WantedWappTerminate(wapp_data_t *ctx) {
-    /* Signal a running instance to abort its in-flight WASM execution:
-     * wasm_runtime_call_wasm on the worker thread returns false, so the thread
-     * unwinds through its cleanup handler and WantedWappStop. This is the stop
-     * path for platforms that cannot rely on forced thread cancellation.
-     * Self-guards when the wapp has no live instance. */
+    /* Abort an instance's in-flight WASM execution: the worker's
+     * wasm_runtime_call_wasm returns false and the thread unwinds through its
+     * cleanup handler. Self-guards when the wapp has no live instance. */
     if (ctx == NULL || ctx->wamr == NULL || ctx->wamr->instance == NULL) {
         return;
     }
@@ -965,9 +916,8 @@ void WantedWappTerminate(wapp_data_t *ctx) {
 }
 
 /* Reload state. Single bytes are atomic on every target; `volatile` keeps the
- * run loop from caching a value the supervisor's thread has changed.
- * `reloadArmed` is consumed at the next respawn; `pinBuiltin` survives a
- * reload and marks a staged image as bad. */
+ * run loop from caching a value the supervisor's thread changed. `reloadArmed`
+ * is consumed at the next respawn; `pinBuiltin` survives a reload. */
 static volatile uint8_t supervisorReloadArmed;
 static volatile uint8_t supervisorPinBuiltin;
 
@@ -992,11 +942,9 @@ static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
     }
     if (ret < 0) {
         DEBUG_TRACE("failed to load supervisor image from %s: %d", path, ret);
-        /* Drop the layer bookkeeping so the struct keeps its own invariant: a
-         * valid wapp has layer_cnt >= 1, which wappTarfsInit checks. A reload
-         * unloads before it loads, and PlatformWappUnload takes a const wapp_t
-         * and cannot clear these, so a failed reload would otherwise present
-         * layers[0] pointing at freed memory. */
+        /* Drop the layer bookkeeping so the struct keeps its invariant: a
+         * valid wapp has layer_cnt >= 1. PlatformWappUnload takes a const
+         * wapp_t, so a failed reload would otherwise leave layers[0] freed. */
         memset((void *)w->layers, 0, sizeof(w->layers));
         memset(w->layer_lens, 0, sizeof(w->layer_lens));
         w->layer_cnt = 0;
@@ -1021,9 +969,8 @@ int WantedSupervisorRollback(void) {
 }
 
 /* Consecutive observations a supervisor must be seen running before an exit
- * counts as an ordinary one. A platform run loop polls at 1 Hz, thus this is
- * seconds. It clears a normal startup (~5 s) and stays far below any real
- * working lifetime. */
+ * counts as ordinary. A platform run loop polls at 1 Hz, so this is seconds:
+ * clear of a normal startup, far below any real working lifetime. */
 #define SUPERVISOR_HEALTHY_TICKS 10
 
 /* True while the running image is a staged one, thus a rollback has somewhere
@@ -1045,25 +992,17 @@ supervisorHealth_t WantedSupervisorObserve(bool running, bool failed,
     if (running) {
         if (healthyTicks < SUPERVISOR_HEALTHY_TICKS)
             healthyTicks++;
-        /* Only a supervisor that has run its full healthy span clears the
-         * count. Clearing it on any running tick would let an image that dies
-         * just short of that span restart forever, each attempt erasing the
-         * last. */
+        /* Only a supervisor that ran its full healthy span clears the count.
+         * Clearing on any running tick would let an image that dies just short
+         * of that span restart forever, each attempt erasing the last. */
         if (healthyTicks >= SUPERVISOR_HEALTHY_TICKS)
             failures = 0;
         return SUPERVISOR_HEALTHY;
     }
 
     /* A launch that failed outright, or a staged image that reached its entry
-     * point and left again immediately. The second is what an incompatible
-     * supervisor looks like: it loads, decides it cannot run here, and exits
-     * cleanly, which no load-failure check can see. An exit after a working
-     * lifetime is the ordinary one — a reboot, a poweroff, a live update.
-     *
-     * A quick exit counts only while a staged image is what runs. The
-     * compiled-in image has nothing to fall back to, and its exit is a
-     * supervisor's own business: an interactive one is quit and restarted
-     * freely, and ending the engine over that would be a denial of service. */
+     * point and left again at once, which is what an incompatible supervisor
+     * looks like. Judged only while a staged image runs; see the docs. */
     bool suspect = failed || (exited && supervisorStaged() &&
                               healthyTicks < SUPERVISOR_HEALTHY_TICKS);
     healthyTicks = 0;
@@ -1096,10 +1035,9 @@ wapp_t *WantedGetCurrentSupervisor(void) {
     }
 
     w = WantedMalloc(sizeof(wapp_t));
-    /* The supervisor is loaded directly (not via the registry), so its image
-     * and version fields are never stamped by the loader — zero them so the
-     * control-plane string nodes read empty rather than uninitialised memory.
-     */
+    /* The supervisor is loaded directly, so the loader never stamps its image
+     * and version fields. Zero them so the control-plane string nodes read
+     * empty rather than uninitialised memory. */
     memset(w, 0, sizeof(wapp_t));
     const wantedConfig_t *cfg = WantedGetConfig();
 

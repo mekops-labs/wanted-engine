@@ -132,10 +132,9 @@ static bool parseNum(const char *val, size_t len, long max, long *out) {
     return true;
 }
 
-/* Parse the ";key=value" parameters trailing the transport spec — the launch
- * config's role/backlog/max_conns fields, which the sockets[] installer
- * appends to the address. Returns false on an unknown key or an unusable
- * value; the caller rejects the whole entry. */
+/* Parse the ";key=value" parameters trailing the transport spec: the role,
+ * backlog and max_conns the sockets[] installer appends to the address.
+ * Returns false on an unknown key or unusable value; the caller rejects it. */
 static bool parseParams(const char *p, bool *listening, uint16_t *backlog,
                         uint8_t *maxConns, bool *hasBacklog,
                         bool *hasMaxConns) {

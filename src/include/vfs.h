@@ -173,26 +173,17 @@ int VfsMkdir(vfs_ctx_t c, int fd, const char *path);
 int VfsRmdir(vfs_ctx_t c, int fd, const char *path);
 
 /* Bind a pre-opened host directory fd into the VFS table as a PLATFORM fd.
- * `driver` provides the dispatch surface (OpenAt/Read/Write/...). `host_fd`
- * is stored as drv_fd so subsequent ops on this slot or anything OpenAt'd
- * from it reach the right host object. `path` is the wapp-visible absolute
- * path (e.g. "/var/lib/sheriff"). `readonly` binds the slot without write
- * intent (the driver rejects writes with -EROFS). Returns the allocated VFS fd
- * or -errno. The VFS takes ownership of `driver` — VfsDestroy will call
- * Destroy. */
+ * `host_fd` becomes drv_fd, `path` is the wapp-visible absolute path, and
+ * `readonly` makes the driver reject writes. The VFS then owns `driver`. */
 int VfsBindPlatformFd(vfs_ctx_t c, const char *path, const vfs_driver_t *driver,
                       int host_fd, bool readonly);
 
-/* Bind a file/backend driver as a mount at an arbitrary absolute `prefix`
- * (e.g. "/etc/config"). The mount routes opens of `prefix` and any path beneath
- * it to `driver`. The VFS takes ownership of `driver` — VfsDestroy calls
- * Destroy. `prefix` must be absolute and must not collide with a fixed
- * namespace. Returns 0 or -errno (the caller still owns `driver` on failure).
- */
+/* Bind a file/backend driver as a mount at an arbitrary absolute `prefix`,
+ * routing that path and everything beneath it. `prefix` must be absolute and
+ * must not collide with a fixed namespace. The VFS owns `driver` on success. */
 int VfsMountDriver(vfs_ctx_t c, const char *prefix, const vfs_driver_t *driver);
 
-/* The driver backing a console STREAM slot (VFS_STDIN/VFS_STDOUT/VFS_STDERR),
- * or NULL if the slot is not a live stream. Lets /dev/std* aliases forward to
- * the same backing as the wapp's WASI fd. The slot's driver-fd equals `slot`.
- */
+/* The driver backing a console STREAM slot, or NULL when the slot is not a live
+ * stream. Lets /dev/std* aliases forward to the same backing as the wapp's WASI
+ * fd; the slot's driver-fd equals `slot`. */
 const vfs_driver_t *VfsStreamDriver(vfs_ctx_t c, int slot);

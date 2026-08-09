@@ -1,14 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* wifi-connect — brings the board onto a WiFi network through the engine's
- * wifi device node.
- *
- * Its launch config grants the `wifi` driver, mounted at /dev/wifi, and
- * credentials from either a config file at /cfg holding two lines (the SSID
- * and the passphrase) or the WIFI_SSID/WIFI_PASS launch-config env vars. The
- * wapp scans, logs the visible APs, associates, then polls status until
- * connected. It touches the radio only through the VFS, with no
- * WiFi-specific ABI. */
+/* wifi-connect — brings the board onto a WiFi network through /dev/wifi. It
+ * scans, logs the visible APs, associates, then polls status until connected,
+ * touching the radio only through the VFS and no WiFi-specific ABI. */
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -20,12 +14,9 @@
 #define CONFIG_PATH  "/cfg/wifi.conf"
 #define CONNECT_TRIES 10
 
-/* Read the SSID/passphrase from the mounted two-line config file, or — when
- * that mount is absent — from WIFI_SSID/WIFI_PASS launch-config env vars.
- * The env path is the practical one when driving this wapp from an
- * interactive shell: a line-based console can write a single-line file but
- * not one with an embedded newline, while a launch config's envs[] entries
- * are ordinary strings. */
+/* Read the SSID and passphrase from the mounted two-line config file, or from
+ * the WIFI_SSID/WIFI_PASS env vars when that mount is absent. The env path
+ * suits an interactive shell, which cannot write an embedded newline. */
 static int read_config(char *ssid, size_t ssid_sz, char *pass, size_t pass_sz) {
     int fd = open(CONFIG_PATH, O_RDONLY);
     if (fd >= 0) {

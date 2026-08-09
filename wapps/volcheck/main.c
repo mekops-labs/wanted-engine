@@ -1,13 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* volcheck — exercises an engine-managed volume's persistence.
- *
- * It is launched with a `volume` mount at /data. On each run it looks for its
- * marker file: absent → a fresh store, so it writes the marker and reports
- * "vol-wrote"; present → a store that already holds state, so it reads the
- * marker back and reports "vol-read:<payload>". Relaunching the same instance
- * proves the volume survives a restart. The report goes to the log console; the
- * selftest supervisor reads it back and asserts persistence. */
+/* volcheck — exercises an engine-managed volume's persistence. Launched with a
+ * `volume` mount at /data, it writes a marker on a fresh store and reads it
+ * back on a populated one, so relaunching proves the volume survives. */
 
 #include <fcntl.h>
 #include <string.h>
@@ -25,10 +20,9 @@ int main(void) {
         close(fd);
         if (n < 0)
             n = 0;
-        /* -> log console. "vol-open" reports the marker file survived a restart
-         * and re-opened (the persistence guarantee); "vol-read:<bytes>" reports
-         * the content read back through the preopen, which the supervisor checks
-         * separately so a host-fs that opens but reads back nothing is visible. */
+        /* "vol-open" reports the marker survived a restart and re-opened;
+         * "vol-read:<bytes>" reports the content read back. The supervisor
+         * checks them separately, so an open that reads nothing is visible. */
         write(STDOUT_FILENO, "vol-open\n", 9);
         write(STDOUT_FILENO, "vol-read:", 9);
         write(STDOUT_FILENO, buf, (size_t)n);

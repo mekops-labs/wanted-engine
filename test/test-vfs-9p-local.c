@@ -17,16 +17,9 @@
 #include <vfs-drivers.h>
 #include <vfs.h>
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * vfs_9p_local — the 9P driver against a live server over a local socket.
- *
- * A minimal 9P2000 server (the c9 server half) is forked onto a filesystem
- * socket and serves one regular file. The driver mounts it through a
- * "unix://<path>" address and the round trips — walk, open, stat, read, write
- * — are exercised for real. This is the on-box driver-server topology: an
- * out-of-engine server process reached over a socket, with no loopback port.
- * ═══════════════════════════════════════════════════════════════════════════
- */
+/* vfs_9p_local — the 9P driver against a live server over a local socket. A
+ * minimal 9P2000 server is forked onto a filesystem socket and serves one file,
+ * so walk, open, stat, read and write round-trip for real. */
 
 #define SOCK_PATH_FMT "/tmp/wanted-9p-test-%ld.sock"
 #define SRV_MSIZE 8192u

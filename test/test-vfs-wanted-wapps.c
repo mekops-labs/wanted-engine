@@ -15,13 +15,9 @@
 
 #include "dummy-fs.h"
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * vfs_wanted_wapps — the decomposed per-wapp control namespace
- * (vfs-wanted-wapps.c) driven directly through its vtable, backed by the dummy
- * in-memory wapp-state and registry mocks. Path carries identity; reads are
- * plain text; the start config is the only JSON.
- * ═══════════════════════════════════════════════════════════════════════════
- */
+/* vfs_wanted_wapps — the per-wapp control namespace driven directly through its
+ * vtable, backed by the dummy in-memory wapp-state and registry mocks. Path
+ * carries identity, reads are plain text, and only the start config is JSON. */
 
 extern const vfs_driver_t WantedWappsDriver; /* mounted at /dev/wanted/wapps */
 extern const vfs_driver_t WantedCtlDriver;   /* mounted at /dev/wanted/ctl   */
@@ -302,10 +298,9 @@ TEST(vfs_wanted_wapps, ConfigWriteAfterCreate_TransitionsToNotStarted) {
     TEST_ASSERT_EQUAL_STRING("not_started", buf);
 }
 
-/* A bare `create` reservation has no config; starting it is rejected — config
- * must be written first (created cannot transition straight to starting). A
- * name with no reservation is unaffected (see CtlStart_NoImageReturnsEnosys,
- * which reaches the loader and fails on the missing image instead). */
+/* A bare `create` reservation has no config, so starting it is rejected and
+ * config must be written first. A name with no reservation is unaffected: it
+ * reaches the loader and fails on the missing image instead. */
 TEST(vfs_wanted_wapps, StartCreatedWithoutConfig_ReturnsEinval) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create ghost", 12) > 0);
@@ -314,10 +309,9 @@ TEST(vfs_wanted_wapps, StartCreatedWithoutConfig_ReturnsEinval) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Write(drv->ctx, c, "start", 5));
 }
 
-/* `start <image>` on a bare `create` reservation (no config written) satisfies
- * the start gate on its own — the explicit image is enough to launch, so the
- * loader is reached (dummy can't map an image → -ENOSYS) rather than the
- * unconfigured-reservation -EINVAL a bare `start` would get. */
+/* `start <image>` on a bare `create` reservation satisfies the start gate on
+ * its own, so the loader is reached and answers -ENOSYS, rather than the
+ * -EINVAL a bare `start` would get. */
 TEST(vfs_wanted_wapps, CtlStartWithImage_CreatedWithoutConfig_ReachesLoader) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create ghost", 12) > 0);
@@ -359,9 +353,8 @@ TEST(vfs_wanted_wapps, RootCtlCreateTooLongName_ReturnsEinval) {
 }
 
 /* Write "create w<i>" and return the driver's result. The slot pool is sized by
- * configuration, so these tests count against CONFIG_WANTED_MAX_WAPPS rather
- * than a literal — a build with a different envelope must still exhaust at its
- * own limit, not at the default one. */
+ * configuration, so these count against CONFIG_WANTED_MAX_WAPPS: a build with a
+ * different envelope must exhaust at its own limit. */
 static int CreateNth(int fd, int i) {
     char cmd[32];
     int n = snprintf(cmd, sizeof(cmd), "create w%d", i);

@@ -78,10 +78,9 @@ void *WA_thread(void *ptr) {
     return NULL;
 }
 
-/* Worker thread's native C stack. Set explicitly so every platform sizes it the
- * same way — the WAMR classic interpreter is recursive and the WASI/VFS host
- * calls add frames, and the RTOS per-thread default is far too small. Lives in
- * PSRAM (see startWorker). */
+/* Worker thread's native C stack, set explicitly because the classic WAMR
+ * interpreter is recursive and the RTOS per-thread default is far too small.
+ * Lives in PSRAM; see startWorker. */
 size_t PlatformWorkerStackSize(void) {
     return CONFIG_WANTED_WASM_WORKER_STACK_SIZE;
 }
@@ -105,10 +104,9 @@ static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
     cfg.prio = (size_t)(basePriority + (isSupervisor ? 1 : 0));
     cfg.thread_name = isSupervisor ? "wapp-super" : "wapp";
 #if CONFIG_IDF_TARGET_ESP32
-    /* Worker threads read the flash-backed registry. The classic part fully
-     * disables its cache for a flash op; a PSRAM stack is unreachable during
-     * that window and ESP-IDF asserts (esp_task_stack_is_sane_cache_disabled)
-     * the moment one is used. Stack stays internal DRAM here. */
+    /* Worker threads read the flash-backed registry, and the classic part
+     * disables its cache for a flash op, during which a PSRAM stack is
+     * unreachable and asserts. This stack stays internal DRAM. */
 #else
     /* Stack in PSRAM instead of internal DRAM. */
     cfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
@@ -142,10 +140,9 @@ int PlatformWappStart(wapp_t *wapp) {
         return -ENOSPC;
     }
 
-    /* The slot owns the previous occupant's wapp_t for its whole lifetime. Its
-     * thread has fully terminated by the time the slot is reusable, so release
-     * the image + struct now. The supervisor's image is a persistent singleton
-     * reused across respawns — never free that one. */
+    /* The slot owns the previous occupant's wapp_t, whose thread has fully
+     * terminated by the time the slot is reusable, so release image and struct
+     * now. The supervisor's image is a singleton reused across respawns. */
     wapp_t *prev = state.threads[slot].data.wapp;
     if (prev != NULL && prev != wapp && prev != WantedGetCurrentSupervisor()) {
         PlatformWappUnload(prev);
@@ -195,9 +192,8 @@ int PlatformWappStop(const char *name) {
     }
 
     /* Cooperative stop: set the terminate flag so wasm_runtime_call_wasm
-     * returns false at the next instruction boundary. The thread unwinds
-     * through WA_threadEnd. A worker blocked in a host call unwinds once that
-     * call returns (no signal wakeup on ESP-IDF). */
+     * returns false at the next instruction boundary and the thread unwinds
+     * through WA_threadEnd. ESP-IDF wires no signal wakeup. */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
 
     pthread_mutex_unlock(&state_mtx);

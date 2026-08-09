@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* The dummy platform carries no Ed25519 backend (PlatformEd25519Verify
- * returns -ENOSYS), so these tests cover the device's framing contract and
- * the backend-error propagation; the cryptographic verdict itself is a
- * platform concern exercised on a real target. */
+/* The dummy platform carries no Ed25519 backend, so these cover the device's
+ * framing contract and backend-error propagation. The cryptographic verdict is
+ * a platform concern exercised on a real target. */
 
 #include "unity_fixture.h"
 

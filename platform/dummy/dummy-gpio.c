@@ -9,12 +9,8 @@
 
 #include "dummy-fs.h"
 
-/* In-memory GPIO fake for the unit tests. Each line holds a level; an output
- * write stores it and a read returns it. Tests drive an input through
- * DummyGpioSetLevel and observe an output through DummyGpioGetLevel, both
- * keyed by the grant's address field.
- *
- * The address grammar is the ESP-IDF one — a decimal pin number — so a test
+/* In-memory GPIO fake for the unit tests, keyed by the grant's address field.
+ * The address grammar is the ESP-IDF one, a decimal pin number, so a test
  * exercises the same grant string the hardware backing takes. */
 
 #define DUMMY_GPIO_MAX_LINES 8

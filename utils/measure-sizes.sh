@@ -1,30 +1,7 @@
 #!/bin/bash
-# Report the WANTED engine's per-wapp and fixed memory footprint for every
-# defconfig in configs/, on both the host (LP64) and 32-bit embedded (ILP32) ABI.
-#
-# Runs in the build container (clang + readelf); see `make sizes`. The figures
-# come from a compile-only build of utils/measure_structs.c — no program is run
-# and no target libc is needed, so the same source is measured for the 32-bit
-# model via a freestanding cross-target. See that file's header for the trick.
-#
-# Definitions:
-#   per-wapp footprint = per-wapp structs (wapp_t, slot, vfs/wasi/wamr context,
-#                        log ring) + WASM stack + WASM app heap + worker thread
-#                        native stack + one linear-memory page + approximate WAMR
-#                        overhead.
-#   engine overhead    = fixed boot/config structures (wantedConfig_t).
-#   worst case         = engine overhead + MAX_WAPPS x per-wapp footprint.
-#
-# The struct and limit sizes are exact (measured from the real headers). The two
-# WAMR-side addends are estimates so the total is a usable ballpark rather than a
-# floor that ignores the runtime:
-#   - LINEAR_FLOOR: one 64 KiB wasm page — the minimum linear memory an
-#     instance reserves. A module that declares N initial pages uses N x this,
-#     so scale it up for a memory-hungry wapp.
-#   - WAMR_OVERHEAD: order-of-magnitude per-instance WAMR bookkeeping (module
-#     instance, function/global/table instances, exec-env struct). Not exact;
-#     grows with module complexity.
-# Still excluded: the per-image writable module copy (wasm_bytes, = .wasm size).
+# Report the engine's per-wapp and fixed memory footprint for every defconfig in
+# configs/, on both the host (LP64) and 32-bit embedded (ILP32) ABI, from a
+# compile-only build of measure_structs.c. Defined in docs/platform-guide.md.
 set -euo pipefail
 
 # WAMR per-instance bookkeeping — order-of-magnitude estimate (see header).
@@ -143,7 +120,7 @@ measure() { # $1 = abi (linux|nuttx), $2 = profile -> fills M[name]=size
         clang -I"$cfg" $INC -DSECURE_SOCKETS="$tls" -fno-common -c "$SRC" -o "$obj"
     fi
     # readelf prints the symbol Size in hex once it grows large; $(( )) folds
-    # both hex and decimal to a plain decimal so downstream math/format is uniform.
+    # both hex and decimal to a plain decimal, so downstream math is uniform.
     M=()
     while read -r sz name; do M[${name#measured_}]=$(( sz )); done \
         < <(readelf -sW "$obj" | awk '/measured_/{print $3, $8}')
@@ -157,10 +134,9 @@ human() { # bytes -> human string
         else printf "%.2f MB", b/1048576 }'
 }
 
-# Which ABI the configured target builds for. Only the build dir's .config can
-# answer it — the defconfigs carry no target, which is why the survey shows both.
-# Sets ABI_KEY (linux | nuttx | empty) and ABI_WHY; empty is a real answer, not
-# a failure, since a custom SDK URL need not name an architecture.
+# Which ABI the configured target builds for; only the build dir's .config can
+# answer, since a defconfig carries no target. Sets ABI_KEY and ABI_WHY, where
+# empty is a real answer: a custom SDK URL need not name an architecture.
 ABI_KEY=""; ABI_WHY=""
 
 # Resolve an SDK argument to an ABI from an extracted SDK's toolchain triple.
@@ -218,7 +194,7 @@ detect_abi() { # $1 = .config path
 
 report_abi() { # $1 = abi label, $2 = abi key
     local abi="$2"
-    # Pointer width is an ABI property, so any reported configuration answers it.
+    # Pointer width is an ABI property, so any configuration answers it.
     measure "$abi" "${PROFILES[0]}"
     printf '\n=== ABI: %s (sizeof(void*)=%s, sizeof(size_t)=%s) ===\n' \
         "$1" "${M[ptr]}" "${M[size_t]}"

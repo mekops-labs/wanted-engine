@@ -10,15 +10,9 @@
 #include <vfs.h>
 #include <wanted_malloc.h>
 
-/* Stdio DevFS aliases — /dev/stdin, /dev/stdout, /dev/stderr.
- *
- * These are not independent backings: each forwards to the wapp's own console
- * stream (WASI fd 0/1/2), so opening "/dev/stdout" and writing reaches exactly
- * the same place fd 1 does — the platform console, the log ring, or /dev/null,
- * whichever the launch config wired the slot to. The alias owns no console
- * state; it holds the target driver + that slot's driver-fd and delegates. The
- * target driver is owned by its STREAM slot (VfsDestroy tears it down), so the
- * alias never destroys it. */
+/* Stdio DevFS aliases — /dev/stdin, /dev/stdout and /dev/stderr forward to the
+ * wapp's own console stream (WASI fd 0/1/2). An alias owns no console state and
+ * never destroys the target driver, which its STREAM slot owns. */
 
 struct vfs_driver_ctx_t {
     const vfs_driver_t *target; /* the console slot's driver (may be NULL) */

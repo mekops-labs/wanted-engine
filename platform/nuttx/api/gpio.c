@@ -15,19 +15,9 @@
 
 #include <platform.h>
 
-/* NuttX GPIO backing over the CONFIG_DEV_GPIO character devices.
- *
- * The grant's address field is a host device path such as "/dev/gpio0". The
- * board registers its pins and their types; the grant maps a wapp-visible name
- * onto one of those nodes. Direction is fixed by the grant, so this backing
- * never calls GPIOC_SETPINTYPE.
- *
- * Pull and drive have no generic GPIOC_* ioctl. A grant asking for either is
- * refused with -ENOTSUP, which fails the launch — the board configuration is
- * where those belong on this target.
- *
- * On the host-only scaffolding build the NuttX GPIO headers are absent, so the
- * level is held in memory. The ioctl path compiles only for __NuttX__. */
+/* NuttX GPIO backing over the CONFIG_DEV_GPIO character devices; the grant's
+ * address is a device path such as "/dev/gpio0". Pull and drive have no generic
+ * GPIOC_* ioctl, so a grant asking for either is refused with -ENOTSUP. */
 
 #define NUTTX_GPIO_MAX_LINES 8
 #define NUTTX_GPIO_PATH_MAX 32

@@ -1,16 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* /dev/ed25519 — Ed25519 signature-verification device.
- *
- * Each open starts one verification. The write stream is framed: the first
- * 32 bytes are the raw public key, the next 64 bytes the signature, and every
- * byte after that is the message. Reading returns the verdict as a text
- * token — "ok" when the signature verifies, "fail" when it does not — and
- * seals the stream; a fresh open starts the next verification. The engine
- * holds no keys: the caller supplies the public key it trusts, so key custody
- * stays with the wapp and the engine only performs the curve arithmetic
- * (hardware-accelerated where the platform provides it).
- */
+/* /dev/ed25519 — signature verification. The write stream is framed: 32-byte
+ * public key, 64-byte signature, then the message; the read returns "ok" or
+ * "fail" and seals it. The engine holds no keys, only the curve arithmetic. */
 
 #include <errno.h>
 #include <stdbool.h>

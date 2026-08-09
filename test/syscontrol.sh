@@ -1,17 +1,7 @@
 #!/bin/bash
-# System-control functional test: poweroff / reboot / exit via the wsh supervisor.
-#
-# Drives the wsh debug supervisor through the engine's stdio console (a FIFO held
-# open so the engine never sees a premature EOF) and asserts the three control
-# paths, including that the engine's console survives a supervisor teardown:
-#
-#   1. poweroff -> the engine exits without respawning the supervisor.
-#   2. exit     -> the supervisor exits and is respawned WITH a working console:
-#                  a command issued after the respawn is processed. This is the
-#                  regression guard for the console fds (0/1/2) being borrowed,
-#                  not owned, by a wapp's VFS — a teardown must not close them.
-#   3. reboot   -> the engine re-execs (Linux) and the restarted supervisor also
-#                  has a working console.
+# System-control functional test: poweroff, reboot and exit through the wsh
+# supervisor, driven over a FIFO-held console so the engine never sees a
+# premature EOF. It also guards that the console survives a supervisor teardown.
 #
 # Usage: test/syscontrol.sh [wanted-cli] [config]
 set -u
@@ -79,7 +69,7 @@ drive "1:poweroff"
 rm -f "$ENGINE_OUT"
 
 # 2. exit -> respawn, and the respawned supervisor has a working console.
-#    The first wsh only receives 'exit'; the help listing can therefore only come
+#    The first wsh only receives 'exit', so the help listing can only come
 #    from the respawned wsh processing the later 'help'.
 drive "1:exit" "3:help"
 [ "$ENGINE_ALIVE" -eq 1 ]; check $? "exit respawns the supervisor (engine stays up)"

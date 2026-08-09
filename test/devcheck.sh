@@ -1,11 +1,7 @@
 #!/bin/bash
 # Build the devcheck wapp, run it as the engine supervisor with the offload
-# devices granted, and assert its TAP: the sha256/ed25519/inflate wasm ->
-# WASI -> VFS -> driver round trip. devcheck powers the engine off after one
-# pass. Ed25519 is a SKIP (still "ok") when the build has no crypto backend.
-#
-# Runs inside the build container (toolchain + wanted-cli on PATH/built), the
-# same way test/selftest.sh is invoked.
+# devices granted, and assert its TAP. Ed25519 is a skip, still "ok", when the
+# build carries no crypto backend.
 #
 # Usage: test/devcheck.sh [wanted-cli]
 set -u

@@ -1,13 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* biginit — declares four initial linear-memory pages (see Makefile), used to
- * test the engine's load-time rejection of an image whose *initial* memory
- * exceeds WASM_MAX_MEMORY_PAGES (the runtime cap only bounds later growth).
- *
- * The small alloc loop keeps a memory.grow in the module so WAMR's
- * shrunk-memory pass does not collapse the declared four pages back to one.
- * Under a cap below four pages the engine refuses to load it (no marker);
- * under a cap of four or more it loads and logs "biginit-loaded". */
+/* biginit — declares four initial linear-memory pages, testing the engine's
+ * load-time rejection of an image whose initial memory exceeds the page cap.
+ * It logs "biginit-loaded" only under a cap of four pages or more. */
 
 #include <stdlib.h>
 #include <string.h>

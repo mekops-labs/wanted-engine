@@ -7,13 +7,9 @@
 
 #include "dummy-fs.h"
 
-/* ── In-memory registry ─────────────────────────────────────────────────────
- * Deterministic, dependency-free stand-in for the host registry. Backs
- * PlatformRegistryRead / PlatformRegistryRemove. The real PlatformRegistryWrite
- * is a chunked state machine that streams an image to a host file and renames
- * it under the install ref — out of scope for the dummy. Tests populate via
- * DummyRegistrySeed.
- * ───────────────────────────────────────────────────────────────────────── */
+/* In-memory registry — a dependency-free stand-in backing PlatformRegistryRead
+ * and PlatformRegistryRemove. Streaming an image to a host file is out of scope
+ * here, so tests populate it through DummyRegistrySeed. */
 
 #define DUMMY_REG_MAX_ENTRIES 8
 

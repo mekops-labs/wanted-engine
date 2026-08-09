@@ -1,15 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* blink — toggles a board LED through the engine's gpio device node.
- *
- * Its launch config grants the `gpio` driver one pin under the name `led`, for
- * example "pins=led:21:out". The engine mounts that pin at
- * /dev/gpio/led/value; blink drives it by writing "1"/"0" and never returns on
- * its own — the supervisor halts it with a control-plane `stop`.
- *
- * The pin is named, not numbered, so this binary runs on any board whose
- * launch config maps `led` onto the right line. The wapp touches hardware only
- * through the VFS, with no GPIO-specific ABI. */
+/* blink — toggles a board LED by writing "1"/"0" to /dev/gpio/led/value, whose
+ * pin its launch config grants under the name `led`. It runs on any board whose
+ * config maps that name onto the right line, and never returns on its own. */
 
 #include <fcntl.h>
 #include <unistd.h>

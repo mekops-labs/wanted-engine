@@ -9,11 +9,9 @@
 
 typedef int (*proc_read_fn_t)(vfs_ctx_t c, void *buf, size_t bufLen);
 
-/* A directory-type ProcFS entry whose children are resolved dynamically, e.g.
- * /proc/wapps/<name>/<leaf>. `subpath` is the path below the entry name with no
- * leading slash: "" (the entry directory itself), "<name>", or "<name>/<leaf>".
- * The ProcFS driver owns paging and the privileged gate; these callbacks only
- * resolve, render, and enumerate. */
+/* A directory-type ProcFS entry whose children resolve dynamically. `subpath`
+ * is the path below the entry name with no leading slash: "", "<name>", or
+ * "<name>/<leaf>". The driver owns paging and the privileged gate. */
 typedef struct proc_dir_ops_t {
     /* Classify subpath: set *type to VFS_FILETYPE_DIRECTORY or
      * VFS_FILETYPE_REGULAR_FILE. Return 0, or -ENOENT when subpath names

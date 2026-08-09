@@ -1,26 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* /dev/inflate — streaming gzip decompression device.
- *
- * Each open decompresses one gzip member. The write stream is length-prefixed:
- * the first 4 bytes declare the compressed member size (LE u32, header and
- * trailer included), then the member bytes follow in any chunking. Reads drain
- * the decompressed output; a short write means the output buffer is full —
- * read before writing more. Reading an empty stream mid-member returns
- * -EAGAIN; a finished, drained stream reads 0. The trailer CRC32 and ISIZE are
- * validated; any malformed input fails the stream with -EIO until close.
- *
- * The length prefix exists because the decoder cannot resume after running
- * out of *input* mid-symbol (output pauses are fine). Knowing where the member
- * ends lets the driver decode eagerly with a safe input margin and finish
- * deterministically on the declared last byte. The margin makes the worst-case
- * input per decoded byte explicit; a stream that exceeds it (a run of empty
- * deflate blocks — nothing a whole-file compressor emits) fails as malformed.
- *
- * A wapp offloads decompression here instead of carrying the inflate code and
- * its 32 KiB history window in its own linear memory; the window lives in
- * engine memory for the lifetime of the open.
- */
+/* /dev/inflate — streaming gzip decompression. Each open decodes one member,
+ * length-prefixed by a LE u32 so the decoder never starves mid-symbol and ends
+ * deterministically. The 32 KiB window lives in engine memory until close. */
 
 #include <errno.h>
 #include <stdbool.h>
@@ -167,12 +149,9 @@ static bool carryByte(inflate_stream_t *s, uint8_t *b) {
     return true;
 }
 
-/* Advance the header/trailer state machine and the decoder as far as the
- * carried input and output space allow. Never starves the decoder: mid-member
- * it caps each decode step so the worst-case input need is covered by what is
- * already carried; once the declared last byte arrived it decodes freely (a
- * starve then means a truncated member — malformed). Sets ST_ERROR on any
- * malformed element. */
+/* Advance the header/trailer state machine and the decoder as far as carried
+ * input and output space allow, capping each mid-member step so the decoder
+ * never starves. Sets ST_ERROR on any malformed element. */
 static void pump(inflate_stream_t *s) {
     uint8_t b;
 

@@ -1,15 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Sim init shim.
- *
- * When wsh runs as the NuttX init task (CONFIG_INIT_ENTRYPOINT=wanted_sim_main)
- * the NSH start-up script that normally mounts /data over hostfs does not run,
- * so the engine cannot reach its config or supervisor image. Mount hostfs here
- * (board rcS does `mount -t hostfs -o fs=. /data`), then chdir into it so the
- * relative registry root (REGISTRY_ROOT "./wapps") resolves onto hostfs — a
- * supervisor that launches wapps can then find their images. Finally hand off
- * to the standard entry point. Used only by the sim test / interactive board
- * config; the production NSH built-in entry remains wanted_main. */
+/* Sim init shim. Running as the NuttX init task skips the NSH start-up script
+ * that mounts /data over hostfs, so this mounts it and chdirs in, letting the
+ * relative registry root resolve, then hands off to the standard entry. */
 
 #include <stdio.h>
 #include <sys/boardctl.h>
@@ -30,12 +23,9 @@ int wanted_sim_main(int argc, char *argv[]) {
 
     int rc = wanted_main(argc, argv);
 
-    /* The engine loop returned without powering the board off itself — e.g. a
-     * reboot request on a sim that has no BOARDIOC_RESET. Power the simulator
-     * off so the host process exits and the controlling terminal is restored;
-     * otherwise NuttX idles as init returns and the raw-mode tty hangs. Falls
-     * through if the config lacks BOARDCTL_POWEROFF (then init just returns).
-     */
+    /* The engine loop returned without powering the board off, so power the
+     * simulator off: otherwise NuttX idles as init returns and the raw-mode tty
+     * hangs. Falls through when the config lacks BOARDCTL_POWEROFF. */
     boardctl(BOARDIOC_POWEROFF, rc);
     return rc;
 }

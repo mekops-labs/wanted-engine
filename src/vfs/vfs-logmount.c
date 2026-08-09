@@ -13,23 +13,9 @@
 #include <wanted-autoconf.h>
 #include <wanted_malloc.h>
 
-/* ── VfsLogMount ─────────────────────────────────────────────────────────────
- *
- * A read-only directory view of per-wapp captured logs, bound via the launch
- * config mounts[] at an operator-chosen path. Under the mount:
- *
- *   <mount>/            ReadDir → one entry per wapp with a live log slot
- *   <mount>/<name>      Read    → wapp <name>'s ring-buffered stdout/stderr
- *
- * The write side is unchanged: a wapp whose console is the "log" driver
- * (console:{"name":"log"}) appends here through vfs-log.c. This mount is the
- * read surface over the same process-wide LogStore, grantable independently of
- * the /dev/wanted control plane — a log shipper gets logs without control.
- *
- * The `name=<wapp>` option scopes the mount to a single wapp: a least-privilege
- * grant that exposes one log rather than the whole fleet. With no option the
- * mount exposes every wapp's log (the supervisor's broad view).
- * ───────────────────────────────────────────────────────────────────────── */
+/* VfsLogMount — a read-only directory view of per-wapp captured logs, bound
+ * through mounts[]. Grantable without the /dev/wanted control plane, so a log
+ * shipper gets logs without control. `name=<wapp>` scopes it to one wapp. */
 
 #define ID {'L', 'o', 'g', 'd'}
 #define CONFIG_WANTED_LOGMOUNT_MAX_OPEN 8

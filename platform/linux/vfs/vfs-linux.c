@@ -21,10 +21,9 @@
 #include <wanted-api.h>
 #include <wanted_malloc.h>
 
-/* The Linux host has no driver the engine drives directly: gpio/wifi are
- * hardware capabilities with no host backing, so the platform offers none. A
- * launch config naming such a driver fails with -ENODEV. A real backing
- * (sysfs/libgpiod) would add an entry here. */
+/* The Linux host has no driver the engine drives directly, so the platform
+ * table is empty and a launch config naming one fails with -ENODEV. A real
+ * backing would add its entry here. */
 static const vfs_driver_table_t linux_driver_table[] = {
     {NULL, NULL},
 };
@@ -164,15 +163,9 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     return fd;
 }
 
-/* openat() that refuses to resolve outside the preopen directory.
- * RESOLVE_BENEATH rejects absolute paths, escaping ".." and — the case the
- * read-only flag cannot close — a symlink inside the host directory that points
- * outside it. Resolution is confined to the subtree under `dirfd`.
- *
- * openat2() (Linux >= 5.6) is required, with no plain-openat() fallback: on a
- * kernel that lacks it the syscall returns ENOSYS and the open fails loudly,
- * rather than silently resolving without the escape guard. Confinement is not
- * optional — a sandbox we cannot enforce must deny, not degrade. */
+/* openat() confined to the subtree under `dirfd` by RESOLVE_BENEATH. openat2()
+ * is required with no plain-openat fallback, so a kernel lacking it fails the
+ * open loudly: a sandbox that cannot be enforced must deny, not degrade. */
 static int openAtBeneath(int dirfd, const char *path, int flags, int mode) {
     struct open_how how;
     memset(&how, 0, sizeof(how));
@@ -187,10 +180,9 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
                    vfs_oflags_t flags) {
     if (d->readonly && VFS_O_IS_WRITE(flags))
         return -EROFS;
-    /* `fd` is the preopen directory's host fd and `path` is already relative to
-     * it, so the kernel resolves against `fd` directly. Prepending d->rootPath
-     * would be both redundant and wrong (cwk_path_change_root drops the
-     * separator, yielding e.g. "/dir" + "file" → "/dirfile"). */
+    /* `fd` is the preopen directory's host fd and `path` is already relative
+     * to it, so the kernel resolves against `fd`. Prepending d->rootPath would
+     * be redundant and wrong: the separator is dropped. */
     int fl = convertVfsFlags(flags);
 
     DEBUG_TRACE("fd: %d, flags: 0x%x, path: %s", fd, fl, path);
@@ -205,11 +197,9 @@ static int _OpenAt(vfs_driver_ctx_t d, int fd, const char *path,
 
 static int _Close(vfs_driver_ctx_t d, int fd) {
     (void)d;
-    /* The console stream slots borrow the engine's native stdio (fd 0/1/2). The
-     * VFS does not own those — they belong to the process and must survive a
-     * supervisor teardown so the respawned/re-exec'd supervisor still has a
-     * console. Files this driver opens always get fd >= 3, so this only ever
-     * spares the borrowed stdio. */
+    /* The console stream slots borrow the process's own stdio (fd 0/1/2),
+     * which must survive a supervisor teardown so the respawned one still has
+     * a console. This driver's own files always get fd >= 3. */
     if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO)
         return 0;
     int ret = close(fd);

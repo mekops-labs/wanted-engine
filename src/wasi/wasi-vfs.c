@@ -200,10 +200,9 @@ static int32_t wasi_environ_sizes_get(wasm_exec_env_t exec_env,
     return __WASI_ERRNO_SUCCESS;
 }
 
-/* Lazily resolve preopens[fd] to a real VFS fd. The 4 standard entries
- * (stdin/stdout/stderr/root) start with fd=-1; the first prestat_get on the
- * root preopen triggers a VfsOpen("/"). Engine-injected preopens added via
- * WasiCtxAddPreopen are eagerly bound and skip this path. */
+/* Lazily resolve preopens[fd] to a real VFS fd. The 4 standard entries start
+ * with fd=-1, and the first prestat_get on the root preopen triggers a
+ * VfsOpen("/"). Engine-injected preopens bind eagerly and skip this. */
 static wasi_preopen_t *resolve_preopen(wasi_ctx_t *ctx, int fd) {
     for (uint8_t i = 0; i < ctx->preopens_cnt; i++) {
         wasi_preopen_t *p = &ctx->preopens[i];
@@ -485,11 +484,8 @@ static int32_t wasi_path_open(wasm_exec_env_t exec_env, int32_t dirfd,
         return __WASI_ERRNO_INVAL;
 
     /* Capability gate at the preopen boundary: a request may not exceed the
-     * parent preopen's inheriting rights. wasi-libc caps a request to the
-     * directory fd's advertised set before calling path_open, so a well-behaved
-     * wapp never trips this; it denies a wapp that hand-crafts a path_open with
-     * rights beyond the grant (bypassing libc's capping). The backing driver
-     * backstops writes for fds opened beneath a preopen. */
+     * parent preopen's inheriting rights. This denies a wapp hand-crafting a
+     * path_open past libc's own capping; the driver backstops writes. */
     const wasi_preopen_t *parent = WasiCtxFindPreopen(ctx, dirfd);
     if (parent &&
         !WasiRightsWithin(parent->rights_inheriting, (uint64_t)fs_rights_base))
@@ -832,13 +828,8 @@ static int32_t wasi_poll_oneoff(wasm_exec_env_t exec_env, int32_t in_app,
         return errno_to_wasi(ret);
 
     /* Synthesise a single clock event so the caller's tick loop unblocks.
-     * The __wasi_event_t layout (snapshot-preview1):
-     *   offset  0: userdata        (u64)
-     *   offset  8: error           (u16)
-     *   offset 10: type            (u8)   — must mirror the subscription type
-     *   offset 11: _pad[5]
-     *   offset 16: fd_readwrite    (u64 nbytes + u16 flags) — unused for clock
-     * Zero-initialise first, then fill the fields the wapp inspects. */
+     * __wasi_event_t is zero-initialised first; `type` at offset 10 must mirror
+     * the subscription type, and fd_readwrite at 16 is unused for a clock. */
     memset(out, 0, sizeof(__wasi_event_t));
     *(uint64_t *)(out + 0) = in->userdata;
     *(uint16_t *)(out + 8) = __WASI_ERRNO_SUCCESS;
@@ -1019,24 +1010,16 @@ static NativeSymbol wasi_preview1_natives[] = {
 
 wasi_ctx_t *InitWasiContext(void) {
     /* Internal RAM, not WantedMalloc: dereferenced on every WASI syscall a
-     * running wapp makes, so it stays off the (slower on ESP-IDF) PSRAM
-     * allocator even where one is configured. argv/envp below stay on
-     * WantedMalloc — cold, read only by args_get/environ_get. */
+     * running wapp makes. argv/envp below stay on WantedMalloc, being cold and
+     * read only by args_get/environ_get. */
     wasi_ctx_t *ctx = (wasi_ctx_t *)malloc(sizeof(wasi_ctx_t));
     if (!ctx)
         return ctx;
     memset(ctx, 0, sizeof(*ctx));
 
-    /* The stdio slots and the root preopen mirror the layout the wapp will see
-     * via fd_prestat enumeration. stdio fds 0-2 are registered separately as
-     * STREAM slots by VfsRegister — we record them here only so the table is
-     * dense for the resolve_preopen scan, and grant them every right except
-     * SEEK/TELL. The root preopen at fd=3 is lazy: the first prestat_get
-     * triggers VfsOpen("/") which succeeds once wapp setup has called
-     * VfsAttachTarfs. The root advertises the full grant — the TarFS driver
-     * enforces its read-only nature by failing write-opens, and advertising it
-     * read-only would only make libc silently downgrade a write-open under it
-     * to a read-open. */
+    /* The root preopen at fd=3 is lazy: the first prestat_get opens "/". It
+     * advertises the full grant: the TarFS driver enforces read-only by
+     * failing write-opens, and a read-only grant makes libc downgrade. */
     static const struct {
         const char *path;
         int fd;
@@ -1079,11 +1062,9 @@ int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, const char *hostPath,
     if (ctx->preopens_cnt >= WASI_MAX_PREOPENS)
         return -ENOSPC;
 
-    /* The PlatformFs driver owns conversion from VFS ops to host syscalls on
-     * `host_fd`. The rootPath isn't load-bearing — for openat-relative paths
-     * the host kernel resolves against `host_fd` itself — but labelling it with
-     * the real backing directory keeps the driver self-describing for
-     * debugging. */
+    /* The PlatformFs driver converts VFS ops to host syscalls on `host_fd`.
+     * rootPath is not load-bearing, since the kernel resolves openat-relative
+     * paths against host_fd, but labelling it keeps the driver descriptive. */
     vfs_driver_t *drv =
         VfsPlatformFsInit(NULL, hostPath ? hostPath : path, readonly);
     if (!drv)

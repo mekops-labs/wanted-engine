@@ -94,10 +94,9 @@ static bool isZeroBlock(const uint8_t *b) {
     return true;
 }
 
-/* Binary search over the sorted prefix [0, n). Only valid when n entries have
- * already been sorted — i.e. called with the length from a prior layer, not
- * including entries currently being appended for the layer under construction.
- */
+/* Binary search over the sorted prefix [0, n). Valid only when n entries are
+ * already sorted, so callers pass the length from a prior layer, excluding the
+ * layer under construction. */
 static bool indexContains(const tar_index_entry_t *idx, uint16_t n,
                           const char *path) {
     uint16_t lo = 0, hi = n;
@@ -434,10 +433,9 @@ static int indexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
             entry_layer = layer_idx;
         }
 
-        /* Newer-layer shadowing: first occurrence wins.
-         * Search only the sorted prefix from previous layers. Within-layer
-         * duplicates are the TAR writer's problem; well-formed archives don't
-         * have them. */
+        /* Newer-layer shadowing: first occurrence wins, so search only the
+         * sorted prefix from previous layers. Within-layer duplicates are the
+         * TAR writer's problem. */
         if (indexContains(ctx->index, sorted_len, entry_path)) {
             off = next_off;
             continue;
@@ -550,12 +548,9 @@ uint16_t TarFsIndexLen(const vfs_tarfs_ctx_t *ctx) {
     return ctx ? ctx->index_len : 0;
 }
 
-/* File/directory operations.
- *
- * Lookups run on the qsorted index — exact-match for files, "<path>/" prefix
- * scan for implicit directories. Reads are zero-copy via the layer pointer;
- * the only heap allocation per open is the handle plus (for directories) a
- * copy of the prefix string. */
+/* File/directory operations. Lookups run on the qsorted index: exact match for
+ * a file, "<path>/" prefix scan for an implicit directory. Reads are zero-copy
+ * through the layer pointer. */
 
 static uint16_t lowerBound(const tar_index_entry_t *idx, uint16_t n,
                            const char *key) {

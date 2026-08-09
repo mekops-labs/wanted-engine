@@ -1,17 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* /dev/sha256 — streaming SHA-256 digest device.
- *
- * Each open starts a fresh digest stream: writes feed message bytes, the
- * first read finalizes the digest and reads return it as 64 lowercase hex
- * characters. Once a read has finalized the stream, further writes are
- * rejected; close releases the stream. A wapp offloads hashing here instead
- * of carrying the SHA-256 code, constant table, and working state in its own
- * linear memory. The digest itself is computed by the PlatformSha256*
- * seam (platform/include/platform.h), so this driver never touches the
- * algorithm directly and picks up a hardware-accelerated backend for free
- * on a target that has one.
- */
+/* /dev/sha256 — streaming SHA-256. Each open is one digest stream: writes feed
+ * message bytes, the first read finalizes and returns 64 lowercase hex chars,
+ * sealing it. The digest itself comes from the PlatformSha256* seam. */
 
 #include <errno.h>
 #include <stdbool.h>

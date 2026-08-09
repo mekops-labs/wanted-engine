@@ -1,14 +1,7 @@
 #!/bin/bash
-# Negative test for WASM_MAX_MEMORY_PAGES — both halves of the enforcement.
-#
-# bigmem  starts at one page and grows ~160 KiB, exercising the runtime growth
-#         cap: under a 1-page cap memory.grow is refused, malloc returns NULL and
-#         it logs "bigmem-bounded"; under a wider cap it logs "bigmem-reached".
-# biginit declares four initial pages, exercising the load-time check: under a
-#         cap below four pages the engine refuses to load it (no marker); under a
-#         cap of four it loads and logs "biginit-loaded".
-#
-# Builds the wsh engine at cap=1 and cap=4 and drives each wapp over the console.
+# Negative test for WASM_MAX_MEMORY_PAGES, covering both halves of the
+# enforcement. It builds the wsh engine at cap=1 and cap=4 and drives bigmem
+# and biginit over the console; see the platform guide.
 #
 # Usage: test/memcap.sh   (runs in the build container; see `make memcap`)
 set -u

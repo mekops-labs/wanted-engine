@@ -1,14 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* duplex — one image, two inter-wapp pipe roles selected by the ROLE env var
- * (passed via the launch config). Proves /dev/pipe is a process-wide channel
- * between wapps in separate namespaces. The selftest stages this single source
- * under two registry names (reader, writer) and launches each with its ROLE:
- *
- *   ROLE=writer:           write PAYLOAD to /dev/pipe/duplex, then exit.
- *   ROLE=reader (default): block-read /dev/pipe/duplex and echo what arrived to
- *                          the log console for the supervisor to verify.
- */
+/* duplex — one image, two inter-wapp pipe roles selected by the ROLE env var,
+ * proving /dev/pipe is a process-wide channel between separate namespaces. The
+ * selftest stages this source under two registry names and launches both. */
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>

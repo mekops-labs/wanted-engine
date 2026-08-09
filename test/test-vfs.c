@@ -162,10 +162,9 @@ TEST(vfs_prefix_router, NetStatDoesNotOpenSocket) {
     VfsClose(vfs, base);
 }
 
-/* A deep driver mount (e.g. a config-map at "/etc/config") makes "/etc" a
- * synthetic intermediate directory: it has no backing driver but must stat and
- * list as a directory, since root readdir surfaces it as an entry. Regression
- * for the NuttX `ls /` failure where lstat("/etc") returned -ENOENT. */
+/* A deep driver mount makes its parent a synthetic intermediate directory: no
+ * backing driver, but it must stat and list as a directory, since root readdir
+ * surfaces it as an entry. Regression for an `ls /` failure on NuttX. */
 TEST(vfs_prefix_router, SyntheticMountDirStatsAndLists) {
     vfs_driver_t *cfg = VfsNullInit(NULL, NULL);
     TEST_ASSERT_EQUAL_INT(0, VfsMountDriver(vfs, "/etc/config", cfg));
@@ -242,10 +241,9 @@ TEST_GROUP_RUNNER(vfs_prefix_router) {
 TEST_GROUP(vfs_stream_register);
 /***************************************/
 
-/* VfsRegister is the stdio-only path. Each `<stdin>`/`<stdout>`/`<stderr>`
- * mount drops the supplied driver into a STREAM slot at fd 0/1/2; VfsDestroy
- * walks those slots and frees the driver. Anything else is destroyed and
- * returns -EINVAL. */
+/* VfsRegister is the stdio-only path: each stdio mount drops the supplied
+ * driver into a STREAM slot at fd 0/1/2 and VfsDestroy frees it. Anything else
+ * is destroyed and returns -EINVAL. */
 
 TEST_SETUP(vfs_stream_register) { vfs = VfsInit(); }
 

@@ -1,14 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* escaper — attempts to break out of its sandbox; every attempt must be denied.
- *
- * A launched, non-privileged wapp sees only its read-only TarFS root and its
- * console (no /dev/wanted, no /proc, no host preopen). It tries the classic
- * escapes — parent traversal past the root, absolute host paths, writing the
- * read-only image, and reaching the engine control plane / another wapp's nodes
- * — and reports a single verdict on its log console: "sandbox-OK" if all were
- * denied, "sandbox-LEAK" if any unexpectedly succeeded. The selftest supervisor
- * reads the verdict and asserts no escape. */
+/* escaper — attempts the classic sandbox escapes (parent traversal, absolute
+ * host paths, writing the read-only image, reaching the control plane), and
+ * reports "sandbox-OK" or "sandbox-LEAK". Every one must be denied. */
 
 #include <fcntl.h>
 #include <string.h>
@@ -17,7 +11,7 @@
 #define OK_MARKER   "sandbox-OK\n"
 #define LEAK_MARKER "sandbox-LEAK\n"
 
-/* Open that must fail. Returns 1 if the path was unexpectedly opened (a leak). */
+/* Open that must fail. Returns 1 if the path was unexpectedly opened. */
 static int leaked(const char *path, int flags) {
     int fd = open(path, flags);
     if (fd >= 0) {

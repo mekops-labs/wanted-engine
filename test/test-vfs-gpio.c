@@ -88,10 +88,9 @@ TEST(gpio_grant, MalformedEntryFailsLaunch) {
     TEST_ASSERT_NULL(VfsGpioInit(NULL, "pin=21"));
 }
 
-/* An address is one field, and the two separators are reserved. A backing whose
- * native addressing uses either must spell it differently — a libgpiod line is
- * "/dev/gpiochip0/17", not "0:17" — and a grant that ignores that fails the
- * launch rather than resolving to a different pin. */
+/* An address is one field and the two separators are reserved, so a backing
+ * whose native addressing uses either must spell it differently. A grant that
+ * ignores this fails the launch rather than resolving to a different pin. */
 TEST(gpio_grant, AddressCarryingASeparatorFailsLaunch) {
     /* A colon makes the field count ambiguous: this would otherwise read as
      * address "0" with direction "17". */

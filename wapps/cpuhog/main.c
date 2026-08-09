@@ -1,13 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* cpuhog — a never-yielding busy loop with no sleep and no syscalls.
- *
- * Where `looper` sleeps between iterations (going off-CPU), cpuhog spins on a
- * pure compute loop that never blocks. It proves the engine can stop even a
- * wapp that never yields: WAMR checks the termination flag per instruction in
- * the interpreter loop, so a control-plane "stop" unwinds the in-flight call
- * (wasm_runtime_terminate) without the wapp ever cooperating. The supervisor
- * starts it, confirms it runs, stops it, and confirms it terminated. */
+/* cpuhog — a never-yielding busy loop with no sleep and no syscalls. It proves
+ * the engine can stop a wapp that never yields: WAMR checks the terminate flag
+ * per instruction, so a "stop" unwinds the in-flight call regardless. */
 
 #include <string.h>
 #include <unistd.h>

@@ -1,16 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* "log" console driver — captures a wapp's stdout/stderr into the per-wapp log
- * store instead of the shared platform console. Installed as a wapp's console
- * (console.out/err = {"name":"log"}); the supervisor reads the captured output
- * back via /dev/wanted/wapps/<name>/log. A misbehaving or chatty wapp can no
- * longer disturb the platform console, and its late output is not lost to the
- * stdio teardown that closes the shared console fd.
- *
- * One driver instance per wapp (like vfs-config), bound to the wapp name; the
- * ring buffers live in the process-wide LogStore (vfs-pipe is the sibling
- * pattern). Writes append; reads return EOF (the log is read out-of-band by
- * the supervisor, not by the wapp itself). */
+ * store, so a chatty wapp cannot disturb the platform console and its late
+ * output survives stdio teardown. One instance per wapp; reads return EOF. */
 
 #include <string.h>
 

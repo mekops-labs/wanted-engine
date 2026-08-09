@@ -21,9 +21,8 @@ void DummyClockAdvance(uint64_t ns);
 void DummyRegistryReset(void);
 
 /* Populate the registry from `entries`, upserting by name. Returns the number
- * of entries stored, or -ENOSPC if the table is full. This is the test write
- * path: the real PlatformRegistryWrite streams an image to a host file under an
- * install ref, which the dummy platform cannot do. */
+ * stored, or -ENOSPC when the table is full. The test write path, since the
+ * dummy platform cannot stream an image to a host file. */
 int DummyRegistrySeed(const reg_entry_t *entries, size_t count);
 
 /* ── GPIO fake control (dummy-gpio.c) ───────────────────────────────────── */
@@ -69,10 +68,8 @@ int DummyUartRxLen(void);
 void DummyWappStateReset(void);
 
 /* Populate the wapp runtime-state table from `states`, upserting by name.
- * Returns the number stored, or -ENOSPC if the table is full. Lets a test put
- * a wapp into a known status (e.g. RUNNING) without a real WASM runtime, so
- * PlatformWappGetState — and the control-plane reads layered on it — return
- * deterministic data. */
+ * Returns the number stored, or -ENOSPC when the table is full. Puts a wapp
+ * into a known status without a real WASM runtime. */
 int DummyWappStateSeed(const wapp_state_t *states, size_t count);
 
 /* ── Network mock control (dummy-net.c) ─────────────────────────────────── */

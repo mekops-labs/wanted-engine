@@ -2,12 +2,9 @@
 
 #pragma once
 
-/* Process-wide per-wapp log buffers.
- *
- * A wapp whose console is the "log" driver has its stdout/stderr captured here
- * instead of sharing the platform console; the supervisor reads it back via
- * /dev/wanted/wapps/<name>/log. Each wapp gets a fixed-size ring buffer, so a
- * chatty or long-lived wapp keeps only its most recent output. */
+/* Process-wide per-wapp log buffers. A wapp whose console is the "log" driver
+ * has stdout/stderr captured here, read back by the supervisor. Each wapp gets
+ * a fixed ring, so only its most recent output is kept. */
 
 #include <stdbool.h>
 #include <stddef.h>

@@ -205,9 +205,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
 }
 
 /* /dev/ota: one command per call ("begin"/"commit"/"abort"/"confirm"/
- * "rollback"). "abort" discards a streaming write; "rollback" reverts a booted
- * image and reboots. /dev/ota/slot: image bytes, forwarded to
- * PlatformOtaWrite. */
+ * "rollback"). /dev/ota/slot takes image bytes for PlatformOtaWrite. */
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     if (fd < 0 || fd >= OTA_MAX_FDS || !d->fds[fd].used)
         return -EBADF;

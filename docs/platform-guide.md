@@ -18,18 +18,38 @@ Every platform implements the contract in `platform/include/platform.h`. A confo
 |------|---------|
 | Wapp lifecycle | `PlatformWappLoad` / `Unload` / `Start` / `Stop` / `Release` / `Loop` / `GetState`, `PlatformWorkerStackSize` |
 | Registry backend | `PlatformRegistryRead` / `Write` / `Remove` / `WappLoad` / `ReadImage` |
-| Filesystem | `PlatformOpenStateDir`, `PlatformFsRename`, `PlatformFsMkdir`, `PlatformVolumeRoot` |
+| Filesystem | `PlatformOpenStateDir`, `PlatformFsRename`, `PlatformFsMkdir`, `PlatformFsRmdir`, `PlatformVolumeRoot` |
 | Network | `PlatformNetOpen` / `Connect` / `Recv` / `Send` / `Accept` / `Shutdown` / `Close` / `Free` |
 | Clock | `PlatformClockGetRes` / `GetTime` / `NanoSleep` |
 | Random | `PlatfromGetRandom` |
+| Storage | `PlatformStorageStats` — free/total bytes of the store backing the registry and volumes, reported at `/proc/memory`; zeroes where the platform cannot answer |
+| Identity | `PlatformName`, `PlatformFirmwareDigest` — the build-time image digest reported at `/proc/wanted`; `-ENOSYS` where the platform stamps none |
 | Memory | `PlatformMemoryStats`; `PlatformExtram*` (`Malloc` / `Realloc` / `Free` / `EarlyInit`) — the external-RAM (PSRAM) heap backing the engine's large allocations (image cache, WAMR runtime) where one exists |
 | Concurrency | `PlatformMutexNew` / `Lock` / `Unlock` / `Free` |
 | Drivers | `PlatformDriverTable` — the platform's additions to the launch-config driver names (`wifi` on NuttX and ESP-IDF, none on Linux). `gpio`, `uart` and `ota` are core drivers instead: their tree and grant grammar are identical everywhere, and only the line, port or slot behind them is per-platform, behind `PlatformGpio*`/`PlatformUart*`/`PlatformOta*`. A build may add a third table from a tree outside this repo; see [Out-of-tree drivers](#out-of-tree-drivers) |
-| Crypto | `PlatformSha256New` / `Update` / `Final` / `Free` — streaming digest behind `/dev/sha256` (software body in `posix/sha256.c`; ESP32-S3 uses the SHA peripheral; no `-ENOSYS` path). `PlatformEd25519Verify` — the one seam symbol allowed to report an absent backend (`-ENOSYS`); the `/dev/ed25519` verdict read surfaces it to the wapp. Real on Linux (OpenSSL) and NuttX (vendored `orlp/ed25519`); the ESP-IDF port still uses the dummy backend |
+| Crypto | `PlatformSha256New` / `Update` / `Final` / `Free` — streaming digest behind `/dev/sha256` (software body in `posix/sha256.c`; ESP32-S3 uses the SHA peripheral; no `-ENOSYS` path). `PlatformEd25519Verify` — the one seam symbol allowed to report an absent backend (`-ENOSYS`); the `/dev/ed25519` verdict read surfaces it to the wapp. Real on Linux (OpenSSL), and on NuttX and ESP-IDF through the vendored verify-only `orlp/ed25519` |
 | Firmware update | `PlatformOtaInit` / `Confirm` / `GetBootState` / `BeginWrite` / `Write` / `Commit` / `Abort` / `Rollback` — the A/B OTA seam behind `/dev/ota`; real on ESP-IDF (`esp_ota_ops`) and Linux (slot directories, see below), `-ENOSYS` on NuttX |
-| Power / process | `PlatformSetProcessArgs`, `PlatformRequestShutdown`, `PlatformRequestReboot`, `PlatformName` |
+| Power / process | `PlatformSetProcessArgs`, `PlatformRequestShutdown`, `PlatformRequestReboot` |
 
 The invariants every platform must honour: a wapp runs on its own thread; `PlatformWappStop` must interrupt a wapp that is blocked in a host syscall (not merely set a flag and wait); `PlatformWappLoop` blocks until an explicit shutdown/reboot request and respawns a supervisor that exits on its own; memory stats report heap usage; the registry resolves a wapp image by name.
+
+### Seam contracts worth knowing
+
+A few symbols carry a contract the signature does not show. A port that gets these wrong compiles and then misbehaves at runtime, so they are written out here.
+
+**`PlatformGpio*` and `PlatformUart*` back a core driver.** The driver owns the wapp-facing tree, the grant grammar, the blocking policy and the line-setting text format; the platform owns only the line or the port. `plat_gpio_cfg_t.address` is the grant's middle field (`pins=boot0:4:out` → `4`) and is interpreted in the backing and nowhere else — a decimal pin number on ESP-IDF, a character-device path such as `/dev/gpio0` on NuttX. A wapp never sees it, which is what lets one wapp image run on boards with different wiring. `plat_uart_cfg_t.options` carries every grant key the driver did not consume, comma-separated in the order written: `tx=1,rx=2` on ESP-IDF, `dev=/dev/ttyUSB0` on Linux. **Reject an unknown key** rather than ignoring it, so a grant that is meaningless on this target fails the launch instead of half-applying.
+
+**A UART port must be exclusive, and not every OS gives that for free.** ESP-IDF does — `uart_driver_install` refuses a port that is already installed. Linux does not: two opens of one tty both succeed, so the Linux backing takes `TIOCEXCL` itself. `PlatformUartConfigure` drains the transmit buffer before applying new line settings, so a reconfiguration cannot truncate a byte already on the wire, then discards the receive buffer, because bytes received under the old settings cannot be decoded under the new ones. It must never substitute the nearest achievable baud rate: that produces a link that looks configured and corrupts data.
+
+**`PlatformOta*` slots are always named `a` and `b`** — the first and second physical app slots (ESP-IDF's `ota_0`/`ota_1`, a boot-root subdirectory on Linux) — so the `/dev/ota` wire text reads the same whatever bootloader backs it. `PlatformOtaRollback` may reboot the board during the call rather than scheduling the revert, so a caller must not assume control returns.
+
+**`PlatformExtramEarlyInit` exists because of allocation order, not laziness.** On a target where PSRAM shares one merged heap with internal RAM, the pool needs a large contiguous block, and any earlier allocation can fragment the region it would come from. Call it as early as boot allows; it is idempotent and harmless where PSRAM is a separate heap, since `PlatformExtramMalloc` lazy-initialises anyway.
+
+**`PlatformSha256*` has no `-ENOSYS` path**, unlike `PlatformEd25519Verify`. `/dev/sha256` has no other digest source, so a target with no crypto peripheral compiles the portable body in `posix/sha256.c` rather than declining the request.
+
+**`PlatformFirmwareDigest` identifies bytes, not source.** Two builds of one source tree share a `version` string; the digest is stamped into the image at build time, so a control plane confirming a firmware update compares this instead.
+
+**A read-only preopen will not create its directory.** `PlatformOpenStateDir` creates a missing directory for a read-write mount, but answers `-ENOENT` for a read-only one — creating a directory only to deny writes to it is incoherent. The returned fd is owned by the VFS layer and closed at `VfsDestroy`.
 
 All recipes build inside the standardized container — the host only needs a container runtime. `just --list` lists them; on a bare host `make <recipe>` runs the same recipe in the container (append `RUNNER=docker` to use Docker).
 
@@ -141,7 +161,7 @@ The reference constrained target, and the one the control-plane story is proven 
 
 - **Registry** — a LittleFS volume on a reserved region of the internal QSPI flash (the flash-MTD backend), written through the RP2350 ROM flash routines. Full wapp lifecycle (`create → start → running → stop → exited`) is hardware-verified.
 - **PSRAM** — 8 MB external PSRAM on QMI CS1 (GPIO8), merged with internal SRAM into one ~8.5 MiB heap (`RP23XX_PSRAM_HEAP_SINGLE`). The large engine buffers (WAMR linear memory, the wapp image cache) live in PSRAM while worker stacks stay in scarce internal SRAM. Measured ceiling: ~38 concurrent wapps. Because flash program/erase and PSRAM share the QMI hardware, the internal-flash MTD driver cleans the XIP cache and saves/restores the CS1 registers around every flash op — without which a flash write silently corrupts PSRAM.
-- **Crypto** — a **real Ed25519 verify**: NuttX's vendored mbedTLS has no Ed25519, so the port vendors `orlp/ed25519` (verify-only) behind `PlatformEd25519Verify`. The only target with a genuine (non-stub) Ed25519 backend on embedded silicon.
+- **Crypto** — a **real Ed25519 verify**: NuttX's vendored mbedTLS has no Ed25519, so the port vendors `orlp/ed25519` (verify-only) behind `PlatformEd25519Verify`. The ESP-IDF port uses the same vendored backend.
 - **Wi-Fi (CYW43439)** — on the Pico Plus 2 W the pinned fork drives the onboard CYW43439 radio: the `wifi` driver is available to wapps, and the `:sheriff` boot path joins Wi-Fi before Sheriff's manager loop starts — SSID and passphrase are read interactively from the console (never baked into firmware), association goes through the NuttX WAPI library with DHCP retry. On a CYW43439 board Sheriff's manager socket is `tcp://`; a board without the radio uses the `serial://` USB-CDC link below. The RP2350 board configs do not enable `CONFIG_SYSTEM_WANTED_TLS` (the mbedTLS layer is proven on the sim; its flash/RAM cost on this board is unmeasured), so the control-plane transport is plain TCP or the wired serial link.
 - **Console + flashing** — with the `:sheriff` config the console moves to UART0 (read it over the Debug Probe's UART bridge), which frees the native USB-CDC for the control plane. Flash over SWD with `make rp2350-flash-swd` (no button dance) or over USB in BOOTSEL with `make rp2350-flash`; `make rp2350-reset` resets a running board over SWD.
 - **Control plane over USB-CDC** — on a board with no radio, Sheriff reaches a host Deputy over the native USB-CDC using the engine's `serial://` socket scheme (a device path in place of `host:port`). The full reconcile loop runs on real hardware (verified on the Feather RP2350): State Report uplink → Ed25519-verified signed Desired State → wapp `RUNNING`, and a wrongly-signed Desired State is rejected. This is the ecosystem's first genuine (not demo-stubbed) signed-workload verification on embedded hardware.
@@ -166,6 +186,14 @@ make esp32-flash                    # esptool over ESP32_PORT (default /dev/ttyU
 - **OTA** — A/B firmware update through `esp_ota_ops` (`ota.c`) on the S3, with a pending-verify / rollback seam. The classic part's single-factory layout has no A/B slot to roll back to.
 - **Secure sockets** — raw mbedTLS with ESP32-S3 hardware AES/SHA/ECC acceleration. No CA bundle is provisioned (`MBEDTLS_SSL_VERIFY_NONE`), so `tcps://` here is encrypted but **unauthenticated** — a demo transport, not production TLS.
 - **Crypto** — SHA-256 is hardware-backed; Ed25519 verify uses a vendored portable `orlp/ed25519` backend (`crypto.c`) on both chips.
+
+### Factory-seeded registry images
+
+A board that has never been online still needs wapps in its registry, so an image can be **seeded from the firmware**. The mechanism differs by host but the contract does not: a seed image is written into the writable registry only when its ref is absent there, so an image installed over a seeded ref survives the next boot rather than being overwritten on every start.
+
+On ESP-IDF the seed images are embedded into the app binary at configure time; `platform/esp-idf/registry-seed.sh` packages each `wapps/<name>/<name>.wasm` as `<out>/<name>.wapp`, and `make wapps` builds the inputs. On the NuttX boards the firmware carries them in the read-only ROMFS at `/rom/registry/*.wapp` and the boot shim copies them across on first boot.
+
+The firmware flasher wapp ships this way. It is seeded as `flasher:<supervisor version>` — the version of the supervisor tree it was built from, a bare semver at a tag (`flasher:0.3.3`) or the tag plus a short commit past one (`flasher:0.3.3-abc123`). It installs an engine firmware image and exits, which is why it must be present before any network is: the thing that would otherwise fetch it is what it exists to update. A version too long for a registry version field fails the build rather than being truncated.
 
 ## OpenWrt
 
@@ -296,6 +324,17 @@ Driver allocation sizes that size a static structure are configurable too, under
 
 Drivers a launch config reaches by name can be deselected, which drops their source, their factory-table row, and their declaration together. `9p` and `inflate` also drag the vendored c9 and uzlib libraries out of the build, so they are the two largest wins. The VFS core — `tarfs`, `devfs`, `netfs`, `procfs`, plus `null`/`log`/`pipe`/`stdio`/`virtual` — is mandatory and carries no symbols.
 
+The hardware and update drivers are core code behind their own symbols, so a target compiles in only what it can serve:
+
+| Symbol | Default | Deselect when |
+|---|---|---|
+| `CONFIG_WANTED_VFS_GPIO` | off | the target drives no pins, or nothing granted needs them |
+| `CONFIG_WANTED_VFS_UART` | off | no wapp is granted a serial port |
+| `CONFIG_WANTED_VFS_OTA` | on | the host has no A/B mechanism to update into — the OpenWrt defconfig deselects it, since that host updates through its package manager |
+| `CONFIG_WANTED_VFS_SOCKET_LISTEN` | off (on for OpenWrt) | no wapp serves a socket |
+
+A launch config that names a driver the build did not compile in fails the launch rather than resolving to a stub, which is the point of the gate.
+
 ### A wapp's memory
 
 Three engine-controlled regions are passed to WAMR per instance:
@@ -321,7 +360,12 @@ Three engine-controlled regions are passed to WAMR per instance:
 | `esp32-esp-idf` | ESP-IDF | classic ESP32, quad PSRAM, 4 MB flash, single-factory-app layout, internal-RAM worker stacks |
 | `openwrt` | OpenWrt | packaged `.ipk`; supervisor read from its install path |
 
-A board defconfig exists only where the board needs something an envelope does not give it. The RP2350 has no entry because `small` already describes it exactly — build it with `DEFCONFIG=small` rather than carrying a file that restates those numbers and would silently stop tracking them.
+A board defconfig exists only where the board needs something an envelope does not give it — a launch config, an install path, a supervisor choice, or a limit the envelope gets wrong.
+
+| Board | Host | Notes |
+|---|---|---|
+| `rp2350_feather` | NuttX | Adafruit Feather RP2350, 8 MB PSRAM; PSRAM backs the large allocations, but worker stacks and slot tables still come out of internal SRAM, which is what bounds the wapp count |
+| `pimoroni_pico2_plus_w` | NuttX | RP2350 + PSRAM; the same limits as `small`, carried for its launch config |
 
 A defconfig seeds a build directory that has no `.config` yet; it never overwrites an existing one, so a configuration you edited is not silently replaced by a rebuild.
 
@@ -348,7 +392,17 @@ OpenWrt instead builds the engine as an external package and shares no symbol na
 ### Measuring the footprint
 
 - `just sizes` reports each defconfig's per-wapp and worst-case memory — plus the build dir's own `.config`, as a final row, so a configuration you have edited is measured alongside the envelopes it derives from. `just sizes current` reports that row alone, and is what `menuconfig`, `defconfig` and `olddefconfig` run once they have written a `.config`, so a limit change is priced as it is made. It also narrows to the ABI the configured target actually builds for, derived from the target half of the tree — an extracted OpenWrt SDK is asked directly for its toolchain triple, and when neither that nor the SDK/board name settles it, both ABIs are shown with the reason. The full survey always shows both, since a defconfig carries no target. Both cover the host (LP64) and 32-bit embedded (ILP32) ABIs, measured from the real engine structs, but it's just approximate value (e.g. wamr overhead is arbitrary worst case value), it doesn't actually measure the whole runtime overhead on specific hardware, using specifc compiler, just the struct sizes.
-- `just memcap` is a negative test that verifies the `WASM_MAX_MEMORY_PAGES` cap actually bounds a wapp's `memory.grow`.
+- `just memcap` is a negative test that verifies the `WASM_MAX_MEMORY_PAGES` cap actually bounds a wapp's `memory.grow`. It builds the engine at a one-page and a four-page cap and drives two wapps over the console: `bigmem` grows past one page and reports whether the runtime growth cap refused it, and `biginit` declares four *initial* pages, which the engine must refuse at load time rather than at growth.
+
+What the report's three figures mean:
+
+| Figure | Definition |
+|---|---|
+| per-wapp footprint | the per-wapp structs (`wapp_t`, its slot, the VFS/WASI/WAMR contexts, the log ring) plus the WASM stack, the WASM app heap, the worker thread's native stack, one linear-memory page, and an approximate WAMR overhead |
+| engine overhead | the fixed boot and config structures (`wantedConfig_t`) |
+| worst case | engine overhead + `MAX_WAPPS` × per-wapp footprint |
+
+The struct and limit sizes are exact, measured from the real headers. Two addends are deliberately estimates, so the total is a usable ballpark rather than a floor that ignores the runtime: the linear-memory floor is one 64 KiB page, the minimum an instance reserves, so scale it up for a module declaring N initial pages; and the WAMR overhead is an order-of-magnitude figure for per-instance bookkeeping (module instance, function/global/table instances, exec-env struct) that grows with module complexity. Still excluded: the per-image writable module copy, which is the size of the `.wasm` itself.
 
 ## Out-of-tree drivers
 
@@ -365,6 +419,56 @@ Two properties are worth stating plainly:
 
 - **The extra table is searched last** — core names first, then the platform's, then the extra tree's. A tree claiming `wanted`, `socket`, or any other core name cannot shadow it.
 - **An extra driver runs at full engine privilege.** Living outside this repo keeps it out of core review; it does not put it outside the trust boundary. A fault in it faults the engine. For a driver that should be isolated instead, run it as a 9P server process and grant the wapp a `9p` mount — `unix://<socket-path>` reaches one on the same box.
+
+## Target quirks worth knowing
+
+Constraints found on real hardware, each of which a port can otherwise rediscover the slow way.
+
+### Stopping a wapp is cooperative everywhere
+
+No target uses `pthread_cancel` — it is unreliable on NuttX and leaves WAMR state half-torn-down elsewhere. `PlatformWappStop` sets the per-instruction terminate flag (`WantedWappTerminate`) and then signals the worker so any host call it is parked in returns early; the interpreter sees the flag at the next instruction boundary, aborts the in-flight WASM call, and the thread unwinds through `WA_threadEnd` on its own stack. That terminates a wapp spinning in pure compute and one blocked indefinitely in I/O alike.
+
+Two details are not obvious. The signal is **`SIGUSR2`**: WAMR reserves `SIGUSR1` for its own blocking-op wakeup and keeps it masked on every wasm thread, so a `SIGUSR1` sent to a worker is never delivered. And on **NuttX the signal wakes a sleep but the sleep still reports success**, so the timer return alone cannot distinguish an interrupt from an elapsed wait — the handler records the interrupt on the worker's own slot and `PlatformClockNanoSleep` consumes it to report `EINTR`. ESP-IDF wires no signal wakeup at all, so a worker blocked in a host call unwinds once that call returns.
+
+### Worker stacks and scheduling
+
+Every platform sets the worker's native C stack **explicitly** from `CONFIG_WANTED_WASM_WORKER_STACK_SIZE`, floored at `PTHREAD_STACK_MIN`, rather than taking the host default: the classic WAMR interpreter is recursive and the WASI/VFS host calls add frames, so an RTOS default (NuttX's `CONFIG_PTHREAD_STACK_DEFAULT` is ~2 KB) overflows the moment real wasm runs, while glibc's 8 MB is wasteful.
+
+The supervisor runs **one scheduling step above** the wapps it manages, so it can always preempt and terminate a runaway. Priorities are set explicitly rather than inherited — a wapp is launched from the supervisor's own elevated thread, and inheriting would lift it to the supervisor's priority and defeat exactly that. A host that forbids real-time scheduling (Linux without `CAP_SYS_NICE`) returns `EPERM`; every thread then falls back to default scheduling, where the host scheduler time-slices anyway.
+
+### The classic ESP32 cannot read flash while a wapp holds PSRAM
+
+On the classic ESP32 an SPI-flash read disables the flash/PSRAM cache globally, and a read issued while another task holds live PSRAM returns corrupt data — LittleFS reports `LFS_ERR_CORRUPT`. This single hardware behaviour shapes three decisions:
+
+- **An in-RAM image cache** (`platform/nuttx/api/registry.c`) reads every registry image into RAM at boot, while only the supervisor is live and flash reads are still safe, and serves every later launch RAM-to-RAM. Masters live for the device lifetime; each launch gets its own copy. An image installed *after* the first launch and started while another wapp runs still falls back to a flash read.
+- **A bounce buffer** in `platform/posix/wapps-image.c`, static so it lives in `.bss` and therefore internal RAM: the SPI-flash MTD read target cannot itself be PSRAM, so bytes are read into internal RAM and copied into the (possibly PSRAM) image buffer by the CPU.
+- **The registry moves off internal flash** on that board — onto an SD card over a separate SPI peripheral, whose reads never disable the cache. The supervisor image stays in a read-only ROMFS, which is a cache-window read and coherent with PSRAM.
+
+ESP-IDF's `esp_ota_*` calls hit the same class of problem from the other side: the cache-freeze safety check aborts if it observes a PSRAM-stacked caller. Both the OTA path and the flash registry proxy their calls through a dedicated helper thread with an ordinary internal-DRAM stack, so it does not matter which thread invoked the entry point.
+
+### PSRAM alignment and heap fragmentation
+
+Allocations from the classic ESP32's PSRAM heap are made **explicitly 8-byte aligned** (`heap_caps_aligned_alloc`): plain `heap_caps_malloc` guarantees only that heap's block granularity, which is not a multiple of 8, and WAMR's GC allocator requires 8-byte alignment on its heap-struct buffer.
+
+On RP2350 the SRAM and PSRAM share one merged segregated-fit heap, which starts fragmenting the instant any other subsystem allocates — chipping the one giant PSRAM free node into pieces well under 1 MiB before a multi-megabyte probe ever runs. `PlatformExtramEarlyInit` exists to grab the pool before that happens. The ESP32 needs no such call, since its PSRAM is a separate `heap_caps` pool from boot.
+
+### Linux confines a preopen with `openat2`, or not at all
+
+`platform/linux/vfs/vfs-linux.c` opens beneath a preopen with `openat2(RESOLVE_BENEATH)`, which rejects absolute paths, escaping `..`, and — the case a read-only flag cannot close — a symlink inside the host directory pointing outside it. There is deliberately **no plain-`openat` fallback**: on a kernel without `openat2` (< 5.6) the syscall returns `ENOSYS` and the open fails loudly. A sandbox that cannot be enforced must deny, not degrade.
+
+### ESP-IDF filesystem and radio quirks
+
+The `joltwallet/littlefs` port **hard-asserts and aborts the device** when `lfs_file_read_`/`lfs_file_write_` is called on a handle opened without the matching access bit, where a POSIX filesystem would return `EBADF` — so the driver tracks the access mode itself and rejects a mismatch before it reaches the filesystem. Its `fstat` also reads the on-disk directory entry rather than the open handle's live size, so a size check against a handle with unflushed writes sees the last-synced size until something flushes littlefs's write cache.
+
+On the radio, a WPA2/WPA3-transition AP commonly expects a **PMF-capable** client even when it does not require one; leaving `pmf_cfg` zeroed made a real AP reject the very first 802.11 open-auth frame with `AUTH_EXPIRE`, before the WPA2 handshake started. The `/dev/wifi` status read is also a latch **per connection state, not per fd**: a poll loop that writes `connect` once and then only reads must still observe the disconnected→connected transition, which a plain one-shot-per-write latch misses (that shape works on NuttX only because its connect blocks synchronously).
+
+The firmware digest is read straight out of the image descriptor rather than through `esp_app_get_elf_sha256()`, whose RAM copy is sized by `CONFIG_APP_RETRIEVE_LEN_ELF_SHA` — 9 of the 64 hex digits by default — and truncates silently. A truncated prefix compares cleanly and would confirm the wrong image.
+
+Finally, the console VFS is routed through the interrupt-driven driver so `read(stdin)` blocks. With the default non-blocking console, a supervisor shell's `getline()` spins returning nothing and never assembles a command line. The peripheral differs by board — USB-Serial/JTAG on the S3, UART on the classic part — but both need their blocking driver installed.
+
+### TLS is client-side only
+
+Neither the OpenSSL nor the mbedTLS body branches on direction: both unconditionally run a client-mode handshake, so a secure transport cannot serve. `PlatformNetListen` rejects one for want of a server certificate and key. mbedTLS is used raw rather than through ESP-IDF's `esp-tls`, because `esp_tls_conn_new_sync` unconditionally opens and connects its own socket and cannot wrap an fd it did not open. No CA bundle is provisioned — verification is `MBEDTLS_SSL_VERIFY_NONE`, which proves the handshake and record layer and nothing about peer identity.
 
 ## Porting to a new platform
 

@@ -1,19 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* devcheck — end-to-end check of the engine offload devices from inside WASM.
- *
- * Exercises /dev/sha256, /dev/inflate and /dev/ed25519 over the ordinary WASI
- * open/write/read path with known-answer vectors, printing TAP to the log
- * console. This is the wasm-wapp -> WASI fd_read/fd_write -> engine VFS ->
- * driver round trip that neither the engine's C unit tests (which call the VFS
- * API directly) nor Sheriff's host tests (which use a std fallback) cover.
- *
- * Run as the supervisor with the three devices granted (see
- * test/devcheck-config.json). Exits 0 iff every required check passes; the
- * runner asserts on the "ok"/"not ok" TAP lines. Ed25519 needs a platform
- * crypto backend (OpenSSL on Linux/SECURE_SOCKETS); without one the read
- * reports -ENOSYS, which still proves the transport, so it is a skip, not a
- * failure. */
+/* devcheck — end-to-end check of /dev/sha256, /dev/inflate and /dev/ed25519
+ * from inside WASM over the ordinary WASI path, with known-answer vectors,
+ * printing TAP. Ed25519 with no crypto backend is a skip, not a failure. */
 
 #include <errno.h>
 #include <fcntl.h>
@@ -25,7 +14,7 @@ static void say(const char *s) {
 }
 
 /* Drain a device read into buf, retrying on EAGAIN (a C wapp, unlike Zig's std,
- * can observe EAGAIN without trapping). Stops at EOF (0), a hard error, or full.
+ * can observe EAGAIN without trapping). Stops at EOF, a hard error, or full.
  * Returns bytes read. */
 static int drain(int fd, char *buf, int cap) {
     int n = 0;

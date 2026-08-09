@@ -1,12 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Minimal TAP (Test Anything Protocol) emitter for in-WASM test wapps.
- *
- * Output goes to stdout, which the engine wires to the platform console on
- * every target (Linux CLI, NuttX sim, future HW over UART), so the host runner
- * just scans the console for `ok`/`not ok`/`1..N`. No engine natives, only
- * WASI writes — identical everywhere. Counting is process-global; call
- * tap_plan() last. */
+/* Minimal TAP emitter for in-WASM test wapps. Output goes to stdout, which the
+ * engine wires to the platform console on every target, so the host runner just
+ * scans it. Counting is process-global; call tap_plan() last. */
 
 #ifndef WANTED_TAP_H
 #define WANTED_TAP_H

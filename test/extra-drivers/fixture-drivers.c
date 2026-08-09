@@ -6,9 +6,8 @@
 #include <vfs.h>
 
 /* Two entries with one job each: `extra` proves the extra table is consulted
- * at all, and the `null` entry claims a core name so the resolver's precedence
- * can be asserted — a build that let it win would hand out this driver's
- * marker body instead of the core null device. */
+ * at all, and `null` claims a core name so precedence can be asserted — a build
+ * that let it win would hand out this marker body instead of /dev/null. */
 #define EXTRA_BODY "EXTRA"
 #define SHADOW_BODY "SHADOW"
 

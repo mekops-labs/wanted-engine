@@ -1,19 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* selftest — the WANTED engine test supervisor.
- *
- * Runs as the boot supervisor (like sheriff/wsh) and exercises the engine from
- * inside WASM, emitting TAP to stdout (the host runner scans the console). It
- * does two kinds of checks:
- *
- *   positive  — assert its own VFS namespace, /proc, the read-only TarFS, the
- *               inter-wapp pipe, and the control plane behave as expected;
- *   robustness — launch a deliberately misbehaving wapp via the control plane
- *               and assert the engine contains it (the wapp ends in a dead
- *               state while this supervisor keeps running).
- *
- * Everything here is plain WASI + the WANTED VFS/control-plane ABI, so the same
- * image runs on Linux, the NuttX sim, and future hardware. */
+/* selftest — the engine test supervisor. It runs as the boot supervisor and
+ * exercises the engine from inside WASM, emitting TAP. Everything here is plain
+ * WASI plus the VFS and control-plane ABI, so one image runs everywhere. */
 
 #include <dirent.h>
 #include <errno.h>
@@ -30,11 +19,9 @@
 #define TRAPPER_STATE "/dev/wanted/wapps/" TRAPPER "/state"
 #define SUPERVISOR_STATE "/dev/wanted/wapps/supervisor/state"
 
-/* Launched test wapps get a null stdin and the "log" console for stdout/stderr:
- * their output is captured per-wapp in the engine log store (read back below
- * via .../log) instead of sharing the platform console — so a launched wapp's
- * stdio teardown on exit cannot close the supervisor's own stdout. No interior
- * whitespace so the control-plane string parser keeps it as one value. */
+/* Launched test wapps get a null stdin and the "log" console, so their output
+ * is captured per-wapp and a wapp's stdio teardown cannot close the
+ * supervisor's stdout. No interior whitespace: the parser wants one value. */
 #define LAUNCH_CFG                                                             \
     "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}}"
@@ -70,9 +57,8 @@
     "\"args\":[\"alpha\",\"beta\"],\"envs\":[\"FOO=bar\",\"BAZ=qux\"]}"
 
 /* A `pipe` console streams a wapp's stdout live to a peer. argpipe runs the
- * argenv image with its stdout backed by a `pipe` console (auto-named
- * <wapp>.out); the supervisor reads the output back from /dev/pipe/argpipe.out
- * rather than a log. */
+ * argenv image with its stdout backed by one, and the supervisor reads the
+ * output back from /dev/pipe/argpipe.out. */
 #define ARGPIPE "argpipe"
 #define ARGPIPE_CFG "/dev/wanted/wapps/" ARGPIPE "/config"
 #define ARGPIPE_PIPE "/dev/pipe/" ARGPIPE ".out"
@@ -81,10 +67,9 @@
     "\"out\":{\"name\":\"pipe\"},\"err\":{\"name\":\"null\"}},"                \
     "\"args\":[\"alpha\",\"beta\"]}"
 
-/* volcheck mounts an engine-managed `volume` at /data. On a fresh store it
- * writes a marker and reports "vol-wrote"; on a store that already holds state
- * it reads the marker back and reports "vol-read:<payload>". Two runs of the
- * same instance prove the volume persists across a restart. */
+/* volcheck mounts an engine-managed `volume` at /data, writing a marker on a
+ * fresh store and reading it back on a populated one. Two runs of the same
+ * instance prove the volume persists across a restart. */
 #define VOLCHECK "volcheck"
 #define VOLCHECK_CFG "/dev/wanted/wapps/" VOLCHECK "/config"
 #define VOLCHECK_LOG LOG_MOUNT "/" VOLCHECK
@@ -94,12 +79,9 @@
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\"}]}"
 
-/* A shared volume is one store two wapps reach by name — the substrate for a
- * producer→processor→publisher pipeline. Two distinct instances (vprod, vcons)
- * both run the volcheck image against the same `name=stream,shared` volume: the
- * producer writes the marker on the fresh store, the consumer (a different
- * instance) re-opens it, proving the store crosses the wapp boundary. Both bind
- * the image via the config `image` field, since the instance names differ. */
+/* A shared volume is one store two wapps reach by name. Two instances run the
+ * volcheck image against the same `name=stream,shared` volume: one writes the
+ * marker, the other re-opens it, proving the store crosses wapp bounds. */
 #define VPROD "vprod"
 #define VCONS "vcons"
 #define VPROD_CFG "/dev/wanted/wapps/" VPROD "/config"
@@ -112,11 +94,9 @@
     "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\","                     \
     "\"options\":\"name=stream,shared\"}]}"
 
-/* Isolation: a private and a shared volume of the *same name* must be different
- * stores. isoshr writes to a shared `name=iso`; isoprv then mounts a private
- * `name=iso` (no `shared`) — if the two namespaces mixed, isoprv would find the
- * shared marker (vol-open); kept disjoint, it sees a fresh store and writes
- * (vol-wrote). Both run the volcheck image. */
+/* Isolation: a private and a shared volume of the same name must be different
+ * stores. isoshr writes to a shared `name=iso`, then isoprv mounts a private
+ * one; disjoint namespaces mean isoprv sees a fresh store and writes. */
 #define ISO_SHARE "isoshr"
 #define ISO_PRIV "isoprv"
 #define ISO_SHARE_CFG "/dev/wanted/wapps/" ISO_SHARE "/config"
@@ -135,10 +115,8 @@
     "\"options\":\"name=iso\"}]}"
 
 /* A read-only shared volume must deny writes. vroro mounts a fresh
- * `name=roonly,shared,ro` store; volcheck finds no marker and tries to create
- * one, which the ro grant refuses, so it reports "vol-fail". This is the
- * publisher's mount in a producer→processor→publisher chain — read the shared
- * feed, never mutate it. */
+ * `name=roonly,shared,ro` store; volcheck finds no marker, tries to create one,
+ * and the ro grant refuses, so it reports "vol-fail". */
 #define VRORO "vroro"
 #define VRORO_CFG "/dev/wanted/wapps/" VRORO "/config"
 #define VRORO_LOG LOG_MOUNT "/" VRORO
@@ -149,9 +127,8 @@
     "\"options\":\"name=roonly,shared,ro\"}]}"
 
 /* observer is the reference observability wapp: granted a `log` mount and the
- * ambient /proc but NOT the `wanted` control driver, so it can watch the fleet
- * (read /proc/wapps, tail logs) yet cannot reach the control plane. It reports
- * each finding to its log, which the supervisor reads back through the mount. */
+ * ambient /proc but no `wanted` driver, so it watches the fleet yet cannot
+ * command it. It reports each finding to its log. */
 #define OBSERVER "observer"
 #define OBSERVER_CFG "/dev/wanted/wapps/" OBSERVER "/config"
 #define OBSERVER_LOG LOG_MOUNT "/" OBSERVER
@@ -160,10 +137,9 @@
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"mounts\":[{\"name\":\"log\",\"path\":\"/log\"}]}"
 
-/* The supervisor's own launch config (selftest-config.json) wires the three
- * launch-config resource sections, so they are verified in our own namespace:
- * a `config` map mounted at an arbitrary path outside /dev, a named socket, and
- * the `wanted` device driver. */
+/* The supervisor's own launch config wires all three resource sections, so they
+ * are verified in this namespace: a `config` map mounted outside /dev, a named
+ * socket, and the `wanted` device driver. */
 #define CFGMAP_PATH "/etc/config"
 #define CFGMAP_MARKER "selftest-cfgmap-v1"
 #define SOCKET_NAME "uplink"
@@ -180,10 +156,9 @@
 #define LISTEN_REQ2 "ping2"
 #define LISTEN_RES "pong"
 
-/* A `platform` bind mount at /host (selftest-config.json, backed by a host dir
- * the runner populates): an in-bounds file reads back, but a symlink the host
- * planted inside the dir that points OUTSIDE it must not resolve through the
- * mount — the bind-mount confinement the read-only flag cannot provide. */
+/* A `platform` bind mount at /host, backed by a host dir the runner populates:
+ * an in-bounds file reads back, but a symlink planted inside it pointing
+ * outside must not resolve — the confinement a read-only flag cannot give. */
 #define BIND_INSIDE "/host/inside/data.txt"
 #define BIND_INSIDE_MARKER "in-bounds-ok"
 #define BIND_ESCAPE "/host/escape"
@@ -243,7 +218,7 @@ static int dir_has(const char *dir, const char *name) {
 
 static void positive_checks(void) {
     /* Large enough for the full /proc/wanted dump, whose `drivers` field pushes
-     * it past 256 B; the node is one-shot, so a short read silently truncates. */
+     * it past 256 B; the node is one-shot, so a short read truncates. */
     char buf[512];
 
     tap_ok(read_path("/app.wasm", buf, sizeof(buf)) > 0,
@@ -275,10 +250,9 @@ static void positive_checks(void) {
                strstr(buf, "pages_cur:") != NULL,
            "proc: /proc/wapps/<name>/memory reports linear-memory accounting");
 
-    /* /proc/wanted reports engine identity and the compile-time ceilings as
-     * key:\tvalue lines. It is unprivileged. The platform string and version
-     * vary by target/build, so assert the stable fields: the identity keys are
-     * present and max_wapps carries the actual MAX_WAPPS ceiling. */
+    /* /proc/wanted reports engine identity and the compile-time ceilings, and
+     * is unprivileged. Platform and version vary by build, so only the stable
+     * fields are asserted. */
     tap_ok(dir_has("/proc", "wanted"), "VFS: /proc exposes wanted");
     tap_ok(read_path("/proc/wanted", buf, sizeof(buf)) > 0 &&
                strstr(buf, "platform:") != NULL &&
@@ -327,10 +301,9 @@ static void robustness_checks(void) {
     int start_ok = start_wapp(TRAPPER);
     tap_ok(cfg_ok && start_ok, "control plane: launched the " TRAPPER " wapp");
 
-    /* Poll until it leaves starting/running, i.e. the engine has reaped the
-     * trap. Bounded so a hang fails rather than blocks. (A trap now reports
-     * "failure"; "exited" is also accepted for robustness — both count as
-     * dead.) */
+    /* Poll until it leaves starting/running, meaning the engine reaped the
+     * trap. Bounded, so a hang fails rather than blocks. Both "failure" and
+     * "exited" count as dead. */
     const char *state = "";
     int contained = 0;
     for (int i = 0; i < 10; i++) {
@@ -359,11 +332,9 @@ static void robustness_checks(void) {
            "log: supervisor reads the launched wapp's captured output");
 }
 
-/* Poll a wapp's state node until `want_running` matches whether it is
- * running/starting, bounded to ~10 s. Returns true if the condition was met. A
- * node that can't be read (the wapp is unknown — e.g. a launch that failed
- * before it ever ran, leaving no slot) counts as not-live, so a "wait until
- * dead" poll is satisfied immediately rather than spinning out the bound. */
+/* Poll a wapp's state node until `want_running` matches, bounded to ~10 s.
+ * An unreadable node counts as not-live, so a "wait until dead" poll on a
+ * launch that never ran is satisfied at once rather than spinning out. */
 static int wait_state(const char *state_path, int want_running) {
     char buf[64];
     for (int i = 0; i < 10; i++) {
@@ -418,9 +389,8 @@ static int wait_dead(const char *name) {
 }
 
 /* Launch each misbehaving wapp and assert the engine contains it: the wapp ends
- * in a dead state on its own (trap or in-sandbox resource bound) while this
- * supervisor and the host survive. Covers the stack-overflow and
- * memory-exhaustion classes (the OOB trap is covered by robustness_checks). */
+ * dead on its own while this supervisor and the host survive. Covers the
+ * stack-overflow and memory-exhaustion classes. */
 static void containment_checks(void) {
     static const char *const wapps[] = {"stackbomb", "membomb"};
     char buf[64], desc[96];
@@ -437,13 +407,9 @@ static void containment_checks(void) {
            "robustness: supervisor still running after the misbehaving wapps");
 }
 
-/* The per-wapp linear-memory cap (WASM_MAX_MEMORY_PAGES; constrained default =
- * one page) is enforced two ways. bigmem grows past one page: under the cap its
- * grow is refused, malloc returns NULL, and it logs "bigmem-bounded" (still
- * exiting cleanly). biginit declares four initial pages: the engine refuses to
- * load an image whose initial memory already exceeds the cap, so it ends in a
- * failure state without running. Both assume the constrained default cap; a
- * build with a wider cap (PROFILE=small/big) would admit them. */
+/* The per-wapp linear-memory cap is enforced two ways: bigmem's grow past the
+ * cap is refused at runtime, and biginit's oversized initial memory is refused
+ * at load. Both assume the constrained default cap; a wider one admits them. */
 static void memcap_checks(void) {
     char path[96], buf[64];
 
@@ -467,9 +433,8 @@ static void memcap_checks(void) {
 }
 
 /* A never-yielding wapp must still be stoppable: WAMR's per-instruction
- * termination check unwinds even a tight compute loop that never blocks. Start
- * the cpuhog, confirm it runs, stop it via the control plane, confirm the
- * engine terminated it. */
+ * terminate check unwinds even a tight compute loop that never blocks. Start
+ * cpuhog, confirm it runs, stop it, confirm the engine terminated it. */
 static void cpuhog_check(void) {
     char state[96], ctl[96];
     wapp_node(state, sizeof(state), "cpuhog", "state");
@@ -495,11 +460,9 @@ static void lifecycle_checks(void) {
     tap_ok(stopped, "lifecycle: control-plane stop terminates the looper");
 }
 
-/* Console backing: a wapp's stdio slots default when the launch config omits
- * them (stdin->null, stdout/stderr->log), and an explicit all-null console is
- * also valid. Either way the wapp must launch — a wapp with unwired stdio fds
- * fails to start. Reuses the looper (a clean long-runner), stopped after each.
- */
+/* Console backing: a wapp's stdio slots default when the config omits them, and
+ * an explicit all-null console is also valid. Either way it must launch, since
+ * a wapp with unwired stdio fds fails to start. */
 static void console_checks(void) {
     /* Empty config (no console block): the unset slots resolve to their
      * defaults. A start still requires a config to have been written, so the
@@ -531,17 +494,9 @@ static int stop_wapp(const char *name) {
     return write_path(ctl, "stop");
 }
 
-/* Launch a wapp that parks in a blocking host call, stop it, and report whether
- * the stop *interrupted* the call promptly. cpuhog covers the other axis (a
- * wapp busy in the interpreter, where the terminate flag is checked per
- * instruction); these cover a wapp with no instruction boundaries to check
- * because it is parked in a host call. The stop must reach it anyway: the
- * engine sets the terminate flag and signals the worker to EINTR the call, so
- * the interpreter regains control and unwinds. Promptness is judged in a 2 s
- * window — well under any self-return — so it isolates the interrupt path;
- * *alive_out reports whether the supervisor survived. On a non-prompt result
- * the wapp is reaped (bounded) so the suite can continue and the failure is
- * recorded rather than hanging. */
+/* Launch a wapp parked in a blocking host call, stop it, and report whether the
+ * stop interrupted the call promptly. Promptness is judged in a 2 s window,
+ * well under any self-return, so it isolates the interrupt path. */
 static int stop_interrupts(const char *name, int *alive_out) {
     char state[96], buf[64];
     wapp_node(state, sizeof(state), name, "state");
@@ -609,12 +564,9 @@ static void edge_checks(void) {
            "edge: stopping an unknown wapp errors cleanly");
 }
 
-/* Launch a non-privileged wapp that tries to break out of its namespace, and
- * assert every escape was denied. Where positive_checks probes isolation from
- * the supervisor's privileged view, this probes it from a launched wapp — the
- * actual sandbox boundary. The escaper reports a single verdict on its log
- * console: "sandbox-OK" if all attempts were denied, "sandbox-LEAK" if any
- * succeeded. */
+/* Launch a non-privileged wapp that tries to break out of its namespace and
+ * assert every escape was denied. This probes the sandbox boundary from a
+ * launched wapp, which is where it actually is. */
 static void sandbox_check(void) {
     char log[96], buf[128];
     log_path(log, sizeof(log), "escaper");
@@ -628,10 +580,9 @@ static void sandbox_check(void) {
            "sandbox: a launched wapp cannot escape its namespace");
 }
 
-/* Launch a wapp that exhausts a sandbox resource (file descriptors) and assert
- * the abuse is contained: the wapp is reaped and the supervisor survives —
- * never a host crash. Whether the engine bounded the fd table below the wapp's
- * probe cap is reported as a diagnostic. */
+/* Launch a wapp that exhausts its file descriptors and assert the abuse is
+ * contained: the wapp is reaped and the supervisor survives. Whether the fd
+ * table was bounded below the probe cap is a diagnostic. */
 static void resource_check(void) {
     char log[96], verdict[64], buf[64];
     log_path(log, sizeof(log), "fdhog");
@@ -651,10 +602,9 @@ static void resource_check(void) {
            "robustness: fd exhaustion is contained to the wapp, host survives");
 }
 
-/* Try to start a battery of malformed registry images (no app.wasm entrypoint,
- * invalid wasm, truncated archive). The engine must reject each cleanly — none
- * reaches a running state — and stay up; a crash in the loader would take the
- * whole engine down and the TAP plan would never print. */
+/* Try to start a battery of malformed registry images. The engine must reject
+ * each cleanly and stay up: a crash in the loader would take the engine down
+ * and the TAP plan would never print. */
 static void malformed_check(void) {
     static const char *const bad[] = {"noappwasm", "badwasm", "truncated"};
     char state[96], cfg[96], buf[64];
@@ -703,13 +653,9 @@ static void crashloop_check(void) {
         "robustness: a crash-looping wapp does not thrash or wedge the engine");
 }
 
-/* Prove /dev/pipe is a process-wide channel between two distinct wapps (the
- * positive_checks round-trip is within one namespace). Two instances —
- * `reader` and `writer` — run the single `duplex` image (config `image`):
- * `reader` blocks reading the shared channel and echoes what it got to its log
- * console; `writer` writes the payload. Each picks its side from the ROLE env
- * var in its launch config (the env-passthrough path) — the supervisor verifies
- * the payload reached the reader's log. */
+/* Prove /dev/pipe is a process-wide channel between two distinct wapps. Two
+ * instances run the single `duplex` image and pick their side from the ROLE env
+ * var; the supervisor verifies the payload reached the reader's log. */
 #define DUPLEX_PAYLOAD "duplex-ok"
 #define READER_CFG "/dev/wanted/wapps/reader/config"
 #define WRITER_CFG "/dev/wanted/wapps/writer/config"
@@ -740,11 +686,9 @@ static void pipe_duplex_check(void) {
            "pipe: a payload crosses between two wapps via /dev/pipe");
 }
 
-/* argv / environ passthrough + exit-code exposure. Configure argenv with known
- * args and envs, launch it via its own ctl, and let it print them to its log
- * and exit with a fixed non-zero code. Assert the values reached the wapp
- * (argv[0] is the engine-set name) and that the clean non-zero exit surfaces on
- * the exit_code node — distinct from a trap, which would leave it at -1. */
+/* argv and environ passthrough plus exit-code exposure. argenv prints its known
+ * args and envs to its log and exits non-zero; assert the values reached it and
+ * that the clean exit surfaces on exit_code, where a trap would leave -1. */
 static void argenv_check(void) {
     char buf[256];
 
@@ -766,10 +710,9 @@ static void argenv_check(void) {
            "exit_code: a clean non-zero exit surfaces on the exit_code node");
 }
 
-/* Capability separation: launch the observer wapp with a `log` mount but no
- * `wanted` control mount, and assert it can observe the fleet (read /proc/wapps,
- * tail logs through its mount) while every attempt to reach the control plane is
- * denied — the least-privilege split the read-only namespaces exist for. */
+/* Capability separation: launch observer with a `log` mount but no `wanted`
+ * control mount, and assert it can read /proc/wapps and tail logs while every
+ * attempt to reach the control plane is denied. */
 static void observer_check(void) {
     char buf[1024];
 
@@ -788,10 +731,9 @@ static void observer_check(void) {
            "observe: the observability wapp ran to completion");
 }
 
-/* A `pipe` console is a live stream to a peer, distinct from the buffered `log`
- * console. Launch argpipe (the argenv image) with stdout backed by a pipe
- * console, then read its output from /dev/pipe/argpipe.out — proving a wapp's
- * stdout can be consumed live by another wapp. */
+/* A `pipe` console is a live stream to a peer. Launch argpipe with stdout
+ * backed by one, then read its output from /dev/pipe/argpipe.out, proving a
+ * wapp's stdout can be consumed live by another wapp. */
 static void console_pipe_check(void) {
     char buf[256];
 
@@ -807,14 +749,8 @@ static void console_pipe_check(void) {
 }
 
 /* The launch-config resource sections, verified in the supervisor's own
- * namespace (wired by selftest-config.json):
- *   - mounts[]:  a `config` map mounts at an arbitrary path OUTSIDE /dev
- *                (/etc/config), reads back its configured content, and surfaces
- *                a synthetic parent (/etc) in the root listing — exercising the
- *                general single-driver VFS mount;
- *   - sockets[]: a socket is created at /net/<name> by name;
- *   - drivers[]: the `wanted` device driver mounts at /dev/<name> — already
- *                asserted by positive_checks via /dev/wanted. */
+ * namespace: a `config` map mounted outside /dev that also surfaces a synthetic
+ * parent in the root listing, a socket at /net/<name>, and `wanted`. */
 static void mounts_check(void) {
     char buf[256];
 
@@ -826,15 +762,9 @@ static void mounts_check(void) {
     tap_ok(dir_has("/", "etc"),
            "mounts: a deep mount surfaces a synthetic parent in ls /");
 
-    /* A socket needs an IP netstack: socket() must succeed even to enumerate
-     * the node, because listing /net stats each entry and stat'ing a socket
-     * node opens it. Current selftest targets — Linux and the NuttX sim (the
-     * latter over host-backed usrsock) — carry a netstack, so the socket node
-     * is present; the abort branch stays a guard for a genuinely netless
-     * build. Distinguish three outcomes:
-     *   - found        → the socket is present (assert pass);
-     *   - readdir abort → no netstack on this build (skip with a diagnostic);
-     *   - enumerable but absent → a real regression (assert fail). */
+    /* A socket needs an IP netstack even to enumerate the node, because
+     * listing /net stats each entry and stat'ing a socket opens it. A readdir
+     * abort means no netstack and skips; enumerable but absent is a failure. */
     int found = 0, aborted = 0;
     DIR *nd = opendir("/net");
     if (nd) {
@@ -862,15 +792,9 @@ static void mounts_check(void) {
     }
 }
 
-/* Serving from inside the sandbox: a listening socket the config granted binds
- * at open, accepts connections that each become an fd of their own, and answers
- * on them. The client sockets connect back to the same port, so the whole
- * exchange stays inside this wapp's own namespace.
- *
- * The sockets are present only where the engine carries the listen role; on a
- * build without it the config has no server entry and the checks are skipped
- * (a launch config naming one there fails the launch outright, which is the
- * point of the gate). */
+/* Serving from inside the sandbox: a granted listening socket binds at open and
+ * accepts connections onto fds of their own, with the clients connecting back
+ * to the same port. Skipped on a build without the listen role. */
 static void listen_check(void) {
     char buf[64];
 
@@ -974,11 +898,9 @@ static void dgram_listen_check(void) {
     close(sfd);
 }
 
-/* A `platform` bind mount must confine path resolution to its host directory.
- * An in-bounds file reads back; a symlink the host planted inside the mount
- * that points outside it must not resolve through the mount. (Host-side
- * symlinks only exist on Linux; on a target without them the escape simply
- * cannot be set up, so a missing escape node is not a failure.) */
+/* A `platform` bind mount must confine path resolution to its host directory:
+ * an in-bounds file reads back, a symlink pointing outside must not resolve.
+ * A missing escape node is not a failure, since the setup needs symlinks. */
 static void bind_mount_escape_check(void) {
     /* The /host bind mount is wired only in the Linux selftest config; a build
      * without it (e.g. the NuttX sim) has nothing to confine. */
@@ -1000,10 +922,9 @@ static void bind_mount_escape_check(void) {
     tap_ok(fd < 0, "bind mount: a symlink escaping the mount root is denied");
 }
 
-/* Configure instance `name` with `cfg` and return true if the engine REJECTED
- * it — the wapp never reached running/starting. Each `cfg` pins image:looper (a
- * known-good image) so the image loads and the ONLY failure source is the
- * launch config itself. */
+/* Configure instance `name` with `cfg` and return true if the engine rejected
+ * it. Each `cfg` pins a known-good image, so the image loads and the only
+ * failure source is the launch config itself. */
 static int rejects_config(const char *name, const char *cfg) {
     char path[96], state[96], buf[64];
     if (!create_wapp(name))
@@ -1019,10 +940,8 @@ static int rejects_config(const char *name, const char *cfg) {
 }
 
 /* Per-section launch-config validation must fail loudly: a path on a device
- * driver or socket, a mount under a reserved namespace (/dev, /net, /proc), and
- * a malformed socket address are each rejected at install — the wapp fails to
- * start rather than coming up half-configured. A valid config mount on a
- * launched wapp still runs, proving the rejection is specific. */
+ * driver or socket, a mount under a reserved namespace, and a malformed socket
+ * address are each rejected at install, not left half-configured. */
 static void launch_config_validation_check(void) {
     static const struct {
         const char *name, *cfg;
@@ -1081,16 +1000,9 @@ static void launch_config_validation_check(void) {
            "launch config: supervisor survives the rejected configs");
 }
 
-/* An engine-managed `volume` is a writable, persistent, named store: the engine
- * owns the host location (the wapp names only the volume) and it survives a
- * wapp restart. volcheck writes a marker on a fresh store and, on a populated
- * one, re-opens it and reads it back. Running the same instance twice — the
- * engine names the volume by instance, so both runs see the same store — proves
- * the first run's write persists into the second.
- *
- * Both the persistence (the marker re-opens after the restart) and the
- * byte-level read-back of the payload through the preopen are asserted on every
- * platform. */
+/* An engine-managed `volume` is a writable, persistent, named store that
+ * survives a wapp restart. Running volcheck twice as the same instance proves
+ * the first run's write persists, and the payload reads back byte for byte. */
 static void volume_check(void) {
     char buf[160];
 
@@ -1117,11 +1029,8 @@ static void volume_check(void) {
 }
 
 /* A shared volume crosses the wapp isolation boundary by design: two instances
- * that name the same `shared` volume see one store. The producer writes a
- * marker to a fresh shared volume; the consumer — a separate instance —
- * re-opens that marker, proving the store is shared, not per-wapp. The byte
- * read-back of the shared payload through the preopen is asserted on every
- * platform. */
+ * naming the same `shared` volume see one store. The producer writes a marker,
+ * the consumer re-opens it, and the payload is read back byte for byte. */
 static void shared_volume_check(void) {
     char buf[160];
 
@@ -1146,11 +1055,8 @@ static void shared_volume_check(void) {
 }
 
 /* Private and shared namespaces must never alias: a `name=iso` private volume
- * and a `name=iso` shared volume are different stores. The shared instance
- * writes its marker; the private instance, naming the same volume, must see a
- * fresh store (write, not read) — finding the shared marker would be a
- * namespace leak. This is the open-based proof (it holds even where byte
- * read-back does not). */
+ * and a `name=iso` shared volume are different stores. The private instance
+ * must see a fresh store; the shared marker there would be a leak. */
 static void volume_isolation_check(void) {
     char buf[160];
 
@@ -1185,13 +1091,9 @@ static void volume_readonly_check(void) {
     tap_ok(denied, "volume: a read-only shared volume denies writes");
 }
 
-/* Multiple readers on one pipe. A named pipe is a single consume-once ring, not
- * a broadcast: with two readers blocked on /dev/pipe/duplex and one writer
- * (this supervisor) writing a single payload, exactly one reader receives it
- * and the other reaches EOF — proving multi-reader attach is safe and each byte
- * is delivered once. MAX_WAPPS=3, so the supervisor is the writer and the two
- * readers are the only launched wapps. Both reader instances run the one duplex
- * image (ROLE=reader) and echo what they read to their log. */
+/* Multiple readers on one pipe. A named pipe is a single consume-once ring, so
+ * with two readers blocked and one payload written, exactly one receives it and
+ * the other reaches EOF: multi-reader attach is safe, each byte once. */
 #define MREAD_A "mreadA"
 #define MREAD_B "mreadB"
 #define MREAD_A_LOG LOG_MOUNT "/" MREAD_A
@@ -1228,12 +1130,9 @@ static void multi_reader_pipe_check(void) {
 }
 
 int main(void) {
-    /* Phases run in order. Announce each before running it (with a
-     * current/total counter) so a long, mostly-sleeping check — the
-     * control-plane stop/wait phases take seconds — is visibly progressing
-     * rather than looking hung between `ok` lines. The table is the single
-     * source for the order and the total, so adding a phase updates the counter
-     * automatically. */
+    /* Phases run in order, each announced with a current/total counter before
+     * it runs, so a long mostly-sleeping check is visibly progressing. The
+     * table is the single source for both the order and the total. */
     static const struct {
         const char *name;
         void (*run)(void);

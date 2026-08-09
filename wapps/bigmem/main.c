@@ -1,14 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* bigmem — grows its linear memory past one page to exercise the engine's
- * WASM_MAX_MEMORY_PAGES cap. It allocates ~160 KiB (≈3 pages) in chunks until it
- * reaches the target or malloc fails. (Any malloc pulls in memory.grow, so the
- * module is not collapsed by WAMR's shrunk-memory pass.)
- *
- * Under a cap that admits the growth it reaches the target and logs
- * "bigmem-reached"; under a 1-page cap the grow is refused, malloc returns NULL
- * early, and it logs "bigmem-bounded". The logged marker is the test's signal
- * (see test/memcap.sh). */
+ * page cap, allocating in chunks until it reaches the target or malloc fails.
+ * It logs "bigmem-reached" or "bigmem-bounded", which is the test's signal. */
 
 #include <stdlib.h>
 #include <string.h>

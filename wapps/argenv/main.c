@@ -1,12 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* argenv — prints its argv and environ, then exits with a fixed non-zero code.
- *
- * The selftest launches it with known args and envs in its launch config and
- * asserts they appear in its captured log, proving WASI argv/environ
- * passthrough. The deliberate non-zero return proves a clean, application-level
- * exit code surfaces on the exit_code control-plane node — distinct from a
- * trap, which leaves exit_code at its sentinel and the state at failure. */
+ * The selftest asserts they reach the captured log, proving WASI passthrough,
+ * and that a clean exit code surfaces on the exit_code control node. */
 
 #include <stdio.h>
 

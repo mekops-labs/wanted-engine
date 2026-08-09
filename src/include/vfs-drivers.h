@@ -35,17 +35,9 @@ typedef struct vfs_driver_table_t {
     VfsInitFunction_t init;
 } vfs_driver_table_t;
 
-/* Driver table contributed by an out-of-tree source tree, NULL-terminated; may
- * return NULL or an empty table. Lets a use-case-specific driver — one not
- * worth carrying in the engine — be statically linked into a target without
- * living in this repo. The coupling is source-level, not a binary ABI: the
- * tree is compiled against these headers as part of the same build.
- *
- * Searched last, after the core and platform tables, so an extra driver can
- * never shadow a core name. It is nonetheless engine-privilege code — a fault
- * in it faults the engine — so it belongs to the same trust boundary as any
- * compiled-in driver. Wire a tree in with -DWANTED_EXTRA_DRIVERS_DIR=<path>;
- * builds without one link a default returning NULL. */
+/* Driver table contributed by an out-of-tree source tree, NULL-terminated; NULL
+ * or empty is valid. Searched last, so it can never shadow a core name, but it
+ * runs at engine privilege. Wire one in with -DWANTED_EXTRA_DRIVERS_DIR. */
 const vfs_driver_table_t *ExtraDriverTable(void);
 
 /* Always compiled in. */

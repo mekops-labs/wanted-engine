@@ -12,11 +12,8 @@ extern "C" {
 #define WASI_MAX_PREOPENS 8
 
 /* Per-wapp preopen entry. `fd` is the VFS fd assigned at bind time; -1 means
- * the entry is lazy and will be opened on first fd_prestat_get(). The path
- * is what the wapp sees via fd_prestat_dir_name.
- * `rights_base`/`rights_inheriting` are the capability grant advertised for
- * this fd and inherited beneath it; a read-only mount clears WASI_RIGHTS_WRITE.
- */
+ * lazy, opened on the first fd_prestat_get(). `rights_base`/`rights_inheriting`
+ * are the grant advertised and inherited; a read-only mount clears WRITE. */
 typedef struct wasi_preopen_t {
     char path[64];
     int fd;
@@ -41,12 +38,8 @@ wasi_ctx_t *InitWasiContext(void);
 void FreeWasiContext(wasi_ctx_t *ctx);
 
 /* Append a preopen at the wapp-visible `path`, backed by an already-opened host
- * directory fd. `hostPath` is the real backing directory (used to label the
- * driver for debugging; it may differ from `path`). `readonly` binds the mount
- * without write capability — the backing driver rejects writes with -EROFS. The
- * Engine must open the host directory before launching wasm. The new VFS fd is
- * allocated from the wasi ctx's vfs and stored in the returned entry. Returns 0
- * on success or a negative errno. */
+ * directory fd; `hostPath` only labels the driver. `readonly` binds it without
+ * write capability. Returns 0 or a negative errno. */
 int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, const char *hostPath,
                       int host_fd, bool readonly);
 

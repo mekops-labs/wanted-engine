@@ -562,10 +562,9 @@ int wsh_status(char **args)
     return 1;
 }
 
-/* Stop every running child wapp (everything but the supervisor itself) via the
- * control plane, so a poweroff/reboot drains cleanly. Best-effort: a failed
- * stop is ignored — the engine tears remaining wapps down when the run loop
- * ends regardless. */
+/* Stop every running child wapp through the control plane, so a poweroff or
+ * reboot drains cleanly. Best-effort: the engine tears down whatever remains
+ * when the run loop ends. */
 static void wsh_stop_children(void)
 {
     DIR *dr = opendir(WANTED_WAPPS);

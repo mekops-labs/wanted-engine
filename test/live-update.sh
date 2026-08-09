@@ -1,8 +1,7 @@
 #!/bin/bash
 # Supervisor live-update functional test: replace the supervisor image without
-# stopping the engine or its child wapps. Asserts child continuity, that a
-# staged image is adopted only when a reload is armed, and that a staged image
-# that cannot launch or exits at once rolls back to the built-in one.
+# stopping the engine or its child wapps. Asserts child continuity, armed-only
+# adoption, and rollback to the built-in image.
 #
 # Usage: test/live-update.sh [wanted-cli] [config]
 set -u
@@ -61,9 +60,8 @@ stage_broken() {
 }
 
 # A wapp image that loads and runs, then exits after a couple of seconds. It
-# stands in for a supervisor that starts under an engine it cannot work with
-# and leaves again: the load succeeds, so nothing reports a failure, and only
-# the lifetime distinguishes it from a working image.
+# stands in for a supervisor that starts under an engine it cannot work with:
+# the load succeeds, so only the lifetime distinguishes it.
 stage_fast_exit() {
     local d
     d=$(mktemp -d)
@@ -138,10 +136,9 @@ grep -q "Following commands are available" "$ENGINE_OUT"
 check $? "supervisor is serving again after the swap"
 rm -f "$ENGINE_OUT"
 
-# ── 3. a staged image is adopted only when a reload is armed ────────────────
-# Control for the rollback case: stage a bad image but do NOT arm a reload.
-# The engine must keep using the good image it already read, never touch the
-# staged path — the reload is what causes the re-read.
+# 3. a staged image is adopted only when a reload is armed. Control for the
+# rollback case: stage a bad image but arm no reload, and the engine must keep
+# using the image it already read.
 stage "$WSH_TAR"
 engine_start
 send 1   "help"
@@ -185,10 +182,9 @@ check $? "engine reports the rollback"
 check $? "rolled-back supervisor has a working console"
 rm -f "$ENGINE_OUT"
 
-# ── 5. a staged image that loads but exits at once rolls back ───────────────
-# Distinct from case 4: this image is valid wasm and reaches its entry point,
-# so the load never fails and no launch error is ever reported. Its lifetime is
-# the only thing that gives it away.
+# 5. a staged image that loads but exits at once rolls back. This image is valid
+# wasm and reaches its entry point, so the load never fails and no launch error
+# is reported; its lifetime is the only thing that gives it away.
 stage "$WSH_TAR"
 engine_start
 send 1   "help"

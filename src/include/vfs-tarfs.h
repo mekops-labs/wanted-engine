@@ -23,10 +23,9 @@ vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
 
 void TarFsDestroy(vfs_tarfs_ctx_t *ctx);
 
-/* Hand a tarfs context off to a vfs ctx so the prefix router resolves
- * non-/dev//net/ paths against it. The vfs ctx takes ownership: VfsDestroy
- * (or a subsequent VfsAttachTarfs replacing the slot) will TarFsDestroy() it.
- * Returns -EINVAL on a NULL vfs ctx. */
+/* Hand a tarfs context to a vfs ctx so the prefix router resolves non-/dev,
+ * non-/net paths against it. The vfs ctx takes ownership and TarFsDestroy()s
+ * it. Returns -EINVAL on a NULL vfs ctx. */
 int VfsAttachTarfs(vfs_ctx_t c, vfs_tarfs_ctx_t *tarfs);
 
 /* Pre-fetched boot entrypoint. Returns NULL if app.wasm was absent or shadowed
@@ -36,17 +35,9 @@ const uint8_t *TarFsEntrypointWasm(const vfs_tarfs_ctx_t *ctx, size_t *len);
 /* Indexed entry count — exposed for tests and diagnostics. */
 uint16_t TarFsIndexLen(const vfs_tarfs_ctx_t *ctx);
 
-/* File/directory operations.
- *
- * TarFs is read-only. TarFs_Open returns a heap-owned handle on success or
- * NULL on -ENOENT / shadowed-by-whiteout / write flags. The handle is
- * opaque — pass it back into the matching op until TarFs_Close releases it.
- *
- * Directories are *implicit*: the indexer drops typeflag '5' entries because
- * the sorted index already encodes the tree by path prefix. TarFs_Open on
- * "/" or any prefix that is shared by at least one file returns a directory
- * handle; TarFs_ReadDir walks the index forward emitting immediate children
- * and synthesised subdirectories. */
+/* File/directory operations. TarFs is read-only; Open returns a heap-owned
+ * opaque handle or NULL. Directories are implicit: the sorted index encodes
+ * the tree by path prefix, so typeflag '5' entries are dropped when indexed. */
 
 void *TarFs_Open(const vfs_tarfs_ctx_t *ctx, const char *path,
                  vfs_oflags_t flags);

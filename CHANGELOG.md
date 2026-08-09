@@ -1,22 +1,25 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.12.0 (2026-08-05)
+-------------------
 
 ### Added
 
 - Classic ESP32 (Waveshare ESP32 One, quad PSRAM, 4 MB flash) support under ESP-IDF, alongside the ESP32-S3. `make esp32` builds it. Single factory app slot, no A/B OTA.
-- `/dev/ota` takes an `abort` command, which discards a streaming image write and releases the session. A write that begins and never commits holds the slot, and every later `begin` answers `-EBUSY` until the board reboots.
-- The firmware flasher wapp is factory-seeded into the registry under the version of the supervisor tree it was built from: `flasher:0.3.3` at a tag, `flasher:0.3.3-abc123` past one. It installs an engine firmware image and exits, so it is present before any network is up. `make wapps` builds it from the supervisor submodule. A version too long for a registry version field fails the build.
-- `/proc/wanted` reports a `digest` line: the running image's build-time digest, 64 lowercase hex characters. It identifies the exact bytes that booted, which two builds of one source tree can share a `version` string without. ESP-IDF stamps one; the line is absent on platforms that do not.
-- `/proc/wanted` reports a `supervisor_abi` line: the version of the contract between the engine and a supervisor wapp. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value.
+- `/dev/ota` takes an `abort` command, which discards a streaming image write and releases the session. A write that begins and never commits holds the slot until the board reboots.
+- The firmware flasher wapp is factory-seeded into the registry as `flasher:<supervisor version>`, so it is present before any network is up. It installs an engine firmware image and exits.
+- `/proc/wanted` reports a `digest` line: the running image's build-time digest, 64 lowercase hex characters. It names the exact bytes that booted, which a `version` string alone does not. ESP-IDF stamps one.
+- `/proc/wanted` reports a `supervisor_abi` line: the version of the contract between the engine and a supervisor wapp. A supervisor reads it first and writes `rollback-supervisor` when it cannot support the value.
 - `/dev/wanted/ctl` takes `rollback-supervisor`, which pins the compiled-in supervisor image and reloads it. `-EALREADY` when that image is what already runs.
-- A wapp can serve a socket. A `sockets[]` entry with `"role": "listen"` binds its address instead of connecting to it: on `tcp` the `/net/<name>` fd listens and `sock_accept` hands back a connection fd of its own, several of which are served at once (`backlog` and `max_conns` bound the listener); on `udp` the node is the bound socket, read for a datagram and written to answer its sender. Off by default, built in with `CONFIG_WANTED_VFS_SOCKET_LISTEN` (on for OpenWRT). A config asking for a listener the build cannot serve fails the launch. A secure transport cannot listen: TLS server credentials have no source.
-- The `gpio` driver addresses any pin the launch config grants it, at `/dev/gpio/<name>/{value,direction}`. A pin is named, not numbered — `pins=boot0:4:out,btn:2:in` maps a wapp-visible label onto a platform address — so one wapp image runs on boards with different wiring. `readdir` lists exactly the granted pins and an ungranted one is unreachable, not refused. Direction, pull and drive are fixed by the grant, and `direction` is read-only, so a wapp cannot drive a line an external device is already driving.
-- A `uart` driver: a serial port at `/dev/uart/<port>/`, with a `data` byte stream plus writable `baud` and `format` nodes. The line settings change at runtime, because one link can carry a bootloader sync at 57600 8E1 and a framed channel at 921600 8N1. A blocking `data` read returns on a byte or on `-EINTR`, with no wall-clock cap — an idle line is normal and says nothing about a fault — and `O_NONBLOCK` is how a wapp bounds a wait. One wapp holds a port exclusively. Off by default, built in with `CONFIG_WANTED_VFS_UART`; backed by ESP-IDF and Linux.
-- Linux stages an A/B firmware update for real: `/dev/ota` writes the inactive slot under `CONFIG_WANTED_OTA_SLOT_ROOT` (default `/boot`), renames the image into place at commit, and arms a trial boot the bootloader reads. `confirm` flips the active slot, `rollback` cancels an unconfirmed trial. Nothing here reboots into the staged slot, and no host bootloader reports a failed trial back, so `last_failed_slot` stays empty on this platform.
-- `/proc/memory` reports a `wasm_pages_free` line: the sum, across every loaded wapp, of the WASM linear-memory headroom left before its own page ceiling. A live figure, unlike `/proc/wanted`'s compile-time `wasm_max_pages`.
+- A wapp can serve a socket: a `sockets[]` entry with `"role": "listen"` binds its address. `tcp` accepts each connection onto an fd of its own; `udp` reads a datagram and answers its sender.
+- Socket listeners are built in with `CONFIG_WANTED_VFS_SOCKET_LISTEN` (on for OpenWRT), and `backlog`/`max_conns` bound them. A secure transport cannot listen: TLS server credentials have no source.
+- The `gpio` driver addresses any pin the launch config grants it, at `/dev/gpio/<name>/{value,direction}`. A pin is addressed by name, so one wapp image runs on boards with different wiring.
+- Direction, pull and drive are fixed by the `gpio` grant, and `direction` is read-only. `readdir` lists exactly the granted pins; an ungranted one is unreachable.
+- A `uart` driver: a serial port at `/dev/uart/<port>/`, with a `data` byte stream plus writable `baud` and `format` nodes, because one link can carry both a bootloader sync and a framed channel.
+- A blocking `uart` `data` read returns on a byte or on `-EINTR`, with no wall-clock cap; `O_NONBLOCK` is how a wapp bounds a wait. One wapp holds a port exclusively. Built in with `CONFIG_WANTED_VFS_UART`.
+- Linux stages an A/B firmware update for real: `/dev/ota` writes the inactive slot under `CONFIG_WANTED_OTA_SLOT_ROOT` (default `/boot`) and arms a trial boot at commit.
+- `/proc/memory` reports a `wasm_pages_free` line: the sum, across every loaded wapp, of the WASM linear-memory headroom left before its own page ceiling.
 
 ### Removed
 
@@ -24,14 +27,15 @@ Unreleased
 
 ### Changed
 
-- `ota` is a core driver rather than an ESP-IDF one, behind `CONFIG_WANTED_VFS_OTA`. The driver only ever called `PlatformOta*`, so nothing in it was platform-specific. A launch config granting `ota` off ESP-IDF no longer fails with `-ENODEV`. Deselect it on a target with no A/B mechanism to update into — the OpenWRT defconfig does, since that host updates through its package manager.
-- `gpio` is a core driver rather than a per-platform one, so its tree, grant grammar and name-to-line mapping are compiled once and only the line behind it is per-platform (`PlatformGpio*`). **This is a breaking change to the `gpio` ABI.** The single node at `/dev/gpio` is gone, and with it the silent fallback to GPIO 21 that a malformed grant used to reach: a missing, malformed or empty `pins=` clause now fails the launch. Every launch config granting `gpio` must add one, and a wapp must open `/dev/gpio/<name>/value` instead of `/dev/gpio`. The `blink` sample is migrated.
+- `ota` is a core driver behind `CONFIG_WANTED_VFS_OTA`, so a launch config granting it off ESP-IDF no longer fails with `-ENODEV`. Deselect it on a target with no A/B mechanism, as the OpenWRT defconfig does.
+- `gpio` is a core driver, and only the line behind it stays per-platform (`PlatformGpio*`). **Breaking change to the `gpio` ABI:** a wapp opens `/dev/gpio/<name>/value`, and the single `/dev/gpio` node is gone.
+- A missing, malformed or empty `gpio` `pins=` clause fails the launch. Every launch config granting `gpio` must carry one; the `blink` sample is migrated.
 - A factory-seed image is written only when its registry ref is absent, so an image installed over a seeded ref survives the next boot.
-- A staged supervisor image that starts and exits at once now counts toward the rollback ceiling, alongside one that fails to launch. An image can load, find it cannot work with the engine, and leave cleanly, which no launch check sees. An exit after a working lifetime stays an ordinary one, and the compiled-in image is never judged this way.
+- A staged supervisor image that starts and exits at once counts toward the rollback ceiling. An image can load, find it cannot work with the engine, and leave cleanly, which no launch check sees.
 
 ### Fixed
 
-- A supervisor image that fails to load no longer leaves the engine holding freed layer memory. A reload unloads before it loads, so a failed reload presented a freed pointer as a valid image and the next start crashed the engine — reachable whenever a rollback landed on a compiled-in image that could not itself be loaded.
+- A supervisor image that fails to load no longer leaves the engine holding freed layer memory: a failed reload presented a freed pointer as a valid image and the next start crashed the engine.
 - PSRAM allocations are 8-byte aligned (`heap_caps_aligned_alloc`).
 - The classic ESP32's UART console installs a blocking driver.
 
@@ -170,7 +174,7 @@ Unreleased
 
 ### ESP32 (NuttX, Xtensa)
 
-- Engine runs on the classic ESP32 (ESP32-WROVER) via the NuttX port — the first hardware bring-up of that port (the esp-idf ESP32 path was removed in 0.5.0). Xtensa cross-build image (`docker/Containerfile.esp32`) and `esp32-build`/flash recipes.
+- Engine runs on the classic ESP32 (ESP32-WROVER) via the NuttX port — the first hardware bring-up of that port. Xtensa cross-build image (`docker/Containerfile.esp32`) and `esp32-build`/flash recipes.
 - Supervisor boots from a firmware-bundled read-only ROMFS with a first-boot factory seed; installed wapps persist on a writable registry.
 - In-RAM image cache preloaded at boot serves wapp launches RAM-to-RAM, so a flash read never corrupts live PSRAM (classic-ESP32 flash/PSRAM cache coexistence bug) — enables concurrent wapps.
 - PSRAM external-RAM heap backs the image cache and WAMR runtime, freeing scarce internal RAM.

@@ -33,16 +33,17 @@ Override the container runtime or image with `RUNNER=docker` / `IMAGE=...` (on t
 cd build && ctest -R test-tarfs --output-on-failure
 ```
 
-### Key CMake Options
+### Build configuration
+
+Almost everything is a Kconfig symbol in this build directory's `.config`, not a CMake `-D`. Reach them with `just menuconfig`, or `just setconfig 'CONFIG_WANTED_X=y'` for one value. Debug traces (`CONFIG_WANTED_DEBUG_TRACES`), coverage (`CONFIG_WANTED_BUILD_COVERAGE`), TLS (`CONFIG_WANTED_VFS_SOCKET_TLS`), the target, the supervisor variant, the default launch config and every resource limit all live there.
+
+Only these remain CMake cache variables:
 
 | Option | Default | Effect |
 |---|---|---|
-| `-DBUILD_EXECUTABLE=ON` | ON | Build standalone CLI (`cmd/wanted-cli`) |
+| `-DBUILD_EXECUTABLE=ON` | ON | Build standalone CLI (`cmd/wanted-cli`); Linux only |
 | `-DBUILD_TESTING=ON` | ON | Build unit test suite |
-| `-DWANTED_DEBUG_TRACES=ON` | OFF | Verbose WANTED engine output |
-| `-DENABLE_CODE_COVERAGE=ON` | OFF | Gcovr coverage instrumentation |
-| `-DSECURE_SOCKETS=ON` | auto | OpenSSL TLS support |
-| `-DWANTED_DEFCONFIG=<name>` | unset | Seed `.config` from `configs/<name>` on first configure |
+| `-DWANTED_DEFCONFIG=<name>` | unset | Seed `.config` from `configs/<name>_defconfig` on first configure |
 | `-DWANTED_EXTRA_DRIVERS_DIR=<path>` | unset | Out-of-tree source tree supplying `ExtraDriverTable()` |
 
 ## Running
@@ -106,7 +107,15 @@ Production Linux target. Implements:
 
 #### `platform/nuttx/`
 
-NuttX target stub — skeleton for the embedded port. Not yet functional; exists to validate the platform boundary contract without ESP-IDF.
+The NuttX port: the CI-gated simulator and the RP2350 boards. Shares `platform/posix/` with Linux and adds the thread/stop model, a hostfs or flash-MTD LittleFS registry backend, the PSRAM heap, the Wi-Fi driver, and a per-board entry shim under `app/`.
+
+#### `platform/esp-idf/`
+
+The native ESP-IDF port for the whole ESP32 family (ESP32-S3 and the classic ESP32): `app_main`, a flash LittleFS registry with raw-partition image slots, PSRAM, A/B OTA, mbedTLS sockets, and the `wifi` driver.
+
+#### `platform/posix/`
+
+The bodies Linux, the NuttX sim and ESP-IDF share — sockets, mutexes, clock, filesystem, the registry store, image load/unload, and the software SHA-256.
 
 #### `platform/dummy/`
 
@@ -123,12 +132,13 @@ WebAssembly toolchain, test apps, and supervisor variants.
 
 #### `wasm/supervisor/`
 
-Two supervisor variants, each bundled into `supervisor.tar` from `app.wasm`.
+Three supervisor variants, each bundled into `supervisor.tar` from `app.wasm`. Which one the engine boots is the `CONFIG_WANTED_SUPERVISOR_*` Kconfig choice.
 
 | Variant | Purpose | `app.wasm` source |
 |---|---|---|
-| `sheriff/` | Production control-plane agent — default | prebuilt blob (separate repo) |
+| `sheriff/` | Production control-plane agent — default | built from the `wapps/sheriff` submodule |
 | `wsh/` | Interactive debug shell | compiled from `wapps/wsh/` |
+| `selftest/` | In-WASM test supervisor, emits TAP | compiled from `wapps/selftest/` |
 
 Rebuild after any supervisor source change (compiles `wsh` from `wapps/wsh/`,
 re-tars both variants):
@@ -141,15 +151,11 @@ make -C wasm/supervisor
 
 ### `test/`
 
-Unity-based unit test suite. Each `test-*.c` maps to a CTest test group.
+Unity-based unit test suite. Each `test-*.c` maps to a CTest test group, registered by a CMake glob — drop a new file in and it is picked up. Groups cover the VFS router and every per-namespace driver, TarFS, the control-plane drivers, the platform seam, the driver-table search order, and the vendored Ed25519 verifier against RFC 8032 vectors.
 
-- `test-tarfs.c` — TarFS layer merging, shadowing, whiteout
-- `test-vfs.c` — VFS router path resolution
-- `test-vfs_virtual.c` — virtual device drivers
-- `test-api.c` — WANTED core API
-- `test-wanted-vfs-api.c` — VFS API
+Tests use `platform/dummy/`, so no hardware or network is required. The one exception is `test-vfs-9p-local`, which forks a minimal 9P2000 server onto a filesystem socket. `generate_runner.sh` creates Unity test runners; do not edit generated files.
 
-Tests use `platform/dummy/` — no hardware or network required. `generate_runner.sh` creates Unity test runners; do not edit generated files.
+The shell-driven suites (`selftest`, `syscontrol`, `smoke-engine`, `live-update`, `memcap`, `devcheck`, `selftest-qemu`) also live here — see [docs/testing-guide.md](docs/testing-guide.md).
 
 ### `vendor/`
 
@@ -161,6 +167,9 @@ All external dependencies as git submodules. Do not modify these directly.
 | `tiny-json` | JSON parsing |
 | `cwalk` | Cross-platform path manipulation |
 | `c9` | 9P2000 protocol client (`vfs-9p`) |
+| `uzlib` | DEFLATE decoder behind `/dev/inflate` |
+
+`third_party/` holds the NuttX and nuttx-apps forks (sim and board builds); `wapps/sheriff` is the production supervisor's own repo. Vendored Ed25519 (`orlp/ed25519`, verify-only) is carried in-tree rather than as a submodule.
 
 After cloning: `git submodule update --init --recursive`
 

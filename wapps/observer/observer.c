@@ -1,19 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* observer — reference observability wapp.
- *
- * Demonstrates the least-privilege split the read-only namespaces exist for: a
- * wapp granted the observability surfaces but NOT the /dev/wanted control mount
- * can watch the fleet without being able to command it. Its launch config gives
- * it a `log` mount (read wapp logs) and the ambient /proc, but no `wanted`
- * driver, so:
- *
- *   - it enumerates the fleet via /proc/wapps and reads each wapp's state;
- *   - it tails wapp logs through its granted `log` mount;
- *   - every attempt to reach the /dev/wanted control plane fails.
- *
- * It reports each finding as a line to stdout, captured to its own log so the
- * supervisor can read the results back through the same log mount. */
+/* observer — reference observability wapp, granted a `log` mount and the
+ * ambient /proc but no `wanted` driver. It enumerates the fleet, tails logs,
+ * and confirms every attempt to reach the control plane fails. */
 
 #include <dirent.h>
 #include <fcntl.h>
