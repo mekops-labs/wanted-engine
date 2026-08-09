@@ -101,14 +101,9 @@ endif()
 # so MAX_WAPPS and the flash layout cannot disagree.
 set(WANTED_ENGINE_ROOT ${ENGINE})
 
-# ESP-IDF flash-layout profile: couples MAX_WAPPS (overriding the
-# WANTED_PROFILE value above), WAPP_IMAGE_MAX_SLOTS (config-esp-idf.h
-# aliases it directly to MAX_WAPPS), and the generated partitions.csv from
-# one source, per chip. S3 profiles (WANTED_OTA_LAYOUT=ab): s3-wapps
-# (default, MAX_WAPPS=20, max concurrency) and s3-storage (MAX_WAPPS=10,
-# roomier persist partition) -- only MAX_WAPPS varies, slot size fixed at
-# 160 KiB across both. Classic-ESP32 profile (WANTED_OTA_LAYOUT=factory):
-# esp32-factory, a single app slot, no A/B.
+# ESP-IDF flash-layout profile: couples MAX_WAPPS, the registry image ceiling
+# and the generated partitions.csv from one source, per chip. Each profile in
+# ota-profiles/ documents its own envelope.
 if(NOT OTA_PROFILE)
     set(OTA_PROFILE "s3-wapps")
 endif()
@@ -151,21 +146,25 @@ if(WANTED_OTA_LAYOUT STREQUAL "factory")
     math(EXPR OTA_POOL_KB "4096 - 64 - ${FACTORY_APP_KB}")
     set(_partition_template ${ENGINE}/platform/esp-idf/project/partitions-factory.csv.in)
 else()
-    # Fixed flash geometry (8 MB XIAO ESP32-S3): reserved 64 KiB (bootloader +
-    # partition table + nvs 24 KiB + phy_init 4 KiB) + otadata 8 KiB + two OTA
-    # app slots. 1600 KiB slots hold >=35% headroom over the measured,
-    # OTA-code-included image (1 171 072 B, 2026-07-07) -- 1536 KiB (the
-    # pre-OTA-code estimate) no longer clears that margin once this driver's own
-    # code is counted, before the pending gpio driver or a real Ed25519 backend
-    # land (floor-measured gpio stub: +832 B; Ed25519 unmeasured, budgeted
-    # generously). Must stay a multiple of 64 KiB so ota_0/ota_1 auto-align with
-    # zero padding waste -- see partitions.csv.in's layout comment.
-    set(OTA_SLOT_KB 1600)
+    # 8 MB XIAO ESP32-S3: 64 KiB reserved + otadata 8 KiB + two app slots, and
+    # persist takes what is left. A multiple of 64 KiB, or ota_1 pads up to the
+    # next boundary and the table runs past the end of flash.
+    set(OTA_SLOT_KB 1792)
     math(EXPR OTA_POOL_KB "8192 - 64 - 8 - (2 * ${OTA_SLOT_KB})")
     set(_partition_template ${ENGINE}/platform/esp-idf/project/partitions.csv.in)
 endif()
 
-set(WAPP_IMAGE_SLOT_SIZE_KB 160)
+# Slot size is the engine's image ceiling, so the compiled-in bound and the
+# partition are the same number. Slots are erased in place, so a size that is
+# not a whole number of 4 KiB sectors would put two slots in one sector.
+set(WAPP_IMAGE_SLOT_SIZE_KB ${CONFIG_WANTED_MAX_WAPP_IMAGE_KB})
+math(EXPR SLOT_SECTOR_REMAINDER "${WAPP_IMAGE_SLOT_SIZE_KB} % 4")
+if(NOT SLOT_SECTOR_REMAINDER EQUAL 0)
+    message(FATAL_ERROR
+        "CONFIG_WANTED_MAX_WAPP_IMAGE_KB=${WAPP_IMAGE_SLOT_SIZE_KB} is not a "
+        "multiple of the 4 KiB flash sector")
+endif()
+
 math(EXPR OTA_WAPPS_KB "${CONFIG_WANTED_MAX_WAPPS} * ${WAPP_IMAGE_SLOT_SIZE_KB}")
 math(EXPR OTA_PERSIST_KB "${OTA_POOL_KB} - ${OTA_WAPPS_KB}")
 
@@ -174,9 +173,9 @@ math(EXPR OTA_PERSIST_KB "${OTA_POOL_KB} - ${OTA_WAPPS_KB}")
 # OTA_PROFILE edit that pushes wapps past the pool.
 if(OTA_WAPPS_KB GREATER OTA_POOL_KB)
     message(FATAL_ERROR
-        "OTA_PROFILE=${OTA_PROFILE}: CONFIG_WANTED_MAX_WAPPS=${CONFIG_WANTED_MAX_WAPPS} needs "
-        "${OTA_WAPPS_KB} KiB of wapps, exceeding the ${OTA_POOL_KB} KiB "
-        "persist+wapps pool")
+        "OTA_PROFILE=${OTA_PROFILE}: CONFIG_WANTED_MAX_WAPPS=${CONFIG_WANTED_MAX_WAPPS} at "
+        "${WAPP_IMAGE_SLOT_SIZE_KB} KiB per image needs ${OTA_WAPPS_KB} KiB of wapps, "
+        "exceeding the ${OTA_POOL_KB} KiB persist+wapps pool")
 endif()
 
 # Regenerated on every configure -- partitions.csv is a build artifact (like

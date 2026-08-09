@@ -312,6 +312,20 @@ config WANTED_MAX_WAPPS
 	  dominant term in the engine's static footprint. The supervisor occupies
 	  one slot, so 1 leaves room for no child wapps.
 
+config WANTED_MAX_WAPP_IMAGE_KB
+	int "Maximum wapp image size (KiB)"
+	default 160
+	range 64 1024
+	help
+	  Upper bound on one image the registry stores. A backing that keeps
+	  images in fixed-size raw flash slots takes this as its slot size and
+	  multiplies it by WANTED_MAX_WAPPS to size the registry partition, so
+	  raising it costs flash whether or not any image grows into it.
+
+	  A supervisor image is the largest thing the registry holds, and a
+	  registry that cannot store one is a registry a control plane cannot
+	  install a supervisor through.
+
 config WANTED_WASM_STACK_SIZE
 	int "WASM operand stack per instance (bytes)"
 	default 8192

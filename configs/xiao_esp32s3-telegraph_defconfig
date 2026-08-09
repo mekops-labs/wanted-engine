@@ -9,7 +9,10 @@
 # The wapps of the device are seeded from another repository — see
 # ota-profiles/s3-telegraph.cmake.
 
-CONFIG_WANTED_MAX_WAPPS=20
+# A supervisor image is the largest thing the registry holds, and 256 KiB is
+# what one takes. MAX_WAPPS drops to 12 so the partition stays in its pool.
+CONFIG_WANTED_MAX_WAPPS=12
+CONFIG_WANTED_MAX_WAPP_IMAGE_KB=256
 CONFIG_WANTED_WASM_STACK_SIZE=65536
 CONFIG_WANTED_WASM_HEAP_SIZE=0
 CONFIG_WANTED_WASM_WORKER_STACK_SIZE=65536

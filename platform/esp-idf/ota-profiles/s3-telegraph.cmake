@@ -2,8 +2,9 @@
 # Select with -DOTA_PROFILE=s3-telegraph (idf.py build) or
 # OTA_PROFILE=s3-telegraph (just build).
 #
-# Same A/B layout and wapp-slot envelope as s3-wapps. What differs is the
-# serial-port driver and the listening socket the wapps of the device need.
+# Same A/B layout as s3-wapps. What differs is the serial-port driver, the
+# listening socket the wapps of the device need, and a registry envelope of 12
+# slots at a 256 KiB image ceiling, which is what a supervisor image takes.
 set(WANTED_DEFCONFIG "xiao_esp32s3-telegraph_defconfig" CACHE STRING "Engine defconfig" FORCE)
 set(WANTED_OTA_LAYOUT "ab")
 
