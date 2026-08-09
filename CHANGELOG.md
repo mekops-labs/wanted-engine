@@ -11,11 +11,19 @@ Unreleased
 - An ESP32-S3 board configuration running Sheriff: `OTA_PROFILE=s3-sheriff`, the `s3-wapps` A/B layout with the production supervisor and the boot-time join.
 - The supervisor image may come from the wapp registry: `imagePath` of the form `registry:<name>[:<version>]` resolves the reference the way a launch config's `image` does. A board whose image path is compiled in has no other source a control plane can write to, and `reload-supervisor` then adopts whatever the registry holds.
 - A `gpio` grant entry takes `init=0|1`, the level an output holds from the moment the grant opens it, written before the pad becomes an output. Without it every output starts low, which holds a reset line asserted. Default `0`; on an input it fails the launch.
+- ESP32-S3 A/B app slots are 1792 KiB, up from 1600, taken from `persist`. A
+  slot size must be a multiple of 64 KiB.
+- `CONFIG_WANTED_MAX_WAPP_IMAGE_KB` bounds one registry image, default 160 KiB.
+  The Telegraph profiles take 256 KiB over 12 slots.
 - A board profile can seed wapps built outside this repository: `WANTED_EXTRA_SEEDS` takes `<ref>=<path to .wasm>` entries, and the declarations and seed calls are generated, so the boot path names no board's wapp.
 - An ESP32-S3 board configuration for the Telegraph display: `OTA_PROFILE=s3-telegraph`, the `s3-wapps` A/B layout with the `uart` driver built in, wsh as the supervisor, and the wapps of the device seeded from the firmware. `TELEGRAPH_WAPPS` gives the directory that holds them.
 
 ### Fixed
 
+- `/dev/wanted/reg/<ref>` and `unlink` answered `-ENOENT` for an image the
+  registry holds unless the root had been opened first.
+- A registry lookup matched a name by prefix, so `app` answered for `app-v2`.
+  Both halves of a ref are compared in full.
 - ESP-IDF firmware reported `version: unknown` at `/proc/wanted`: the component compiles the engine core itself and nothing defined the version. A checkout with no reachable tag now fails the build.
 - The ESP-IDF build compiled the `gpio`, `uart` and `ota` drivers unconditionally, so deselecting any of them broke the build.
 - A build with `CONFIG_WANTED_VFS_UART=y` failed on ESP-IDF: `driver/uart.h` was off the include path. The component requirements of the driver backings are resolved in an expansion pass that runs before the engine's configuration exists, so they are listed unconditionally.
