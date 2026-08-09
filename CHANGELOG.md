@@ -20,6 +20,8 @@ Unreleased
 
 ### Fixed
 
+- A registry install whose start failed answered `-EBADF` on every later write,
+  hiding the error that stopped it. A full registry read as a bad descriptor.
 - `/dev/wanted/reg/<ref>` and `unlink` answered `-ENOENT` for an image the
   registry holds unless the root had been opened first.
 - A registry lookup matched a name by prefix, so `app` answered for `app-v2`.

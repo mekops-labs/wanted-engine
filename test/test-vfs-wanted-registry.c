@@ -284,12 +284,24 @@ TEST(vfs_registry_driver, Unlink_Unknown_ReturnsEnoent) {
     TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Unlink(drv->ctx, 0, "ghost"));
 }
 
-TEST(vfs_registry_driver, Close_AfterWrite_FinalizesRegistry) {
+TEST(vfs_registry_driver, Close_AfterFailedStart_DoesNotFinalize) {
     drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
-    drv->Write(drv->ctx, 0, "{}", 2); /* sets startedWriting */
-    /* Close with a pending write calls WantedCloseRegistry ->
-     * PlatformRegistryWrite(FINISH_WRITE) -> -ENOSYS. */
-    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Close(drv->ctx, 0));
+    /* The dummy backing refuses START_WRITE, so nothing is in flight and the
+     * close has nothing to finalize. */
+    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, 0, "{}", 2));
+    TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, 0));
+}
+
+/* A failed start must leave the write unarmed. Continuing after it reports the
+ * backing's -EBADF for a write it never opened, hiding the error that actually
+ * stopped the install — a full registry reads as a bad descriptor. */
+TEST(vfs_registry_driver, WriteRegistry_FailedStart_LeavesWriteUnarmed) {
+    bool cont = false;
+
+    TEST_ASSERT_EQUAL_INT(
+        -ENOSYS,
+        WantedWriteRegistry(&cont, "newapp:1.0.0-1", (const uint8_t *)"{}", 2));
+    TEST_ASSERT_FALSE(cont);
 }
 
 TEST(vfs_registry_driver, OpenEntry_WithoutOpeningRoot_Resolves) {
@@ -351,7 +363,9 @@ TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, Unlink_ByNameVersion_RemovesEntry);
     RUN_TEST_CASE(vfs_registry_driver, Unlink_RemovesEntry);
     RUN_TEST_CASE(vfs_registry_driver, Unlink_Unknown_ReturnsEnoent);
-    RUN_TEST_CASE(vfs_registry_driver, Close_AfterWrite_FinalizesRegistry);
+    RUN_TEST_CASE(vfs_registry_driver, Close_AfterFailedStart_DoesNotFinalize);
+    RUN_TEST_CASE(vfs_registry_driver,
+                  WriteRegistry_FailedStart_LeavesWriteUnarmed);
     RUN_TEST_CASE(vfs_registry_driver, OpenEntry_WithoutOpeningRoot_Resolves);
     RUN_TEST_CASE(vfs_registry_driver, OpenEntry_NamePrefix_ReturnsEnoent);
     RUN_TEST_CASE(vfs_registry_driver, OpenEntry_WrongVersion_ReturnsEnoent);

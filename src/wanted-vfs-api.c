@@ -142,10 +142,15 @@ int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
         return -EINVAL;
 
     /* The ref ("<name>:<version>") names the install target; it is consumed at
-     * START_WRITE and ignored thereafter. */
+     * START_WRITE and ignored thereafter. Only a started write may continue:
+     * arming this on a failed start turns the real error into the -EBADF a
+     * backing answers CONTINUE_WRITE with when it never opened. */
     if (*cont == false) {
+        int ret = PlatformRegistryWrite(START_WRITE, ref, buf, bufLen);
+        if (ret < 0)
+            return ret;
         *cont = true;
-        return PlatformRegistryWrite(START_WRITE, ref, buf, bufLen);
+        return ret;
     }
 
     return PlatformRegistryWrite(CONTINUE_WRITE, ref, buf, bufLen);
