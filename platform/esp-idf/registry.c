@@ -131,3 +131,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
 
     return count;
 }
+
+/* Images live in fixed raw-flash slots; the count is the hard ceiling a
+ * supervisor needs to see before it runs out. */
+size_t PlatformRegistrySlots(void) { return WAPP_IMAGE_MAX_SLOTS; }

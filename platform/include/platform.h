@@ -121,6 +121,10 @@ void PlatformRequestShutdown(void);
 void PlatformRequestReboot(void);
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len);
+/* How many images the registry can hold, or 0 where it is bounded only by the
+ * filesystem. A backing that keeps images in fixed flash slots has a hard
+ * ceiling, and a supervisor cannot see it coming without being told. */
+size_t PlatformRegistrySlots(void);
 /* Stream-install an image under an explicit ref ("<name>:<version>") supplied
  * at START_WRITE, which names the stored file and is the image's identity.
  * `ref` is ignored on CONTINUE/FINISH/ABORT. */
