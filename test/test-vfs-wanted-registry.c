@@ -407,7 +407,60 @@ TEST(vfs_registry_driver, ReadDir_EntryFd_ReturnsEnotdir) {
                                        sizeof(buf), &cookie, &used));
 }
 
+/* A buffer too small for every entry must report the bytes it did write and
+ * leave the cookie on the entry that did not fit. Reporting the whole buffer
+ * hands the reader bytes this never wrote, and a reader that parses those as
+ * an entry follows a length and a cookie that lead nowhere. */
+TEST(vfs_registry_driver, ReadDir_ShortBuffer_ReportsWhatItWrote) {
+    SeedTwo();
+    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+
+    /* Room for one entry only. */
+    uint8_t buf[sizeof(vfs_dirent_t) + 16];
+    uint64_t cookie = 0;
+    size_t used = 0;
+
+    TEST_ASSERT_EQUAL_INT(
+        0, drv->ReadDir(drv->ctx, 0, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_TRUE(used > 0);
+    TEST_ASSERT_TRUE(used <= sizeof(buf));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "app1", 4));
+    /* The second entry did not fit, thus the cookie still names it. */
+    TEST_ASSERT_EQUAL_UINT64(1, cookie);
+}
+
+/* Every entry is served exactly once across the calls a short buffer forces,
+ * and the walk ends. A cookie that skipped or repeated an entry would lose one
+ * or never terminate. */
+TEST(vfs_registry_driver, ReadDir_ShortBuffer_WalksEveryEntryOnce) {
+    SeedTwo();
+    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+
+    uint8_t buf[sizeof(vfs_dirent_t) + 16];
+    uint64_t cookie = 0;
+    int seen1 = 0;
+    int seen2 = 0;
+
+    for (int calls = 0; calls < 8; calls++) {
+        size_t used = 0;
+        TEST_ASSERT_EQUAL_INT(
+            0, drv->ReadDir(drv->ctx, 0, buf, sizeof(buf), &cookie, &used));
+        if (used == 0)
+            break; /* the walk is over */
+        TEST_ASSERT_TRUE(used <= sizeof(buf));
+        if (HasBytes(buf, used, "app1", 4))
+            seen1++;
+        if (HasBytes(buf, used, "app2", 4))
+            seen2++;
+    }
+
+    TEST_ASSERT_EQUAL_INT(1, seen1);
+    TEST_ASSERT_EQUAL_INT(1, seen2);
+}
+
 TEST_GROUP_RUNNER(vfs_registry_driver) {
+    RUN_TEST_CASE(vfs_registry_driver, ReadDir_ShortBuffer_ReportsWhatItWrote);
+    RUN_TEST_CASE(vfs_registry_driver, ReadDir_ShortBuffer_WalksEveryEntryOnce);
     RUN_TEST_CASE(vfs_registry_driver,
                   Install_SurvivesAnotherDescriptorClosing);
     RUN_TEST_CASE(vfs_registry_driver, Install_KeepsItsRefAcrossAnotherOpen);

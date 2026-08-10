@@ -722,16 +722,17 @@ TEST(vfs_virtual_readdir, ReadDirOk) {
     r = TRY_DRV(virt, ReadDir, 0, buf, BUF_LEN, &cookie, &bufUsed);
     TEST_ASSERT_EQUAL(0, r);
     TEST_ASSERT_EQUAL(52, bufUsed);
-    TEST_ASSERT_EQUAL(2, cookie);
+    /* One past the last entry served: the walk is over. */
+    TEST_ASSERT_EQUAL(3, cookie);
 
-    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*buf);        // uint64_t d_next
+    TEST_ASSERT_EQUAL_UINT64(2, (uint64_t)*buf);        // uint64_t d_next
     TEST_ASSERT_EQUAL_UINT64(0, (uint64_t)*(buf + 8));  // uint64_t d_ino
     TEST_ASSERT_EQUAL_UINT32(1, (uint32_t)*(buf + 16)); // uint32_t d_namlen
     TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_REGULAR_FILE,
                              (uint32_t)*(buf + 20)); // vfs_filetype_t d_type
     TEST_ASSERT_EQUAL_STRING_LEN("a", buf + 24, 1);  // filename
 
-    TEST_ASSERT_EQUAL_UINT64(2, (uint64_t)*(buf + 25)); // uint64_t d_next
+    TEST_ASSERT_EQUAL_UINT64(3, (uint64_t)*(buf + 25)); // uint64_t d_next
     TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*(buf + 33)); // uint64_t d_ino
     TEST_ASSERT_EQUAL_UINT32(3, (uint32_t)*(buf + 41)); // uint32_t d_namlen
     TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_DIRECTORY,
@@ -754,10 +755,12 @@ TEST(vfs_virtual_readdir, ReadDirTwice) {
 
     r = TRY_DRV(virt, ReadDir, 0, buf, 40, &cookie, &bufUsed);
     TEST_ASSERT_EQUAL(0, r);
-    TEST_ASSERT_EQUAL(40, bufUsed);
+    /* "dir" did not fit: the count is what was written, not the buffer, and
+     * the cookie still names the entry left over. */
+    TEST_ASSERT_EQUAL(25, bufUsed);
     TEST_ASSERT_EQUAL(2, cookie);
 
-    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*buf);        // uint64_t d_next
+    TEST_ASSERT_EQUAL_UINT64(2, (uint64_t)*buf);        // uint64_t d_next
     TEST_ASSERT_EQUAL_UINT64(0, (uint64_t)*(buf + 8));  // uint64_t d_ino
     TEST_ASSERT_EQUAL_UINT32(1, (uint32_t)*(buf + 16)); // uint32_t d_namlen
     TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_REGULAR_FILE,
@@ -767,9 +770,9 @@ TEST(vfs_virtual_readdir, ReadDirTwice) {
     r = TRY_DRV(virt, ReadDir, 0, buf, 40, &cookie, &bufUsed);
     TEST_ASSERT_EQUAL(0, r);
     TEST_ASSERT_EQUAL(27, bufUsed);
-    TEST_ASSERT_EQUAL(2, cookie);
+    TEST_ASSERT_EQUAL(3, cookie);
 
-    TEST_ASSERT_EQUAL_UINT64(2, (uint64_t)*buf);        // uint64_t d_next
+    TEST_ASSERT_EQUAL_UINT64(3, (uint64_t)*buf);        // uint64_t d_next
     TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*(buf + 8));  // uint64_t d_ino
     TEST_ASSERT_EQUAL_UINT32(3, (uint32_t)*(buf + 16)); // uint32_t d_namlen
     TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_DIRECTORY,
@@ -787,9 +790,9 @@ TEST(vfs_virtual_readdir, ReadDirInDir) {
     r = TRY_DRV(virt, ReadDir, r, buf, 40, &cookie, &bufUsed);
     TEST_ASSERT_EQUAL(0, r);
     TEST_ASSERT_EQUAL(25, bufUsed);
-    TEST_ASSERT_EQUAL(1, cookie);
+    TEST_ASSERT_EQUAL(2, cookie);
 
-    TEST_ASSERT_EQUAL_UINT64(1, (uint64_t)*buf);        // uint64_t d_next
+    TEST_ASSERT_EQUAL_UINT64(2, (uint64_t)*buf);        // uint64_t d_next
     TEST_ASSERT_EQUAL_UINT64(0, (uint64_t)*(buf + 8));  // uint64_t d_ino
     TEST_ASSERT_EQUAL_UINT32(1, (uint32_t)*(buf + 16)); // uint32_t d_namlen
     TEST_ASSERT_EQUAL_UINT32(VFS_FILETYPE_REGULAR_FILE,
@@ -797,7 +800,25 @@ TEST(vfs_virtual_readdir, ReadDirInDir) {
     TEST_ASSERT_EQUAL_STRING_LEN("b", buf + 24, 1);  // filename
 }
 
+/* A walk that reached the end must end. A cookie naming the entry just served
+ * makes the next call serve it again, and a reader following that never
+ * finishes. */
+TEST(vfs_virtual_readdir, ReadDirAtEnd_ReportsNothing) {
+    uint8_t buf[BUF_LEN];
+    uint64_t cookie = 0;
+    size_t bufUsed = 0;
+
+    TEST_ASSERT_EQUAL(
+        0, TRY_DRV(virt, ReadDir, 0, buf, BUF_LEN, &cookie, &bufUsed));
+    TEST_ASSERT_TRUE(bufUsed > 0);
+
+    TEST_ASSERT_EQUAL(
+        0, TRY_DRV(virt, ReadDir, 0, buf, BUF_LEN, &cookie, &bufUsed));
+    TEST_ASSERT_EQUAL(0, bufUsed);
+}
+
 TEST_GROUP_RUNNER(vfs_virtual_readdir) {
+    RUN_TEST_CASE(vfs_virtual_readdir, ReadDirAtEnd_ReportsNothing);
     RUN_TEST_CASE(vfs_virtual_readdir, ReadDirFail);
     RUN_TEST_CASE(vfs_virtual_readdir, ReadDirOk);
     RUN_TEST_CASE(vfs_virtual_readdir, ReadDirTwice);

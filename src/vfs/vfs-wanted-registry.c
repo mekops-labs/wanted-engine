@@ -303,7 +303,11 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     if (f->kind != REG_FD_ROOT)
         return -ENOTDIR;
 
-    for (int i = *cookie; i < d->nEntries; i++) {
+    /* The entry the next call starts from. It advances only over an entry
+     * that reached the buffer, so one that did not fit is served next. */
+    size_t next = (size_t)*cookie;
+
+    for (size_t i = next; i < d->nEntries; i++) {
         size_t nameLen = strnlen(d->entries[i].name, WAPP_MAX_NAME_LEN);
         size_t verLen = strnlen(d->entries[i].version, WAPP_MAX_VERSION_LEN);
 
@@ -312,10 +316,12 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
         dir.d_type = VFS_FILETYPE_REGULAR_FILE;
         dir.d_next = i + 1;
 
-        if (used + sizeof(dir) + dir.d_namlen > bufLen) {
-            used = bufLen;
+        /* Report the bytes written. Claiming the whole buffer hands the
+         * reader the part of it this never wrote, and a reader that parses
+         * that as an entry follows its length and its cookie into nothing. */
+        if (used + sizeof(dir) + dir.d_namlen > bufLen)
             break;
-        }
+
         memcpy((char *)buf + used, &dir, sizeof(dir));
         used += sizeof(dir);
         memcpy((char *)buf + used, d->entries[i].name, nameLen);
@@ -324,10 +330,11 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
         used += 1;
         memcpy((char *)buf + used, d->entries[i].version, verLen);
         used += verLen;
+        next = i + 1;
     }
 
     *bufUsed = used;
-    *cookie = dir.d_next; // last found directory entry
+    *cookie = next;
 
     return 0;
 }

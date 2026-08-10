@@ -20,6 +20,10 @@ Unreleased
 
 ### Fixed
 
+- A directory read that ran out of buffer reported the whole buffer as filled,
+  handing the reader bytes it never wrote and skipping the entry that did not
+  fit. A supervisor walking a directory past ~10 entries span until the task
+  watchdog fired. Every VFS driver carried the same code.
 - The registry driver kept one set of state for every open descriptor, so a
   second opener disturbed an install and one close answered for another's writes.
 - An ESP-IDF registry install could take a slot a loaded wapp still runs from,

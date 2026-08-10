@@ -527,33 +527,44 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     if (*cookie != 0)
         seekdir(dp, (long)*cookie);
 
+    /* The stream position of the entry the next call must start from. It
+     * advances only over an entry that reached the buffer, so an entry that
+     * did not fit is served next rather than skipped. */
+    long pos = (*cookie != 0) ? (long)*cookie : telldir(dp);
+
     struct dirent *ep;
     while ((ep = readdir(dp)) != NULL) {
+        long after = telldir(dp);
+
         if (memcmp(".", ep->d_name, 2) == 0 ||
             memcmp("..", ep->d_name, 3) == 0) {
+            pos = after;
             continue;
         }
         dirent.d_namlen = strnlen(ep->d_name, sizeof(ep->d_name));
         dirent.d_type = convertDirtype(ep->d_type);
-        dirent.d_next = (uint64_t)telldir(dp);
+        dirent.d_next = (uint64_t)after;
         /* LittleFS's dirent carries no stable inode; the readdir stream
          * position is a stable per-entry identifier, and the VFS exposes
          * d_ino opaquely, so fall back to it when d_ino reads as zero. */
         dirent.d_ino = (ep->d_ino != 0) ? (uint64_t)ep->d_ino : dirent.d_next;
 
-        if (used + sizeof(dirent) + dirent.d_namlen > bufLen) {
-            used = bufLen;
+        /* Report the bytes written. Claiming the whole buffer hands the
+         * reader the part of it this never wrote, and a reader that parses
+         * that as an entry follows its length and its cookie into nothing. */
+        if (used + sizeof(dirent) + dirent.d_namlen > bufLen)
             break;
-        }
+
         memcpy(out + used, &dirent, sizeof(dirent));
         memcpy(out + used + sizeof(dirent), ep->d_name, dirent.d_namlen);
 
         used += sizeof(dirent) + dirent.d_namlen;
+        pos = after;
     }
     closedir(dp);
 
     *bufUsed = used;
-    *cookie = dirent.d_next;
+    *cookie = (uint64_t)pos;
 
     return 0;
 }

@@ -276,6 +276,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     vfs_dirent_t dir = {0};
     uint8_t *out = (uint8_t *)buf;
     size_t used = 0;
+    off_t pos = 0;
     DIR *dp = fdopendir(fd);
 
     if (dp != NULL) {
@@ -284,34 +285,46 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
             seekdir(dp, (off_t)*cookie);
         }
 
+        /* The stream position of the entry the next call must start from. It
+         * advances only over an entry that reached the buffer, so an entry
+         * that did not fit is served next rather than skipped. */
+        pos = telldir(dp);
+
         while ((ep = readdir(dp))) {
+            off_t after = telldir(dp);
+
             if (memcmp(".", ep->d_name, 2) == 0 ||
                 memcmp("..", ep->d_name, 3) == 0) {
+                pos = after;
                 continue;
             }
             dir.d_namlen = strnlen(ep->d_name, sizeof(ep->d_name));
             dir.d_type = convertDirtype(ep->d_type);
-            dir.d_next = telldir(dp);
+            dir.d_next = (uint64_t)after;
             /* NuttX's struct dirent carries no inode field. The readdir
              * stream position is a stable per-entry identifier, and the VFS
              * exposes d_ino opaquely, so use it as the synthetic inode. */
             dir.d_ino = (uint64_t)dir.d_next;
 
-            if (used + sizeof(dir) + dir.d_namlen > bufLen) {
-                used = bufLen;
+            /* Report the bytes written. Claiming the whole buffer hands the
+             * reader the part of it this never wrote, and a reader that
+             * parses that as an entry follows its length and its cookie
+             * into nothing. */
+            if (used + sizeof(dir) + dir.d_namlen > bufLen)
                 break;
-            }
+
             memcpy(out + used, &dir, sizeof(dir));
             memcpy(out + used + sizeof(dir), ep->d_name, dir.d_namlen);
 
             used += sizeof(dir) + dir.d_namlen;
+            pos = after;
         }
     } else {
         return -errno;
     }
 
     *bufUsed = used;
-    *cookie = dir.d_next; // last found directory entry
+    *cookie = (uint64_t)pos;
 
     return 0;
 }
