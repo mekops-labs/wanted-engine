@@ -918,6 +918,10 @@ int VfsUnlink(vfs_ctx_t c, int fd, const char *path) {
     switch (c->fds[fd].type) {
     case VFS_TYPE_DEV:
         return DevFs_Unlink(c, c->fds[fd].internal_ctx, path);
+    /* PLATFORM belongs with DRIVER here as it does in mkdir and rmdir: a
+     * mounted filesystem is where a wapp's files are, and leaving it out made
+     * every unlink on one answer -ENOTSUP. */
+    case VFS_TYPE_PLATFORM:
     case VFS_TYPE_DRIVER:
         return TRY_DRV(c->fds[fd].driver, Unlink, c->fds[fd].drv_fd, path);
     case VFS_TYPE_TARFS:

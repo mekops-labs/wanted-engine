@@ -160,6 +160,7 @@ int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
                      const char *new_path);
 int PlatformFsMkdir(int fd, const char *path);
 int PlatformFsRmdir(int fd, const char *path);
+int PlatformFsUnlink(int fd, const char *path);
 
 /* GPIO backing for the core /dev/gpio driver: the platform owns only the line,
  * and `address` is the grant's middle field, interpreted here and nowhere else.

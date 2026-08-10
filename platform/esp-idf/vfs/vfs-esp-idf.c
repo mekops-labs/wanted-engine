@@ -177,6 +177,18 @@ int PlatformFsRmdir(int fd, const char *path) {
     return 0;
 }
 
+int PlatformFsUnlink(int fd, const char *path) {
+    if (path == NULL)
+        return -EINVAL;
+    char abs[CONFIG_WANTED_MAX_PATH_LEN];
+    int rc = joinFromFd(fd, path, abs, sizeof(abs));
+    if (rc < 0)
+        return rc;
+    if (unlink(abs) < 0)
+        return -errno;
+    return 0;
+}
+
 static const char id[] = {'E', 'I', 'd', 'f'};
 
 static int _Destroy(struct vfs_driver_t *d);
@@ -195,6 +207,7 @@ static int _Rename(vfs_driver_ctx_t d, int old_fd, const char *old_path,
                    int new_fd, const char *new_path);
 static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path);
 static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path);
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 
 struct vfs_driver_ctx_t {
     const char *rootPath;
@@ -257,6 +270,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
     driver->Rename = _Rename;
     driver->Mkdir = _Mkdir;
     driver->Rmdir = _Rmdir;
+    driver->Unlink = _Unlink;
 
     return driver;
 }
@@ -502,6 +516,12 @@ static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path) {
     if (d->readonly)
         return -EROFS;
     return PlatformFsRmdir(fd, path);
+}
+
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
+    if (d->readonly)
+        return -EROFS;
+    return PlatformFsUnlink(fd, path);
 }
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,

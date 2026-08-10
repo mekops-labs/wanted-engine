@@ -86,6 +86,14 @@ int PlatformFsRmdir(int fd, const char *path) {
     return 0;
 }
 
+int PlatformFsUnlink(int fd, const char *path) {
+    if (!path)
+        return -EINVAL;
+    if (unlinkat(fd, path, 0) < 0)
+        return -errno;
+    return 0;
+}
+
 void PlatformStorageStats(size_t *free_b, size_t *total_b) {
     if (free_b)
         *free_b = 0;
