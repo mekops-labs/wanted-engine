@@ -102,3 +102,6 @@ int PlatformRegistryRemove(const reg_entry_t *entry) {
 
     return 0;
 }
+
+/* This backing seeds nothing, so nothing is protected from removal. */
+void PlatformRegistryMarkSeeded(const char *ref) { (void)ref; }

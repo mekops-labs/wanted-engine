@@ -375,6 +375,11 @@ static bool registryHasRef(const char *ref) {
  * next boot. */
 static void seedWapp(const char *ref, const uint8_t *start,
                      const uint8_t *end) {
+    /* Marked whether or not it is written: after the first boot the image is
+     * already there, and a ref the firmware owns is still not a supervisor's
+     * to reclaim. */
+    PlatformRegistryMarkSeeded(ref);
+
     if (registryHasRef(ref)) {
         ESP_LOGI(TAG, "seed: %s present, keeping the installed image", ref);
         return;

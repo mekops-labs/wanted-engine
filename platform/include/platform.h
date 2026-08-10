@@ -130,6 +130,12 @@ size_t PlatformRegistrySlots(void);
  * `ref` is ignored on CONTINUE/FINISH/ABORT. */
 int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
                           size_t nbytes);
+/* Record `ref` ("<name>[:<version>]") as firmware-provided. A seeded image is
+ * written back at the next boot, so removing it is churn a supervisor cannot
+ * know to avoid; PlatformRegistryRemove refuses one with -EPERM. Call it for
+ * every seed on every boot, whether or not the image had to be written.
+ * Backings that seed nothing ignore it. */
+void PlatformRegistryMarkSeeded(const char *ref);
 int PlatformRegistryRemove(const reg_entry_t *entry);
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);
 /* Read up to maxLen leading bytes of the stored .wapp archive without loading

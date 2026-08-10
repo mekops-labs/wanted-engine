@@ -20,6 +20,9 @@ Unreleased
 
 ### Added
 
+- The registry refuses to remove an image the firmware seeded (`-EPERM`), so a
+  supervisor may sweep everything a device no longer needs without knowing which
+  images the board provides. A seed is written back at the next boot anyway.
 - The engine's own error channel is readable: `LOG_ERROR` output is captured
   into the log store under `.engine` and served by the existing log mount, so a
   board with no console can be asked what happened. A `mounts[]` grant of

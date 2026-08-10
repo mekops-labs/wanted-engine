@@ -335,11 +335,54 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
     }
 }
 
+/* Refs the firmware seeds, recorded on every boot whether or not the image had
+ * to be written. Bounded by the seed list the board compiles in. */
+#define REGISTRY_SEEDED_MAX 16
+static struct {
+    char name[WAPP_MAX_NAME_LEN];
+    char version[WAPP_MAX_VERSION_LEN];
+} g_seeded[REGISTRY_SEEDED_MAX];
+static size_t g_seededCount;
+
+void PlatformRegistryMarkSeeded(const char *ref) {
+    char name[WAPP_MAX_NAME_LEN], version[WAPP_MAX_VERSION_LEN];
+
+    if (ref == NULL || g_seededCount >= REGISTRY_SEEDED_MAX)
+        return;
+    if (!splitRef(ref, name, sizeof(name), version, sizeof(version)))
+        return;
+
+    for (size_t i = 0; i < g_seededCount; i++) {
+        if (strcmp(g_seeded[i].name, name) == 0 &&
+            strcmp(g_seeded[i].version, version) == 0)
+            return; /* idempotent */
+    }
+
+    strncpy(g_seeded[g_seededCount].name, name, WAPP_MAX_NAME_LEN - 1);
+    strncpy(g_seeded[g_seededCount].version, version, WAPP_MAX_VERSION_LEN - 1);
+    g_seededCount++;
+}
+
+static bool isSeeded(const reg_entry_t *entry) {
+    for (size_t i = 0; i < g_seededCount; i++) {
+        if (strncmp(g_seeded[i].name, entry->name, WAPP_MAX_NAME_LEN) == 0 &&
+            strncmp(g_seeded[i].version, entry->version,
+                    WAPP_MAX_VERSION_LEN) == 0)
+            return true;
+    }
+    return false;
+}
+
 int PlatformRegistryRemove(const reg_entry_t *entry) {
     char path[WAPP_REG_PATH_MAX];
 
     if (entry == NULL)
         return -EINVAL;
+    /* The next boot writes it back, so removing it frees nothing and costs a
+     * flash erase. The supervisor cannot know which images the firmware owns.
+     */
+    if (isSeeded(entry))
+        return -EPERM;
     metaPath(path, sizeof(path), entry->name, entry->version);
     if (remove(path) != 0)
         return -errno;
