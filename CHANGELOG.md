@@ -28,6 +28,11 @@ Unreleased
 
 ### Fixed
 
+- A wapp start took the first slot holding a finished wapp, freeing that wapp's
+  record — its name, status and exit code — with it. A supervisor then could not
+  tell a job that had run from one that never existed, and a firmware install
+  that staged successfully was reinstalled every tick, forever. Only an empty
+  slot is free now; `delete` is what empties one.
 - A directory read that ran out of buffer reported the whole buffer as filled,
   handing the reader bytes it never wrote and skipping the entry that did not
   fit. A supervisor walking a directory past ~10 entries span until the task

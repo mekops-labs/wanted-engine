@@ -205,24 +205,19 @@ int PlatformWappStart(wapp_t *wapp) {
         return -ENOSPC;
     }
 
+    /* A terminal slot still holds its wapp's name, status and exit code, and a
+     * supervisor reads those after the run — `delete` is what releases one.
+     * Taking it for the next start destroys that record, so only an empty slot
+     * is free. A wapp restarting in place, the supervisor across a respawn,
+     * keeps the slot it already holds. */
     for (slot = 0; slot < CONFIG_WANTED_MAX_WAPPS; slot++) {
-        if (state.threads[slot].status == NOT_STARTED ||
-            state.threads[slot].status == EXITED ||
-            state.threads[slot].status == FAILURE)
+        const wapp_t *occupant = state.threads[slot].data.wapp;
+        if (occupant == NULL || occupant == wapp)
             break;
     }
     if (slot >= CONFIG_WANTED_MAX_WAPPS) {
         pthread_mutex_unlock(&state_mtx);
         return -ENOSPC;
-    }
-
-    /* The slot owns the previous occupant's wapp_t, whose thread has fully
-     * terminated by the time the slot is reusable, so release image and struct
-     * now. The supervisor's image is a singleton reused across respawns. */
-    wapp_t *prev = state.threads[slot].data.wapp;
-    if (prev != NULL && prev != wapp && prev != WantedGetCurrentSupervisor()) {
-        PlatformWappUnload(prev);
-        WantedFree(prev);
     }
 
     state.threads[slot].data.id = slot;
