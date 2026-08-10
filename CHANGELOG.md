@@ -31,6 +31,9 @@ Unreleased
 
 ### Fixed
 
+- `ENOTEMPTY`, `ELOOP`, `EOVERFLOW` and `ENOLCK` reached a wapp as `EINVAL`,
+  having no WASI mapping. A directory delete that found entries left reported a
+  bad argument, so a supervisor could not evict a cache entry at all.
 - A wapp start took the first slot holding a finished wapp, freeing that wapp's
   record — its name, status and exit code — with it. A supervisor then could not
   tell a job that had run from one that never existed, and a firmware install

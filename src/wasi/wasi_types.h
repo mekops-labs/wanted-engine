@@ -53,6 +53,7 @@ typedef uint8_t __wasi_sdflags_t;
 #define __WASI_ERRNO_INVAL 28
 #define __WASI_ERRNO_IO 29
 #define __WASI_ERRNO_ISDIR 31
+#define __WASI_ERRNO_LOOP 32
 #define __WASI_ERRNO_MFILE 33
 #define __WASI_ERRNO_MLINK 34
 #define __WASI_ERRNO_NAMETOOLONG 37
@@ -60,12 +61,15 @@ typedef uint8_t __wasi_sdflags_t;
 #define __WASI_ERRNO_NODEV 43
 #define __WASI_ERRNO_NOENT 44
 #define __WASI_ERRNO_NOEXEC 45
+#define __WASI_ERRNO_NOLCK 46
 #define __WASI_ERRNO_NOMEM 48
 #define __WASI_ERRNO_NOSPC 51
 #define __WASI_ERRNO_NOSYS 52
 #define __WASI_ERRNO_NOTDIR 54
+#define __WASI_ERRNO_NOTEMPTY 55
 #define __WASI_ERRNO_NOTTY 59
 #define __WASI_ERRNO_NXIO 60
+#define __WASI_ERRNO_OVERFLOW 61
 #define __WASI_ERRNO_PERM 63
 #define __WASI_ERRNO_PIPE 64
 #define __WASI_ERRNO_RANGE 68

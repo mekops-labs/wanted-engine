@@ -67,6 +67,13 @@ static __wasi_errno_t errno_to_wasi(int errnum) {
         CASE_RET(ECONNREFUSED, __WASI_ERRNO_CONNREFUSED);
         CASE_RET(ECONNABORTED, __WASI_ERRNO_CONNABORTED);
         CASE_RET(ECONNRESET, __WASI_ERRNO_CONNRESET);
+        /* Filesystem errnos a wapp's libc must see as themselves. ENOTEMPTY
+         * reaching a caller as INVAL is what made a directory delete look like
+         * a bug in the caller rather than a directory with entries left. */
+        CASE_RET(ENOTEMPTY, __WASI_ERRNO_NOTEMPTY);
+        CASE_RET(ELOOP, __WASI_ERRNO_LOOP);
+        CASE_RET(EOVERFLOW, __WASI_ERRNO_OVERFLOW);
+        CASE_RET(ENOLCK, __WASI_ERRNO_NOLCK);
     default:
         break;
     }
