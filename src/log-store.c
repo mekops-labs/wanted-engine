@@ -148,3 +148,9 @@ size_t LogStoreList(log_store_t *s, char names[][WAPP_MAX_NAME_LEN],
     PlatformMutexUnlock(s->lock);
     return n;
 }
+
+/* The engine's error channel, captured under a name no wapp image can claim.
+ * A store that failed to allocate makes this a no-op, as it does for a wapp. */
+void WantedLogCapture(const void *buf, size_t n) {
+    LogStoreAppend(LogStore(), WANTED_ENGINE_LOG_NAME, buf, n);
+}

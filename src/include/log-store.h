@@ -11,6 +11,11 @@
 
 #include <wanted-api.h> /* WAPP_MAX_NAME_LEN */
 
+/* Reserved log name for the engine's own error channel. The leading dot is
+ * outside the image-reference grammar (validInstallRef requires [A-Za-z0-9_]
+ * first), so no installable image can claim the slot. */
+#define WANTED_ENGINE_LOG_NAME ".engine"
+
 typedef struct log_store_t log_store_t;
 
 /* Process-global singleton, created on first use (NULL on allocation failure).
@@ -34,3 +39,8 @@ bool LogStoreHas(log_store_t *s, const char *name);
  * wapps with a live log. */
 size_t LogStoreList(log_store_t *s, char names[][WAPP_MAX_NAME_LEN],
                     size_t max);
+
+/* Append the engine's own error channel to WANTED_ENGINE_LOG_NAME's ring, so a
+ * board with no console can be asked what happened. Declared for wanted_log.h,
+ * which is a header of static inlines and must not pull this one in. */
+void WantedLogCapture(const void *buf, size_t n);

@@ -18,6 +18,14 @@ Unreleased
 - A board profile can seed wapps built outside this repository: `WANTED_EXTRA_SEEDS` takes `<ref>=<path to .wasm>` entries, and the declarations and seed calls are generated, so the boot path names no board's wapp.
 - An ESP32-S3 board configuration for the Telegraph display: `OTA_PROFILE=s3-telegraph`, the `s3-wapps` A/B layout with the `uart` driver built in, wsh as the supervisor, and the wapps of the device seeded from the firmware. `TELEGRAPH_WAPPS` gives the directory that holds them.
 
+### Added
+
+- The engine's own error channel is readable: `LOG_ERROR` output is captured
+  into the log store under `.engine` and served by the existing log mount, so a
+  board with no console can be asked what happened. A `mounts[]` grant of
+  `name=.engine` gives that log and nothing else. The store gains a slot so
+  wapp churn cannot evict it.
+
 ### Fixed
 
 - A directory read that ran out of buffer reported the whole buffer as filled,
