@@ -5,6 +5,7 @@
  * non-destructive so the supervisor can poll a wapp's output. Keyed by name. */
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <log-store.h>
@@ -122,6 +123,17 @@ void LogStorePersistInit(log_store_t *s) {
     s->pbuf[1] = half1;
     s->pcap = CONFIG_WANTED_LOG_PERSIST_CAP;
     PlatformMutexUnlock(s->lock);
+
+    /* Open this boot's half with why the last one ended, so the log says what
+     * a reader would otherwise have to ask a separate node for. */
+    char reason[24];
+    if (PlatformResetReason(reason, sizeof(reason)) > 0) {
+        char line[64];
+        int n = snprintf(line, sizeof(line), "wanted: boot after %s\n", reason);
+        if (n > 0) {
+            WantedLogCapture(line, (size_t)n);
+        }
+    }
 }
 
 void LogStorePersistDetach(log_store_t *s) {

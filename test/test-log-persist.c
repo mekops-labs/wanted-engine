@@ -17,8 +17,15 @@
 
 TEST_GROUP(log_persist);
 
-TEST_SETUP(log_persist) { DummyPersistMemClear(); }
-TEST_TEAR_DOWN(log_persist) { DummyPersistMemClear(); }
+TEST_SETUP(log_persist) {
+    DummyPersistMemClear();
+    DummyResetReasonSet(NULL);
+}
+
+TEST_TEAR_DOWN(log_persist) {
+    DummyPersistMemClear();
+    DummyResetReasonSet(NULL);
+}
 
 /* The store is a process-wide singleton, so a test that wants a fresh boot
  * clears the memory a reset would have kept and re-runs the adoption. */
@@ -120,6 +127,44 @@ TEST(log_persist, TheEngineRingStaysReadableInRam) {
     TEST_ASSERT_EQUAL_STRING_LEN("wanted: current boot\n", out + n - 21, 21);
 }
 
+/* The failure this exists for: a task watchdog resets the board, and the boot
+ * that follows must carry both the previous log and the reason. */
+TEST(log_persist, AWatchdogResetKeepsTheLogAndNamesItself) {
+    reboot();
+    WantedLogCapture("wanted: the tick before the wedge\n", 33);
+
+    DummyResetReasonSet("task_wdt");
+    reboot();
+
+    char prev[64] = {0};
+    size_t n =
+        LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, prev, sizeof(prev));
+    TEST_ASSERT_EQUAL_size_t(33, n);
+    TEST_ASSERT_EQUAL_STRING_LEN("wanted: the tick before the wedge\n", prev,
+                                 33);
+
+    /* This boot opens with why the last one ended. */
+    char cur[CONFIG_WANTED_LOG_CAP];
+    size_t m =
+        LogStoreRead(LogStore(), WANTED_ENGINE_LOG_NAME, cur, sizeof(cur));
+    TEST_ASSERT_TRUE(m >= 25);
+    TEST_ASSERT_EQUAL_STRING_LEN("wanted: boot after task_wdt\n", cur + m - 28,
+                                 28);
+}
+
+TEST(log_persist, APlatformWithNoResetReasonOpensNoLine) {
+    DummyResetReasonSet(NULL);
+    reboot();
+
+    char cur[CONFIG_WANTED_LOG_CAP];
+    size_t m =
+        LogStoreRead(LogStore(), WANTED_ENGINE_LOG_NAME, cur, sizeof(cur));
+    if (m >= 19) {
+        TEST_ASSERT_NOT_EQUAL_INT(
+            0, strncmp(cur + m - 19, "wanted: boot after ", 19));
+    }
+}
+
 TEST_GROUP_RUNNER(log_persist) {
     RUN_TEST_CASE(log_persist, FirstBoot_ServesNoPreviousLog);
     RUN_TEST_CASE(log_persist, PreviousBootsLogSurvivesTheReset);
@@ -128,4 +173,6 @@ TEST_GROUP_RUNNER(log_persist) {
     RUN_TEST_CASE(log_persist, TheStoreIsListedOnlyWhenItHasAPreviousLog);
     RUN_TEST_CASE(log_persist, OnlyTheMostRecentBytesSurviveAFullRing);
     RUN_TEST_CASE(log_persist, TheEngineRingStaysReadableInRam);
+    RUN_TEST_CASE(log_persist, AWatchdogResetKeepsTheLogAndNamesItself);
+    RUN_TEST_CASE(log_persist, APlatformWithNoResetReasonOpensNoLine);
 }

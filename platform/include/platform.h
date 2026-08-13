@@ -89,6 +89,12 @@ void PlatformWakeRaise(int fd);
 bool PlatformWakeRaised(int fd);
 void PlatformWakeClose(int fd);
 
+/* Why the current boot started, as a short stable token: "poweron", "sw",
+ * "panic", "task_wdt", "int_wdt", "brownout", "deepsleep" or "unknown". Writes
+ * at most `len` bytes including the terminator and answers the length, or 0
+ * where the platform cannot tell. */
+size_t PlatformResetReason(char *buf, size_t len);
+
 /* Memory a reset does not clear — a watchdog, a panic, a commanded reboot —
  * holding whatever the previous boot left. NULL where the platform has none,
  * and on every platform it is lost when power is. `len` takes the size. */

@@ -349,6 +349,16 @@ static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
 
 /* /proc/wanted — engine identity and compile-time resource ceilings. One
  * key:\tvalue line per field: human-readable, trivially split on the tab. */
+/* The reset reason as a token, or "unknown" where the platform cannot tell —
+ * a field that vanished would move every field after it. */
+static const char *resetReason(void) {
+    static char reason[24];
+    if (PlatformResetReason(reason, sizeof(reason)) == 0) {
+        return "unknown";
+    }
+    return reason;
+}
+
 static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
     int w = snprintf(
@@ -366,13 +376,14 @@ static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
         "max_drivers:\t%d\n"
         "max_options:\t%d B\n"
         "log_slots:\t%d\n"
-        "reg_slots:\t%zu\n",
+        "reg_slots:\t%zu\n"
+        "reset_reason:\t%s\n",
         PlatformName(), WANTED_VERSION, WANTED_SUPERVISOR_ABI,
         CONFIG_WANTED_MAX_WAPPS, WAPP_MAX_NAME_LEN, CONFIG_WANTED_MAX_PATH_LEN,
         CONFIG_WANTED_WASM_STACK_SIZE, CONFIG_WANTED_WASM_HEAP_SIZE,
         PlatformWorkerStackSize(), CONFIG_WANTED_WASM_MAX_MEMORY_PAGES,
         CONFIG_WANTED_MAX_DRIVERS_CNT, CONFIG_WANTED_MAX_OPTIONS_SIZE,
-        CONFIG_WANTED_LOG_SLOTS, PlatformRegistrySlots());
+        CONFIG_WANTED_LOG_SLOTS, PlatformRegistrySlots(), resetReason());
     if (w < 0)
         return -EIO;
 

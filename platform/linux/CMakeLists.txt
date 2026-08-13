@@ -21,6 +21,7 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
     ${CMAKE_SOURCE_DIR}/platform/posix/wake.c
     ${CMAKE_SOURCE_DIR}/platform/posix/persist-mem.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/reset-reason.c
     ${CMAKE_SOURCE_DIR}/platform/posix/registry-store.c
     ${CMAKE_SOURCE_DIR}/platform/posix/socket.c
     ${CMAKE_SOURCE_DIR}/platform/posix/wapps-image.c
