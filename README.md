@@ -1,5 +1,7 @@
 # WebAssembly Nanocontainer Technology for Embedded Devices
 
+![](./docs/logo.svg)
+
 [![pipeline status](https://gitlab.com/mekops/wanted/wanted-engine/badges/main/pipeline.svg)](https://gitlab.com/mekops/wanted/wanted-engine/-/commits/main)
 [![coverage report](https://gitlab.com/mekops/wanted/wanted-engine/badges/main/coverage.svg)](https://gitlab.com/mekops/wanted/wanted-engine/-/commits/main)
 
