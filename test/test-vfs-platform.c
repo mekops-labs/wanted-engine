@@ -381,6 +381,7 @@ TEST(wasi_preopen_fs, ReadOnlyMount_RejectsWrites) {
         -EROFS, VfsOpenAt(vfs, ro_vfs, "new.txt", VFS_O_CREAT | VFS_O_RDWR));
     TEST_ASSERT_EQUAL_INT(-EROFS, VfsMkdir(vfs, ro_vfs, "sub"));
     TEST_ASSERT_EQUAL_INT(-EROFS, VfsRmdir(vfs, ro_vfs, "sub"));
+    TEST_ASSERT_EQUAL_INT(-EROFS, VfsUnlink(vfs, ro_vfs, "data.txt"));
     TEST_ASSERT_EQUAL_INT(
         -EROFS, VfsRename(vfs, ro_vfs, "data.txt", ro_vfs, "moved.txt"));
 }
@@ -405,7 +406,60 @@ TEST(wasi_preopen_fs, HostPathMapping_PreopenUsesWappPath) {
     VfsClose(vfs, f);
 }
 
+/* A wapp deleting a file it wrote. `VfsUnlink` dispatched for DEV, DRIVER and
+ * TARFS but not PLATFORM, so this answered -ENOTSUP on every mounted
+ * filesystem — the sibling operations below were covered and this was not. */
+TEST(wasi_preopen_fs, Unlink_RemovesFileInPreopen) {
+    int host_fd = PlatformOpenStateDir("/unlink", false);
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/unlink", NULL, host_fd, false));
+    int vfs_fd = wctx->preopens[wctx->preopens_cnt - 1].fd;
+
+    int f = VfsOpenAt(vfs, vfs_fd, "doomed.txt", VFS_O_CREAT | VFS_O_RDWR);
+    TEST_ASSERT_TRUE(f >= 0);
+    VfsClose(vfs, f);
+
+    TEST_ASSERT_EQUAL_INT(0, VfsUnlink(vfs, vfs_fd, "doomed.txt"));
+
+    /* Gone, not merely reported gone. */
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpenAt(vfs, vfs_fd, "doomed.txt", VFS_O_RDONLY));
+}
+
+TEST(wasi_preopen_fs, Unlink_MissingFileReportsEnoent) {
+    int host_fd = PlatformOpenStateDir("/unlink2", false);
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/unlink2", NULL, host_fd, false));
+    int vfs_fd = wctx->preopens[wctx->preopens_cnt - 1].fd;
+
+    TEST_ASSERT_EQUAL_INT(-ENOENT, VfsUnlink(vfs, vfs_fd, "absent.txt"));
+}
+
+/* An emptied directory goes, which is the pair unlink is used with: a cache
+ * entry is files plus the directory holding them. */
+TEST(wasi_preopen_fs, Unlink_ThenRmdir_ClearsAnEntryDirectory) {
+    int host_fd = PlatformOpenStateDir("/entry", false);
+    TEST_ASSERT_EQUAL_INT(
+        0, WasiCtxAddPreopen(wctx, "/entry", NULL, host_fd, false));
+    int vfs_fd = wctx->preopens[wctx->preopens_cnt - 1].fd;
+
+    TEST_ASSERT_EQUAL_INT(0, VfsMkdir(vfs, vfs_fd, "sha256-aa"));
+    int f =
+        VfsOpenAt(vfs, vfs_fd, "sha256-aa/payload", VFS_O_CREAT | VFS_O_RDWR);
+    TEST_ASSERT_TRUE(f >= 0);
+    VfsClose(vfs, f);
+
+    /* The directory holds an entry, so it cannot go first. */
+    TEST_ASSERT_EQUAL_INT(-ENOTEMPTY, VfsRmdir(vfs, vfs_fd, "sha256-aa"));
+
+    TEST_ASSERT_EQUAL_INT(0, VfsUnlink(vfs, vfs_fd, "sha256-aa/payload"));
+    TEST_ASSERT_EQUAL_INT(0, VfsRmdir(vfs, vfs_fd, "sha256-aa"));
+}
+
 TEST_GROUP_RUNNER(wasi_preopen_fs) {
+    RUN_TEST_CASE(wasi_preopen_fs, Unlink_RemovesFileInPreopen);
+    RUN_TEST_CASE(wasi_preopen_fs, Unlink_MissingFileReportsEnoent);
+    RUN_TEST_CASE(wasi_preopen_fs, Unlink_ThenRmdir_ClearsAnEntryDirectory);
     RUN_TEST_CASE(wasi_preopen_fs, AddPreopen_BindsToVfs);
     RUN_TEST_CASE(wasi_preopen_fs, OpenAt_CreateAndRead);
     RUN_TEST_CASE(wasi_preopen_fs, Mkdir_CreatesDirectory);

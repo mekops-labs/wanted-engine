@@ -407,6 +407,12 @@ static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path) {
     return dummy_rmdir(d->fs, fd, path);
 }
 
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
+    if (d->readonly)
+        return -EROFS;
+    return PlatformFsUnlink(fd, path);
+}
+
 /* ── VfsPlatformFsInit ──────────────────────────────────────────────────── */
 
 static const char id[] = {'D', 'u', 'm', 'y'};
@@ -445,6 +451,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt,
     drv->Rename = _Rename;
     drv->Mkdir = _Mkdir;
     drv->Rmdir = _Rmdir;
+    drv->Unlink = _Unlink;
     return drv;
 }
 
