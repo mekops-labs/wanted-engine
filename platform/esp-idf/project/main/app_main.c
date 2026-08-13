@@ -335,14 +335,8 @@ static void *concurrentInstallSelftest(void *arg) {
 }
 
 /* Smoke-test fixtures linked via EMBED_FILES. */
-extern const uint8_t _binary_looper_wapp_start[];
-extern const uint8_t _binary_looper_wapp_end[];
 extern const uint8_t _binary_wifi_connect_wapp_start[];
 extern const uint8_t _binary_wifi_connect_wapp_end[];
-extern const uint8_t _binary_devcheck_wapp_start[];
-extern const uint8_t _binary_devcheck_wapp_end[];
-extern const uint8_t _binary_blink_wapp_start[];
-extern const uint8_t _binary_blink_wapp_end[];
 extern const uint8_t _binary_flasher_wapp_start[];
 extern const uint8_t _binary_flasher_wapp_end[];
 
@@ -508,13 +502,8 @@ void app_main(void) {
     if (mountLittleFs()) {
         fsSelftest();
         registrySelftest();
-        seedWapp("looper", _binary_looper_wapp_start, _binary_looper_wapp_end);
         seedWapp("wifi-connect", _binary_wifi_connect_wapp_start,
                  _binary_wifi_connect_wapp_end);
-        seedWapp("devcheck", _binary_devcheck_wapp_start,
-                 _binary_devcheck_wapp_end);
-        seedWapp("blink:1.0.0", _binary_blink_wapp_start,
-                 _binary_blink_wapp_end);
         /* Versioned by the tree it was built from, so a newer flasher
          * installs alongside this one and a launch config selects which
          * runs. */

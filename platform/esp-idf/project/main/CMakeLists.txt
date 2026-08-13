@@ -25,7 +25,10 @@
 # this does not relink every build.
 get_filename_component(_repo "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 set(_seed_dir "${_repo}/wasm/registry-seed")
-set(_seeds looper wifi-connect devcheck blink flasher)
+# What a board cannot recover without: the firmware installer, and the way back
+# onto a network. looper, blink and devcheck are bring-up tools and each held a
+# 256 KiB registry slot the control plane could use.
+set(_seeds wifi-connect flasher)
 foreach(_seed IN LISTS _seeds)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${_repo}/wapps/${_seed}/${_seed}.wasm")
