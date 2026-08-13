@@ -16,7 +16,7 @@
             ],
             "mounts": [
                 {"name": "platform", "path": "/var/lib/sheriff", "options": "src=/data/sheriff"},
-                {"name": "log", "path": "/logs", "options": "name=.engine"}
+                {"name": "log", "path": "/logs"}
             ],
             "sockets": [
                 {"name": "manager", "address": "tcp://10.42.0.1:8081"}
