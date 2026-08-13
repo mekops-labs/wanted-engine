@@ -55,6 +55,7 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/clock-sleep.c
     ${ENGINE}/platform/esp-idf/fs-volume.c
     ${ENGINE}/platform/esp-idf/wapps.c
+    ${ENGINE}/platform/esp-idf/wake.c
     ${ENGINE}/platform/esp-idf/platform.c
     ${ENGINE}/platform/esp-idf/registry.c
     ${ENGINE}/platform/esp-idf/registry_flash.c

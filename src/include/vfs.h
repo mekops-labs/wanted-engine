@@ -145,6 +145,11 @@ typedef struct vfs_ctx_t *vfs_ctx_t;
 vfs_ctx_t VfsInit(void);
 void VfsDestroy(vfs_ctx_t *c);
 void VfsSetPrivileged(vfs_ctx_t c, bool privileged);
+
+/* The wapp's wake descriptor: a blocking driver watches it beside the resource
+ * it is serving, so a stop ends the wait. -1 when the platform has none. */
+void VfsSetWakeFd(vfs_ctx_t c, int fd);
+int VfsWakeFd(vfs_ctx_t c);
 int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver);
 
 int VfsOpen(vfs_ctx_t c, const char *path, vfs_oflags_t flags);

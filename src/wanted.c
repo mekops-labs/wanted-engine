@@ -620,6 +620,9 @@ int WantedWappRun(wapp_data_t *ctx) {
 
     /* Propagate system-level privilege flag, then register /proc entries. */
     VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
+    /* A blocking driver watches this beside its own resource, so a stop reaches
+     * a wapp parked in a host call. */
+    VfsSetWakeFd(ctx->vfs, PlatformWakeCreate());
     ProcFs_RegisterDir(ctx->vfs, "wapps", &WappsProcDirOps, true);
     ProcFs_Register(ctx->vfs, "memory", procReadMemory, true);
     /* clock_quality is unprivileged — any wapp may read it to decide whether

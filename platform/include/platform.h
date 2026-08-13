@@ -76,6 +76,15 @@ int PlatformWappStart(wapp_t *wapp);
  * CONFIG_WANTED_WASM_WORKER_STACK_SIZE after the platform's own flooring. */
 size_t PlatformWorkerStackSize(void);
 int PlatformWappStop(const char *name);
+
+/* A descriptor a blocking wait watches beside the one it is serving. Raising it
+ * ends that wait, which is how a stop reaches a wapp parked in a host call.
+ * -1 on a platform whose stop interrupts the worker by signal. */
+int PlatformWakeCreate(void);
+/* Raising an already-raised descriptor is a no-op; -1 is ignored. */
+void PlatformWakeRaise(int fd);
+void PlatformWakeClose(int fd);
+
 /* Free a wapp's platform slot by name. Only a terminal slot (EXITED/FAILURE)
  * is releasable: -EBUSY while running or starting, -ENOENT if unknown. */
 int PlatformWappRelease(const char *name);

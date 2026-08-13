@@ -15,6 +15,7 @@
 #include "sdkconfig.h"
 
 #include <platform.h>
+#include <vfs.h>
 #include <wanted-api.h>
 #include <wanted.h>
 #include <wanted_malloc.h>
@@ -187,9 +188,10 @@ int PlatformWappStop(const char *name) {
     }
 
     /* Cooperative stop: set the terminate flag so wasm_runtime_call_wasm
-     * returns false at the next instruction boundary and the thread unwinds
-     * through WA_threadEnd. ESP-IDF wires no signal wakeup. */
+     * returns false at the next instruction boundary, then raise the wake
+     * descriptor so a blocked host call ends and that boundary is reached. */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
+    PlatformWakeRaise(VfsWakeFd(state.threads[slot].data.vfs));
 
     pthread_mutex_unlock(&state_mtx);
 
