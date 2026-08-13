@@ -255,6 +255,11 @@ int PlatformNetListen(struct netCtx *ctx, const char *bindAddr, uint16_t port,
  * its own that the caller closes and frees. */
 int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out);
 
+/* Wait until `ctx` has a connection to take, or `wakeFd` is raised. Answers 0
+ * when the accept below will not block, and -EINTR on a raised wake. Callers
+ * holding no wake descriptor let the accept block instead. */
+int PlatformNetWaitAccept(struct netCtx *ctx, int wakeFd);
+
 /* A/B firmware OTA: dual-slot update plus rollback, backed by whatever the
  * target boots through. Slots are always named 'a' and 'b', so the /dev/ota
  * wire text reads the same on every platform. */

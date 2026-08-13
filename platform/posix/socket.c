@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include <stdbool.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <termios.h>
 #include <unistd.h>
@@ -252,6 +253,43 @@ int PlatformNetListen(struct netCtx *c, const char *bindAddr, uint16_t port,
     }
 
     return 0;
+}
+
+int PlatformNetWaitAccept(struct netCtx *c, int wakeFd) {
+    fd_set r;
+    int high;
+
+    if (NULL == c) {
+        return -EINVAL;
+    }
+    if (c->isSerial || c->dgram) {
+        return -ENOTSUP;
+    }
+    if (wakeFd < 0) {
+        /* No wake descriptor: the accept blocks and a signal ends it. */
+        return 0;
+    }
+
+    high = c->socket > wakeFd ? c->socket : wakeFd;
+    for (;;) {
+        FD_ZERO(&r);
+        FD_SET(c->socket, &r);
+        FD_SET(wakeFd, &r);
+
+        if (select(high + 1, &r, NULL, NULL, NULL) < 0) {
+            if (errno == EINTR) {
+                return -EINTR;
+            }
+            return -errno;
+        }
+        /* The wake first: a stop outranks a connection that also arrived. */
+        if (FD_ISSET(wakeFd, &r)) {
+            return -EINTR;
+        }
+        if (FD_ISSET(c->socket, &r)) {
+            return 0;
+        }
+    }
 }
 
 int PlatformNetAccept(struct netCtx *c, struct netCtx **out) {

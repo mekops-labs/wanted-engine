@@ -67,7 +67,7 @@ static int _Read(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte);
 static int _Stat(vfs_driver_ctx_t c, int fd, vfs_stat_t *stat);
 static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
-                       int *newFd);
+                       int wakeFd, int *newFd);
 static int _SockRecv(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte,
                      vfs_riflags_t iflags, vfs_roflags_t *oflags);
 static int _SockSend(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte,
@@ -480,6 +480,7 @@ static int _Stat(vfs_driver_ctx_t c, int fd, vfs_stat_t *stat) {
  * without the listen role writes through it nowhere, which reads as const to
  * the analysers. */
 static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
+                       int wakeFd,
                        /* cppcheck-suppress constParameterCallback */
                        /* NOLINTNEXTLINE(readability-non-const-parameter) */
                        int *newFd) {
@@ -492,6 +493,7 @@ static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
 #ifndef CONFIG_WANTED_VFS_SOCKET_LISTEN
     (void)c;
     (void)fd;
+    (void)wakeFd;
     return -ENOTSUP;
 #else
     struct sock_conn_t *l = conn(c, fd);
@@ -511,8 +513,15 @@ static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
     if (slot < 0 || live >= c->maxConns)
         return -ENFILE;
 
+    /* Wait first, watching the wapp's wake descriptor beside the listener, so
+     * a stop ends the wait. Without one the accept blocks and a signal ends
+     * it. */
+    int ret = PlatformNetWaitAccept(l->netCtx, wakeFd);
+    if (ret < 0)
+        return ret;
+
     struct netCtx *accepted = NULL;
-    int ret = PlatformNetAccept(l->netCtx, &accepted);
+    ret = PlatformNetAccept(l->netCtx, &accepted);
     if (ret < 0)
         return ret;
 

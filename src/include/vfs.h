@@ -127,8 +127,10 @@ typedef struct vfs_driver_t {
 
     /* Network operations */
 
+    /* `wakeFd` is the wapp's wake descriptor, watched beside the listener so a
+     * stop ends the wait; -1 where the platform interrupts by signal. */
     int (*SockAccept)(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags,
-                      int *newFd);
+                      int wakeFd, int *newFd);
     int (*SockRecv)(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte,
                     vfs_riflags_t iflags, vfs_roflags_t *oflags);
     int (*SockSend)(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte,
