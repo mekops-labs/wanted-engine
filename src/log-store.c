@@ -22,10 +22,27 @@ typedef struct {
     bool used;
 } log_slot_t;
 
+/* Two rings in memory a reset does not clear: one this boot writes, one the
+ * previous boot left. `magic` tells a first boot from a re-used region, and
+ * `live` says which half is current. */
+#define PERSIST_MAGIC 0x574c4f47u /* "WLOG" */
+
+typedef struct {
+    uint32_t magic;
+    uint32_t live; /* 0 or 1 */
+    uint32_t len[2];
+} persist_hdr_t;
+
 struct log_store_t {
     log_slot_t slots[CONFIG_WANTED_LOG_SLOTS];
     uint64_t clock; /* monotonic; stamped on each slot access */
     platform_mutex_t *lock;
+
+    /* Null until LogStorePersistInit finds usable memory. `cap` is per half. */
+    persist_hdr_t *phdr;
+    char *pbuf[2];
+    size_t pcap;
+    bool prev_valid;
 };
 
 log_store_t *LogStore(void) {
@@ -66,12 +83,93 @@ static log_slot_t *slot_for(log_store_t *s, const char *name) {
     return sl;
 }
 
+void LogStorePersistInit(log_store_t *s) {
+    size_t len = 0;
+
+    if (!s || s->phdr != NULL || CONFIG_WANTED_LOG_PERSIST_CAP == 0) {
+        return;
+    }
+
+    unsigned char *mem = PlatformPersistMem(&len);
+    size_t need = sizeof(persist_hdr_t) + CONFIG_WANTED_LOG_PERSIST_CAP * 2;
+    if (mem == NULL || len < need) {
+        return; /* no such memory here, or too little of it */
+    }
+
+    PlatformMutexLock(s->lock);
+    persist_hdr_t *h = (persist_hdr_t *)mem;
+    char *half0 = (char *)(mem + sizeof(persist_hdr_t));
+    char *half1 = half0 + CONFIG_WANTED_LOG_PERSIST_CAP;
+
+    if (h->magic != PERSIST_MAGIC || h->live > 1) {
+        /* Nothing usable was there: a first boot, or power was lost. */
+        h->magic = PERSIST_MAGIC;
+        h->live = 0;
+        h->len[0] = 0;
+        h->len[1] = 0;
+        s->prev_valid = false;
+    } else {
+        /* What the previous boot wrote is the half it had live. A length past
+         * the cap means the region was written by a build with a different
+         * one, so it is unreadable rather than content. */
+        s->prev_valid = h->len[h->live] <= CONFIG_WANTED_LOG_PERSIST_CAP;
+        h->live = h->live == 0 ? 1 : 0;
+        h->len[h->live] = 0;
+    }
+
+    s->phdr = h;
+    s->pbuf[0] = half0;
+    s->pbuf[1] = half1;
+    s->pcap = CONFIG_WANTED_LOG_PERSIST_CAP;
+    PlatformMutexUnlock(s->lock);
+}
+
+void LogStorePersistDetach(log_store_t *s) {
+    if (!s) {
+        return;
+    }
+    PlatformMutexLock(s->lock);
+    s->phdr = NULL;
+    s->pbuf[0] = NULL;
+    s->pbuf[1] = NULL;
+    s->pcap = 0;
+    s->prev_valid = false;
+    PlatformMutexUnlock(s->lock);
+}
+
+/* Caller holds the lock. Mirror the engine's own bytes into the live half,
+ * dropping the oldest once it is full, as the RAM ring does. */
+static void persistAppend(log_store_t *s, const char *p, size_t n) {
+    if (s->phdr == NULL || n == 0) {
+        return;
+    }
+    char *dst = s->pbuf[s->phdr->live];
+    size_t used = s->phdr->len[s->phdr->live];
+
+    if (n >= s->pcap) {
+        p += n - s->pcap;
+        n = s->pcap;
+        used = 0;
+    }
+    if (used + n > s->pcap) {
+        size_t drop = used + n - s->pcap;
+        memmove(dst, dst + drop, used - drop);
+        used -= drop;
+    }
+    memcpy(dst + used, p, n);
+    s->phdr->len[s->phdr->live] = (uint32_t)(used + n);
+}
+
 void LogStoreAppend(log_store_t *s, const char *name, const void *buf,
                     size_t n) {
     if (!s || !name || !buf || n == 0)
         return;
 
     PlatformMutexLock(s->lock);
+    /* The engine's own channel is mirrored where a reset cannot clear it. */
+    if (strncmp(name, WANTED_ENGINE_LOG_NAME, WAPP_MAX_NAME_LEN) == 0) {
+        persistAppend(s, (const char *)buf, n);
+    }
     log_slot_t *sl = slot_for(s, name);
     if (sl) {
         const char *p = (const char *)buf;
@@ -97,6 +195,17 @@ size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap) {
         return 0;
 
     PlatformMutexLock(s->lock);
+    if (strncmp(name, WANTED_PREV_LOG_NAME, WAPP_MAX_NAME_LEN) == 0) {
+        size_t copied = 0;
+        if (s->prev_valid && s->phdr != NULL) {
+            uint32_t other = s->phdr->live == 0 ? 1 : 0;
+            size_t have = s->phdr->len[other];
+            copied = have < cap ? have : cap;
+            memcpy(out, s->pbuf[other], copied);
+        }
+        PlatformMutexUnlock(s->lock);
+        return copied;
+    }
     size_t copied = 0;
     for (int i = 0; i < CONFIG_WANTED_LOG_SLOTS; i++) {
         if (s->slots[i].used &&
@@ -119,6 +228,11 @@ bool LogStoreHas(log_store_t *s, const char *name) {
         return false;
 
     PlatformMutexLock(s->lock);
+    if (strncmp(name, WANTED_PREV_LOG_NAME, WAPP_MAX_NAME_LEN) == 0) {
+        bool present = s->prev_valid && s->phdr != NULL;
+        PlatformMutexUnlock(s->lock);
+        return present;
+    }
     bool found = false;
     for (int i = 0; i < CONFIG_WANTED_LOG_SLOTS; i++) {
         if (s->slots[i].used &&
@@ -138,6 +252,11 @@ size_t LogStoreList(log_store_t *s, char names[][WAPP_MAX_NAME_LEN],
 
     PlatformMutexLock(s->lock);
     size_t n = 0;
+    if (s->prev_valid && s->phdr != NULL) {
+        strncpy(names[n], WANTED_PREV_LOG_NAME, WAPP_MAX_NAME_LEN - 1);
+        names[n][WAPP_MAX_NAME_LEN - 1] = '\0';
+        n++;
+    }
     for (int i = 0; i < CONFIG_WANTED_LOG_SLOTS && n < max; i++) {
         if (!s->slots[i].used)
             continue;

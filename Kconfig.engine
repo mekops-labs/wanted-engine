@@ -240,6 +240,19 @@ config WANTED_OTA_IMAGE_NAME
 	  Filename written inside slot_a/ or slot_b/. The bootloader picks the slot
 	  by directory, so this name is the same in both.
 
+config WANTED_LOG_PERSIST_CAP
+	int "Bytes of the engine's log kept across a reset"
+	default 1024
+	range 0 8192
+	help
+	  The engine's own log is mirrored into memory a reset does not clear,
+	  so the boot after a watchdog can be asked what the boot before it
+	  said. Two buffers of this size are held: the previous boot's and the
+	  current one's. 0 disables it. Bounded separately from WANTED_LOG_CAP,
+	  because the medium is a fixed region rather than the heap — on the
+	  ESP32-S3 that is 8 KiB of RTC memory shared with everything else that
+	  survives a reset. Lost on power loss.
+
 config WANTED_LOG_CAP
 	int "Bytes retained per wapp log"
 	default 2048

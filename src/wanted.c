@@ -25,6 +25,7 @@
 #include <wanted-vfs-api.h>
 #include <wanted.h>
 
+#include <log-store.h>
 #include <platform.h>
 
 struct wamrData_t {
@@ -1121,6 +1122,10 @@ wapp_t *WantedGetCurrentSupervisor(void) {
 int WantedStart(const char *cfg, size_t cfgLen) {
     int ret;
     wapp_t *app;
+
+    /* Before anything can log: the previous boot's ring is adopted here, and
+     * this boot's writes go to the other half. */
+    LogStorePersistInit(LogStore());
 
     ret = WantedParseConfig(cfg, cfgLen);
     DEBUG_TRACE("WantedParseConfig -> %d", ret);

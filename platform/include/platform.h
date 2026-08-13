@@ -89,6 +89,11 @@ void PlatformWakeRaise(int fd);
 bool PlatformWakeRaised(int fd);
 void PlatformWakeClose(int fd);
 
+/* Memory a reset does not clear — a watchdog, a panic, a commanded reboot —
+ * holding whatever the previous boot left. NULL where the platform has none,
+ * and on every platform it is lost when power is. `len` takes the size. */
+void *PlatformPersistMem(size_t *len);
+
 /* Free a wapp's platform slot by name. Only a terminal slot (EXITED/FAILURE)
  * is releasable: -EBUSY while running or starting, -ENOENT if unknown. */
 int PlatformWappRelease(const char *name);
