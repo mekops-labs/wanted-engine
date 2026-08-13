@@ -92,6 +92,32 @@ Command-line arguments (`argv[1..]`) and environment variables travel in the `co
 
 **Instance vs. image.** `create <name>` reserves an *instance* name; the *image* it runs is resolved at `start` in priority order: an explicit `start <image>` argument, else the config's `image` field, else the instance name. So one image can back several instances (different `<name>`s, same image), and a bare `create` can go straight to `start <image>` — the explicit image satisfies the start gate without a prior `config` write (the wapp launches on default console/args). A bare `start` on an unconfigured reservation is still rejected.
 
+### What `stop` guarantees
+
+`stop` sets the terminate flag, which the runtime reads at the next WebAssembly
+instruction boundary. A wapp waiting in a host call reaches that boundary only
+when the wait ends, thus the engine ends the wait as well.
+
+Two mechanisms end it, by platform:
+
+- **Linux and NuttX** signal the worker (`SIGUSR2`, no `SA_RESTART`). The
+  blocked call answers `EINTR`.
+- **ESP-IDF** raises the wapp's wake descriptor, an `eventfd` the blocking
+  drivers watch. This platform implements no `pthread_kill`.
+
+The waits a wapp can enter:
+
+| Wait | How it ends |
+|------|-------------|
+| socket accept, socket read | the wake descriptor, watched with `select()` beside the socket |
+| `uart` read, `uart` write | the wake descriptor, checked between poll attempts |
+| pipe read, pipe write | a cap of about 5 s, after which the call answers `-EAGAIN` |
+| `uart` transmit drain before a line-rate change | a cap of 1 s |
+
+A stopped wapp answers `-EINTR` from the call it was in, unwinds, and the
+terminate flag is honoured. A supervisor that sees a wapp still `RUNNING` after
+a stop is looking at a defect, not at a slow teardown.
+
 ## Wapp namespace
 
 `readdir` on `wapps/` enumerates every wapp the engine knows — live ones plus `create`d reservations. A wapp's directory and the nodes below it exist **only** for such a known name; opening `wapps/<unknown>/<anything>` returns `-ENOENT`. Each `wapps/<name>/` exposes:

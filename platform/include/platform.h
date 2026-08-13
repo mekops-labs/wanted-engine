@@ -3,6 +3,7 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -83,6 +84,9 @@ int PlatformWappStop(const char *name);
 int PlatformWakeCreate(void);
 /* Raising an already-raised descriptor is a no-op; -1 is ignored. */
 void PlatformWakeRaise(int fd);
+/* Whether `fd` is raised, without waiting. A polling driver asks between
+ * attempts, where a descriptor to select on would not fit. */
+bool PlatformWakeRaised(int fd);
 void PlatformWakeClose(int fd);
 
 /* Free a wapp's platform slot by name. Only a terminal slot (EXITED/FAILURE)

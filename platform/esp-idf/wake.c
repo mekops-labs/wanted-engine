@@ -7,6 +7,8 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <debug_trace.h>
@@ -56,6 +58,18 @@ void PlatformWakeRaise(int fd) {
     if (write(fd, &one, sizeof(one)) < 0) {
         DEBUG_TRACE("eventfd raise failed: %d", errno);
     }
+}
+
+bool PlatformWakeRaised(int fd) {
+    fd_set r;
+    struct timeval tv = {0, 0};
+
+    if (fd < 0) {
+        return false;
+    }
+    FD_ZERO(&r);
+    FD_SET(fd, &r);
+    return select(fd + 1, &r, NULL, NULL, &tv) > 0 && FD_ISSET(fd, &r);
 }
 
 void PlatformWakeClose(int fd) {

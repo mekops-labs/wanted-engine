@@ -8,6 +8,7 @@
 #include "test-utils.h"
 
 #include <dummy-fs.h>
+#include <platform.h>
 #include <vfs-devfs.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
@@ -185,8 +186,8 @@ TEST(uart_data, ReadReturnsShort) {
     VfsClose(vfs, rfd);
 }
 
-/* O_NONBLOCK is what makes a bounded read possible: the blocking read has no
- * wall-clock cap, so a wapp that wants a deadline runs its own clock. */
+/* O_NONBLOCK is what gives a read a deadline of its own: a blocking read ends
+ * on data or on a stop, so a wapp that wants a clock runs one. */
 TEST(uart_data, NonBlockingReadOnAnEmptyPortIsEagain) {
     int fd = VfsOpen(vfs, "/dev/uart/1/data", VFS_O_RDONLY | VFS_O_NONBLOCK);
     TEST_ASSERT_TRUE(fd >= 0);
@@ -195,10 +196,42 @@ TEST(uart_data, NonBlockingReadOnAnEmptyPortIsEagain) {
     VfsClose(vfs, fd);
 }
 
+/* A blocking read polls until data arrives. A raised wake descriptor ends that
+ * wait, which is how a stop reaches a wapp on a quiet line. */
+TEST(uart_data, BlockingReadEndsOnARaisedWake) {
+    int wake = PlatformWakeCreate();
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(0, wake);
+    drv->SetWake(drv->ctx, wake);
+    PlatformWakeRaise(wake);
+
+    int fd = VfsOpen(vfs, "/dev/uart/1/data", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(-EINTR, VfsRead(vfs, fd, buf, sizeof(buf)));
+    VfsClose(vfs, fd);
+    PlatformWakeClose(wake);
+}
+
+TEST(uart_data, BlockingReadWithAnUnraisedWakeReadsTheData) {
+    int wake = PlatformWakeCreate();
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(0, wake);
+    drv->SetWake(drv->ctx, wake);
+    TEST_ASSERT_EQUAL_INT(2, writeNode("/dev/uart/1/data", "ab"));
+
+    int fd = VfsOpen(vfs, "/dev/uart/1/data", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(2, VfsRead(vfs, fd, buf, sizeof(buf)));
+    VfsClose(vfs, fd);
+    PlatformWakeClose(wake);
+}
+
 TEST_GROUP_RUNNER(uart_data) {
     RUN_TEST_CASE(uart_data, WriteThenReadRoundTrips);
     RUN_TEST_CASE(uart_data, ReadReturnsShort);
     RUN_TEST_CASE(uart_data, NonBlockingReadOnAnEmptyPortIsEagain);
+    RUN_TEST_CASE(uart_data, BlockingReadEndsOnARaisedWake);
+    RUN_TEST_CASE(uart_data, BlockingReadWithAnUnraisedWakeReadsTheData);
 }
 
 /***************************************/

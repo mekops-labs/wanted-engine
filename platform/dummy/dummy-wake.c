@@ -4,6 +4,9 @@
  * a stop ends. The read end is the descriptor a wait watches. */
 
 #include <errno.h>
+#include <stdbool.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <platform.h>
@@ -51,6 +54,18 @@ void PlatformWakeRaise(int fd) {
     if (write(writeEnd[fd], &one, 1) < 0) {
         return;
     }
+}
+
+bool PlatformWakeRaised(int fd) {
+    fd_set r;
+    struct timeval tv = {0, 0};
+
+    if (fd < 0) {
+        return false;
+    }
+    FD_ZERO(&r);
+    FD_SET(fd, &r);
+    return select(fd + 1, &r, NULL, NULL, &tv) > 0 && FD_ISSET(fd, &r);
 }
 
 void PlatformWakeClose(int fd) {
