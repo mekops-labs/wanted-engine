@@ -255,10 +255,11 @@ int PlatformNetListen(struct netCtx *ctx, const char *bindAddr, uint16_t port,
  * its own that the caller closes and frees. */
 int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out);
 
-/* Wait until `ctx` has a connection to take, or `wakeFd` is raised. Answers 0
- * when the accept below will not block, and -EINTR on a raised wake. Callers
- * holding no wake descriptor let the accept block instead. */
-int PlatformNetWaitAccept(struct netCtx *ctx, int wakeFd);
+/* Wait until `ctx` is readable — a pending connection on a listener, data on a
+ * connection — or `wakeFd` is raised. Answers 0 when the call below will not
+ * block, and -EINTR on a raised wake. Without a wake descriptor, answers 0 and
+ * lets that call block. */
+int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd);
 
 /* A/B firmware OTA: dual-slot update plus rollback, backed by whatever the
  * target boots through. Slots are always named 'a' and 'b', so the /dev/ota

@@ -461,6 +461,11 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
         return -EINVAL;
     }
 
+    /* A driver that blocks watches this beside its own resource. */
+    if (drv->SetWake != NULL) {
+        drv->SetWake(drv->ctx, VfsWakeFd(c));
+    }
+
     return installTo(c, path, drv);
 }
 

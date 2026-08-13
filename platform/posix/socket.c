@@ -255,18 +255,15 @@ int PlatformNetListen(struct netCtx *c, const char *bindAddr, uint16_t port,
     return 0;
 }
 
-int PlatformNetWaitAccept(struct netCtx *c, int wakeFd) {
+int PlatformNetWaitReadable(struct netCtx *c, int wakeFd) {
     fd_set r;
     int high;
 
     if (NULL == c) {
         return -EINVAL;
     }
-    if (c->isSerial || c->dgram) {
-        return -ENOTSUP;
-    }
     if (wakeFd < 0) {
-        /* No wake descriptor: the accept blocks and a signal ends it. */
+        /* No wake descriptor: the call below blocks and a signal ends it. */
         return 0;
     }
 

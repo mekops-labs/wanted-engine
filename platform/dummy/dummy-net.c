@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -129,8 +130,8 @@ int PlatformNetListen(struct netCtx *ctx, const char *bindAddr, uint16_t port,
  * only reads it. */
 /* cppcheck-suppress constParameterPointer */
 /* The test platform has no real queue: a raised wake answers -EINTR, and
- * anything else lets the accept below decide. */
-int PlatformNetWaitAccept(struct netCtx *ctx, int wakeFd) {
+ * anything else lets the call below decide. */
+int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd) {
     if (!ctx)
         return -EINVAL;
     if (wakeFd < 0)

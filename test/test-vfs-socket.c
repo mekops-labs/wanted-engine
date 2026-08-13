@@ -207,7 +207,7 @@ TEST(vfs_socket_driver, Stat_ReportsTypeAndPort) {
 TEST(vfs_socket_driver, SockAccept_NullNewFd_ReturnsEinval) {
     drv = VfsSocketInit(NULL, "tcp://addr:8080");
     drv->Open(drv->ctx, "/", VFS_O_RDWR);
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->SockAccept(drv->ctx, 0, 0, -1, NULL));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->SockAccept(drv->ctx, 0, 0, NULL));
 }
 
 TEST(vfs_socket_driver, SockAccept_OnConnectRole_ReturnsEnotsup) {
@@ -215,8 +215,7 @@ TEST(vfs_socket_driver, SockAccept_OnConnectRole_ReturnsEnotsup) {
     drv->Open(drv->ctx, "/", VFS_O_RDWR);
 
     int newFd = -1;
-    TEST_ASSERT_EQUAL_INT(-ENOTSUP,
-                          drv->SockAccept(drv->ctx, 0, 0, -1, &newFd));
+    TEST_ASSERT_EQUAL_INT(-ENOTSUP, drv->SockAccept(drv->ctx, 0, 0, &newFd));
 }
 
 TEST(vfs_socket_driver, SockRecv_ConnectsThenReceives) {
@@ -346,7 +345,7 @@ TEST(vfs_socket_driver, SockAccept_YieldsConnectionFd) {
     drv->Open(drv->ctx, "", VFS_O_RDWR);
 
     int newFd = -1;
-    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, -1, &newFd));
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &newFd));
     TEST_ASSERT_TRUE(newFd > 0);
 
     /* The accepted connection carries payload the listener never sees. */
@@ -363,7 +362,7 @@ TEST(vfs_socket_driver, SockAccept_AcceptFailure_ReturnsError) {
 
     int newFd = -1;
     TEST_ASSERT_EQUAL_INT(-ECONNABORTED,
-                          drv->SockAccept(drv->ctx, 0, 0, -1, &newFd));
+                          drv->SockAccept(drv->ctx, 0, 0, &newFd));
 }
 
 TEST(vfs_socket_driver, SockAccept_ConnectionsStayIsolated) {
@@ -371,9 +370,9 @@ TEST(vfs_socket_driver, SockAccept_ConnectionsStayIsolated) {
     drv->Open(drv->ctx, "", VFS_O_RDWR);
 
     int a = -1, b = -1;
-    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, -1, &a));
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &a));
     void *aSock = DummyNetLastSock();
-    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, -1, &b));
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &b));
     void *bSock = DummyNetLastSock();
     TEST_ASSERT_TRUE(a != b);
 
@@ -405,12 +404,12 @@ TEST(vfs_socket_driver, SockAccept_PastMaxConns_ReturnsEnfile) {
     drv->Open(drv->ctx, "", VFS_O_RDWR);
 
     int a = -1, b = -1;
-    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, -1, &a));
-    TEST_ASSERT_EQUAL_INT(-ENFILE, drv->SockAccept(drv->ctx, 0, 0, -1, &b));
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &a));
+    TEST_ASSERT_EQUAL_INT(-ENFILE, drv->SockAccept(drv->ctx, 0, 0, &b));
 
     /* A closed connection frees its slot for the next accept. */
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, a));
-    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, -1, &b));
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &b));
 }
 
 TEST(vfs_socket_driver, Udp_Listen_RecvAndSendOnBoundSocket) {
@@ -436,17 +435,8 @@ TEST(vfs_socket_driver, Udp_Listen_SockAccept_ReturnsEnotsup) {
     drv->Open(drv->ctx, "", VFS_O_RDWR);
 
     int newFd = -1;
-    TEST_ASSERT_EQUAL_INT(-ENOTSUP,
-                          drv->SockAccept(drv->ctx, 0, 0, -1, &newFd));
+    TEST_ASSERT_EQUAL_INT(-ENOTSUP, drv->SockAccept(drv->ctx, 0, 0, &newFd));
 }
-
-#else /* the listen role is not compiled in */
-
-TEST(vfs_socket_driver, Init_ListenRole_RejectedWithoutSupport) {
-    TEST_ASSERT_NULL(VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen"));
-}
-
-#endif
 
 TEST(vfs_socket_driver, SockAccept_RaisedWake_ReturnsEintr) {
     drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen");
@@ -454,12 +444,12 @@ TEST(vfs_socket_driver, SockAccept_RaisedWake_ReturnsEintr) {
 
     int wake = PlatformWakeCreate();
     TEST_ASSERT_GREATER_OR_EQUAL_INT(0, wake);
+    drv->SetWake(drv->ctx, wake);
     PlatformWakeRaise(wake);
 
     /* The wait ends on the wake, and no connection is taken. */
     int newFd = -1;
-    TEST_ASSERT_EQUAL_INT(-EINTR,
-                          drv->SockAccept(drv->ctx, 0, 0, wake, &newFd));
+    TEST_ASSERT_EQUAL_INT(-EINTR, drv->SockAccept(drv->ctx, 0, 0, &newFd));
     TEST_ASSERT_EQUAL_INT(-1, newFd);
 
     PlatformWakeClose(wake);
@@ -471,13 +461,22 @@ TEST(vfs_socket_driver, SockAccept_UnraisedWake_TakesTheConnection) {
 
     int wake = PlatformWakeCreate();
     TEST_ASSERT_GREATER_OR_EQUAL_INT(0, wake);
+    drv->SetWake(drv->ctx, wake);
 
     int newFd = -1;
-    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, wake, &newFd));
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &newFd));
     TEST_ASSERT_TRUE(newFd > 0);
 
     PlatformWakeClose(wake);
 }
+
+#else /* the listen role is not compiled in */
+
+TEST(vfs_socket_driver, Init_ListenRole_RejectedWithoutSupport) {
+    TEST_ASSERT_NULL(VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen"));
+}
+
+#endif
 
 TEST_GROUP_RUNNER(vfs_socket_driver) {
     RUN_TEST_CASE(vfs_socket_driver, Init_Tcp_StreamFiletype);

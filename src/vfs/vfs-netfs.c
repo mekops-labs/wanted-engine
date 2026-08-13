@@ -197,14 +197,14 @@ int NetFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
 
 int NetFs_SockAccept(vfs_ctx_t c, void *handle, vfs_oflags_t flags,
                      void **newHandle) {
+    (void)c;
     netfs_handle_t *h = handle;
     if (!h || !newHandle) {
         return -EBADF;
     }
 
     int drv_fd = -1;
-    int r =
-        TRY_DRV(h->drv, SockAccept, h->drv_fd, flags, VfsWakeFd(c), &drv_fd);
+    int r = TRY_DRV(h->drv, SockAccept, h->drv_fd, flags, &drv_fd);
     if (r < 0)
         return r;
 
