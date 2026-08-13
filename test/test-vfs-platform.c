@@ -190,8 +190,21 @@ TEST(vfs_platform_driver, Mkdir_DuplicateReturnsEexist) {
     drv->Close(drv->ctx, dir_fd);
 }
 
+/* Every driver zeroes its vtable, so a slot it does not implement reads as
+ * NULL. A caller tests the slot before calling it, and heap garbage passes
+ * that test. */
+TEST(vfs_platform_driver, Init_LeavesUnimplementedSlotsNull) {
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_NULL(drv->SetWake);
+    TEST_ASSERT_NULL(drv->SockAccept);
+    TEST_ASSERT_NULL(drv->SockRecv);
+    TEST_ASSERT_NULL(drv->SockSend);
+    TEST_ASSERT_NULL(drv->SockShutdown);
+}
+
 TEST_GROUP_RUNNER(vfs_platform_driver) {
     RUN_TEST_CASE(vfs_platform_driver, Open_CreateFile_ReturnsValidFd);
+    RUN_TEST_CASE(vfs_platform_driver, Init_LeavesUnimplementedSlotsNull);
     RUN_TEST_CASE(vfs_platform_driver,
                   Open_NonexistentWithoutCreat_ReturnsEnoent);
     RUN_TEST_CASE(vfs_platform_driver, Open_ExclOnExisting_ReturnsEexist);

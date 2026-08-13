@@ -77,6 +77,9 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
         DEBUG_TRACE("can't allocate memory");
         return NULL;
     }
+    /* Zero first: an unassigned vtable slot would otherwise hold heap
+     * garbage, which the caller reads as a function to call. */
+    memset(driver, 0, sizeof(*driver));
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(
         sizeof(struct vfs_driver_ctx_t));

@@ -478,8 +478,22 @@ TEST(vfs_socket_driver, Init_ListenRole_RejectedWithoutSupport) {
 
 #endif
 
+/* The vtable is zeroed at allocation, so a slot this driver does not implement
+ * reads as NULL. A caller tests the slot before calling it, and heap garbage
+ * passes that test. */
+TEST(vfs_socket_driver, Init_LeavesUnimplementedSlotsNull) {
+    drv = VfsSocketInit(NULL, "tcp://127.0.0.1:8080");
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_NULL(drv->Mkdir);
+    TEST_ASSERT_NULL(drv->Rmdir);
+    TEST_ASSERT_NULL(drv->Unlink);
+    TEST_ASSERT_NULL(drv->Rename);
+    TEST_ASSERT_NULL(drv->ReadDir);
+}
+
 TEST_GROUP_RUNNER(vfs_socket_driver) {
     RUN_TEST_CASE(vfs_socket_driver, Init_Tcp_StreamFiletype);
+    RUN_TEST_CASE(vfs_socket_driver, Init_LeavesUnimplementedSlotsNull);
     RUN_TEST_CASE(vfs_socket_driver, Init_Udp_DgramFiletype);
     RUN_TEST_CASE(vfs_socket_driver, Init_NullOptions_ReturnsNull);
     RUN_TEST_CASE(vfs_socket_driver, Init_NoScheme_ReturnsNull);
