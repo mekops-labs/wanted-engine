@@ -66,12 +66,9 @@ set(tiny_json_src
     ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c
 )
 
-# vendor/ed25519 (verify-only subset): compiled here so
-# test-vendor-ed25519.c can validate it directly against RFC 8032 vectors,
-# independent of PlatformEd25519Verify/platform wiring. Not linked into
-# libwanted.a - Linux's PlatformEd25519Verify stays OpenSSL-backed
-# (platform/linux/api/crypto.c); this vendor library is only used by
-# platform/nuttx/api/crypto.c, built through NuttX's own Makefile, not CMake.
+# vendor/ed25519 (verify-only subset), compiled here to validate it
+# against RFC 8032 vectors directly. Not linked into libwanted.a — only
+# NuttX's own Makefile build (not CMake) uses this vendor library.
 set(ed25519_vendor_src
     ${CMAKE_SOURCE_DIR}/vendor/ed25519/src/verify.c
     ${CMAKE_SOURCE_DIR}/vendor/ed25519/src/sha512.c

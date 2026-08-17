@@ -1,11 +1,6 @@
-# Build orchestration: which target `just build` builds, and that target's
-# inputs. Read by the build system from .config; deliberately absent from
-# wanted-autoconf.h, so nothing here can be tested by engine code.
-#
-# Boards and SDKs are pass-through strings, never enumerated. `sim:wanted`
-# reaches configure.sh verbatim and the engine holds no opinion about which
-# boards exist — modelling them here would be a second source of truth that
-# drifts from the vendor tree, which is the failure this migration removed.
+# Build orchestration: which target `just build` builds. Absent from
+# wanted-autoconf.h, so engine code cannot test it. Boards and SDKs are
+# pass-through strings, never enumerated.
 
 menu "Target"
 
@@ -13,11 +8,8 @@ choice
 	prompt "Build target"
 	default WANTED_TARGET_LINUX
 	help
-	  Which target `just build` builds. Each carries its own inputs below.
-
-	  Every target keeps its own build directory and therefore its own
-	  .config, so two can be configured side by side without either
-	  disturbing the other.
+	  Which target `just build` builds. Each keeps its own build
+	  directory and .config, so two can be configured side by side.
 
 config WANTED_TARGET_LINUX
 	bool "linux — host engine + CLI"
@@ -44,10 +36,8 @@ config WANTED_TARGET_OPENWRT
 
 endchoice
 
-# Derived from the choice, no prompt: one string for the build to switch on,
-# rather than every consumer re-deriving it from four booleans. A prompted
-# string would freeze at its user value and go stale the moment the choice
-# changed — the same trap WANTED_SUPERVISOR_IMAGE avoids.
+# Derived from the choice, no prompt: a prompted string would freeze at
+# its user value and go stale the moment the choice changed.
 config WANTED_TARGET
 	string
 	default "linux" if WANTED_TARGET_LINUX
@@ -64,9 +54,6 @@ config WANTED_TARGET_NUTTX_BOARD
 	  <board>:<config> notation — sim:wanted for the simulator,
 	  esp32-devkitc:wanted for the classic ESP32.
 
-	  Hardware boards need a toolchain the host build image does not carry;
-	  the Makefile selects that container.
-
 config WANTED_TARGET_ESP_IDF_CHIP
 	string "ESP-IDF chip target"
 	depends on WANTED_TARGET_ESP_IDF
@@ -79,11 +66,9 @@ choice
 	depends on WANTED_TARGET_OPENWRT
 	default WANTED_OPENWRT_SDK_AARCH64
 	help
-	  Which SDK cross-builds the package.
-
-	  The two generic SDKs are board-independent on purpose: the engine is
-	  built for an architecture, not for a particular router. Pick the custom
-	  entry to name any other OpenWrt target by URL.
+	  Which SDK cross-builds the package. The two generic SDKs target an
+	  architecture, not a router; pick custom to name any other OpenWrt
+	  target by URL.
 
 config WANTED_OPENWRT_SDK_AARCH64
 	bool "aarch64 — generic 64-bit ARM (armsr/armv8)"
@@ -100,17 +85,9 @@ config WANTED_TARGET_OPENWRT_SDK_URL
 	string "OpenWrt SDK URL or directory"
 	depends on WANTED_OPENWRT_SDK_CUSTOM
 	help
-	  A target-specific SDK to build against, as either:
-
-	    - a URL to an OpenWrt SDK archive (.tar.zst or .tar.xz), downloaded
-	      and cached under .openwrt-sdk/ on first use; or
-	    - a path to an SDK directory already extracted locally.
-
-	  The target, architecture and toolchain prefix are auto-detected from
-	  the SDK's own staging_dir layout, so nothing here needs restating them.
-	  Example, for a device on the 24.10.0 ath79/generic target:
-
-	    https://downloads.openwrt.org/releases/24.10.0/targets/ath79/generic/openwrt-sdk-24.10.0-ath79-generic_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+	  A URL to an OpenWrt SDK archive (cached under .openwrt-sdk/ on
+	  first use) or a path to one already extracted. Target, architecture
+	  and toolchain prefix are auto-detected from its staging_dir layout.
 
 # Derived from the choice above, no prompt: one string for the build to read,
 # whether it came from a keyword or a URL. sdk-env.sh already accepted all three
@@ -121,10 +98,9 @@ config WANTED_TARGET_OPENWRT_SDK
 	default "mipsel" if WANTED_OPENWRT_SDK_MIPSEL
 	default WANTED_TARGET_OPENWRT_SDK_URL if WANTED_OPENWRT_SDK_CUSTOM
 
-# CMake-only knobs. They change how the build runs, not what the engine is, so
-# they stay out of the generated header — and out of Kconfig.engine, which the
-# hosts source: NuttX and ESP-IDF run no CMake of ours and could not honour any
-# of these. Options that change the binary (debug traces) live in General.
+# CMake-only knobs: change how the build runs, not what the engine is,
+# so they stay out of wanted-autoconf.h and out of Kconfig.engine (NuttX
+# and ESP-IDF run no CMake of ours and could not honour them).
 menu "Host build options"
 	depends on WANTED_TARGET_LINUX || WANTED_TARGET_OPENWRT
 
@@ -140,58 +116,33 @@ config WANTED_BUILD_STATIC_CLI
 	bool "Link wanted-cli statically"
 	default n
 	help
-	  Link the CLI with -static, for dropping a single binary onto a host
-	  that has no matching shared libraries.
-
-	  Two caveats, both from the C library rather than the engine:
-
-	  Secure sockets need a static OpenSSL. The build image ships libssl and
-	  libcrypto as shared objects only, so this combination fails at link
-	  ("attempted static link of dynamic object"). Either deselect secure
-	  sockets or build against an image carrying libssl.a.
-
-	  glibc resolves hostnames through dlopen'd NSS modules, so a statically
-	  linked binary still needs the matching glibc at runtime to connect by
-	  name. Connecting by address is unaffected. A musl toolchain — the
-	  OpenWrt SDK, for instance — has no such split.
+	  Link the CLI with -static, for a single binary with no matching
+	  shared libraries. Secure sockets need a static OpenSSL (the build
+	  image ships shared-only); glibc still dlopen's NSS for hostnames.
 
 config WANTED_EXTRA_DRIVERS_DIR
 	string "Out-of-tree driver source directory"
 	default ""
 	help
-	  A source tree outside this repository supplying ExtraDriverTable(); its
-	  drivers join the launch-config driver names. The tree is compiled as
-	  part of this build (source-level coupling, no binary ABI, no runtime
-	  loader) and must define a library target named wanted_extra_drivers.
-
-	  The extra table is searched last, so a tree claiming a core name cannot
-	  shadow it. An extra driver still runs at full engine privilege: living
-	  outside this repo keeps it out of core review, not outside the trust
-	  boundary. Empty compiles in a stub returning NULL.
+	  A source tree outside this repo supplying ExtraDriverTable(),
+	  compiled in. Searched last, so it cannot shadow a core name. Runs
+	  at full engine privilege; empty compiles in a stub returning NULL.
 
 endmenu
 
 endmenu
 
-# The launch config the build ships: a file beside the binary (linux), a package
-# conffile (openwrt), or a blob in the image (esp-idf, nuttx). A build-host path,
-# so it belongs here — only the file's content crosses to the device.
-#
-# A path rather than a menu of the files under configs/, for the reason boards
-# and SDKs are pass-through strings: enumerating them here is a second list to
-# keep in step with the directory. A board defconfig sets it, alongside that
-# board's supervisor and limits.
+# The launch config the build ships: a file beside the binary (linux), a
+# package conffile (openwrt), or a blob in the image (esp-idf, nuttx). A
+# path rather than a menu of configs/, so nothing here drifts from it.
 menu "Default configuration"
 
 config WANTED_DEFAULT_CONFIG
 	string "Default configuration file"
 	default "configs/example_config.json"
 	help
-	  JSON to ship as the engine's launch config, relative to the repository
-	  root or absolute. It names the supervisor's drivers, mounts and sockets,
-	  so it decides what the node can reach — see configs/example_config.json
-	  for the schema, and the other configs/*.json for board variants.
-
+	  JSON to ship as the engine's launch config, relative to the repo
+	  root or absolute — see configs/example_config.json for the schema.
 	  Parsed at build time; one that does not parse fails the build.
 
 endmenu

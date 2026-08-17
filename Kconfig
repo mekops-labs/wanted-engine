@@ -1,18 +1,6 @@
-# WANTED engine — top-level configuration.
-#
-# This is what `just menuconfig` opens, and the only file that sees the whole
-# tree. It exists to keep one menu over two files with different audiences:
-#
-#   Kconfig.target   how to build it — target, board, SDK. Build-system only;
-#                    never reaches the compiler.
-#   Kconfig.engine   what the binary is. Host-agnostic, and sourced directly by
-#                    hosts that compile engine sources into their own tree
-#                    (NuttX, ESP-IDF) — they answer the target question by
-#                    construction, so they must not be asked it again.
-#
-# wanted-autoconf.h is generated from Kconfig.engine alone, while .config spans
-# this tree. That is what keeps an SDK URL out of the binary while leaving both
-# menus in one place.
+# WANTED engine — top-level configuration, opened by `just menuconfig`.
+# Kconfig.target picks how to build it (build-system only); Kconfig.engine
+# defines what the binary is, sourced directly by hosts that build it in.
 
 mainmenu "WANTED Engine Configuration"
 

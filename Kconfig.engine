@@ -1,16 +1,6 @@
-# What the engine binary IS. Authoritative and host-agnostic.
-#
-# Every symbol here reaches wanted-autoconf.h and therefore the compiler. Build
-# orchestration — which target, which board, which SDK — is Kconfig.target's,
-# and must not appear here: a host that compiles engine sources into its own
-# tree sources THIS file, and has already answered those questions itself.
-#
-# Two rules, both load-bearing:
-#   1. Every symbol is prefixed CONFIG_WANTED_. Engine and host symbols reach
-#      the same TU on NuttX and ESP-IDF; an unprefixed name will collide.
-#   2. Never reference a host symbol here. This file is read standalone too,
-#      and kconfiglib resolves an unknown symbol to n with at most a warning —
-#      the feature vanishes silently. Host edges go in that host's Kconfig.
+# What the engine binary IS — reaches wanted-autoconf.h, host-agnostic.
+# Every symbol is prefixed CONFIG_WANTED_ (shared TU on NuttX/ESP-IDF)
+# and never references a host symbol (an unknown one resolves to n).
 
 menu "General"
 
@@ -18,14 +8,9 @@ config WANTED_DEBUG_TRACES
 	bool "Debug traces"
 	default n
 	help
-	  Compile in the DEBUG_TRACE() call sites scattered through the engine:
-	  VFS routing decisions, wapp lifecycle transitions, driver open/close.
-	  Off, they expand to nothing and cost neither code nor a branch.
-
-	  Development aid, not an operational log. The traces are written with a
-	  raw write() to stderr, bypassing the per-wapp log capture, and they are
-	  verbose enough to change timing on a constrained target. The engine's
-	  normal reporting is /proc and the log mount, which are always present.
+	  Compile in DEBUG_TRACE() call sites (VFS routing, wapp lifecycle,
+	  driver open/close). Off, they cost nothing. Raw write() to stderr,
+	  verbose enough to affect timing on a constrained target.
 
 endmenu
 
@@ -58,31 +43,18 @@ config WANTED_VFS_SOCKET_TLS
 	depends on WANTED_VFS_SOCKET
 	default y
 	help
-	  Adds the tcps:// and udps:// transports to the socket driver.
-
-	  The engine states the intent here; the backend is the host's — OpenSSL
-	  on Linux, mbedTLS on NuttX and ESP-IDF. A host that cannot provide one
-	  fails the build rather than quietly handing back a binary whose secure
-	  socket entries are rejected at wapp launch.
-
-	  Certificate verification is not implemented on any backend: connections
-	  are encrypted but unauthenticated.
+	  Adds tcps:// and udps://, backed by OpenSSL (Linux) or mbedTLS
+	  (NuttX/ESP-IDF). Connections are encrypted but unauthenticated —
+	  no certificate verification on any backend.
 
 config WANTED_VFS_SOCKET_LISTEN
 	bool "listening sockets (servers)"
 	depends on WANTED_VFS_SOCKET
 	default n
 	help
-	  Adds the listen role to the sockets[] section: a wapp binds a port and
-	  serves it. A tcp/tcps entry binds, listens and accepts — each accepted
-	  connection becomes its own fd; a udp/udps entry binds a datagram socket
-	  read with recv and answered with send.
-
-	  A leaf sensor node never serves, so this costs it nothing until a target
-	  asks for it. Turn it on for a wapp-served web UI or a protocol gateway.
-
-	  A launch config carrying "role": "listen" on a build without this fails
-	  the wapp's launch rather than silently opening an outbound connection.
+	  Adds the listen role to sockets[]: tcp/tcps accepts (one fd per
+	  connection), udp/udps binds a datagram socket. A launch config
+	  naming "role": "listen" without this fails the wapp's launch.
 
 config WANTED_VFS_SOCKET_MAX_CONNS
 	int "Accepted connections per listener"
@@ -135,22 +107,17 @@ config WANTED_VFS_GPIO
 	bool "gpio — per-pin digital I/O"
 	default y
 	help
-	  /dev/gpio/<name>/{value,direction}: one subtree per pin the launch
-	  config granted. The grant maps a wapp-visible name onto a platform
-	  address, so a wapp image stays board-portable. Needs a PlatformGpio*
-	  backing — present on ESP-IDF and NuttX, absent on Linux, where a grant
-	  fails the launch until the libgpiod backing lands.
+	  /dev/gpio/<name>/{value,direction}, one subtree per granted pin.
+	  Needs PlatformGpio* — present on ESP-IDF and NuttX, absent on
+	  Linux (grant fails the launch until the libgpiod backing lands).
 
 config WANTED_VFS_UART
 	bool "uart — serial port"
 	default n
 	help
-	  /dev/uart/<port>/{data,baud,format}: one subtree per port the launch
-	  config granted, with the line settings writable at runtime because one
-	  link can carry two of them. One wapp holds a port exclusively; routing
-	  several logical users onto one link is a broker wapp's job. Needs a
-	  PlatformUart* backing — present on ESP-IDF and Linux, absent on NuttX,
-	  where a grant fails the launch.
+	  /dev/uart/<port>/{data,baud,format}, one wapp holds a port
+	  exclusively. Needs PlatformUart* — present on ESP-IDF and Linux,
+	  absent on NuttX (grant fails the launch).
 
 config WANTED_VFS_OTA
 	bool "ota — A/B firmware update"
@@ -183,10 +150,9 @@ config WANTED_PIPE_MAX_PIPES
 	default 8
 	range 1 64
 	help
-	  The pipe store is ONE engine-wide instance of count * buf bytes,
-	  allocated whether or not any wapp opens /dev/pipe — 32 KiB at the
-	  defaults, ~6 % of a 512 KiB part. Raising it also grows a stack frame:
-	  the driver's readdir sizes a local array by this.
+	  One engine-wide table of count * buf bytes, allocated whether or
+	  not any wapp opens /dev/pipe (32 KiB at the defaults). Also sizes
+	  a stack array in the driver's readdir.
 
 config WANTED_GPIO_MAX_PINS
 	int "Pins per gpio grant"
@@ -210,18 +176,9 @@ config WANTED_ESP_IDF_WIFI_BOOT_JOIN
 	bool "Join Wi-Fi before starting the supervisor (ESP-IDF)"
 	default n
 	help
-	  Bring the radio up in the boot path, before the supervisor starts.
-
-	  Needed by a supervisor that reaches its control plane over the network:
-	  nothing else joins Wi-Fi at boot, and a production supervisor is not a
-	  shell that could be told to. Leave this off for an interactive build,
-	  which brings the radio up itself through /dev/wifi. No effect on a
-	  target without the ESP-IDF boot path.
-
-	  Credentials come from two lines of a file on the persist partition
-	  (/data/wifi.conf: SSID, then passphrase). When that file is absent the
-	  boot path asks for them on the console and writes it, so only the first
-	  boot of a board needs an operator. They are never compiled in.
+	  Joins Wi-Fi in the boot path, before the supervisor starts — for a
+	  supervisor that cannot bring the radio up itself. Credentials come
+	  from /data/wifi.conf, prompted on first boot; never compiled in.
 
 config WANTED_OTA_SLOT_ROOT
 	string "OTA slot directory (host backings)"
@@ -245,13 +202,9 @@ config WANTED_LOG_PERSIST_CAP
 	default 1024
 	range 0 8192
 	help
-	  The engine's own log is mirrored into memory a reset does not clear,
-	  so the boot after a watchdog can be asked what the boot before it
-	  said. Two buffers of this size are held: the previous boot's and the
-	  current one's. 0 disables it. Bounded separately from WANTED_LOG_CAP,
-	  because the medium is a fixed region rather than the heap — on the
-	  ESP32-S3 that is 8 KiB of RTC memory shared with everything else that
-	  survives a reset. Lost on power loss.
+	  Two buffers of this size (previous boot, current) mirrored into
+	  memory a reset does not clear — 8 KiB of RTC memory on ESP32-S3.
+	  0 disables it; lost on power loss.
 
 config WANTED_LOG_CAP
 	int "Bytes retained per wapp log"
@@ -330,14 +283,9 @@ config WANTED_MAX_WAPP_IMAGE_KB
 	default 160
 	range 64 1024
 	help
-	  Upper bound on one image the registry stores. A backing that keeps
-	  images in fixed-size raw flash slots takes this as its slot size and
-	  multiplies it by WANTED_MAX_WAPPS to size the registry partition, so
-	  raising it costs flash whether or not any image grows into it.
-
-	  A supervisor image is the largest thing the registry holds, and a
-	  registry that cannot store one is a registry a control plane cannot
-	  install a supervisor through.
+	  Upper bound on one registry image. A raw-flash-slot backing takes
+	  this as its slot size and multiplies by WANTED_MAX_WAPPS to size
+	  the partition — costs flash whether or not any image grows into it.
 
 config WANTED_WASM_STACK_SIZE
 	int "WASM operand stack per instance (bytes)"

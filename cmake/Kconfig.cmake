@@ -1,9 +1,6 @@
-# Kconfig-driven build configuration: the root Kconfig plus a .config become
-# wanted-autoconf.h (for C) and CMake variables (for conditional source lists).
-#
-# The .config lives in the build dir, not the source tree — build dirs differ
-# in configuration and stay independent. Editing it re-runs configure;
-# genconfig skips unchanged writes, so that does not cascade into a rebuild.
+# Kconfig-driven build configuration: Kconfig plus .config become
+# wanted-autoconf.h (C) and CMake variables. .config lives in the build
+# dir, not the source tree, so build dirs stay independent.
 
 find_program(WANTED_PYTHON NAMES python3 python REQUIRED)
 
@@ -23,10 +20,9 @@ set(WANTED_KCONFIG_DIR ${WANTED_ENGINE_ROOT}/tools/kconfiglib)
 # .config below, where CMake already parses it.
 set(WANTED_KCONFIG_ENGINE ${WANTED_ENGINE_ROOT}/Kconfig.engine)
 
-# .config's root differs by who is driving. Standalone, it spans the whole tree
-# so menuconfig and `just build` see the target. Embedded in a host tree, the
-# host has already decided the target by construction — offering it the menu
-# again would be a second answer to a settled question.
+# .config's root differs by who is driving. Standalone, it spans the whole
+# tree so menuconfig sees the target; embedded in a host tree, the host has
+# already decided the target by construction.
 if(_wanted_embedded)
     set(WANTED_KCONFIG_ROOT ${WANTED_KCONFIG_ENGINE})
 else()
@@ -60,17 +56,9 @@ function(_wanted_kconfig_run script)
     endif()
 endfunction()
 
-# Seed a missing .config from a named defconfig, else from the Kconfig
-# defaults. An existing .config is preserved across reconfigures — a
-# reconfigure must not silently discard a hand-edited configuration — UNLESS
-# an explicitly-named WANTED_DEFCONFIG differs from the one that last seeded
-# it: ESP-IDF's early component-requirements pass configures this component
-# before its own -D command-line cache variables are fully visible, so a
-# profile-driven embedded build (OTA_PROFILE selecting WANTED_DEFCONFIG) can
-# seed .config once from the wrong/default profile in that early pass, then
-# have the real configure pass silently keep it. Recorded via a marker file
-# rather than re-deriving it, since .config itself carries no record of which
-# defconfig produced it.
+# Seed a missing .config from a named defconfig, else Kconfig defaults.
+# Preserved across reconfigures, except a differing WANTED_DEFCONFIG
+# re-seeds — ESP-IDF's early pass can seed from the wrong profile first.
 set(_wanted_seeded_marker ${CMAKE_BINARY_DIR}/.wanted-defconfig-seeded)
 set(_wanted_last_seeded "")
 if(EXISTS ${_wanted_seeded_marker})
