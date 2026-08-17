@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.13.0 (2026-08-17)
+-------------------
 
 ### Added
 
@@ -170,7 +170,7 @@ Unreleased
 - `test-extra-drivers`: an out-of-tree driver resolves and cannot shadow a core name.
 
 0.10.0 (2026-07-20)
-------------------
+-------------------
 
 ### Added
 
@@ -269,7 +269,7 @@ Unreleased
 - `wifi` VFS driver + `wifi-connect` sample: `wlan0` scans, WPA2-associates, and reports its DHCP lease over a text node.
 
 0.7.1 (2026-06-16)
-----------
+------------------
 
 ### Fixes
 
