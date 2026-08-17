@@ -775,10 +775,9 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
             dir.d_namlen = strnlen(s.name, CONFIG_WANTED_MAX_PATH_LEN);
             dir.d_next = entryEnd;
 
-            /* Report the bytes written. Claiming the whole buffer hands the
-             * reader the part of it this never wrote, and a reader that
-             * parses that as an entry follows its length and its cookie
-             * into nothing. */
+            /* Report only the bytes written to `buf`; claiming the whole
+             * buffer would have a reader parse bytes this never wrote as
+             * an entry, following its length and cookie into nothing. */
             if (used + sizeof(dir) + dir.d_namlen > bufLen) {
                 full = true;
                 break;

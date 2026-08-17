@@ -419,9 +419,7 @@ TEST(wasi_preopen_fs, HostPathMapping_PreopenUsesWappPath) {
     VfsClose(vfs, f);
 }
 
-/* A wapp deleting a file it wrote. `VfsUnlink` dispatched for DEV, DRIVER and
- * TARFS but not PLATFORM, so this answered -ENOTSUP on every mounted
- * filesystem — the sibling operations below were covered and this was not. */
+/* A wapp deleting a file it wrote through a preopened mount. */
 TEST(wasi_preopen_fs, Unlink_RemovesFileInPreopen) {
     int host_fd = PlatformOpenStateDir("/unlink", false);
     TEST_ASSERT_EQUAL_INT(
@@ -434,7 +432,7 @@ TEST(wasi_preopen_fs, Unlink_RemovesFileInPreopen) {
 
     TEST_ASSERT_EQUAL_INT(0, VfsUnlink(vfs, vfs_fd, "doomed.txt"));
 
-    /* Gone, not merely reported gone. */
+    /* The file must actually be gone: reopening it fails. */
     TEST_ASSERT_EQUAL_INT(-ENOENT,
                           VfsOpenAt(vfs, vfs_fd, "doomed.txt", VFS_O_RDONLY));
 }

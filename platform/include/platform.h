@@ -89,10 +89,9 @@ void PlatformWakeRaise(int fd);
 bool PlatformWakeRaised(int fd);
 void PlatformWakeClose(int fd);
 
-/* Why the current boot started, as a short stable token: "poweron", "sw",
- * "panic", "task_wdt", "int_wdt", "brownout", "deepsleep" or "unknown". Writes
- * at most `len` bytes including the terminator and answers the length, or 0
- * where the platform cannot tell. */
+/* Why the current boot started, as a short stable token ("poweron", "sw",
+ * "panic", "task_wdt", "int_wdt", "brownout", "deepsleep", "unknown").
+ * Writes at most `len` bytes incl. terminator; 0 if the platform can't tell. */
 size_t PlatformResetReason(char *buf, size_t len);
 
 /* Memory a reset does not clear — a watchdog, a panic, a commanded reboot —
@@ -154,11 +153,9 @@ size_t PlatformRegistrySlots(void);
  * `ref` is ignored on CONTINUE/FINISH/ABORT. */
 int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
                           size_t nbytes);
-/* Record `ref` ("<name>[:<version>]") as firmware-provided. A seeded image is
- * written back at the next boot, so removing it is churn a supervisor cannot
- * know to avoid; PlatformRegistryRemove refuses one with -EPERM. Call it for
- * every seed on every boot, whether or not the image had to be written.
- * Backings that seed nothing ignore it. */
+/* Record `ref` ("<name>[:<version>]") as firmware-provided, so
+ * PlatformRegistryRemove refuses it with -EPERM. Call it for every seed
+ * on every boot, whether or not the image had to be written. */
 void PlatformRegistryMarkSeeded(const char *ref);
 int PlatformRegistryRemove(const reg_entry_t *entry);
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);
@@ -270,10 +267,9 @@ int PlatformNetListen(struct netCtx *ctx, const char *bindAddr, uint16_t port,
  * its own that the caller closes and frees. */
 int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out);
 
-/* Wait until `ctx` is readable — a pending connection on a listener, data on a
- * connection — or `wakeFd` is raised. Answers 0 when the call below will not
- * block, and -EINTR on a raised wake. Without a wake descriptor, answers 0 and
- * lets that call block. */
+/* Wait until `ctx` is readable — a pending connection on a listener, or
+ * data on a connection — or until `wakeFd` is raised. Answers 0 once the
+ * call below would not block, -EINTR on a raised wake. */
 int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd);
 
 /* A/B firmware OTA: dual-slot update plus rollback, backed by whatever the
@@ -287,11 +283,9 @@ typedef struct {
                             * observed) */
     char last_failed_slot; /* 'a', 'b', or '\0' if no slot has ever failed */
     int boot_attempts;     /* boot attempts recorded for active_slot */
-    /* Build-time digest of the staged image, lowercase hex, empty when nothing
-     * is staged or the target stamps none. This is what
-     * PlatformFirmwareDigest reports once that image boots, so it is the value
-     * a control plane compares to tell a staged image took -- not the digest
-     * of the bytes it downloaded, which hashes a different artifact. */
+    /* Build-time digest of the staged image, lowercase hex; empty when
+     * nothing is staged. Matches PlatformFirmwareDigest's report once
+     * that image boots, confirming to a control plane that it took. */
     char pending_digest[FIRMWARE_DIGEST_HEX_LEN + 1];
 } platform_ota_state_t;
 

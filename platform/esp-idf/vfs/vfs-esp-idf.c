@@ -551,8 +551,8 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
         seekdir(dp, (long)*cookie);
 
     /* The stream position of the entry the next call must start from. It
-     * advances only over an entry that reached the buffer, so an entry that
-     * did not fit is served next rather than skipped. */
+     * advances only over an entry that reached the buffer, so an entry
+     * that did not fit is served next. */
     long pos = (*cookie != 0) ? (long)*cookie : telldir(dp);
 
     struct dirent *ep;

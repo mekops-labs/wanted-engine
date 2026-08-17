@@ -85,8 +85,8 @@ static char *buildStatus(void) {
         return NULL;
     }
 
-    /* Absent rather than empty where nothing is staged or the target stamps no
-     * digest, so a reader never takes an empty value for an image identity. */
+    /* The line itself is omitted when nothing is staged, so a reader can
+     * never take an empty value for an image identity. */
     if (st.pending_digest[0] != '\0' && n < (int)OTA_STATUS_MAX)
         snprintf(out + n, OTA_STATUS_MAX - (size_t)n, "pending_digest: %s\n",
                  st.pending_digest);

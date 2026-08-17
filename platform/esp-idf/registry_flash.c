@@ -144,10 +144,9 @@ static bool splitRef(const char *ref, char *name, size_t nameLen, char *version,
 
 static bool slotIsMapped(int slot);
 
-/* Mark every slot referenced by a valid registry index file as used, plus every
- * slot a loaded wapp is mapped from — an index entry can be removed while its
- * image still runs, and reusing that slot erases flash under it. Creates
- * REGISTRY_ROOT if absent (fresh device), matching PlatformRegistryRead. */
+/* Mark used every slot a valid registry index references, plus every slot
+ * a loaded wapp still runs from — an index entry can outlive the image's
+ * map. Creates REGISTRY_ROOT if absent, matching PlatformRegistryRead. */
 static int scanUsedSlots(bool used[WAPP_IMAGE_MAX_SLOTS]) {
     DIR *dir;
     const struct dirent *de;
@@ -378,9 +377,9 @@ int PlatformRegistryRemove(const reg_entry_t *entry) {
 
     if (entry == NULL)
         return -EINVAL;
-    /* The next boot writes it back, so removing it frees nothing and costs a
-     * flash erase. The supervisor cannot know which images the firmware owns.
-     */
+    /* The next boot writes it back, so removing it frees nothing and
+     * costs a flash erase; the supervisor cannot know which images the
+     * firmware owns. */
     if (isSeeded(entry))
         return -EPERM;
     metaPath(path, sizeof(path), entry->name, entry->version);

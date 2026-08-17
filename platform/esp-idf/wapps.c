@@ -130,11 +130,9 @@ int PlatformWappStart(wapp_t *wapp) {
         return -ENOSPC;
     }
 
-    /* A terminal slot still holds its wapp's name, status and exit code, and a
-     * supervisor reads those after the run — `delete` is what releases one.
-     * Taking it for the next start destroys that record, so only an empty slot
-     * is free. A wapp restarting in place, the supervisor across a respawn,
-     * keeps the slot it already holds. */
+    /* A terminal slot still holds its wapp's record until `delete`
+     * releases it, so only an empty slot is free to take. A wapp
+     * restarting in place keeps the slot it already holds. */
     for (slot = 0; slot < CONFIG_WANTED_MAX_WAPPS; slot++) {
         const wapp_t *occupant = state.threads[slot].data.wapp;
         if (occupant == NULL || occupant == wapp)

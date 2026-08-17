@@ -70,8 +70,8 @@ TEST(ota_status, ReportsAConfirmedSlotBeforeAnyUpdate) {
     TEST_ASSERT_NOT_NULL(strstr(buf, "status: confirmed"));
 }
 
-/* Absent, not empty: a reader must never take a blank value for the identity
- * of an image that is not there. */
+/* Nothing staged means the field is missing from the read entirely, so
+ * a reader cannot mistake a blank value for an image that is not there. */
 TEST(ota_status, ReportsNoPendingDigestWithNothingStaged) {
     char buf[256];
     TEST_ASSERT_GREATER_THAN_INT(0, readStatus(buf, sizeof(buf)));
@@ -179,10 +179,9 @@ TEST(ota_activate, RollbackDropsThePendingSwap) {
     TEST_ASSERT_NOT_NULL(strstr(buf, "status: confirmed"));
 }
 
-/* The digest a status read reports for the staged slot is the one the running
- * image reports once that slot boots. That equality is what lets a control
- * plane confirm an update; the downloaded bytes' digest hashes a different
- * artifact and could never match. */
+/* The digest a status read reports for the staged slot is the one the
+ * running image reports once that slot boots — the equality a control
+ * plane checks to confirm an update took. */
 TEST(ota_activate, TheStagedDigestBecomesTheRunningDigest) {
     char buf[256];
     stageAnImage();

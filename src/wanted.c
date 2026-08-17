@@ -945,10 +945,9 @@ static const char *supervisorImagePath(const wantedConfig_t *cfg) {
                                                 : SUPERVISOR_IMAGE_PATH;
 }
 
-/* A supervisor image named "registry:<name>[:<version>]" comes from the wapp
- * registry, which is what a control plane can install into. Anything else is a
- * platform image path.
- */
+/* A supervisor image named "registry:<name>[:<version>]" comes from the
+ * wapp registry, which is what a control plane can install into.
+ * Anything else is a platform image path. */
 #define SUPERVISOR_REGISTRY_PREFIX "registry:"
 
 static bool supervisorIsRegistryRef(const char *path) {
@@ -959,9 +958,8 @@ static bool supervisorIsRegistryRef(const char *path) {
 }
 
 /* Load a supervisor image the registry holds. The reference is the one a
- * launch config's `image` uses, thus a supervisor is stored and named as every
- * other image is.
- */
+ * launch config's `image` uses, so a supervisor is stored and named the
+ * same way as every other image. */
 static int loadSupervisorFromRegistry(const char *path, wapp_t *w) {
     const size_t prefix = sizeof(SUPERVISOR_REGISTRY_PREFIX) - 1;
     reg_entry_t e;

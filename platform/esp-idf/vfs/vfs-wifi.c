@@ -264,10 +264,9 @@ int EspWifiBringup(const char *ssid, const char *pass, int timeoutSec) {
 
     reportVisibility(ssid);
 
-    /* Association and the lease are both asynchronous; the IP event is what
-     * makes the link usable, so that is what this waits for. A failed
-     * association is not retried by the driver, and a boot that races the AP
-     * coming back must not need an operator, so the request is repeated. */
+    /* Waits for the IP event: association and the DHCP lease are both
+     * asynchronous, and only it means the link is usable. The driver
+     * does not retry a failed association, so an unattended boot repeats it. */
     int rc = -ETIMEDOUT;
     for (int tenths = 0; tenths < timeoutSec * 10; tenths++) {
         if (tenths % 50 == 0 && !g_wifiConnected) {

@@ -346,8 +346,8 @@ TEST(vfs_registry_driver, Unlink_NamePrefix_ReturnsEnoent) {
     TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Unlink(drv->ctx, 0, "app1x"));
 }
 
-/* State is per descriptor: opening and closing another one must not disturb an
- * install. Sharing it made the second write of an install answer -EBADF. */
+/* State is per descriptor: opening and closing another one must not
+ * disturb an install. */
 TEST(vfs_registry_driver, Install_SurvivesAnotherDescriptorClosing) {
     SeedTwo();
     int install = drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
@@ -360,8 +360,7 @@ TEST(vfs_registry_driver, Install_SurvivesAnotherDescriptorClosing) {
     TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, install, "{}", 2));
 }
 
-/* An install must not be renamed by a later open. The write ref used to be one
- * field for the whole driver, so the second open retargeted the first. */
+/* An install must not be renamed by a later open. */
 TEST(vfs_registry_driver, Install_KeepsItsRefAcrossAnotherOpen) {
     int first = drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
     int second = drv->Open(drv->ctx, "other:2.0.0", VFS_O_WRONLY);
@@ -371,8 +370,7 @@ TEST(vfs_registry_driver, Install_KeepsItsRefAcrossAnotherOpen) {
     TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, first, "{}", 2));
 }
 
-/* The end-of-file flag is per descriptor. It was a function-static shared by
- * every reader, so one reader ended another's read. */
+/* The end-of-file flag is per descriptor. */
 TEST(vfs_registry_driver, ReadEntry_EofIsPerDescriptor) {
     SeedTwo();
     int a = OpenEntry("app1");
@@ -407,10 +405,9 @@ TEST(vfs_registry_driver, ReadDir_EntryFd_ReturnsEnotdir) {
                                        sizeof(buf), &cookie, &used));
 }
 
-/* A buffer too small for every entry must report the bytes it did write and
- * leave the cookie on the entry that did not fit. Reporting the whole buffer
- * hands the reader bytes this never wrote, and a reader that parses those as
- * an entry follows a length and a cookie that lead nowhere. */
+/* A buffer too small for every entry must report only the bytes it wrote
+ * and leave the cookie on the entry that did not fit — claiming the whole
+ * buffer would hand the reader bytes this never wrote. */
 TEST(vfs_registry_driver, ReadDir_ShortBuffer_ReportsWhatItWrote) {
     SeedTwo();
     drv->Open(drv->ctx, "/", VFS_O_RDONLY);

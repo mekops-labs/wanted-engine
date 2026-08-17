@@ -40,8 +40,8 @@ typedef enum {
 
 typedef struct {
     reg_fd_kind_t kind;
-    /* ENTRY: a copy rather than an index into the shared table, which an
-     * unlink or another open reloads underneath. */
+    /* ENTRY: holds its own copy, since an unlink or another open
+     * reloads the shared table underneath an open descriptor. */
     reg_entry_t entry;
     bool readDone;
     /* WRITE: the install target, used to name the stored file at finalize,
