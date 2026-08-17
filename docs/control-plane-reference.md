@@ -67,7 +67,7 @@ The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, `r
 write /dev/wanted/ctl delete app1
 ```
 
-It frees a `create` reservation (`created`/`not_started`) and/or a terminal platform slot (`exited`/`failure`). The slot allocator already reuses a terminal slot on the next `start`, so `delete` is for explicitly reclaiming a name — releasing the `wapps/` entry and any buffered config — without launching another wapp.
+It frees a `create` reservation (`created`/`not_started`) and/or a terminal platform slot (`exited`/`failure`). Every `start` allocates a fresh wapp record, so a terminal slot is never implicitly reused by the next `start` — `delete` is the only way to release it, including to restart the same name.
 
 | Target state | Result |
 |--------------|--------|
@@ -163,7 +163,7 @@ stateDiagram-v2
     failure --> [*]: delete
 ```
 
-`delete` is the only edge back to `[*]` from `created`/`not_started`; a terminal `exited`/`failure` slot also leaves via `delete` (or is silently reused by the next `start`). A `running`/`starting` wapp has no `delete` edge — stop it first.
+`delete` is the only edge back to `[*]` from `created`/`not_started`; a terminal `exited`/`failure` slot leaves only via `delete` — a `start` never implicitly reuses one, even for the same name. A `running`/`starting` wapp has no `delete` edge — stop it first.
 
 `state` is the authoritative observed status. A supervisor maps these tokens onto its own reconciliation state machine; `starting` and `stopping` are supervisor-side transient states, not engine tokens.
 
