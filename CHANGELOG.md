@@ -26,8 +26,8 @@ Unreleased
 - A board profile can seed wapps built outside this repository:
   `WANTED_EXTRA_SEEDS` takes `<ref>=<path to .wasm>` entries.
 - An ESP32-S3 board configuration for the Telegraph display:
-  `OTA_PROFILE=s3-telegraph`, `uart` built in, wsh as supervisor, wapps
-  seeded from `TELEGRAPH_WAPPS`.
+  `OTA_PROFILE=s3-telegraph-sheriff`, `uart` built in, Sheriff as
+  supervisor, wapps from the registry, a boot-time network join.
 - The registry refuses to remove an image the firmware seeded (`-EPERM`); a
   supervisor may sweep everything else without knowing which images the
   board provides.
@@ -52,8 +52,9 @@ Unreleased
 
 - `CONFIG_ESP_TASK_WDT_PANIC` is on: a wedged task now resets the board
   instead of only printing.
-- The `s3-telegraph` and `s3-sheriff` seed lists drop `looper`, `devcheck`
-  and `blink`; only `wifi-connect` and the firmware installer stay seeded.
+- The ESP-IDF firmware seed list drops `looper`, `devcheck` and `blink`;
+  only `wifi-connect` and the firmware installer stay seeded on every
+  board.
 
 ### Fixed
 
