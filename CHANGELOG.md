@@ -6,43 +6,66 @@ Unreleased
 
 ### Added
 
-- `/dev/ota` reports a `pending_digest` line: the staged image's own build-time digest, which is what `/proc/wanted`'s `digest` reports once that slot boots. Confirming an update compares these two; the digest of the bytes downloaded hashes a different artifact and can never match. Absent while nothing is staged.
-- An ESP-IDF boot-time Wi-Fi join (`CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN`), for a supervisor that reaches its control plane over the network: nothing else brings the radio up before the supervisor starts. Credentials come from `/data/wifi.conf`, or from a console prompt that writes it, so only a board's first boot needs an operator; the radio keeps them in RAM.
-- An ESP32-S3 board configuration running Sheriff: `OTA_PROFILE=s3-sheriff`, the `s3-wapps` A/B layout with the production supervisor and the boot-time join.
-- The supervisor image may come from the wapp registry: `imagePath` of the form `registry:<name>[:<version>]` resolves the reference the way a launch config's `image` does. A board whose image path is compiled in has no other source a control plane can write to, and `reload-supervisor` then adopts whatever the registry holds.
-- A `gpio` grant entry takes `init=0|1`, the level an output holds from the moment the grant opens it, written before the pad becomes an output. Without it every output starts low, which holds a reset line asserted. Default `0`; on an input it fails the launch.
+- `/dev/ota` reports `pending_digest`: the staged image's build-time digest,
+  compared against `/proc/wanted`'s `digest` once it boots. Absent while
+  nothing is staged.
+- An ESP-IDF boot-time Wi-Fi join (`CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN`)
+  brings the radio up before the supervisor starts, from `/data/wifi.conf`
+  or a console prompt; credentials stay in RAM.
+- An ESP32-S3 board configuration running Sheriff: `OTA_PROFILE=s3-sheriff`,
+  the `s3-wapps` A/B layout with the production supervisor and the
+  boot-time join.
+- The supervisor image may come from the wapp registry: `imagePath` of the
+  form `registry:<name>[:<version>]` resolves like a launch config's `image`.
+- A `gpio` grant entry takes `init=0|1`, the level an output holds from the
+  moment the grant opens it. Default `0`; invalid on an input.
 - ESP32-S3 A/B app slots are 1792 KiB, up from 1600, taken from `persist`. A
   slot size must be a multiple of 64 KiB.
 - `CONFIG_WANTED_MAX_WAPP_IMAGE_KB` bounds one registry image, default 160 KiB.
   The Telegraph profiles take 256 KiB over 12 slots.
-- A board profile can seed wapps built outside this repository: `WANTED_EXTRA_SEEDS` takes `<ref>=<path to .wasm>` entries, and the declarations and seed calls are generated, so the boot path names no board's wapp.
-- An ESP32-S3 board configuration for the Telegraph display: `OTA_PROFILE=s3-telegraph`, the `s3-wapps` A/B layout with the `uart` driver built in, wsh as the supervisor, and the wapps of the device seeded from the firmware. `TELEGRAPH_WAPPS` gives the directory that holds them.
-
-### Added
-
-- The registry refuses to remove an image the firmware seeded (`-EPERM`), so a
-  supervisor may sweep everything a device no longer needs without knowing which
-  images the board provides. A seed is written back at the next boot anyway.
+- A board profile can seed wapps built outside this repository:
+  `WANTED_EXTRA_SEEDS` takes `<ref>=<path to .wasm>` entries.
+- An ESP32-S3 board configuration for the Telegraph display:
+  `OTA_PROFILE=s3-telegraph`, `uart` built in, wsh as supervisor, wapps
+  seeded from `TELEGRAPH_WAPPS`.
+- The registry refuses to remove an image the firmware seeded (`-EPERM`); a
+  supervisor may sweep everything else without knowing which images the
+  board provides.
 - The engine's own error channel is readable: `LOG_ERROR` output is captured
-  into the log store under `.engine` and served by the existing log mount, so a
-  board with no console can be asked what happened. A `mounts[]` grant of
-  `name=.engine` gives that log and nothing else. The store gains a slot so
-  wapp churn cannot evict it.
+  under `.engine`, served by the log mount. A `mounts[]` grant of
+  `name=.engine` gives that log and nothing else.
+- The log store gains a reserved slot for `.engine` so wapp churn cannot
+  evict it.
+- A wake descriptor a blocking wait can watch, raised by a stop to end a
+  wait parked in a host call. Backed by eventfd on ESP-IDF, a pipe on the
+  test platform.
+- The `socket`, `uart` and pipe drivers watch it: a blocked accept,
+  connect, read or write ends on a stop. UART's transmit drain before a
+  rate change is capped at 1 s.
+- The engine's log survives a reset: mirrored into RTC memory on ESP-IDF
+  (nothing on a host), served as `.engine.prev`. Sized by
+  `WANTED_LOG_PERSIST_CAP`; lost on power loss.
+- `/proc/wanted` and the log carry the reset reason (power-on, watchdog,
+  panic, commanded reboot), read from `PlatformResetReason`.
+
+### Changed
+
+- `CONFIG_ESP_TASK_WDT_PANIC` is on: a wedged task now resets the board
+  instead of only printing.
+- The `s3-telegraph` and `s3-sheriff` seed lists drop `looper`, `devcheck`
+  and `blink`; only `wifi-connect` and the firmware installer stay seeded.
 
 ### Fixed
 
 - `ENOTEMPTY`, `ELOOP`, `EOVERFLOW` and `ENOLCK` reached a wapp as `EINVAL`,
-  having no WASI mapping. A directory delete that found entries left reported a
-  bad argument, so a supervisor could not evict a cache entry at all.
-- A wapp start took the first slot holding a finished wapp, freeing that wapp's
-  record — its name, status and exit code — with it. A supervisor then could not
-  tell a job that had run from one that never existed, and a firmware install
-  that staged successfully was reinstalled every tick, forever. Only an empty
-  slot is free now; `delete` is what empties one.
-- A directory read that ran out of buffer reported the whole buffer as filled,
-  handing the reader bytes it never wrote and skipping the entry that did not
-  fit. A supervisor walking a directory past ~10 entries span until the task
-  watchdog fired. Every VFS driver carried the same code.
+  having no WASI mapping. A non-empty directory delete reported a bad
+  argument instead.
+- A wapp start took the first slot holding a finished wapp, erasing its
+  record. A finished job was then indistinguishable from one that never
+  ran. Only an empty slot is free now.
+- A directory read past its buffer's capacity reported the whole buffer
+  filled, skipping the entry that did not fit and spinning a walker past
+  ~10 entries. Every VFS driver carried the same code.
 - The registry driver kept one set of state for every open descriptor, so a
   second opener disturbed an install and one close answered for another's writes.
 - An ESP-IDF registry install could take a slot a loaded wapp still runs from,
@@ -53,9 +76,16 @@ Unreleased
   registry holds unless the root had been opened first.
 - A registry lookup matched a name by prefix, so `app` answered for `app-v2`.
   Both halves of a ref are compared in full.
-- ESP-IDF firmware reported `version: unknown` at `/proc/wanted`: the component compiles the engine core itself and nothing defined the version. A checkout with no reachable tag now fails the build.
-- The ESP-IDF build compiled the `gpio`, `uart` and `ota` drivers unconditionally, so deselecting any of them broke the build.
-- A build with `CONFIG_WANTED_VFS_UART=y` failed on ESP-IDF: `driver/uart.h` was off the include path. The component requirements of the driver backings are resolved in an expansion pass that runs before the engine's configuration exists, so they are listed unconditionally.
+- ESP-IDF firmware reported `version: unknown` at `/proc/wanted`: nothing
+  defined it. A checkout with no reachable tag now fails the build.
+- The ESP-IDF build compiled the `gpio`, `uart` and `ota` drivers
+  unconditionally, so deselecting any of them broke the build.
+- A build with `CONFIG_WANTED_VFS_UART=y` failed on ESP-IDF: `driver/uart.h`
+  was off the include path. Component requirements are now listed
+  unconditionally.
+- A VFS driver's unassigned vtable slot held heap garbage rather than
+  `NULL`; a caller's `NULL` check passed on it and called garbage as a
+  function.
 
 0.12.0 (2026-08-05)
 -------------------
