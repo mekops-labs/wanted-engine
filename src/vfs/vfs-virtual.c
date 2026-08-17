@@ -385,7 +385,7 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
      * that reached the buffer, so one that did not fit is served next. */
     size_t next = (size_t)*cookie;
 
-    for (size_t i = next; i < (size_t)d->cnt; i++) {
+    for (size_t i = next; i < d->cnt; i++) {
         dir.d_ino = i - 1;
         dir.d_namlen = strnlen(d->entries[i].name, MAX_ENTRY_NAME_LEN);
         dir.d_type = d->entries[i].drv ? d->entries[i].drv->filetype

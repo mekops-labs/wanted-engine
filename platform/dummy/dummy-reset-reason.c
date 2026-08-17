@@ -26,9 +26,7 @@ size_t PlatformResetReason(char *buf, size_t len) {
     }
     size_t n = strlen(reason);
     if (n == 0 || n + 1 > len) {
-        if (len > 0) {
-            buf[0] = '\0';
-        }
+        buf[0] = '\0';
         return 0;
     }
     memcpy(buf, reason, n + 1);

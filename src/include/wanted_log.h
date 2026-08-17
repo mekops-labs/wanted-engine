@@ -8,10 +8,10 @@
 #include <string.h>
 #include <unistd.h>
 
-/* Capture of the error channel into the process-wide log store, so the same
- * bytes are readable on a board whose console nobody can reach. Declared
- * rather than included: log-store.h is not a header of static inlines.
- * See decision record on engine log read-back. */
+/* Captures the error channel into the process-wide log store, so it is
+ * readable on a board whose console is unreachable. Declared directly:
+ * this header of static inlines must not include log-store.h. */
+/* NOLINTNEXTLINE(readability-redundant-declaration) */
 void WantedLogCapture(const void *buf, size_t n);
 
 /* Always-compiled error channel — config and launch faults must stay

@@ -146,6 +146,9 @@ int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd) {
     return 0;
 }
 
+/* `ctx` is only read here; the signature matches the platform API's fixed
+ * prototype. */
+/* cppcheck-suppress constParameterPointer */
 int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out) {
     if (!ctx || !out)
         return -EINVAL;

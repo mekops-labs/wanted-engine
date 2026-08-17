@@ -47,12 +47,12 @@ size_t LogStoreList(log_store_t *s, char names[][WAPP_MAX_NAME_LEN],
 /* Append the engine's own error channel to WANTED_ENGINE_LOG_NAME's ring, so a
  * board with no console can be asked what happened. Declared for wanted_log.h,
  * which is a header of static inlines and must not pull this one in. */
+/* NOLINTNEXTLINE(readability-redundant-declaration) */
 void WantedLogCapture(const void *buf, size_t n);
 
-/* Adopt memory a reset does not clear: the log it holds becomes the previous
- * boot's, and this boot writes to the other half. Idempotent; call once before
- * the supervisor starts. Without such memory the store keeps no previous log
- * and every read of WANTED_PREV_LOG_NAME answers absent. */
+/* Adopt memory a reset does not clear: its log becomes the previous
+ * boot's, and this boot writes to the other half. Idempotent; call once
+ * before the supervisor starts; absent such memory, keeps no previous log. */
 void LogStorePersistInit(log_store_t *s);
 
 /* Forget the adopted memory so the next LogStorePersistInit adopts it again.

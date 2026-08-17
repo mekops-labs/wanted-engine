@@ -92,7 +92,8 @@ void LogStorePersistInit(log_store_t *s) {
     }
 
     unsigned char *mem = PlatformPersistMem(&len);
-    size_t need = sizeof(persist_hdr_t) + CONFIG_WANTED_LOG_PERSIST_CAP * 2;
+    size_t need =
+        sizeof(persist_hdr_t) + ((size_t)CONFIG_WANTED_LOG_PERSIST_CAP * 2);
     if (mem == NULL || len < need) {
         return; /* no such memory here, or too little of it */
     }
@@ -111,8 +112,8 @@ void LogStorePersistInit(log_store_t *s) {
         s->prev_valid = false;
     } else {
         /* What the previous boot wrote is the half it had live. A length past
-         * the cap means the region was written by a build with a different
-         * one, so it is unreadable rather than content. */
+         * the cap means the region came from a build with a different cap;
+         * treat it as unreadable. */
         s->prev_valid = h->len[h->live] <= CONFIG_WANTED_LOG_PERSIST_CAP;
         h->live = h->live == 0 ? 1 : 0;
         h->len[h->live] = 0;
@@ -178,7 +179,9 @@ void LogStoreAppend(log_store_t *s, const char *name, const void *buf,
         return;
 
     PlatformMutexLock(s->lock);
-    /* The engine's own channel is mirrored where a reset cannot clear it. */
+    /* The engine's own channel is mirrored where a reset cannot clear it.
+     * strncmp stops at the literal's own NUL well inside WAPP_MAX_NAME_LEN. */
+    /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
     if (strncmp(name, WANTED_ENGINE_LOG_NAME, WAPP_MAX_NAME_LEN) == 0) {
         persistAppend(s, (const char *)buf, n);
     }
@@ -207,6 +210,7 @@ size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap) {
         return 0;
 
     PlatformMutexLock(s->lock);
+    /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
     if (strncmp(name, WANTED_PREV_LOG_NAME, WAPP_MAX_NAME_LEN) == 0) {
         size_t copied = 0;
         if (s->prev_valid && s->phdr != NULL) {
@@ -240,6 +244,7 @@ bool LogStoreHas(log_store_t *s, const char *name) {
         return false;
 
     PlatformMutexLock(s->lock);
+    /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
     if (strncmp(name, WANTED_PREV_LOG_NAME, WAPP_MAX_NAME_LEN) == 0) {
         bool present = s->prev_valid && s->phdr != NULL;
         PlatformMutexUnlock(s->lock);
