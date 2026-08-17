@@ -11,6 +11,7 @@
 #include <vfs-drivers.h>
 #include <vfs.h>
 #include <wanted-api.h>
+#include <wanted-autoconf.h>
 
 /* Exercises the read-only log-mount driver (vfs-logmount.c) directly over the
  * process-wide LogStore. */
@@ -115,7 +116,9 @@ TEST(logmount, ReadsTheEngineLog) {
 
     int fd = drv->Open(drv->ctx, "/" WANTED_ENGINE_LOG_NAME, VFS_O_RDONLY);
     TEST_ASSERT_TRUE(fd >= 0);
-    char buf[128] = {0};
+    /* The ring is process-wide and other groups share it, so a read must
+     * cover the whole cap to be sure of seeing this call's own write. */
+    char buf[CONFIG_WANTED_LOG_CAP + 1] = {0};
     int n = drv->Read(drv->ctx, fd, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
     buf[n] = '\0';
