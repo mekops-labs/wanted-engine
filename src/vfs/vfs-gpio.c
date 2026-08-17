@@ -99,8 +99,8 @@ static bool validName(const char *s) {
     return n > 0 && n <= GPIO_NAME_MAX;
 }
 
-/* One entry: <name>:<address>:<direction>, then optional pull= and drive=
- * fields. Fills `pin` and `cfg`. Returns 0 or -EINVAL. */
+/* One entry: <name>:<address>:<direction>, then optional pull=, drive= and
+ * init= fields. Fills `pin` and `cfg`. Returns 0 or -EINVAL. */
 static int parseEntry(char *entry, struct gpio_pin_t *pin,
                       plat_gpio_cfg_t *cfg) {
     char *cur = entry;
@@ -124,6 +124,8 @@ static int parseEntry(char *entry, struct gpio_pin_t *pin,
 
     cfg->pull = PLAT_GPIO_PULL_NONE;
     cfg->drive = PLAT_GPIO_DRIVE_PP;
+    cfg->init = 0;
+    bool sawInit = false;
 
     for (;;) {
         const char *extra = nextField(&cur, ':');
@@ -139,9 +141,19 @@ static int parseEntry(char *entry, struct gpio_pin_t *pin,
             cfg->drive = PLAT_GPIO_DRIVE_PP;
         else if (strcmp(extra, "drive=od") == 0)
             cfg->drive = PLAT_GPIO_DRIVE_OD;
-        else
+        else if (strcmp(extra, "init=0") == 0) {
+            cfg->init = 0;
+            sawInit = true;
+        } else if (strcmp(extra, "init=1") == 0) {
+            cfg->init = 1;
+            sawInit = true;
+        } else
             return -EINVAL;
     }
+
+    /* An input drives no level, so a grant that states one is a mistake. */
+    if (sawInit && cfg->direction != PLAT_GPIO_DIR_OUT)
+        return -EINVAL;
 
     strncpy(pin->name, name, sizeof(pin->name) - 1);
     strncpy(pin->address, addr, sizeof(pin->address) - 1);

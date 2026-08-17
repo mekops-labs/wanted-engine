@@ -130,6 +130,10 @@ struct vfs_ctx_t {
 
     /* System-level privilege flag — enables privileged /proc entries. */
     bool privileged;
+
+    /* Raised to end a blocking wait when the wapp is stopping; -1 when the
+     * platform interrupts by signal. Owned here, closed by VfsDestroy. */
+    int wake_fd;
 };
 
 /* Flat-directory readdir helper — shared by DevFS root, NetFS root, ProcFS.

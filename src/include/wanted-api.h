@@ -11,9 +11,10 @@
 #include <wanted-host-guard.h>
 #include <wanted.h>
 
-/* Per-wapp log ring slots. Derived rather than configured: a slot exists for
- * each wapp the engine can run, so the two counts cannot disagree. */
-#define CONFIG_WANTED_LOG_SLOTS CONFIG_WANTED_MAX_WAPPS
+/* One ring per wapp the engine can run, plus one for the engine's own
+ * error channel, so a full table's LRU eviction cannot drop the
+ * engine's own record of a failure. */
+#define CONFIG_WANTED_LOG_SLOTS (CONFIG_WANTED_MAX_WAPPS + 1)
 
 /* Version of the contract between the engine and a supervisor wapp: the shape
  * of the /dev/wanted control plane, its verbs, and the wapp states it reports.

@@ -141,11 +141,15 @@ int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
     if (buf == NULL)
         return -EINVAL;
 
-    /* The ref ("<name>:<version>") names the install target; it is consumed at
-     * START_WRITE and ignored thereafter. */
+    /* The ref names the install target, consumed at START_WRITE and
+     * ignored thereafter. Only a started write may continue — arming
+     * it on a failed start would mask the real error with -EBADF. */
     if (*cont == false) {
+        int ret = PlatformRegistryWrite(START_WRITE, ref, buf, bufLen);
+        if (ret < 0)
+            return ret;
         *cont = true;
-        return PlatformRegistryWrite(START_WRITE, ref, buf, bufLen);
+        return ret;
     }
 
     return PlatformRegistryWrite(CONTINUE_WRITE, ref, buf, bufLen);
@@ -454,6 +458,11 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
     if (NULL == drv) {
         DEBUG_TRACE("can't load %s driver", name);
         return -EINVAL;
+    }
+
+    /* A driver that blocks watches this beside its own resource. */
+    if (drv->SetWake != NULL) {
+        drv->SetWake(drv->ctx, VfsWakeFd(c));
     }
 
     return installTo(c, path, drv);

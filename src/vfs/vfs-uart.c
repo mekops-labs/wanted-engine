@@ -52,9 +52,13 @@ struct vfs_driver_ctx_t {
     uint8_t parity;
     uint8_t stopbits;
     struct uart_fd_t fds[UART_MAX_FDS];
+    /* Checked between poll attempts so a stop ends the wait; -1 when the
+     * platform interrupts by signal. */
+    int wakeFd;
 };
 
 static int _Destroy(struct vfs_driver_t *d);
+static void _SetWake(vfs_driver_ctx_t d, int fd);
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags);
 static int _Close(vfs_driver_ctx_t d, int fd);
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
@@ -266,6 +270,7 @@ vfs_driver_t *VfsUartInit(const wapp_t *wapp, const char *options) {
         return NULL;
     }
     memset(ctx, 0, sizeof(*ctx));
+    ctx->wakeFd = -1; /* 0 is a valid descriptor */
     memset(driver, 0, sizeof(*driver));
 
     driver->bytesId = *(const uint32_t *)(id);
@@ -275,6 +280,7 @@ vfs_driver_t *VfsUartInit(const wapp_t *wapp, const char *options) {
     driver->Open = _Open;
     driver->Close = _Close;
     driver->Stat = _Stat;
+    driver->SetWake = _SetWake;
     driver->Read = _Read;
     driver->Write = _Write;
     driver->ReadDir = _ReadDir;
@@ -294,6 +300,11 @@ vfs_driver_t *VfsUartInit(const wapp_t *wapp, const char *options) {
     }
 
     return driver;
+}
+
+static void _SetWake(vfs_driver_ctx_t d, int fd) {
+    if (d != NULL)
+        d->wakeFd = fd;
 }
 
 static int _Destroy(struct vfs_driver_t *d) {
@@ -409,8 +420,11 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
             return n;
         if (f->nonblock)
             return -EAGAIN;
-        /* A signalled stop interrupts the sleep. Return -EINTR so the read
-         * unwinds to the interpreter, where the terminate flag is honoured. */
+        /* A stop ends the wait: a signal interrupts the sleep, and where the
+         * platform has none the wake descriptor is raised instead. Return
+         * -EINTR so the read unwinds and the terminate flag is honoured. */
+        if (PlatformWakeRaised(d->wakeFd))
+            return -EINTR;
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    UART_POLL_INTERVAL_NS, 0) == -EINTR)
             return -EINTR;
@@ -482,6 +496,8 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
             return n;
         if (f->nonblock)
             return -EAGAIN;
+        if (PlatformWakeRaised(d->wakeFd))
+            return -EINTR;
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    UART_POLL_INTERVAL_NS, 0) == -EINTR)
             return -EINTR;

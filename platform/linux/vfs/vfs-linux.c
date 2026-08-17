@@ -50,6 +50,7 @@ static int _Rename(vfs_driver_ctx_t d, int old_fd, const char *old_path,
                    int new_fd, const char *new_path);
 static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path);
 static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path);
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 
 struct vfs_driver_ctx_t {
     const char *rootPath;
@@ -73,6 +74,9 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
         DEBUG_TRACE("can't allocate memory");
         return NULL;
     }
+    /* Zero first: an unassigned vtable slot would otherwise hold heap
+     * garbage, which the caller reads as a function to call. */
+    memset(driver, 0, sizeof(*driver));
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(
         sizeof(struct vfs_driver_ctx_t));
@@ -112,6 +116,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
     driver->Rename = _Rename;
     driver->Mkdir = _Mkdir;
     driver->Rmdir = _Rmdir;
+    driver->Unlink = _Unlink;
 
     return driver;
 }
@@ -288,6 +293,12 @@ static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path) {
     return PlatformFsRmdir(fd, path);
 }
 
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
+    if (d->readonly)
+        return -EROFS;
+    return PlatformFsUnlink(fd, path);
+}
+
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed) {
     vfs_dirent_t dir = {0};
@@ -295,37 +306,50 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     DIR *dp = fdopendir(fd);
     (void)d;
     struct dirent *ep;
+    long pos = 0;
 
     if (dp != NULL) {
         if (*cookie != 0) {
             seekdir(dp, (long)*cookie);
         }
 
+        /* The stream position of the entry the next call must start from.
+         * It advances only over an entry that reached the buffer, so an
+         * entry that did not fit is served next. */
+        pos = telldir(dp);
+
         while ((ep = readdir(dp))) {
+            long after = telldir(dp);
+
             if (memcmp(".", ep->d_name, 2) == 0 ||
                 memcmp("..", ep->d_name, 3) == 0) {
+                pos = after;
                 continue;
             }
             dir.d_ino = ep->d_ino;
             dir.d_namlen = strnlen(ep->d_name, sizeof(ep->d_name));
             dir.d_type = convertDirtype(ep->d_type);
-            dir.d_next = telldir(dp);
+            dir.d_next = (uint64_t)after;
 
-            if (used + sizeof(dir) + dir.d_namlen > bufLen) {
-                used = bufLen;
+            /* Report the bytes written. Claiming the whole buffer hands the
+             * reader the part of it this never wrote, and a reader that
+             * parses that as an entry follows its length and its cookie
+             * into nothing. */
+            if (used + sizeof(dir) + dir.d_namlen > bufLen)
                 break;
-            }
+
             memcpy((char *)buf + used, &dir, sizeof(dir));
             memcpy((char *)buf + sizeof(dir) + used, ep->d_name, dir.d_namlen);
 
             used += sizeof(dir) + dir.d_namlen;
+            pos = after;
         }
     } else {
         return -errno;
     }
 
     *bufUsed = used;
-    *cookie = dir.d_next; // last found directory entry
+    *cookie = (uint64_t)pos;
 
     return 0;
 }

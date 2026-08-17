@@ -1,7 +1,6 @@
-# TLS backend for this platform. The engine asks for secure sockets through
-# Kconfig; Linux answers with OpenSSL. REQUIRED on purpose: a configuration
-# that asked for TLS must not quietly produce a binary without it, which is
-# what auto-detection here used to do.
+# TLS backend for this platform: Linux answers with OpenSSL. REQUIRED on
+# purpose — a configuration that asked for TLS must not quietly produce a
+# binary without it.
 if(CONFIG_WANTED_VFS_SOCKET_TLS)
     find_package(OpenSSL REQUIRED)
     set(SECURE_SOCKETS TRUE)
@@ -19,6 +18,9 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/posix/clock.c
     ${CMAKE_SOURCE_DIR}/platform/posix/fs.c
     ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/wake.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/persist-mem.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/reset-reason.c
     ${CMAKE_SOURCE_DIR}/platform/posix/registry-store.c
     ${CMAKE_SOURCE_DIR}/platform/posix/socket.c
     ${CMAKE_SOURCE_DIR}/platform/posix/wapps-image.c

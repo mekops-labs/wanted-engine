@@ -6,6 +6,9 @@ set(sources
     dummy-uart.c
     dummy-extram.c
     dummy-registry.c
+    dummy-wake.c
+    dummy-persist-mem.c
+    dummy-reset-reason.c
     dummy-wapps.c
     dummy-net.c
     dummy-ota.c

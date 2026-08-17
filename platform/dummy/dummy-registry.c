@@ -117,3 +117,10 @@ int PlatformRegistryRemove(const reg_entry_t *entry) {
     memset(&g_registry[idx], 0, sizeof(g_registry[idx]));
     return 0;
 }
+
+/* The dummy registry is an in-memory array bounded only by its own cap,
+ * which is not a device ceiling worth reporting. */
+size_t PlatformRegistrySlots(void) { return 0; }
+
+/* This backing seeds nothing, so nothing is protected from removal. */
+void PlatformRegistryMarkSeeded(const char *ref) { (void)ref; }

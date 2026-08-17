@@ -3,6 +3,7 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -76,6 +77,28 @@ int PlatformWappStart(wapp_t *wapp);
  * CONFIG_WANTED_WASM_WORKER_STACK_SIZE after the platform's own flooring. */
 size_t PlatformWorkerStackSize(void);
 int PlatformWappStop(const char *name);
+
+/* A descriptor a blocking wait watches beside the one it is serving. Raising it
+ * ends that wait, which is how a stop reaches a wapp parked in a host call.
+ * -1 on a platform whose stop interrupts the worker by signal. */
+int PlatformWakeCreate(void);
+/* Raising an already-raised descriptor is a no-op; -1 is ignored. */
+void PlatformWakeRaise(int fd);
+/* Whether `fd` is raised, without waiting. A polling driver asks between
+ * attempts, where a descriptor to select on would not fit. */
+bool PlatformWakeRaised(int fd);
+void PlatformWakeClose(int fd);
+
+/* Why the current boot started, as a short stable token ("poweron", "sw",
+ * "panic", "task_wdt", "int_wdt", "brownout", "deepsleep", "unknown").
+ * Writes at most `len` bytes incl. terminator; 0 if the platform can't tell. */
+size_t PlatformResetReason(char *buf, size_t len);
+
+/* Memory a reset does not clear — a watchdog, a panic, a commanded reboot —
+ * holding whatever the previous boot left. NULL where the platform has none,
+ * and on every platform it is lost when power is. `len` takes the size. */
+void *PlatformPersistMem(size_t *len);
+
 /* Free a wapp's platform slot by name. Only a terminal slot (EXITED/FAILURE)
  * is releasable: -EBUSY while running or starting, -ENOENT if unknown. */
 int PlatformWappRelease(const char *name);
@@ -121,11 +144,19 @@ void PlatformRequestShutdown(void);
 void PlatformRequestReboot(void);
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len);
+/* How many images the registry can hold, or 0 where it is bounded only by the
+ * filesystem. A backing that keeps images in fixed flash slots has a hard
+ * ceiling, and a supervisor cannot see it coming without being told. */
+size_t PlatformRegistrySlots(void);
 /* Stream-install an image under an explicit ref ("<name>:<version>") supplied
  * at START_WRITE, which names the stored file and is the image's identity.
  * `ref` is ignored on CONTINUE/FINISH/ABORT. */
 int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
                           size_t nbytes);
+/* Record `ref` ("<name>[:<version>]") as firmware-provided, so
+ * PlatformRegistryRemove refuses it with -EPERM. Call it for every seed
+ * on every boot, whether or not the image had to be written. */
+void PlatformRegistryMarkSeeded(const char *ref);
 int PlatformRegistryRemove(const reg_entry_t *entry);
 int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);
 /* Read up to maxLen leading bytes of the stored .wapp archive without loading
@@ -150,6 +181,7 @@ int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
                      const char *new_path);
 int PlatformFsMkdir(int fd, const char *path);
 int PlatformFsRmdir(int fd, const char *path);
+int PlatformFsUnlink(int fd, const char *path);
 
 /* GPIO backing for the core /dev/gpio driver: the platform owns only the line,
  * and `address` is the grant's middle field, interpreted here and nowhere else.
@@ -171,6 +203,7 @@ typedef struct plat_gpio_cfg_t {
     uint8_t direction; /* PLAT_GPIO_DIR_* */
     uint8_t pull;      /* PLAT_GPIO_PULL_* */
     uint8_t drive;     /* PLAT_GPIO_DRIVE_*, output only */
+    uint8_t init;      /* the level an output takes at open, 0 or 1 */
 } plat_gpio_cfg_t;
 
 int PlatformGpioOpen(const plat_gpio_cfg_t *cfg, platform_gpio_t **out);
@@ -234,6 +267,11 @@ int PlatformNetListen(struct netCtx *ctx, const char *bindAddr, uint16_t port,
  * its own that the caller closes and frees. */
 int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out);
 
+/* Wait until `ctx` is readable — a pending connection on a listener, or
+ * data on a connection — or until `wakeFd` is raised. Answers 0 once the
+ * call below would not block, -EINTR on a raised wake. */
+int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd);
+
 /* A/B firmware OTA: dual-slot update plus rollback, backed by whatever the
  * target boots through. Slots are always named 'a' and 'b', so the /dev/ota
  * wire text reads the same on every platform. */
@@ -245,11 +283,9 @@ typedef struct {
                             * observed) */
     char last_failed_slot; /* 'a', 'b', or '\0' if no slot has ever failed */
     int boot_attempts;     /* boot attempts recorded for active_slot */
-    /* Build-time digest of the staged image, lowercase hex, empty when nothing
-     * is staged or the target stamps none. This is what
-     * PlatformFirmwareDigest reports once that image boots, so it is the value
-     * a control plane compares to tell a staged image took -- not the digest
-     * of the bytes it downloaded, which hashes a different artifact. */
+    /* Build-time digest of the staged image, lowercase hex; empty when
+     * nothing is staged. Matches PlatformFirmwareDigest's report once
+     * that image boots, confirming to a control plane that it took. */
     char pending_digest[FIRMWARE_DIGEST_HEX_LEN + 1];
 } platform_ota_state_t;
 

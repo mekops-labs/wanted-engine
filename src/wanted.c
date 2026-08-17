@@ -25,6 +25,7 @@
 #include <wanted-vfs-api.h>
 #include <wanted.h>
 
+#include <log-store.h>
 #include <platform.h>
 
 struct wamrData_t {
@@ -348,29 +349,41 @@ static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
 
 /* /proc/wanted — engine identity and compile-time resource ceilings. One
  * key:\tvalue line per field: human-readable, trivially split on the tab. */
+/* The reset reason as a token, or "unknown" where the platform cannot tell —
+ * a field that vanished would move every field after it. */
+static const char *resetReason(void) {
+    static char reason[24];
+    if (PlatformResetReason(reason, sizeof(reason)) == 0) {
+        return "unknown";
+    }
+    return reason;
+}
+
 static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
-    int w = snprintf((char *)buf, bufLen,
-                     "platform:\t%s\n"
-                     "version:\t%s\n"
-                     "supervisor_abi:\t%d\n"
-                     "max_wapps:\t%d\n"
-                     "max_wapp_name:\t%d B\n"
-                     "max_path:\t%d B\n"
-                     "wasm_stack:\t%d B\n"
-                     "wasm_heap:\t%d B\n"
-                     "wasm_worker_stack:\t%zu B\n"
-                     "wasm_max_pages:\t%d\n"
-                     "max_drivers:\t%d\n"
-                     "max_options:\t%d B\n"
-                     "log_slots:\t%d\n",
-                     PlatformName(), WANTED_VERSION, WANTED_SUPERVISOR_ABI,
-                     CONFIG_WANTED_MAX_WAPPS, WAPP_MAX_NAME_LEN,
-                     CONFIG_WANTED_MAX_PATH_LEN, CONFIG_WANTED_WASM_STACK_SIZE,
-                     CONFIG_WANTED_WASM_HEAP_SIZE, PlatformWorkerStackSize(),
-                     CONFIG_WANTED_WASM_MAX_MEMORY_PAGES,
-                     CONFIG_WANTED_MAX_DRIVERS_CNT,
-                     CONFIG_WANTED_MAX_OPTIONS_SIZE, CONFIG_WANTED_LOG_SLOTS);
+    int w = snprintf(
+        (char *)buf, bufLen,
+        "platform:\t%s\n"
+        "version:\t%s\n"
+        "supervisor_abi:\t%d\n"
+        "max_wapps:\t%d\n"
+        "max_wapp_name:\t%d B\n"
+        "max_path:\t%d B\n"
+        "wasm_stack:\t%d B\n"
+        "wasm_heap:\t%d B\n"
+        "wasm_worker_stack:\t%zu B\n"
+        "wasm_max_pages:\t%d\n"
+        "max_drivers:\t%d\n"
+        "max_options:\t%d B\n"
+        "log_slots:\t%d\n"
+        "reg_slots:\t%zu\n"
+        "reset_reason:\t%s\n",
+        PlatformName(), WANTED_VERSION, WANTED_SUPERVISOR_ABI,
+        CONFIG_WANTED_MAX_WAPPS, WAPP_MAX_NAME_LEN, CONFIG_WANTED_MAX_PATH_LEN,
+        CONFIG_WANTED_WASM_STACK_SIZE, CONFIG_WANTED_WASM_HEAP_SIZE,
+        PlatformWorkerStackSize(), CONFIG_WANTED_WASM_MAX_MEMORY_PAGES,
+        CONFIG_WANTED_MAX_DRIVERS_CNT, CONFIG_WANTED_MAX_OPTIONS_SIZE,
+        CONFIG_WANTED_LOG_SLOTS, PlatformRegistrySlots(), resetReason());
     if (w < 0)
         return -EIO;
 
@@ -619,6 +632,9 @@ int WantedWappRun(wapp_data_t *ctx) {
 
     /* Propagate system-level privilege flag, then register /proc entries. */
     VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
+    /* A blocking driver watches this beside its own resource, so a stop reaches
+     * a wapp parked in a host call. */
+    VfsSetWakeFd(ctx->vfs, PlatformWakeCreate());
     ProcFs_RegisterDir(ctx->vfs, "wapps", &WappsProcDirOps, true);
     ProcFs_Register(ctx->vfs, "memory", procReadMemory, true);
     /* clock_quality is unprivileged — any wapp may read it to decide whether
@@ -929,11 +945,56 @@ static const char *supervisorImagePath(const wantedConfig_t *cfg) {
                                                 : SUPERVISOR_IMAGE_PATH;
 }
 
+/* A supervisor image named "registry:<name>[:<version>]" comes from the
+ * wapp registry, which is what a control plane can install into.
+ * Anything else is a platform image path. */
+#define SUPERVISOR_REGISTRY_PREFIX "registry:"
+
+static bool supervisorIsRegistryRef(const char *path) {
+    const size_t prefix = sizeof(SUPERVISOR_REGISTRY_PREFIX) - 1;
+
+    return strncmp(path, SUPERVISOR_REGISTRY_PREFIX, prefix) == 0 &&
+           path[prefix] != '\0';
+}
+
+/* Load a supervisor image the registry holds. The reference is the one a
+ * launch config's `image` uses, so a supervisor is stored and named the
+ * same way as every other image. */
+static int loadSupervisorFromRegistry(const char *path, wapp_t *w) {
+    const size_t prefix = sizeof(SUPERVISOR_REGISTRY_PREFIX) - 1;
+    reg_entry_t e;
+    const char *ref = path + prefix;
+    const char *colon;
+
+    memset(&e, 0, sizeof(e));
+    colon = strchr(ref, ':');
+    if (colon != NULL) {
+        size_t nlen = (size_t)(colon - ref);
+
+        if (nlen >= WAPP_MAX_NAME_LEN) {
+            nlen = WAPP_MAX_NAME_LEN - 1;
+        }
+
+        memcpy(e.name, ref, nlen);
+        e.name[nlen] = '\0';
+        strncpy(e.version, colon + 1, WAPP_MAX_VERSION_LEN - 1);
+        e.version[WAPP_MAX_VERSION_LEN - 1] = '\0';
+    } else {
+        strncpy(e.name, ref, WAPP_MAX_NAME_LEN - 1);
+        e.name[WAPP_MAX_NAME_LEN - 1] = '\0';
+    }
+
+    return PlatformRegistryWappLoad(&e, w);
+}
+
 /* Load the supervisor image, falling back to the compiled-in one. */
 static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
     const char *path = supervisorImagePath(cfg);
 
-    int ret = PlatformWappLoad(path, w);
+    int ret = supervisorIsRegistryRef(path)
+                  ? loadSupervisorFromRegistry(path, w)
+                  : PlatformWappLoad(path, w);
+
     if (ret < 0 && strcmp(path, SUPERVISOR_IMAGE_PATH) != 0) {
         DEBUG_TRACE("staged supervisor %s failed (%d); using built-in %s", path,
                     ret, SUPERVISOR_IMAGE_PATH);
@@ -1070,6 +1131,10 @@ wapp_t *WantedGetCurrentSupervisor(void) {
 int WantedStart(const char *cfg, size_t cfgLen) {
     int ret;
     wapp_t *app;
+
+    /* Before anything can log: the previous boot's ring is adopted here, and
+     * this boot's writes go to the other half. */
+    LogStorePersistInit(LogStore());
 
     ret = WantedParseConfig(cfg, cfgLen);
     DEBUG_TRACE("WantedParseConfig -> %d", ret);

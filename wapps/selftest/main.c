@@ -199,6 +199,9 @@ static int create_wapp(const char *name) {
  */
 static int start_wapp(const char *name);
 
+/* Release a terminal wapp's slot via the root ctl (defined below). */
+static int delete_wapp(const char *name);
+
 /* True if directory `dir` contains an entry named `name`. */
 static int dir_has(const char *dir, const char *name) {
     DIR *d = opendir(dir);
@@ -330,6 +333,8 @@ static void robustness_checks(void) {
     tap_ok(read_path(TRAPPER_LOG, buf, sizeof(buf)) > 0 &&
                strstr(buf, TRAPPER_MARKER) != NULL,
            "log: supervisor reads the launched wapp's captured output");
+
+    delete_wapp(TRAPPER);
 }
 
 /* Poll a wapp's state node until `want_running` matches, bounded to ~10 s.
@@ -400,6 +405,7 @@ static void containment_checks(void) {
         snprintf(desc, sizeof(desc),
                  "robustness: %s is contained (dead, not running)", wapps[i]);
         tap_ok(ok, desc);
+        delete_wapp(wapps[i]);
     }
 
     tap_ok(read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
@@ -418,6 +424,7 @@ static void memcap_checks(void) {
     int bounded = bm && read_path(path, buf, sizeof(buf)) > 0 &&
                   strstr(buf, "bigmem-bounded") != NULL;
     tap_ok(bounded, "memcap: bigmem linear-memory growth is bounded at the cap");
+    delete_wapp("bigmem");
 
     launch("biginit");
     wapp_node(path, sizeof(path), "biginit", "state");
@@ -426,6 +433,7 @@ static void memcap_checks(void) {
                   strstr(buf, "failure") != NULL;
     tap_ok(refused,
            "memcap: biginit (initial memory over the cap) is refused at load");
+    delete_wapp("biginit");
 
     tap_ok(read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
                strstr(buf, "running") != NULL,
@@ -443,6 +451,7 @@ static void cpuhog_check(void) {
     int ran = launch("cpuhog") && wait_state(state, 1);
     int stopped = ran && write_path(ctl, "stop") >= 0 && wait_state(state, 0);
     tap_ok(stopped, "robustness: a never-yielding cpuhog is stoppable");
+    delete_wapp("cpuhog");
 }
 
 /* Launch a long-running wapp, confirm it runs concurrently with the
@@ -458,6 +467,8 @@ static void lifecycle_checks(void) {
     int stopped =
         write_path(LOOPER_CTL, "stop") >= 0 && wait_state(LOOPER_STATE, 0);
     tap_ok(stopped, "lifecycle: control-plane stop terminates the looper");
+
+    delete_wapp(LOOPER);
 }
 
 /* Console backing: a wapp's stdio slots default when the config omits them, and
@@ -474,6 +485,7 @@ static void console_checks(void) {
         write_path(LOOPER_CTL, "stop");
         wait_state(LOOPER_STATE, 0);
     }
+    delete_wapp(LOOPER);
 
     /* Explicit all-null console: silent, but still runs. */
     int nul = create_wapp(LOOPER) &&
@@ -484,6 +496,7 @@ static void console_checks(void) {
         write_path(LOOPER_CTL, "stop");
         wait_state(LOOPER_STATE, 0);
     }
+    delete_wapp(LOOPER);
 }
 
 /* Stop verb on a wapp's control node. Returns the write result (<0 on error,
@@ -492,6 +505,15 @@ static int stop_wapp(const char *name) {
     char ctl[96];
     wapp_node(ctl, sizeof(ctl), name, "ctl");
     return write_path(ctl, "stop");
+}
+
+/* Release a terminal wapp's slot via the root ctl, so a later start of a
+ * different name finds it empty. Only two child slots exist, so a name this
+ * phase no longer needs must be freed before the next distinct name starts. */
+static int delete_wapp(const char *name) {
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "delete %s", name);
+    return write_path(WANTED_CTL, cmd) >= 0;
 }
 
 /* Launch a wapp parked in a blocking host call, stop it, and report whether the
@@ -543,6 +565,7 @@ static void ioblock_check(void) {
     int prompt = stop_interrupts("pblock", &alive);
     tap_ok(prompt && alive, "robustness: stop interrupts an I/O-blocked wapp "
                             "(read on an empty pipe)");
+    delete_wapp("pblock");
 }
 
 /* Control-plane edge cases that must not crash the engine: stopping a wapp that
@@ -562,6 +585,10 @@ static void edge_checks(void) {
     tap_ok(rc < 0 && read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
                strstr(buf, "running") != NULL,
            "edge: stopping an unknown wapp errors cleanly");
+
+    /* blocker's slot (held since blocker_check) is freed here, once this
+     * phase's own already-dead re-stop check no longer needs it present. */
+    delete_wapp("blocker");
 }
 
 /* Launch a non-privileged wapp that tries to break out of its namespace and
@@ -578,6 +605,8 @@ static void sandbox_check(void) {
     tap_ok(got && strstr(buf, "sandbox-OK") != NULL &&
                strstr(buf, "sandbox-LEAK") == NULL,
            "sandbox: a launched wapp cannot escape its namespace");
+
+    delete_wapp("escaper");
 }
 
 /* Launch a wapp that exhausts its file descriptors and assert the abuse is
@@ -600,6 +629,8 @@ static void resource_check(void) {
 
     tap_ok(reaped && alive,
            "robustness: fd exhaustion is contained to the wapp, host survives");
+
+    delete_wapp("fdhog");
 }
 
 /* Try to start a battery of malformed registry images. The engine must reject
@@ -622,6 +653,7 @@ static void malformed_check(void) {
         if (read_path(state, buf, sizeof(buf)) > 0 &&
             (strstr(buf, "running") || strstr(buf, "starting")))
             contained = 0;
+        delete_wapp(bad[i]);
     }
 
     int alive = read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
@@ -644,6 +676,7 @@ static void crashloop_check(void) {
         if (!wait_dead("crasher"))
             break;
         cycles++;
+        delete_wapp("crasher");
     }
 
     int alive = read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
@@ -651,6 +684,8 @@ static void crashloop_check(void) {
     tap_ok(
         cycles == CRASH_CYCLES && alive,
         "robustness: a crash-looping wapp does not thrash or wedge the engine");
+
+    delete_wapp("crasher");
 }
 
 /* Prove /dev/pipe is a process-wide channel between two distinct wapps. Two
@@ -680,10 +715,14 @@ static void pipe_duplex_check(void) {
     start_wapp("reader"); /* blocks reading /dev/pipe/duplex */
     start_wapp("writer"); /* writes the payload to it */
     wait_dead("reader");
+    wait_dead("writer");
 
     int got = read_path(READER_LOG, buf, sizeof(buf)) > 0;
     tap_ok(got && strstr(buf, DUPLEX_PAYLOAD) != NULL,
            "pipe: a payload crosses between two wapps via /dev/pipe");
+
+    delete_wapp("reader");
+    delete_wapp("writer");
 }
 
 /* argv and environ passthrough plus exit-code exposure. argenv prints its known
@@ -708,6 +747,8 @@ static void argenv_check(void) {
     int n = read_path(ARGENV_EXIT, buf, sizeof(buf));
     tap_ok(n > 0 && strstr(buf, "7") != NULL,
            "exit_code: a clean non-zero exit surfaces on the exit_code node");
+
+    delete_wapp(ARGENV);
 }
 
 /* Capability separation: launch observer with a `log` mount but no `wanted`
@@ -729,6 +770,8 @@ static void observer_check(void) {
            "observe: the control plane is unreachable without the wanted mount");
     tap_ok(got && strstr(buf, "obs-done") != NULL,
            "observe: the observability wapp ran to completion");
+
+    delete_wapp(OBSERVER);
 }
 
 /* A `pipe` console is a live stream to a peer. Launch argpipe with stdout
@@ -746,6 +789,8 @@ static void console_pipe_check(void) {
     tap_ok(started && got && strstr(buf, "arg 0=" ARGPIPE) != NULL &&
                strstr(buf, "arg 1=alpha") != NULL,
            "console: a pipe console streams a wapp's stdout to a peer reader");
+
+    delete_wapp(ARGPIPE);
 }
 
 /* The launch-config resource sections, verified in the supervisor's own
@@ -978,6 +1023,7 @@ static void launch_config_validation_check(void) {
         tap_diag(desc);
         if (!rejected)
             all = 0;
+        delete_wapp(bad[i].name);
     }
     tap_ok(all, "launch config: malformed drivers/mounts/sockets are rejected "
                 "at install");
@@ -994,6 +1040,7 @@ static void launch_config_validation_check(void) {
         write_path("/dev/wanted/wapps/cfgok/ctl", "stop");
         wait_state("/dev/wanted/wapps/cfgok/state", 0);
     }
+    delete_wapp("cfgok");
 
     tap_ok(read_path(SUPERVISOR_STATE, buf, sizeof(buf)) > 0 &&
                strstr(buf, "running") != NULL,
@@ -1016,8 +1063,11 @@ static void volume_check(void) {
         "volume: a fresh volume mounts writable and the wapp writes its state");
 
     /* The launch config is consumed on start, so re-arm it before relaunching
-     * the same instance. The store is named by the instance, not the config. */
-    int r2 = write_path(VOLCHECK_CFG, VOLCHECK_CFG_BODY) >= 0 &&
+     * the same instance. The store is named by the instance, not the config,
+     * so a delete + recreate of the same name still reaches the same volume. */
+    delete_wapp(VOLCHECK);
+    int r2 = create_wapp(VOLCHECK) &&
+             write_path(VOLCHECK_CFG, VOLCHECK_CFG_BODY) >= 0 &&
              start_wapp(VOLCHECK) && wait_dead(VOLCHECK);
     int n = r2 ? read_path(VOLCHECK_LOG, buf, sizeof(buf)) : -1;
 
@@ -1026,6 +1076,8 @@ static void volume_check(void) {
 
     tap_ok(n > 0 && strstr(buf, "vol-read:" VOLCHECK_PAYLOAD) != NULL,
            "volume: the persisted bytes read back through the preopen");
+
+    delete_wapp(VOLCHECK);
 }
 
 /* A shared volume crosses the wapp isolation boundary by design: two instances
@@ -1039,6 +1091,7 @@ static void shared_volume_check(void) {
     int wrote = p && read_path(VPROD_LOG, buf, sizeof(buf)) > 0 &&
                 strstr(buf, "vol-wrote") != NULL;
     tap_ok(wrote, "shared volume: a producer writes to a fresh shared volume");
+    delete_wapp(VPROD);
 
     /* A different instance names the same shared volume and must see the marker
      * the producer wrote — the store crossed the wapp boundary. */
@@ -1052,6 +1105,8 @@ static void shared_volume_check(void) {
 
     tap_ok(n > 0 && strstr(buf, "vol-read:" VOLCHECK_PAYLOAD) != NULL,
            "shared volume: the shared bytes read back through the preopen");
+
+    delete_wapp(VCONS);
 }
 
 /* Private and shared namespaces must never alias: a `name=iso` private volume
@@ -1065,6 +1120,7 @@ static void volume_isolation_check(void) {
             start_wapp(ISO_SHARE) && wait_dead(ISO_SHARE);
     int shared_wrote = s && read_path(ISO_SHARE_LOG, buf, sizeof(buf)) > 0 &&
                        strstr(buf, "vol-wrote") != NULL;
+    delete_wapp(ISO_SHARE);
 
     int p = create_wapp(ISO_PRIV) &&
             write_path(ISO_PRIV_CFG, ISO_PRIV_CFG_BODY) >= 0 &&
@@ -1075,6 +1131,8 @@ static void volume_isolation_check(void) {
 
     tap_ok(shared_wrote && priv_fresh, "volume: a private volume never aliases "
                                        "a shared volume of the same name");
+
+    delete_wapp(ISO_PRIV);
 }
 
 /* `ro` is orthogonal to `shared`: a read-only shared volume is provisioned by
@@ -1089,6 +1147,8 @@ static void volume_readonly_check(void) {
                  strstr(buf, "vol-fail") != NULL &&
                  strstr(buf, "vol-wrote") == NULL;
     tap_ok(denied, "volume: a read-only shared volume denies writes");
+
+    delete_wapp(VRORO);
 }
 
 /* Multiple readers on one pipe. A named pipe is a single consume-once ring, so
@@ -1127,6 +1187,9 @@ static void multi_reader_pipe_check(void) {
                 strstr(buf, DUPLEX_PAYLOAD) != NULL;
     tap_ok(got_a != got_b, "pipe: two readers on one pipe — payload reaches "
                            "exactly one (consume-once)");
+
+    delete_wapp(MREAD_A);
+    delete_wapp(MREAD_B);
 }
 
 int main(void) {

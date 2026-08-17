@@ -45,7 +45,7 @@ A minimal `{"system": {}}` is a valid config.
 | Field | Type | Default | Effect |
 |-------|------|---------|--------|
 | `system.privileged` | boolean | `false` | Enables the privileged `/proc` entries (`wapps`, `memory`). When false they are hidden from reads and enumeration. |
-| `supervisor.imagePath` | string | (build option) | Path to the supervisor TAR image. Overrides the compiled-in default. |
+| `supervisor.imagePath` | string | (build option) | Where the supervisor TAR image comes from: a path, or `registry:<name>[:<version>]` for one the wapp registry holds. Overrides the compiled-in default. |
 | `supervisor.params` | object | (compiled-in) | The supervisor's own launch config — same schema as a wapp `config` node. |
 
 ### `supervisor.imagePath` resolution
@@ -55,6 +55,8 @@ The supervisor image is resolved in priority order:
 1. `supervisor.imagePath` in the config (runtime override, no rebuild).
 2. The `CONFIG_WANTED_SUPERVISOR_*` Kconfig choice (compile-time default), or `CONFIG_WANTED_SUPERVISOR_IMAGE_PATH` when a package installs the image elsewhere.
 3. `./wasm/supervisor/sheriff/supervisor.tar`.
+
+A value of the form `registry:<name>[:<version>]` names an image in the wapp registry instead of a path, resolved the way a launch config's `image` is: a bare name takes the first match, a tag pins the version. This is the source a board uses when its image path is compiled into the firmware — the registry is the one place a control plane can install into — and `reload-supervisor` then adopts whatever the registry holds at that moment. A registry image that fails to load falls back to the compiled-in one, as a staged path does.
 
 ### `supervisor.params` — launch config
 
@@ -88,7 +90,7 @@ Entry shapes per section:
 | `sha256` | `drivers` | Streaming SHA-256 digest device at `/dev/sha256` — writes feed message bytes, the first read returns the digest as 64 hex characters. | — |
 | `ed25519` | `drivers` | Ed25519 signature verification at `/dev/ed25519` — write public key + signature + message, read back `ok`/`fail`. `-ENOSYS` on a build without a crypto backend. | — |
 | `inflate` | `drivers` | Streaming gzip decompression at `/dev/inflate` — a 4-byte LE size prefix, then the member; reads drain the decompressed output. | — |
-| `gpio` | `drivers` | Digital I/O at `/dev/gpio/<name>/`, one subtree per granted pin, each with `value` and a read-only `direction`. `pins=` is required: a missing, malformed, or empty clause fails the launch. Backed by ESP-IDF and NuttX. | `pins=led:21:out,btn:2:in` |
+| `gpio` | `drivers` | Digital I/O at `/dev/gpio/<name>/`, one subtree per granted pin, each with `value` and a read-only `direction`. `pins=` is required: a missing, malformed, or empty clause fails the launch. Backed by ESP-IDF and NuttX. | `pins=led:21:out,btn:2:in,nrst:5:out:init=1` |
 | `uart` | `drivers` | A serial port at `/dev/uart/<port>/`: a `data` byte stream plus writable `baud` and `format`. `port=` is required and names exactly one port. Remaining keys are platform addressing — `tx=`/`rx=` on ESP-IDF, `dev=` on Linux. Backed by ESP-IDF and Linux. | `port=1,tx=1,rx=2,baud=57600,format=8E1` |
 | `wifi` | `drivers` | Wi-Fi station control at `/dev/wifi` as a text node: `write "scan"` / `"connect <ssid> <pass>"` / `"disconnect"`; reads stream scan results or a status line. NuttX and ESP-IDF only. | — |
 | `ota` | `drivers` | A/B firmware update: `/dev/ota` control/status node (`begin`/`commit`/`abort`/`confirm`/`rollback`), `/dev/ota/slot` streaming image sink. Backed by ESP-IDF and Linux; `-ENOSYS` on NuttX. | — |

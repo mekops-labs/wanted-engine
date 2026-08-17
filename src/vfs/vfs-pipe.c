@@ -249,9 +249,12 @@ int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
 
         if (nonblock || iter >= PIPE_POLL_MAX_ITERS)
             return -EAGAIN;
+        /* A stop ends the wait at once: a signal interrupts the sleep, and
+         * where the platform has none the wake descriptor is raised. */
+        if (PlatformWakeRaised(VfsWakeFd(c)))
+            return -EINTR;
         /* Sleep UNLOCKED so a worker torn down here cannot strand the shared
-         * mutex. A signalled stop interrupts the sleep (EINTR); return it so
-         * the read unwinds and the terminate flag is honoured. */
+         * mutex. */
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
             return -EINTR;

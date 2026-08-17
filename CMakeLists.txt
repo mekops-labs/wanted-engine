@@ -21,12 +21,6 @@ include(CTest)
 set(project ${CMAKE_PROJECT_NAME})
 message("Building ${project} v${SEMVER}")
 
-# Instrument every target for gcov when coverage is requested. Must be set
-# before any target is defined so the wanted library itself is covered, not
-# just the test binary. The `coverage` report target is wired in test/.
-#
-# Configured (CONFIG_WANTED_BUILD_COVERAGE), so it must come after the Kconfig
-# step below reads .config — hence the include, then this block.
 include(cmake/Kconfig.cmake)
 
 # The configured launch config, compiled in as the CLI's default. Same generated
@@ -43,6 +37,8 @@ if(NOT _cfg_rc EQUAL 0)
 endif()
 message("-- Default configuration: ${CONFIG_WANTED_DEFAULT_CONFIG}")
 
+# Set before any target is defined, so the wanted library itself is
+# covered, not just the test binary. Report target wired in test/.
 if(CONFIG_WANTED_BUILD_COVERAGE)
     message("-- Code coverage build enabled")
     add_compile_options(--coverage -O0 -g)
@@ -76,10 +72,8 @@ add_custom_target(wasm
     )
 #add_dependencies(${CMAKE_PROJECT_NAME} compile_wasm)
 
-# Rebuilds wasm/supervisor/<variant>/supervisor.tar (a TAR layer) from app.wasm.
-# Not wired as a build dependency: the wasm toolchain lives in the wapp-sdk
-# image, not this build environment, and the engine only opens the archive by
-# path at boot. Build it with `make wasm` (or CI's build-wasm job) instead.
+# Rebuilds supervisor.tar from app.wasm. Not a build dependency: the wasm
+# toolchain lives in the wapp-sdk image, not this build environment.
 add_custom_target(supervisor
     COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm/supervisor
     )

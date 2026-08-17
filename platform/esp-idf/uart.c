@@ -16,6 +16,11 @@
 
 #define ESP_UART_MAX_PORTS 2
 
+/* Cap on the transmit drain before a line-rate change. A stalled transmitter —
+ * flow control asserted by a peer that never releases it — would otherwise hold
+ * the wapp for as long as the stall lasts. */
+#define ESP_UART_TX_DRAIN_MS 1000
+
 struct platform_uart_t {
     bool used;
     uart_port_t port;
@@ -170,7 +175,8 @@ int PlatformUartConfigure(platform_uart_t *u, const plat_uart_cfg_t *cfg) {
 
     /* Let the transmitter finish before the rate changes, so no byte is
      * truncated mid-frame. */
-    if (uart_wait_tx_done(u->port, portMAX_DELAY) != ESP_OK)
+    if (uart_wait_tx_done(u->port, pdMS_TO_TICKS(ESP_UART_TX_DRAIN_MS)) !=
+        ESP_OK)
         return -EIO;
     if (uart_param_config(u->port, &uc) != ESP_OK)
         return -EINVAL;

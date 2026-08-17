@@ -1,10 +1,6 @@
-# WANTED engine as an ESP-IDF component.
-#
-# Mirrors the source set the NuttX built-in app compiles
-# (third_party/nuttx-apps/system/wanted/Makefile): the platform-independent
-# engine core + vendored libraries, plus a platform layer. The platform layer
-# is the dummy (-ENOSYS) stub set for now; the real esp-idf layer replaces it
-# incrementally. WAMR comes from the vendored esp-idf component (REQUIRES wamr).
+# WANTED engine as an ESP-IDF component. Mirrors the source set the NuttX
+# built-in app compiles (third_party/nuttx-apps/system/wanted/Makefile).
+# WAMR comes from the vendored esp-idf component (REQUIRES wamr).
 
 set(ENGINE ${CMAKE_CURRENT_LIST_DIR}/../../../..)
 
@@ -55,26 +51,25 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/clock-sleep.c
     ${ENGINE}/platform/esp-idf/fs-volume.c
     ${ENGINE}/platform/esp-idf/wapps.c
+    ${ENGINE}/platform/esp-idf/wake.c
+    ${ENGINE}/platform/esp-idf/persist-mem.c
+    ${ENGINE}/platform/esp-idf/reset-reason.c
     ${ENGINE}/platform/esp-idf/platform.c
     ${ENGINE}/platform/esp-idf/registry.c
     ${ENGINE}/platform/esp-idf/registry_flash.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-wifi.c
-    # Shared POSIX primitives (also compiled by the Linux/NuttX builds).
-    # platform/posix/fs.c is NOT reused here: its PlatformFsRename/Mkdir call
-    # renameat/mkdirat, which esp-idf's newlib declares but never links (no
-    # *at() family in esp_vfs) — vfs-esp-idf.c provides esp-idf-native
-    # PlatformOpenStateDir/FsRename/FsMkdir instead.
+    # Shared POSIX primitives (also compiled by Linux/NuttX). vfs-esp-idf.c
+    # provides PlatformOpenStateDir/FsRename/FsMkdir natively: esp-idf's
+    # newlib declares renameat/mkdirat but never links them.
     ${ENGINE}/platform/posix/clock.c
     ${ENGINE}/platform/posix/mutex.c
     # lwIP exposes the same BSD socket API this file already targets (it is
     # also the NuttX platform's socket.c, unmodified); its TLS branches turn on
     # with SECURE_SOCKETS, set below from the engine's configuration.
     ${ENGINE}/platform/posix/socket.c
-    # PlatformSha256* backed by mbedtls_sha256_context, which the ESP32-S3
-    # SHA hardware peripheral transparently accelerates (MBEDTLS_HARDWARE_SHA
-    # is on by default for this SoC) -- unlike ECC/ECDSA, this chip has no
-    # peripheral gap to work around.
+    # PlatformSha256* backed by mbedtls_sha256_context, transparently
+    # accelerated by the ESP32-S3's SHA peripheral (on by default).
     ${ENGINE}/platform/esp-idf/sha256.c
     # PlatformEd25519Verify over the vendored ed25519 (in vendor_srcs).
     ${ENGINE}/platform/esp-idf/crypto.c
@@ -82,10 +77,9 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/extram.c
 )
 
-# Engine version string (git-derived SemVer), surfaced at /proc/wanted. The
-# component compiles the engine core itself, so the top-level CMakeLists that
-# normally supplies this is not in the picture -- without it every board reports
-# "unknown", and a control plane cannot tell one firmware from another.
+# Engine version string (git-derived SemVer), surfaced at /proc/wanted.
+# This component compiles the engine core itself, so nothing else
+# supplies it — without it every board reports "unknown".
 include(${ENGINE}/cmake/VersionFromGit.cmake)
 version_from_git(TIMESTAMP "%Y%m%d%H%M%S")
 if(NOT SEMVER)
@@ -95,20 +89,14 @@ if(NOT SEMVER)
         "update -- tag the tree, or fetch its tags.")
 endif()
 
-# Engine build configuration. The idf.py build is not the engine's top-level
-# project, so point the shared Kconfig step at the engine root and let it
-# generate wanted-autoconf.h here. The OTA profile below selects the envelope,
-# so MAX_WAPPS and the flash layout cannot disagree.
+# The idf.py build is not the engine's top-level project, so point the
+# shared Kconfig step at the engine root and generate wanted-autoconf.h
+# here — the OTA profile below then selects the same envelope.
 set(WANTED_ENGINE_ROOT ${ENGINE})
 
-# ESP-IDF flash-layout profile: couples MAX_WAPPS (overriding the
-# WANTED_PROFILE value above), WAPP_IMAGE_MAX_SLOTS (config-esp-idf.h
-# aliases it directly to MAX_WAPPS), and the generated partitions.csv from
-# one source, per chip. S3 profiles (WANTED_OTA_LAYOUT=ab): s3-wapps
-# (default, MAX_WAPPS=20, max concurrency) and s3-storage (MAX_WAPPS=10,
-# roomier persist partition) -- only MAX_WAPPS varies, slot size fixed at
-# 160 KiB across both. Classic-ESP32 profile (WANTED_OTA_LAYOUT=factory):
-# esp32-factory, a single app slot, no A/B.
+# ESP-IDF flash-layout profile: couples MAX_WAPPS, the registry image ceiling
+# and the generated partitions.csv from one source, per chip. Each profile in
+# ota-profiles/ documents its own envelope.
 if(NOT OTA_PROFILE)
     set(OTA_PROFILE "s3-wapps")
 endif()
@@ -118,52 +106,50 @@ include(${ENGINE}/platform/esp-idf/ota-profiles/${OTA_PROFILE}.cmake)
 # makes CONFIG_WANTED_MAX_WAPPS below the same number the header carries.
 include(${ENGINE}/cmake/Kconfig.cmake)
 
-# Configurable drivers and their backings, gated exactly as src/CMakeLists.txt
-# gates them: a driver left in the build references configuration symbols a
-# deselected driver never generates. Listed after the Kconfig step, which is
-# what defines the symbols read here.
-set(driver_requires "")
+# Configurable drivers, gated like src/CMakeLists.txt. Their component
+# REQUIRES stay unconditional: ESP-IDF resolves REQUIRES before .config
+# exists, so one gated on CONFIG_WANTED_VFS_* never reaches the resolver.
+set(driver_requires esp_driver_gpio esp_driver_uart app_update)
 if(CONFIG_WANTED_VFS_GPIO)
     list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-gpio.c)
     list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/gpio.c)
-    list(APPEND driver_requires esp_driver_gpio)
 endif()
 if(CONFIG_WANTED_VFS_UART)
     list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-uart.c)
     list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/uart.c)
-    list(APPEND driver_requires esp_driver_uart)
 endif()
 if(CONFIG_WANTED_VFS_OTA)
     list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-ota.c)
     list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/ota.c)
-    list(APPEND driver_requires app_update)
 endif()
 
 if(WANTED_OTA_LAYOUT STREQUAL "factory")
-    # 4 MB flash (classic ESP32): reserved 64 KiB (bootloader + partition
-    # table + nvs 24 KiB + phy_init 4 KiB), one factory app slot, no A/B.
-    # 1536 KiB holds >=25% headroom over the measured image (1 164 000 B,
-    # 2026-07-24); persist+wapps take the remainder. Must stay a multiple of
+    # 4 MB flash (classic ESP32): 64 KiB reserved, one factory app slot,
+    # no A/B; persist+wapps take the remainder. Must stay a multiple of
     # 64 KiB so persist/wapps auto-align with zero padding waste.
     set(FACTORY_APP_KB 1536)
     math(EXPR OTA_POOL_KB "4096 - 64 - ${FACTORY_APP_KB}")
     set(_partition_template ${ENGINE}/platform/esp-idf/project/partitions-factory.csv.in)
 else()
-    # Fixed flash geometry (8 MB XIAO ESP32-S3): reserved 64 KiB (bootloader +
-    # partition table + nvs 24 KiB + phy_init 4 KiB) + otadata 8 KiB + two OTA
-    # app slots. 1600 KiB slots hold >=35% headroom over the measured,
-    # OTA-code-included image (1 171 072 B, 2026-07-07) -- 1536 KiB (the
-    # pre-OTA-code estimate) no longer clears that margin once this driver's own
-    # code is counted, before the pending gpio driver or a real Ed25519 backend
-    # land (floor-measured gpio stub: +832 B; Ed25519 unmeasured, budgeted
-    # generously). Must stay a multiple of 64 KiB so ota_0/ota_1 auto-align with
-    # zero padding waste -- see partitions.csv.in's layout comment.
-    set(OTA_SLOT_KB 1600)
+    # 8 MB XIAO ESP32-S3: 64 KiB reserved + otadata 8 KiB + two app slots, and
+    # persist takes what is left. A multiple of 64 KiB, or ota_1 pads up to the
+    # next boundary and the table runs past the end of flash.
+    set(OTA_SLOT_KB 1792)
     math(EXPR OTA_POOL_KB "8192 - 64 - 8 - (2 * ${OTA_SLOT_KB})")
     set(_partition_template ${ENGINE}/platform/esp-idf/project/partitions.csv.in)
 endif()
 
-set(WAPP_IMAGE_SLOT_SIZE_KB 160)
+# Slot size is the engine's image ceiling, so the compiled-in bound and the
+# partition are the same number. Slots are erased in place, so a size that is
+# not a whole number of 4 KiB sectors would put two slots in one sector.
+set(WAPP_IMAGE_SLOT_SIZE_KB ${CONFIG_WANTED_MAX_WAPP_IMAGE_KB})
+math(EXPR SLOT_SECTOR_REMAINDER "${WAPP_IMAGE_SLOT_SIZE_KB} % 4")
+if(NOT SLOT_SECTOR_REMAINDER EQUAL 0)
+    message(FATAL_ERROR
+        "CONFIG_WANTED_MAX_WAPP_IMAGE_KB=${WAPP_IMAGE_SLOT_SIZE_KB} is not a "
+        "multiple of the 4 KiB flash sector")
+endif()
+
 math(EXPR OTA_WAPPS_KB "${CONFIG_WANTED_MAX_WAPPS} * ${WAPP_IMAGE_SLOT_SIZE_KB}")
 math(EXPR OTA_PERSIST_KB "${OTA_POOL_KB} - ${OTA_WAPPS_KB}")
 
@@ -172,14 +158,13 @@ math(EXPR OTA_PERSIST_KB "${OTA_POOL_KB} - ${OTA_WAPPS_KB}")
 # OTA_PROFILE edit that pushes wapps past the pool.
 if(OTA_WAPPS_KB GREATER OTA_POOL_KB)
     message(FATAL_ERROR
-        "OTA_PROFILE=${OTA_PROFILE}: CONFIG_WANTED_MAX_WAPPS=${CONFIG_WANTED_MAX_WAPPS} needs "
-        "${OTA_WAPPS_KB} KiB of wapps, exceeding the ${OTA_POOL_KB} KiB "
-        "persist+wapps pool")
+        "OTA_PROFILE=${OTA_PROFILE}: CONFIG_WANTED_MAX_WAPPS=${CONFIG_WANTED_MAX_WAPPS} at "
+        "${WAPP_IMAGE_SLOT_SIZE_KB} KiB per image needs ${OTA_WAPPS_KB} KiB of wapps, "
+        "exceeding the ${OTA_POOL_KB} KiB persist+wapps pool")
 endif()
 
-# Regenerated on every configure -- partitions.csv is a build artifact (like
-# sdkconfig from sdkconfig.defaults), not a hand-maintained file. Runs during
-# the cmake configure phase, strictly before the ninja build step that reads
+# Regenerated on every configure — a build artifact, not hand-maintained.
+# Runs during cmake configure, before the ninja step reads
 # CONFIG_PARTITION_TABLE_CUSTOM_FILENAME.
 configure_file(
     ${_partition_template}
@@ -187,20 +172,9 @@ configure_file(
     @ONLY
 )
 
-# EMBED_FILES links the compiled-in supervisor straight into the app binary as
-# a linker section (`_binary_supervisor_tar_{start,end}` — named for the file's
-# basename, so it is the same symbol whichever variant is configured).
-# platform.c's PlatformWappLoad reads it directly, zero-copy. The ESP-IDF
-# equivalent of the NuttX port's boot ROMFS (platform/nuttx/app/
-# wanted_esp32_main.c), since ESP-IDF has no host filesystem to stage a
-# supervisor image on. Embedded here rather than by the `main` component so
-# platform.c and the embed live in the same static library — a symbol
-# EMBED_FILES defines in one component's archive is not visible to a different
-# component's archive without --start-group/--end-group, which is exactly the
-# link failure that surfaced this constraint.
-#
-# The variant is the Kconfig choice, carried as a repo-relative path. The image
-# is built separately (wapp SDK image), so a missing one names its command.
+# EMBED_FILES links the supervisor in as a linker section that
+# PlatformWappLoad reads zero-copy. Embedded here, not by `main`, so the
+# symbol shares platform.c's archive — a different one can't see it.
 string(REGEX REPLACE "^\\./" "" _supervisor_rel "${CONFIG_WANTED_SUPERVISOR_IMAGE}")
 set(_supervisor_tar "${ENGINE}/${_supervisor_rel}")
 if(NOT EXISTS "${_supervisor_tar}")
@@ -225,10 +199,8 @@ idf_component_register(
     EMBED_FILES ${_supervisor_tar}
 )
 
-# TLS backend for this platform: the engine asks through its own Kconfig, and
-# ESP-IDF answers with the mbedTLS it already ships. Previously pinned on here,
-# which meant a configuration that deselected secure sockets still built and
-# linked them.
+# TLS backend for this platform: the engine asks through its own
+# Kconfig, and ESP-IDF answers with the mbedTLS it already ships.
 if(CONFIG_WANTED_VFS_SOCKET_TLS)
     set(_secure_sockets 1)
     target_sources(${COMPONENT_LIB} PRIVATE ${ENGINE}/platform/posix/ssocket-mbedtls.c)

@@ -34,3 +34,7 @@ CONFIG_WAMR_ENABLE_AOT=n
 CONFIG_WAMR_ENABLE_LIBC_WASI=n
 CONFIG_WAMR_ENABLE_LIB_PTHREAD=n
 CONFIG_WAMR_ENABLE_SHARED_MEMORY=n
+
+# A task watchdog that only prints leaves a wedged board wedged, and the boot
+# that follows a reset now carries the log that preceded it.
+CONFIG_ESP_TASK_WDT_PANIC=y

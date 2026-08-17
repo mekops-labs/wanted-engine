@@ -3,7 +3,10 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+#include <sys/select.h>
+#include <sys/time.h>
 
 #include <platform.h>
 
@@ -125,6 +128,26 @@ int PlatformNetListen(struct netCtx *ctx, const char *bindAddr, uint16_t port,
 
 /* `ctx` is the listening socket the platform API hands every backend; this mock
  * only reads it. */
+/* cppcheck-suppress constParameterPointer */
+/* The test platform has no real queue: a raised wake answers -EINTR, and
+ * anything else lets the call below decide. */
+int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd) {
+    if (!ctx)
+        return -EINVAL;
+    if (wakeFd < 0)
+        return 0;
+
+    fd_set r;
+    struct timeval tv = {0, 0};
+    FD_ZERO(&r);
+    FD_SET(wakeFd, &r);
+    if (select(wakeFd + 1, &r, NULL, NULL, &tv) > 0 && FD_ISSET(wakeFd, &r))
+        return -EINTR;
+    return 0;
+}
+
+/* `ctx` is only read here; the signature matches the platform API's fixed
+ * prototype. */
 /* cppcheck-suppress constParameterPointer */
 int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out) {
     if (!ctx || !out)

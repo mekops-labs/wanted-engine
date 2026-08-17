@@ -407,6 +407,12 @@ static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path) {
     return dummy_rmdir(d->fs, fd, path);
 }
 
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
+    if (d->readonly)
+        return -EROFS;
+    return PlatformFsUnlink(fd, path);
+}
+
 /* ── VfsPlatformFsInit ──────────────────────────────────────────────────── */
 
 static const char id[] = {'D', 'u', 'm', 'y'};
@@ -445,6 +451,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *opt,
     drv->Rename = _Rename;
     drv->Mkdir = _Mkdir;
     drv->Rmdir = _Rmdir;
+    drv->Unlink = _Unlink;
     return drv;
 }
 
@@ -474,6 +481,27 @@ int PlatformFsRename(int old_fd, const char *old_path, int new_fd,
 
 int PlatformFsRmdir(int fd, const char *path) {
     return dummy_rmdir(&g_dummy_fs, fd, path);
+}
+
+int PlatformFsUnlink(int fd, const char *path) {
+    dummy_fs_t *fs = &g_dummy_fs;
+    const dummy_fd_slot_t *dfd = fd_get(fs, fd);
+    if (!dfd)
+        return -EBADF;
+
+    char abs_path[DUMMY_FS_PATH_LEN];
+    path_join(fs->nodes[dfd->node_idx].path, path, abs_path, sizeof(abs_path));
+
+    int ni = node_find(fs, abs_path);
+    if (ni < 0)
+        return -ENOENT;
+    if (fs->nodes[ni].type == DUMMY_NODE_DIR)
+        return -EISDIR;
+
+    fs->nodes[ni].type = DUMMY_NODE_NONE;
+    fs->nodes[ni].path[0] = '\0';
+    fs->nodes[ni].size = 0;
+    return 0;
 }
 
 int PlatformFsMkdir(int fd, const char *path) {

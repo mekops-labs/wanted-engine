@@ -18,10 +18,8 @@ target_link_libraries(${project}-cli
     PRIVATE platform_${WANTED_PLATFORM}
 )
 
-# Supervisor wapp smoke test. Always available as a manual target. Only added
-# to ctest when WANTED_DEBUG_TRACES is on — without traces the engine is
-# silent on failures (FATAL is a no-op), so a passing ctest run with traces
-# off would be a false signal of correctness.
+# Only added to ctest when WANTED_DEBUG_TRACES is on: without traces the
+# engine is silent on failures, so a passing run would be a false signal.
 add_custom_target(smoke-engine
     COMMAND ${CMAKE_SOURCE_DIR}/test/smoke-engine.sh
             $<TARGET_FILE:${project}-cli>

@@ -177,6 +177,18 @@ int PlatformFsRmdir(int fd, const char *path) {
     return 0;
 }
 
+int PlatformFsUnlink(int fd, const char *path) {
+    if (path == NULL)
+        return -EINVAL;
+    char abs[CONFIG_WANTED_MAX_PATH_LEN];
+    int rc = joinFromFd(fd, path, abs, sizeof(abs));
+    if (rc < 0)
+        return rc;
+    if (unlink(abs) < 0)
+        return -errno;
+    return 0;
+}
+
 static const char id[] = {'E', 'I', 'd', 'f'};
 
 static int _Destroy(struct vfs_driver_t *d);
@@ -195,6 +207,7 @@ static int _Rename(vfs_driver_ctx_t d, int old_fd, const char *old_path,
                    int new_fd, const char *new_path);
 static int _Mkdir(vfs_driver_ctx_t d, int fd, const char *path);
 static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path);
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path);
 
 struct vfs_driver_ctx_t {
     const char *rootPath;
@@ -218,6 +231,9 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
         DEBUG_TRACE("can't allocate memory");
         return NULL;
     }
+    /* Zero first: an unassigned vtable slot would otherwise hold heap
+     * garbage, which the caller reads as a function to call. */
+    memset(driver, 0, sizeof(*driver));
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(
         sizeof(struct vfs_driver_ctx_t));
@@ -257,6 +273,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
     driver->Rename = _Rename;
     driver->Mkdir = _Mkdir;
     driver->Rmdir = _Rmdir;
+    driver->Unlink = _Unlink;
 
     return driver;
 }
@@ -504,6 +521,12 @@ static int _Rmdir(vfs_driver_ctx_t d, int fd, const char *path) {
     return PlatformFsRmdir(fd, path);
 }
 
+static int _Unlink(vfs_driver_ctx_t d, int fd, const char *path) {
+    if (d->readonly)
+        return -EROFS;
+    return PlatformFsUnlink(fd, path);
+}
+
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed) {
     (void)d;
@@ -527,33 +550,44 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     if (*cookie != 0)
         seekdir(dp, (long)*cookie);
 
+    /* The stream position of the entry the next call must start from. It
+     * advances only over an entry that reached the buffer, so an entry
+     * that did not fit is served next. */
+    long pos = (*cookie != 0) ? (long)*cookie : telldir(dp);
+
     struct dirent *ep;
     while ((ep = readdir(dp)) != NULL) {
+        long after = telldir(dp);
+
         if (memcmp(".", ep->d_name, 2) == 0 ||
             memcmp("..", ep->d_name, 3) == 0) {
+            pos = after;
             continue;
         }
         dirent.d_namlen = strnlen(ep->d_name, sizeof(ep->d_name));
         dirent.d_type = convertDirtype(ep->d_type);
-        dirent.d_next = (uint64_t)telldir(dp);
+        dirent.d_next = (uint64_t)after;
         /* LittleFS's dirent carries no stable inode; the readdir stream
          * position is a stable per-entry identifier, and the VFS exposes
          * d_ino opaquely, so fall back to it when d_ino reads as zero. */
         dirent.d_ino = (ep->d_ino != 0) ? (uint64_t)ep->d_ino : dirent.d_next;
 
-        if (used + sizeof(dirent) + dirent.d_namlen > bufLen) {
-            used = bufLen;
+        /* Report the bytes written. Claiming the whole buffer hands the
+         * reader the part of it this never wrote, and a reader that parses
+         * that as an entry follows its length and its cookie into nothing. */
+        if (used + sizeof(dirent) + dirent.d_namlen > bufLen)
             break;
-        }
+
         memcpy(out + used, &dirent, sizeof(dirent));
         memcpy(out + used + sizeof(dirent), ep->d_name, dirent.d_namlen);
 
         used += sizeof(dirent) + dirent.d_namlen;
+        pos = after;
     }
     closedir(dp);
 
     *bufUsed = used;
-    *cookie = dirent.d_next;
+    *cookie = (uint64_t)pos;
 
     return 0;
 }

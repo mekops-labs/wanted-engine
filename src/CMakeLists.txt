@@ -105,11 +105,9 @@ set(WAMR_BUILD_LIBC_WASI 0)
 set(WAMR_BUILD_LIBC_BUILTIN 1)
 set(WAMR_BUILD_MULTI_MODULE 0)
 set(WAMR_BUILD_SHARED_MEMORY 0)
-# Required by the cooperative wapp stop: only with the thread manager does
-# setting the instance exception reach the interpreter's terminate check
-# (WASM_SUSPEND_FLAG_TERMINATE, tested at every branch and loop back-edge).
-# Without it the flag is a string nothing reads and a never-yielding wapp
-# cannot be stopped.
+# Required by cooperative wapp stop: only the thread manager routes the
+# instance exception to the interpreter's terminate check
+# (WASM_SUSPEND_FLAG_TERMINATE, tested at every branch/loop back-edge).
 set(WAMR_BUILD_THREAD_MGR 1)
 include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 add_library(vmlib STATIC ${WAMR_RUNTIME_LIB_SOURCE})
@@ -117,16 +115,9 @@ target_include_directories(vmlib INTERFACE
     ${WAMR_ROOT_DIR}/core/iwasm/include
 )
 
-# Out-of-tree driver tree. Keeps a use-case-specific driver out of this repo
-# while still linking it statically into a target: the tree is compiled as part
-# of this build (source-level coupling, no binary ABI) and supplies
-# ExtraDriverTable(), searched after the core and platform tables.
-#
-# The tree's CMakeLists.txt must define a library target named
-# `wanted_extra_drivers`; the engine headers it needs are added to that target
-# below. With the option unset, a default ExtraDriverTable() returning NULL is
-# compiled in and the build is byte-identical to one built before this seam
-# existed.
+# Out-of-tree driver tree supplying ExtraDriverTable(), searched after
+# the core and platform tables. Must define a library target
+# `wanted_extra_drivers`; unset compiles in a default returning NULL.
 if (CONFIG_WANTED_EXTRA_DRIVERS_DIR)
     set(WANTED_EXTRA_DRIVERS_DIR ${CONFIG_WANTED_EXTRA_DRIVERS_DIR})
     message("-- Extra drivers: ${WANTED_EXTRA_DRIVERS_DIR}")

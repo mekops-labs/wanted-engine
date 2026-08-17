@@ -335,16 +335,13 @@ static void *concurrentInstallSelftest(void *arg) {
 }
 
 /* Smoke-test fixtures linked via EMBED_FILES. */
-extern const uint8_t _binary_looper_wapp_start[];
-extern const uint8_t _binary_looper_wapp_end[];
 extern const uint8_t _binary_wifi_connect_wapp_start[];
 extern const uint8_t _binary_wifi_connect_wapp_end[];
-extern const uint8_t _binary_devcheck_wapp_start[];
-extern const uint8_t _binary_devcheck_wapp_end[];
-extern const uint8_t _binary_blink_wapp_start[];
-extern const uint8_t _binary_blink_wapp_end[];
 extern const uint8_t _binary_flasher_wapp_start[];
 extern const uint8_t _binary_flasher_wapp_end[];
+
+/* Generated from the board's WANTED_EXTRA_SEEDS; empty when it names none. */
+#include "extra-seeds-decl.inc"
 
 /* True when the registry already holds `ref` ("<name>" or "<name>:<version>").
  */
@@ -372,6 +369,11 @@ static bool registryHasRef(const char *ref) {
  * next boot. */
 static void seedWapp(const char *ref, const uint8_t *start,
                      const uint8_t *end) {
+    /* Marked whether or not it is written: after the first boot the image is
+     * already there, and a ref the firmware owns is still not a supervisor's
+     * to reclaim. */
+    PlatformRegistryMarkSeeded(ref);
+
     if (registryHasRef(ref)) {
         ESP_LOGI(TAG, "seed: %s present, keeping the installed image", ref);
         return;
@@ -500,18 +502,14 @@ void app_main(void) {
     if (mountLittleFs()) {
         fsSelftest();
         registrySelftest();
-        seedWapp("looper", _binary_looper_wapp_start, _binary_looper_wapp_end);
         seedWapp("wifi-connect", _binary_wifi_connect_wapp_start,
                  _binary_wifi_connect_wapp_end);
-        seedWapp("devcheck", _binary_devcheck_wapp_start,
-                 _binary_devcheck_wapp_end);
-        seedWapp("blink:1.0.0", _binary_blink_wapp_start,
-                 _binary_blink_wapp_end);
         /* Versioned by the tree it was built from, so a newer flasher
          * installs alongside this one and a launch config selects which
          * runs. */
         seedWapp(WANTED_FLASHER_REF, _binary_flasher_wapp_start,
                  _binary_flasher_wapp_end);
+#include "extra-seeds-call.inc"
     }
 
     /* Starts lwIP's tcpip thread; required before any socket() call. */

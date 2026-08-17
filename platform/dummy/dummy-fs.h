@@ -14,6 +14,14 @@ void DummyFsReset(void);
 /* Reset the monotonic clock counter to zero and reseed the PRNG. */
 void DummyClockReset(void);
 
+/* Clear the stand-in for memory a reset does not clear — the equivalent of
+ * losing power. */
+void DummyPersistMemClear(void);
+
+/* Drive the reset reason the platform reports; NULL or "" is a platform that
+ * cannot tell. */
+void DummyResetReasonSet(const char *token);
+
 /* Advance the monotonic clock by `ns` nanoseconds without sleeping. */
 void DummyClockAdvance(uint64_t ns);
 

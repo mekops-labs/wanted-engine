@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <platform.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
 
@@ -437,6 +438,38 @@ TEST(vfs_socket_driver, Udp_Listen_SockAccept_ReturnsEnotsup) {
     TEST_ASSERT_EQUAL_INT(-ENOTSUP, drv->SockAccept(drv->ctx, 0, 0, &newFd));
 }
 
+TEST(vfs_socket_driver, SockAccept_RaisedWake_ReturnsEintr) {
+    drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen");
+    drv->Open(drv->ctx, "", VFS_O_RDWR);
+
+    int wake = PlatformWakeCreate();
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(0, wake);
+    drv->SetWake(drv->ctx, wake);
+    PlatformWakeRaise(wake);
+
+    /* The wait ends on the wake, and no connection is taken. */
+    int newFd = -1;
+    TEST_ASSERT_EQUAL_INT(-EINTR, drv->SockAccept(drv->ctx, 0, 0, &newFd));
+    TEST_ASSERT_EQUAL_INT(-1, newFd);
+
+    PlatformWakeClose(wake);
+}
+
+TEST(vfs_socket_driver, SockAccept_UnraisedWake_TakesTheConnection) {
+    drv = VfsSocketInit(NULL, "tcp://0.0.0.0:8080;role=listen");
+    drv->Open(drv->ctx, "", VFS_O_RDWR);
+
+    int wake = PlatformWakeCreate();
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(0, wake);
+    drv->SetWake(drv->ctx, wake);
+
+    int newFd = -1;
+    TEST_ASSERT_EQUAL_INT(0, drv->SockAccept(drv->ctx, 0, 0, &newFd));
+    TEST_ASSERT_TRUE(newFd > 0);
+
+    PlatformWakeClose(wake);
+}
+
 #else /* the listen role is not compiled in */
 
 TEST(vfs_socket_driver, Init_ListenRole_RejectedWithoutSupport) {
@@ -445,8 +478,22 @@ TEST(vfs_socket_driver, Init_ListenRole_RejectedWithoutSupport) {
 
 #endif
 
+/* The vtable is zeroed at allocation, so a slot this driver does not implement
+ * reads as NULL. A caller tests the slot before calling it, and heap garbage
+ * passes that test. */
+TEST(vfs_socket_driver, Init_LeavesUnimplementedSlotsNull) {
+    drv = VfsSocketInit(NULL, "tcp://127.0.0.1:8080");
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_NULL(drv->Mkdir);
+    TEST_ASSERT_NULL(drv->Rmdir);
+    TEST_ASSERT_NULL(drv->Unlink);
+    TEST_ASSERT_NULL(drv->Rename);
+    TEST_ASSERT_NULL(drv->ReadDir);
+}
+
 TEST_GROUP_RUNNER(vfs_socket_driver) {
     RUN_TEST_CASE(vfs_socket_driver, Init_Tcp_StreamFiletype);
+    RUN_TEST_CASE(vfs_socket_driver, Init_LeavesUnimplementedSlotsNull);
     RUN_TEST_CASE(vfs_socket_driver, Init_Udp_DgramFiletype);
     RUN_TEST_CASE(vfs_socket_driver, Init_NullOptions_ReturnsNull);
     RUN_TEST_CASE(vfs_socket_driver, Init_NoScheme_ReturnsNull);
@@ -490,6 +537,9 @@ TEST_GROUP_RUNNER(vfs_socket_driver) {
     RUN_TEST_CASE(vfs_socket_driver, Open_Listen_BindFailure_ReturnsError);
     RUN_TEST_CASE(vfs_socket_driver, Read_OnStreamListener_ReturnsEnotconn);
     RUN_TEST_CASE(vfs_socket_driver, SockAccept_YieldsConnectionFd);
+    RUN_TEST_CASE(vfs_socket_driver, SockAccept_RaisedWake_ReturnsEintr);
+    RUN_TEST_CASE(vfs_socket_driver,
+                  SockAccept_UnraisedWake_TakesTheConnection);
     RUN_TEST_CASE(vfs_socket_driver, SockAccept_AcceptFailure_ReturnsError);
     RUN_TEST_CASE(vfs_socket_driver, SockAccept_ConnectionsStayIsolated);
     RUN_TEST_CASE(vfs_socket_driver, SockAccept_PastMaxConns_ReturnsEnfile);

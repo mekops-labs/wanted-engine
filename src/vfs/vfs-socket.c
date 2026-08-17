@@ -48,6 +48,9 @@ struct sock_conn_t {
 };
 
 struct vfs_driver_ctx_t {
+    /* Watched beside the socket so a stop ends a blocking wait; -1 when the
+     * platform interrupts by signal. */
+    int wakeFd;
     uint8_t type;
     const char addr[MAX_ADDR_LEN];
     uint16_t port;
@@ -68,6 +71,7 @@ static int _Write(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte);
 static int _Stat(vfs_driver_ctx_t c, int fd, vfs_stat_t *stat);
 static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
                        int *newFd);
+static void _SetWake(vfs_driver_ctx_t c, int fd);
 static int _SockRecv(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte,
                      vfs_riflags_t iflags, vfs_roflags_t *oflags);
 static int _SockSend(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte,
@@ -298,6 +302,9 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
         DEBUG_TRACE("can't allocate memory");
         return NULL;
     }
+    /* Zero first: an unassigned vtable slot would otherwise hold heap
+     * garbage, which the caller reads as a function to call. */
+    memset(driver, 0, sizeof(*driver));
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(
         sizeof(struct vfs_driver_ctx_t));
@@ -307,6 +314,7 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
         return NULL;
     }
     memset(driver->ctx, 0, sizeof(struct vfs_driver_ctx_t));
+    driver->ctx->wakeFd = -1; /* 0 is a valid descriptor */
 
     driver->bytesId = *(uint32_t *)(id);
     driver->filetype = convertSocketType(type);
@@ -324,6 +332,7 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     driver->Write = _Write;
     driver->Stat = _Stat;
     driver->SockAccept = _SockAccept;
+    driver->SetWake = _SetWake;
     driver->SockRecv = _SockRecv;
     driver->SockSend = _SockSend;
     driver->SockShutdown = _SockShutdown;
@@ -447,7 +456,15 @@ static int _Read(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte) {
     int ret = ioConn(c, fd, &s);
     if (ret < 0)
         return ret;
+    ret = PlatformNetWaitReadable(s->netCtx, c->wakeFd);
+    if (ret < 0)
+        return ret;
     return PlatformNetRecv(s->netCtx, buf, nbyte, 0);
+}
+
+static void _SetWake(vfs_driver_ctx_t c, int fd) {
+    if (c != NULL)
+        c->wakeFd = fd;
 }
 
 static int _Write(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte) {
@@ -511,8 +528,15 @@ static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
     if (slot < 0 || live >= c->maxConns)
         return -ENFILE;
 
+    /* Wait first, watching the wapp's wake descriptor beside the listener, so
+     * a stop ends the wait. Without one the accept blocks and a signal ends
+     * it. */
+    int ret = PlatformNetWaitReadable(l->netCtx, c->wakeFd);
+    if (ret < 0)
+        return ret;
+
     struct netCtx *accepted = NULL;
-    int ret = PlatformNetAccept(l->netCtx, &accepted);
+    ret = PlatformNetAccept(l->netCtx, &accepted);
     if (ret < 0)
         return ret;
 

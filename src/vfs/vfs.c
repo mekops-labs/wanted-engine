@@ -10,6 +10,7 @@
 #include "vfs-internal.h"
 #include <cwalk.h>
 #include <debug_trace.h>
+#include <platform.h>
 #include <vfs-devfs.h>
 #include <vfs-netfs.h>
 #include <vfs-procfs.h>
@@ -301,6 +302,7 @@ vfs_ctx_t VfsInit(void) {
         return c;
 
     memset(c, 0, sizeof(*c));
+    c->wake_fd = -1; /* 0 is a valid descriptor, so zeroing is not "none" */
 
     vfsMount(c, "/", VFS_TYPE_TARFS, NULL);
     vfsMount(c, "/dev", VFS_TYPE_DEV, NULL);
@@ -419,6 +421,8 @@ void VfsDestroy(vfs_ctx_t *c) {
     destroyStreamFd(*c, VFS_STDERR);
     destroyStreamFd(*c, VFS_STDOUT);
     destroyStreamFd(*c, VFS_STDIN);
+    PlatformWakeClose((*c)->wake_fd);
+    (*c)->wake_fd = -1;
     if ((*c)->tarfs)
         TarFsDestroy((*c)->tarfs);
 
@@ -430,6 +434,13 @@ void VfsSetPrivileged(vfs_ctx_t c, bool privileged) {
     if (c)
         c->privileged = privileged;
 }
+
+void VfsSetWakeFd(vfs_ctx_t c, int fd) {
+    if (c)
+        c->wake_fd = fd;
+}
+
+int VfsWakeFd(vfs_ctx_t c) { return c ? c->wake_fd : -1; }
 
 const vfs_driver_t *VfsStreamDriver(vfs_ctx_t c, int slot) {
     if (!c || slot < 0 || slot >= VFS_MAX_FDS)
@@ -918,6 +929,9 @@ int VfsUnlink(vfs_ctx_t c, int fd, const char *path) {
     switch (c->fds[fd].type) {
     case VFS_TYPE_DEV:
         return DevFs_Unlink(c, c->fds[fd].internal_ctx, path);
+    /* PLATFORM belongs with DRIVER here as in mkdir and rmdir: a mounted
+     * filesystem is where a wapp's files are. */
+    case VFS_TYPE_PLATFORM:
     case VFS_TYPE_DRIVER:
         return TRY_DRV(c->fds[fd].driver, Unlink, c->fds[fd].drv_fd, path);
     case VFS_TYPE_TARFS:

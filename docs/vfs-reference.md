@@ -53,7 +53,7 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/wapps/<name>/memory` | r | yes | Per-wapp WASM linear-memory accounting: `linear_cur` / `linear_max` (bytes) and `pages_cur` / `pages_max`. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`; `store_free` / `store_total`; `wasm_pages_free` — free WASM linear-memory pages, summed across every loaded wapp's headroom to its own ceiling. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `reg_slots` (images the registry can hold; `0` where it is bounded only by the filesystem), `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
@@ -73,6 +73,7 @@ wasm_max_pages:	1
 max_drivers:	6
 max_options:	128 B
 log_slots:	3
+reg_slots:	0
 drivers:	null log 9p config platform socket sha256 ed25519 inflate wanted
 ```
 
@@ -128,7 +129,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
 | `config` | `mounts[]` | chosen `path` (e.g. `/etc/config`) | Read-only config-file injection, reachable outside `/dev`. |
 | `9p` | `mounts[]` | chosen `path` | 9P2000 client for an external FS plugin. The `options` URL is `tcp://<host>:<port>`, `udp://<host>:<port>`, or `unix://<socket-path>` for a server on the same box. |
-| `log` | `mounts[]` | chosen `path` | Read-only directory view of per-wapp captured logs. `<path>/<name>` reads wapp `<name>`'s ring-buffered output; the mount enumerates wapps with a live log slot. A `name=<wapp>` option scopes it to one wapp (default: all). Grantable independently of `/dev/wanted`. |
+| `log` | `mounts[]` | chosen `path` | Read-only directory view of per-wapp captured logs. `<path>/<name>` reads wapp `<name>`'s ring-buffered output; the mount enumerates wapps with a live log slot. A `name=<wapp>` option scopes it to one wapp (default: all). The engine's own error channel appears as `.engine`, a name no image reference can carry; `name=.engine` scopes a grant to it alone. Grantable independently of `/dev/wanted`. |
 | `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
 | `log` | console slot | — | Console capture: routes a wapp's stdout/stderr into its per-wapp log slot (read back via a `log` mount). |
 | `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` are lossy writers (drop oldest on a full ring); `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
@@ -233,7 +234,7 @@ The grant names every pin, and nothing else is reachable:
 ```
 
 Each `pins=` entry is three colon-separated fields, `<name>:<address>:<direction>`,
-optionally followed by `pull=up|down|none` and `drive=pp|od`. The address is the
+optionally followed by `pull=up|down|none`, `drive=pp|od` and `init=0|1`. The address is the
 backing's business — a GPIO number on ESP-IDF, a character-device path such as
 `/dev/gpio0` on NuttX — and a wapp never sees it. It is one field, and `:` and
 `,` are reserved: they separate fields and entries, so a backing addressing a
@@ -249,6 +250,11 @@ board changes the launch config, not the image.
 - A `value` write takes `"0"` or `"1"`, with or without a trailing newline. On a
   pin the grant made an input it returns `-EPERM`; any other payload is
   `-EINVAL`.
+- `init=` is the level an output takes as the grant opens it, defaulting to
+  `0`, and the backing writes it before the pad becomes an output. A line whose
+  idle level is high — a reset line, a chip select — needs it: without it the
+  pin drives low from the moment the wapp launches and holds the device it is
+  wired to. On a pin the grant made an input it fails the launch.
 - Direction, pull, and drive are fixed by the grant. `direction` is read-only,
   so a wapp cannot turn an input into an output and drive a line an external
   device is already driving. A backing that cannot honour a requested pull or

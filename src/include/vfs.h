@@ -125,8 +125,15 @@ typedef struct vfs_driver_t {
     int (*Mkdir)(vfs_driver_ctx_t d, int fd, const char *path);
     int (*Rmdir)(vfs_driver_ctx_t d, int fd, const char *path);
 
+    /* Adopt the wapp's wake descriptor, watched beside whatever this driver
+     * blocks on so a stop ends the wait. Optional; -1 means the platform
+     * interrupts by signal and the driver blocks as before. */
+    void (*SetWake)(vfs_driver_ctx_t d, int fd);
+
     /* Network operations */
 
+    /* `wakeFd` is the wapp's wake descriptor, watched beside the listener so a
+     * stop ends the wait; -1 where the platform interrupts by signal. */
     int (*SockAccept)(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags,
                       int *newFd);
     int (*SockRecv)(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte,
@@ -145,6 +152,11 @@ typedef struct vfs_ctx_t *vfs_ctx_t;
 vfs_ctx_t VfsInit(void);
 void VfsDestroy(vfs_ctx_t *c);
 void VfsSetPrivileged(vfs_ctx_t c, bool privileged);
+
+/* The wapp's wake descriptor: a blocking driver watches it beside the resource
+ * it is serving, so a stop ends the wait. -1 when the platform has none. */
+void VfsSetWakeFd(vfs_ctx_t c, int fd);
+int VfsWakeFd(vfs_ctx_t c);
 int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver);
 
 int VfsOpen(vfs_ctx_t c, const char *path, vfs_oflags_t flags);

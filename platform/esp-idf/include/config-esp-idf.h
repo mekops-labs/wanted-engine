@@ -21,4 +21,4 @@
  * fixed-size and erase-sector-aligned, and one bounds the largest image. */
 #define WAPP_IMAGE_PARTITION_LABEL "wapps"
 #define WAPP_IMAGE_MAX_SLOTS CONFIG_WANTED_MAX_WAPPS
-#define WAPP_IMAGE_SLOT_SIZE (160 * 1024) /* 40 sectors */
+#define WAPP_IMAGE_SLOT_SIZE (CONFIG_WANTED_MAX_WAPP_IMAGE_KB * 1024)

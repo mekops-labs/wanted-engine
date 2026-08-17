@@ -43,7 +43,7 @@ The `wanted` driver is a device singleton: it mounts at its canonical `/dev/want
 | Path | Access | Description |
 |------|--------|-------------|
 | `/dev/wanted/ctl` | w | Root verbs. `create <name>` registers a wapp's control namespace ahead of configuring it. `delete <name>` releases a slot — a `create` reservation or a terminal (`exited`/`failure`) wapp — so the name leaves `wapps/` and its nodes return `-ENOENT` again. `poweroff` stops the engine without respawning the supervisor. `reboot` restarts the engine (host re-exec / board reset). `reload-supervisor` arms a supervisor image reload, applied at the next respawn. `rollback-supervisor` pins the compiled-in supervisor image and reloads it, answering `-EALREADY` when that image is what already runs. |
-| `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`, plus the declared linear-memory profile — see below) synthesized from the registry, peeking only the image header. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image. The version is an opaque tag; each ref component must match `[A-Za-z0-9_][A-Za-z0-9._-]*` or the open is rejected. A plain read of the directory itself returns `-EISDIR`. |
+| `/dev/wanted/reg` | rw | Installed-wapp registry. `readdir` enumerates `name:version` entries; reading an entry returns a small JSON descriptor (`name`/`version`/`size`, plus the declared linear-memory profile — see below) synthesized from the registry, peeking only the image header. **Install by ref**: open `reg/<name>:<version>` for *write* and stream the OCI TAR; the path names the stored image. The version is an opaque tag; each ref component must match `[A-Za-z0-9_][A-Za-z0-9._-]*` or the open is rejected. **Remove by ref**: `unlink` on `reg/<name>[:<version>]` drops the image and frees its slot; a ref naming no version removes the first image under that name. Both halves of a ref are matched in full, and neither an open nor an unlink by ref depends on the directory having been opened first. A plain read of the directory itself returns `-EISDIR`. |
 | `/dev/wanted/config` | r | Supervisor bootstrap meta-config. |
 
 The registry descriptor reports each image's **declared** linear-memory envelope, parsed from the wasm `(memory)` section without loading the module — a pre-flight check for whether an image fits this build's per-wapp cap (`WASM_MAX_MEMORY_PAGES`):
@@ -67,7 +67,7 @@ The root `ctl` accepts **only** `create <name>`, `delete <name>`, `poweroff`, `r
 write /dev/wanted/ctl delete app1
 ```
 
-It frees a `create` reservation (`created`/`not_started`) and/or a terminal platform slot (`exited`/`failure`). The slot allocator already reuses a terminal slot on the next `start`, so `delete` is for explicitly reclaiming a name — releasing the `wapps/` entry and any buffered config — without launching another wapp.
+It frees a `create` reservation (`created`/`not_started`) and/or a terminal platform slot (`exited`/`failure`). Every `start` allocates a fresh wapp record, so a terminal slot is never implicitly reused by the next `start` — `delete` is the only way to release it, including to restart the same name.
 
 | Target state | Result |
 |--------------|--------|
@@ -91,6 +91,32 @@ write /dev/wanted/wapps/app1/ctl   start                   # launch with that co
 Command-line arguments (`argv[1..]`) and environment variables travel in the `config` node's `args[]` and `envs[]` arrays (see the schema below) — there is no inline-argument shorthand on the control plane. `argv[0]` is always the instance name, set by the engine.
 
 **Instance vs. image.** `create <name>` reserves an *instance* name; the *image* it runs is resolved at `start` in priority order: an explicit `start <image>` argument, else the config's `image` field, else the instance name. So one image can back several instances (different `<name>`s, same image), and a bare `create` can go straight to `start <image>` — the explicit image satisfies the start gate without a prior `config` write (the wapp launches on default console/args). A bare `start` on an unconfigured reservation is still rejected.
+
+### What `stop` guarantees
+
+`stop` sets the terminate flag, which the runtime reads at the next WebAssembly
+instruction boundary. A wapp waiting in a host call reaches that boundary only
+when the wait ends, thus the engine ends the wait as well.
+
+Two mechanisms end it, by platform:
+
+- **Linux and NuttX** signal the worker (`SIGUSR2`, no `SA_RESTART`). The
+  blocked call answers `EINTR`.
+- **ESP-IDF** raises the wapp's wake descriptor, an `eventfd` the blocking
+  drivers watch. This platform implements no `pthread_kill`.
+
+The waits a wapp can enter:
+
+| Wait | How it ends |
+|------|-------------|
+| socket accept, socket read | the wake descriptor, watched with `select()` beside the socket |
+| `uart` read, `uart` write | the wake descriptor, checked between poll attempts |
+| pipe read, pipe write | a cap of about 5 s, after which the call answers `-EAGAIN` |
+| `uart` transmit drain before a line-rate change | a cap of 1 s |
+
+A stopped wapp answers `-EINTR` from the call it was in, unwinds, and the
+terminate flag is honoured. A supervisor that sees a wapp still `RUNNING` after
+a stop is looking at a defect, not at a slow teardown.
 
 ## Wapp namespace
 
@@ -137,7 +163,7 @@ stateDiagram-v2
     failure --> [*]: delete
 ```
 
-`delete` is the only edge back to `[*]` from `created`/`not_started`; a terminal `exited`/`failure` slot also leaves via `delete` (or is silently reused by the next `start`). A `running`/`starting` wapp has no `delete` edge — stop it first.
+`delete` is the only edge back to `[*]` from `created`/`not_started`; a terminal `exited`/`failure` slot leaves only via `delete` — a `start` never implicitly reuses one, even for the same name. A `running`/`starting` wapp has no `delete` edge — stop it first.
 
 `state` is the authoritative observed status. A supervisor maps these tokens onto its own reconciliation state machine; `starting` and `stopping` are supervisor-side transient states, not engine tokens.
 

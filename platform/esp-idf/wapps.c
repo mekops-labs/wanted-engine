@@ -15,6 +15,7 @@
 #include "sdkconfig.h"
 
 #include <platform.h>
+#include <vfs.h>
 #include <wanted-api.h>
 #include <wanted.h>
 #include <wanted_malloc.h>
@@ -129,24 +130,17 @@ int PlatformWappStart(wapp_t *wapp) {
         return -ENOSPC;
     }
 
+    /* A terminal slot still holds its wapp's record until `delete`
+     * releases it, so only an empty slot is free to take. A wapp
+     * restarting in place keeps the slot it already holds. */
     for (slot = 0; slot < CONFIG_WANTED_MAX_WAPPS; slot++) {
-        if (state.threads[slot].status == NOT_STARTED ||
-            state.threads[slot].status == EXITED ||
-            state.threads[slot].status == FAILURE)
+        const wapp_t *occupant = state.threads[slot].data.wapp;
+        if (occupant == NULL || occupant == wapp)
             break;
     }
     if (slot >= CONFIG_WANTED_MAX_WAPPS) {
         pthread_mutex_unlock(&state_mtx);
         return -ENOSPC;
-    }
-
-    /* The slot owns the previous occupant's wapp_t, whose thread has fully
-     * terminated by the time the slot is reusable, so release image and struct
-     * now. The supervisor's image is a singleton reused across respawns. */
-    wapp_t *prev = state.threads[slot].data.wapp;
-    if (prev != NULL && prev != wapp && prev != WantedGetCurrentSupervisor()) {
-        PlatformWappUnload(prev);
-        WantedFree(prev);
     }
 
     state.threads[slot].data.id = slot;
@@ -192,9 +186,10 @@ int PlatformWappStop(const char *name) {
     }
 
     /* Cooperative stop: set the terminate flag so wasm_runtime_call_wasm
-     * returns false at the next instruction boundary and the thread unwinds
-     * through WA_threadEnd. ESP-IDF wires no signal wakeup. */
+     * returns false at the next instruction boundary, then raise the wake
+     * descriptor so a blocked host call ends and that boundary is reached. */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
+    PlatformWakeRaise(VfsWakeFd(state.threads[slot].data.vfs));
 
     pthread_mutex_unlock(&state_mtx);
 

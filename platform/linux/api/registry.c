@@ -177,3 +177,6 @@ int PlatformRegistryReadImage(const reg_entry_t *entry, uint8_t *buf,
     close(fd);
     return r < 0 ? -errno : (int)r;
 }
+
+/* Images are files under REGISTRY_ROOT, bounded by the filesystem. */
+size_t PlatformRegistrySlots(void) { return 0; }

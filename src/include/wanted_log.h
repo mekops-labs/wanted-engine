@@ -8,6 +8,12 @@
 #include <string.h>
 #include <unistd.h>
 
+/* Captures the error channel into the process-wide log store, so it is
+ * readable on a board whose console is unreachable. Declared directly:
+ * this header of static inlines must not include log-store.h. */
+/* NOLINTNEXTLINE(readability-redundant-declaration) */
+void WantedLogCapture(const void *buf, size_t n);
+
 /* Always-compiled error channel — config and launch faults must stay
  * diagnosable where DEBUG_TRACE compiles away. Raw write() as in DEBUG_TRACE:
  * on some targets the stderr FILE stream is not bound to the console fd. */
@@ -28,6 +34,7 @@ static inline void WantedLogErrEmit(const char *fmt, ...) {
 
     buf[off++] = '\n';
     (void)write(STDERR_FILENO, buf, (size_t)off);
+    WantedLogCapture(buf, (size_t)off);
 }
 
 #define LOG_ERROR(fmt, ...) WantedLogErrEmit(fmt, ##__VA_ARGS__)

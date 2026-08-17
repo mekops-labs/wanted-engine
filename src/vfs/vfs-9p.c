@@ -441,6 +441,9 @@ vfs_driver_t *Vfs9PInit(const wapp_t *wapp, const char *opt) {
         DEBUG_TRACE("can't allocate memory");
         return NULL;
     }
+    /* Zero first: an unassigned vtable slot would otherwise hold heap
+     * garbage, which the caller reads as a function to call. */
+    memset(driver, 0, sizeof(*driver));
 
     driver->ctx = (struct vfs_driver_ctx_t *)WantedMalloc(
         sizeof(struct vfs_driver_ctx_t));
@@ -736,7 +739,11 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
     uint8_t *b;
     uint32_t sz;
     size_t used = 0;
-    uint64_t off = 0;
+    uint64_t off = *cookie;
+    /* The offset the next call starts from. It advances only over an entry
+     * that reached the buffer, so one that did not fit is served next. */
+    uint64_t next = off;
+    bool full = false;
     vfs_dirent_t dir = {0};
 
     // read and parse dir entry
@@ -751,29 +758,40 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
         proc(a);
         if (a->rCnt < 7)
             break;
-        off += a->rCnt;
         b = &a->rBuf[RREAD_HDR_LEN];
         sz = a->rCnt;
 
+        const uint8_t *chunk = b;
+        uint64_t chunkOff = off;
+        off += a->rCnt;
+
         while (sz > 0 && c9parsedir(&a->c, &s, &b, &sz) == 0) {
+            /* c9parsedir leaves `b` past this entry, thus the offset of the
+             * one after it. */
+            uint64_t entryEnd = chunkOff + (uint64_t)(b - chunk);
+
             dir.d_ino = s.qid.path;
             dir.d_type = convert9pFiletype(s.qid.type);
             dir.d_namlen = strnlen(s.name, CONFIG_WANTED_MAX_PATH_LEN);
-            dir.d_next = off;
+            dir.d_next = entryEnd;
 
+            /* Report only the bytes written to `buf`; claiming the whole
+             * buffer would have a reader parse bytes this never wrote as
+             * an entry, following its length and cookie into nothing. */
             if (used + sizeof(dir) + dir.d_namlen > bufLen) {
-                used = bufLen;
+                full = true;
                 break;
             }
             memcpy((char *)buf + used, &dir, sizeof(dir));
             memcpy((char *)buf + sizeof(dir) + used, s.name, dir.d_namlen);
 
             used += sizeof(dir) + dir.d_namlen;
+            next = entryEnd;
         }
-    } while (a->rCnt != 0);
+    } while (!full && a->rCnt != 0);
 
     *bufUsed = used;
-    *cookie = dir.d_next; // last found directory entry
+    *cookie = next;
 
     return 0;
 }
