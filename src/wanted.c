@@ -359,7 +359,7 @@ static const char *resetReason(void) {
     return reason;
 }
 
-static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
+int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
     int w = snprintf(
         (char *)buf, bufLen,
@@ -650,7 +650,7 @@ int WantedWappRun(wapp_data_t *ctx) {
                     false);
     /* wanted exposes engine identity and resource ceilings; unprivileged so any
      * wapp can introspect the host it runs on. */
-    ProcFs_Register(ctx->vfs, "wanted", procReadWanted, false);
+    ProcFs_Register(ctx->vfs, "wanted", WantedProcReadInfo, false);
 
     wasiCtx->vfsCtx = ctx->vfs;
 
