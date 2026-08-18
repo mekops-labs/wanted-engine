@@ -335,6 +335,15 @@ config WANTED_MAX_DRIVERS_CNT
 	  Sizes drivers[], mounts[] and sockets[] each — paid three times per
 	  configured wapp.
 
+config WANTED_MAX_LAYERS
+	int "Filesystem layers per wapp image"
+	default 4
+	range 1 16
+	help
+	  Sizes the per-wapp layer table and bounds what a wapp image may stack.
+	  A supervisor reads the value from /proc/wanted and refuses a deployment
+	  naming more, so raising it here is what lets one arrive.
+
 config WANTED_MAX_OPTIONS_SIZE
 	int "Launch-config options string (bytes)"
 	default 128

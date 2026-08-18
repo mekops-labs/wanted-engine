@@ -376,6 +376,9 @@ static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
         "wasm_max_pages:\t%d\n"
         "max_drivers:\t%d\n"
         "max_options:\t%d B\n"
+        "max_layers:\t%d\n"
+        "max_args:\t%d\n"
+        "max_envs:\t%d\n"
         "log_slots:\t%d\n"
         "reg_slots:\t%zu\n"
         "reset_reason:\t%s\n",
@@ -384,8 +387,10 @@ static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
         CONFIG_WANTED_MAX_PATH_LEN, CONFIG_WANTED_WASM_STACK_SIZE,
         CONFIG_WANTED_WASM_HEAP_SIZE, PlatformWorkerStackSize(),
         CONFIG_WANTED_WASM_MAX_MEMORY_PAGES, CONFIG_WANTED_MAX_DRIVERS_CNT,
-        CONFIG_WANTED_MAX_OPTIONS_SIZE, CONFIG_WANTED_LOG_SLOTS,
-        PlatformRegistrySlots(), resetReason());
+        CONFIG_WANTED_MAX_OPTIONS_SIZE, TARFS_MAX_LAYERS, WAPP_MAX_ARGS,
+        WAPP_MAX_ENVS, CONFIG_WANTED_LOG_SLOTS, PlatformRegistrySlots(),
+        resetReason());
+
     if (w < 0)
         return -EIO;
 

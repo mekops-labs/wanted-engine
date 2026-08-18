@@ -53,7 +53,7 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/wapps/<name>/memory` | r | yes | Per-wapp WASM linear-memory accounting: `linear_cur` / `linear_max` (bytes) and `pages_cur` / `pages_max`. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`; `store_free` / `store_total`; `wasm_pages_free` — free WASM linear-memory pages, summed across every loaded wapp's headroom to its own ceiling. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `uptime_ms` (milliseconds since the engine started, the origin log line stamps count from), `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `reg_slots` (images the registry can hold; `0` where it is bounded only by the filesystem), `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `uptime_ms` (milliseconds since the engine started, the origin log line stamps count from), `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `max_layers`, `max_args`, `max_envs`, `reg_slots` (images the registry can hold; `0` where it is bounded only by the filesystem), `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
@@ -73,6 +73,9 @@ wasm_worker_stack:	65536 B
 wasm_max_pages:	1
 max_drivers:	6
 max_options:	128 B
+max_layers:	4
+max_args:	8
+max_envs:	8
 log_slots:	3
 reg_slots:	0
 drivers:	null log 9p config platform socket sha256 ed25519 inflate wanted
@@ -81,7 +84,9 @@ drivers:	null log 9p config platform socket sha256 ed25519 inflate wanted
 `wasm_worker_stack` is the effective per-wapp worker thread native C stack (the
 configured `WASM_WORKER_STACK_SIZE` after the platform's `PTHREAD_STACK_MIN`
 floor); `max_drivers` / `max_options` size each launch-config drivers/mounts/sockets
-section and the per-entry options blob. `drivers` lists the driver names a launch
+section and the per-entry options blob. `max_layers` / `max_args` / `max_envs` bound
+one wapp's filesystem layers, arguments and environment entries — a supervisor reads
+them to refuse a deployment the engine would not accept. `drivers` lists the driver names a launch
 config can request on this build — the platform-agnostic core plus the drivers
 the running platform implements (e.g. `wifi ota` on ESP-IDF) and any linked in
 from an out-of-tree tree (see the [Platform Guide](platform-guide.md)); naming
