@@ -11,7 +11,8 @@
                 "err": {"name": "platform"}
             },
             "drivers": [
-                {"name": "wanted"}
+                {"name": "wanted"},
+                {"name": "ota"}
             ],
             "mounts": [
                 {"name": "config", "path": "/etc/config", "options": "selftest-cfgmap-v1"},
