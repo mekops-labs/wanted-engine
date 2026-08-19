@@ -18,6 +18,7 @@
 #include <sys/boardctl.h>
 #endif
 
+#include <board-wdt.h>
 #include <platform.h>
 #include <wanted-api.h>
 #include <wanted.h>
@@ -33,6 +34,11 @@ pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
  * WAMR reserves SIGUSR1 for its own wakeup and keeps it masked on every wasm
  * thread, so a SIGUSR1 sent here would never reach the worker. */
 #define WAPP_STOP_SIGNAL SIGUSR2
+
+/* Board watchdog timeout. Kicked once per run-loop iteration, which sleeps a
+ * second, so this is the margin for a loop that is late rather than wedged.
+ * The rp23xx counter is 24 bits of microseconds, capping it near 16.7 s. */
+#define BOARD_WDT_TIMEOUT_MS 8000
 
 #define FATAL(err, msg, ...)                                                   \
     {                                                                          \
@@ -352,9 +358,16 @@ void PlatformRequestReboot(void) {
 
 void PlatformWappLoop(void) {
     bool supervisorOk;
+    bool otaConfirmed = false;
+
+    /* Armed here rather than before the engine starts: nothing kicks it until
+     * this loop runs, and a boot that never reaches the loop is what the OTA
+     * revert path exists to catch. */
+    BoardWdtArm(BOARD_WDT_TIMEOUT_MS);
 
     for (;;) {
         sleep(1);
+        BoardWdtKick();
 
         pthread_mutex_lock(&state_mtx);
         int shutdown = shutdown_requested;
@@ -362,12 +375,14 @@ void PlatformWappLoop(void) {
         pthread_mutex_unlock(&state_mtx);
 
         if (shutdown) {
+            BoardWdtDisarm();
 #ifdef __NuttX__
             boardctl(BOARDIOC_POWEROFF, 0);
 #endif
             return;
         }
         if (reboot) {
+            BoardWdtDisarm();
 #ifdef __NuttX__
             boardctl(BOARDIOC_RESET, 0);
 #endif
@@ -401,6 +416,12 @@ void PlatformWappLoop(void) {
         switch (WantedSupervisorObserve(supervisorOk, supervisorFailed,
                                         supervisorExited)) {
         case SUPERVISOR_HEALTHY:
+            /* The supervisor reached RUNNING at least once this boot, so the
+             * image is good. Idempotent, and a no-op on a confirmed slot. */
+            if (!otaConfirmed) {
+                PlatformOtaConfirm();
+                otaConfirmed = true;
+            }
             continue;
         case SUPERVISOR_RESPAWN:
             break;
@@ -417,6 +438,7 @@ void PlatformWappLoop(void) {
                     "stopping — check the supervisor config\n",
                     MAX_SUPERVISOR_LAUNCH_FAILURES,
                     supervisorFailText(supervisorFailed, supervisorErr));
+            BoardWdtDisarm();
             return;
         }
         PlatformWappStart(WantedGetCurrentSupervisor());

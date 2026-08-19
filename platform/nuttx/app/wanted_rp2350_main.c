@@ -20,6 +20,7 @@
 #include <config-nuttx.h>
 #include <platform.h>
 #include <wanted.h>
+#include <wanted_log.h>
 
 #include "boot-romfs.h" /* generated: boot_romfs_img[], boot_romfs_img_len */
 #include "debug_trace.h"
@@ -293,6 +294,29 @@ static void bring_up_usb_console(void) {
 }
 #endif /* !CONFIG_UART0_SERIAL_CONSOLE */
 
+/* Read the boot state and record a slot that failed. An unconfirmed active
+ * slot on a repeat attempt means the loader already tried an image and came
+ * back, which is the one account of a bad update that outlives the reboot
+ * that hid it. Goes to the engine's error channel, which survives a reset. */
+static void report_boot_slot(void) {
+    if (PlatformOtaInit() != 0) {
+        DEBUG_TRACE("ota: boot state unavailable");
+        return;
+    }
+
+    platform_ota_state_t st;
+    if (PlatformOtaGetBootState(&st) != 0)
+        return;
+
+    DEBUG_TRACE("ota: booted slot %c (%s), attempt %d", st.active_slot,
+                st.confirmed ? "confirmed" : "unconfirmed", st.boot_attempts);
+
+    if (!st.confirmed && st.boot_attempts > 1)
+        LOG_ERROR("ota: slot %c did not confirm after %d attempts; "
+                  "the loader reverted",
+                  st.active_slot, st.boot_attempts);
+}
+
 int wanted_rp2350_main(int argc, char *argv[]) {
     /* Must run before anything else (littlefs/ROMFS mount, seed_registry
      * file I/O) touches the shared heap and fragments its one big PSRAM
@@ -341,6 +365,10 @@ int wanted_rp2350_main(int argc, char *argv[]) {
         wifi_connect_bringup();
     }
 #endif
+
+    /* Before the engine starts, so a slot that failed is recorded even if the
+     * supervisor never comes up. */
+    report_boot_slot();
 
     int rc;
     if (sheriffDemo) {

@@ -5,6 +5,7 @@ set(sources
     api/gpio.c
     api/uart.c
     api/ota.c
+    api/wdt.c
     api/extram.c
     api/random.c
     ${CMAKE_SOURCE_DIR}/platform/posix/clock.c
