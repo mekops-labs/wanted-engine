@@ -17,6 +17,7 @@
 
 #include <nuttx/usb/cdcacm.h>
 
+#include <config-nuttx.h>
 #include <platform.h>
 #include <wanted.h>
 
@@ -39,8 +40,8 @@
 int wanted_main(int argc, char *argv[]);
 
 #define SEED_DIR                                                               \
-    ROMFS_MOUNTPT "/registry"   /* /rom/registry (bundled factory wapps) */
-#define REGISTRY_DIR "registry" /* relative to REGISTRY_VOLUME (chdir'd) */
+    ROMFS_MOUNTPT "/registry" /* /rom/registry (bundled factory wapps) */
+#define REGISTRY_DIR REGISTRY_ROOT
 #define SEED_COPY_BUF 1024
 
 /* Copy one factory image from the read-only boot ROMFS into the writable

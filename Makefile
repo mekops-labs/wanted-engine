@@ -40,7 +40,7 @@ WAPP_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help shell menuconfig setconfig build wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32-flash rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync FORCE
+.PHONY: help shell menuconfig setconfig wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32-flash rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign rp2350-partition-table rp2350-seal rp2350-flash-partition-table rp2350-flash-slot docs-sync FORCE
 
 # make reads every word as its own goal, so `make defconfig openwrt` reaches just
 # as two recipes. Forward trailing goals as arguments and neutralise them as
@@ -213,6 +213,36 @@ rp2350-reset: ## reset the running board over SWD via a Raspberry Pi Debug Probe
 
 rp2350-sign: ## sign $(RP2350_BIN) and validate the signature offline (no OTP, no device) [RP2350_BIN=...]
 	$(RP2350_RUN) './test/rp2350-sign-verify.sh $(RP2350_BIN)'
+
+# A/B image slots. The bootrom picks between two image partitions by version
+# and reverts an unconfirmed one, and it translates whichever slot it booted
+# to the image's link address, so one build runs from either. The table is
+# per board because the slot bounds follow the part's size; it is named from
+# the board half of RP2350_CONFIG.
+RP2350_BOARD   = $(firstword $(subst :, ,$(RP2350_CONFIG)))
+RP2350_PT_JSON = configs/rp2350-partitions/$(RP2350_BOARD).json
+RP2350_PT_BIN ?= third_party/nuttx/partition-table.uf2
+# Version-ordered slot selection reads these; bump RP2350_MINOR per build so a
+# staged image outranks the one it replaces.
+RP2350_MAJOR  ?= 1
+RP2350_MINOR  ?= 0
+RP2350_SEALED ?= third_party/nuttx/nuttx-sealed.uf2
+# Which slot a flash targets: 0 is A, 1 is B.
+RP2350_SLOT   ?= 0
+
+rp2350-partition-table: ## build the A/B partition table -> $(RP2350_PT_BIN) [RP2350_CONFIG=...]
+	$(RP2350_RUN) 'cd /src && picotool partition create $(RP2350_PT_JSON) $(RP2350_PT_BIN)'
+
+rp2350-seal: ## stamp $(RP2350_BIN) with a version and hash -> $(RP2350_SEALED) [RP2350_MAJOR/MINOR=...]
+	$(RP2350_RUN) 'cd /src && picotool seal --hash \
+	    --major $(RP2350_MAJOR) --minor $(RP2350_MINOR) \
+	    $(RP2350_BIN) $(RP2350_SEALED)'
+
+rp2350-flash-partition-table: ## write the partition table over USB; wipes the part, so re-flash a slot after [RP2350_PT_BIN=...]
+	picotool load $(RP2350_PT_BIN)
+
+rp2350-flash-slot: ## flash $(RP2350_SEALED) into slot $(RP2350_SLOT) over USB (0=A, 1=B) [RP2350_SLOT=...]
+	picotool load -p $(RP2350_SLOT) -x $(RP2350_SEALED)
 
 # docs-sync runs on the host, not in the build container: it only copies Markdown
 # (no toolchain needed) to the destination directory. Pass DOCS_DEST.

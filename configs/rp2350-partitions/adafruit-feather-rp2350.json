@@ -1,0 +1,26 @@
+{
+  "version": [1, 0],
+  "unpartitioned": {
+    "families": ["absolute"],
+    "permissions": { "secure": "rw" }
+  },
+  "partitions": [
+    {
+      "name": "A",
+      "id": 0,
+      "start": 4096,
+      "size": 2097152,
+      "families": ["rp2350-arm-s"],
+      "permissions": { "secure": "rw" }
+    },
+    {
+      "name": "B",
+      "id": 1,
+      "start": 2101248,
+      "size": 2097152,
+      "families": ["rp2350-arm-s"],
+      "permissions": { "secure": "rw" },
+      "link": ["a", 0]
+    }
+  ]
+}
