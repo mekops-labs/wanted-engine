@@ -131,7 +131,9 @@ int PlatformNetListen(struct netCtx *ctx, const char *bindAddr, uint16_t port,
 /* cppcheck-suppress constParameterPointer */
 /* The test platform has no real queue: a raised wake answers -EINTR, and
  * anything else lets the call below decide. */
-int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd) {
+int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd,
+                            int64_t timeout_ns) {
+    (void)timeout_ns;
     if (!ctx)
         return -EINVAL;
     if (wakeFd < 0)

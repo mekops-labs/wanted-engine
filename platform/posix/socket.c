@@ -255,32 +255,49 @@ int PlatformNetListen(struct netCtx *c, const char *bindAddr, uint16_t port,
     return 0;
 }
 
-int PlatformNetWaitReadable(struct netCtx *c, int wakeFd) {
+int PlatformNetWaitReadable(struct netCtx *c, int wakeFd, int64_t timeout_ns) {
     fd_set r;
     int high;
 
     if (NULL == c) {
         return -EINVAL;
     }
-    if (wakeFd < 0) {
+    if (wakeFd < 0 && timeout_ns < 0) {
         /* No wake descriptor: the call below blocks and a signal ends it. */
         return 0;
     }
 
-    high = c->socket > wakeFd ? c->socket : wakeFd;
+    struct timeval tv;
+    if (timeout_ns >= 0) {
+        tv.tv_sec = (time_t)(timeout_ns / 1000000000);
+        tv.tv_usec = (suseconds_t)((timeout_ns % 1000000000) / 1000);
+    }
+
+    high = c->socket;
+    if (wakeFd > high) {
+        high = wakeFd;
+    }
+
     for (;;) {
         FD_ZERO(&r);
         FD_SET(c->socket, &r);
-        FD_SET(wakeFd, &r);
+        if (wakeFd >= 0) {
+            FD_SET(wakeFd, &r);
+        }
 
-        if (select(high + 1, &r, NULL, NULL, NULL) < 0) {
+        int ready = select(high + 1, &r, NULL, NULL,
+                           timeout_ns >= 0 ? &tv : NULL);
+        if (ready < 0) {
             if (errno == EINTR) {
                 return -EINTR;
             }
             return -errno;
         }
+        if (ready == 0) {
+            return -EAGAIN;
+        }
         /* The wake first: a stop outranks a connection that also arrived. */
-        if (FD_ISSET(wakeFd, &r)) {
+        if (wakeFd >= 0 && FD_ISSET(wakeFd, &r)) {
             return -EINTR;
         }
         if (FD_ISSET(c->socket, &r)) {

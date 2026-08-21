@@ -269,8 +269,10 @@ int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out);
 
 /* Wait until `ctx` is readable — a pending connection on a listener, or
  * data on a connection — or until `wakeFd` is raised. Answers 0 once the
- * call below would not block, -EINTR on a raised wake. */
-int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd);
+ * call below would not block, -EINTR on a raised wake, -EAGAIN when the
+ * deadline passed first. A negative `timeout_ns` waits without one, and 0
+ * only tests. */
+int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd, int64_t timeout_ns);
 
 /* A/B firmware OTA: dual-slot update plus rollback, backed by whatever the
  * target boots through. Slots are always named 'a' and 'b', so the /dev/ota
