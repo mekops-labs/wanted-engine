@@ -21,6 +21,13 @@ CONFIG_WANTED_MAX_OPTIONS_SIZE=128
 
 CONFIG_WANTED_VFS_UART=y
 
+# Two pipes per peer is the convention of the broker, and the wapps of this
+# board reach both the broker and the display that way. Eight pipes serve four
+# such links; sixteen serve eight. The store is one heap allocation in the
+# external RAM this board carries, thus the eight added pipes cost ~33 KiB of
+# the megabytes free there.
+CONFIG_WANTED_PIPE_MAX_PIPES=16
+
 # The wapp of the display serves its REST surface from inside the sandbox.
 CONFIG_WANTED_VFS_SOCKET_LISTEN=y
 
