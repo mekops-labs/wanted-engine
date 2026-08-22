@@ -451,12 +451,15 @@ static int ioConn(vfs_driver_ctx_t c, int fd, struct sock_conn_t **out) {
     return 0;
 }
 
+/* A wapp cannot subscribe an fd to poll_oneoff, thus a non-blocking read is
+ * the only way one waits on a socket and does anything else. */
 static int _Read(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte) {
     struct sock_conn_t *s;
     int ret = ioConn(c, fd, &s);
     if (ret < 0)
         return ret;
-    ret = PlatformNetWaitReadable(s->netCtx, c->wakeFd);
+    ret = PlatformNetWaitReadable(s->netCtx, c->wakeFd,
+                                  (c->flags & VFS_O_NONBLOCK) ? 0 : -1);
     if (ret < 0)
         return ret;
     return PlatformNetRecv(s->netCtx, buf, nbyte, 0);
@@ -531,7 +534,7 @@ static int _SockAccept(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags,
     /* Wait first, watching the wapp's wake descriptor beside the listener, so
      * a stop ends the wait. Without one the accept blocks and a signal ends
      * it. */
-    int ret = PlatformNetWaitReadable(l->netCtx, c->wakeFd);
+    int ret = PlatformNetWaitReadable(l->netCtx, c->wakeFd, -1);
     if (ret < 0)
         return ret;
 
@@ -558,6 +561,11 @@ static int _SockRecv(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte,
     int ret = ioConn(c, fd, &s);
     if (ret < 0)
         return ret;
+    if (c->flags & VFS_O_NONBLOCK) {
+        ret = PlatformNetWaitReadable(s->netCtx, c->wakeFd, 0);
+        if (ret < 0)
+            return ret;
+    }
     return PlatformNetRecv(s->netCtx, buf, nbyte, iflags);
 }
 
