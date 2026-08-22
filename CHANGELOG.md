@@ -1,6 +1,16 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Fixed
+
+- A sleep shorter than one tick of the scheduler waits a whole tick on
+  ESP-IDF, where `usleep` below a tick spins on the CPU instead of blocking.
+- The blocking-read cap of a named pipe is a deadline of 5 s, not 5000 passes
+  of a 1 ms sleep.
+
 0.13.0 (2026-08-17)
 -------------------
 
