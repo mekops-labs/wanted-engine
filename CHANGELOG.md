@@ -4,6 +4,11 @@ Changelog
 Unreleased
 ----------
 
+### Changed
+
+- The Telegraph board holds sixteen named pipes, and its registry image slot
+  is 192 KiB over sixteen refs rather than 256 KiB over twelve.
+
 ### Removed
 
 - The boot selftests of the ESP-IDF entry point, and the concurrent-install
