@@ -4,6 +4,8 @@ Changelog
 Unreleased
 ----------
 
+### Changed
+
 - A read of a socket opened with `O_NONBLOCK` answers `-EAGAIN` rather than
   waiting, as the pipe and serial drivers already do.
 - `PlatformNetWaitReadable` takes a timeout: negative waits, 0 only tests.
