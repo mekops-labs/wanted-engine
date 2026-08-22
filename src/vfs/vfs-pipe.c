@@ -21,7 +21,13 @@
  * rechecks, which is cancellation-safe. The cap bounds the wait so a
  * never-arriving peer becomes -EAGAIN rather than a hang. */
 #define PIPE_POLL_INTERVAL_NS 1000000ULL /* 1 ms */
-#define PIPE_POLL_MAX_ITERS 5000         /* ~5 s safety cap */
+
+/* The cap is a deadline and not a count of passes: a platform whose sleep
+ * rounds up to a scheduler tick would otherwise wait ten times as long as
+ * this says.
+ */
+
+#define PIPE_POLL_MAX_NS 5000000000ULL /* 5 s safety cap */
 
 typedef struct named_pipe_t {
     char name[MAX_ENTRY_NAME_LEN];
@@ -45,6 +51,26 @@ typedef struct pipe_handle_t {
     int flags;
     bool is_root;
 } pipe_handle_t;
+
+/* The wait of a blocking read ends at a deadline, thus the cap means the same
+ * on a platform whose sleep rounds up to a scheduler tick.
+ */
+
+static plat_timestamp_t pollDeadline(void) {
+    plat_timestamp_t now = 0;
+
+    if (PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &now) < 0)
+        return 0; /* no clock: the sleep below still answers a wake */
+    return now + PIPE_POLL_MAX_NS;
+}
+
+static bool pollExpired(plat_timestamp_t deadline) {
+    plat_timestamp_t now = 0;
+
+    if (deadline == 0 || PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &now) < 0)
+        return false;
+    return now >= deadline;
+}
 
 /* ── Shared store lifecycle ──────────────────────────────────────────────────
  */
@@ -231,7 +257,9 @@ int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
     named_pipe_t *p = h->pipe;
     bool nonblock = (h->flags & VFS_O_NONBLOCK) != 0;
 
-    for (size_t iter = 0;; iter++) {
+    plat_timestamp_t deadline = pollDeadline();
+
+    for (;;) {
         PlatformMutexLock(store->lock);
         if (p->data_len > 0) {
             int n = ringRead(p, buf, nbyte);
@@ -247,7 +275,7 @@ int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
         }
         PlatformMutexUnlock(store->lock);
 
-        if (nonblock || iter >= PIPE_POLL_MAX_ITERS)
+        if (nonblock || pollExpired(deadline))
             return -EAGAIN;
         /* A stop ends the wait at once: a signal interrupts the sleep, and
          * where the platform has none the wake descriptor is raised. */
@@ -521,7 +549,9 @@ static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
         return 0; /* out/err read as EOF */
 
     bool nonblock = (c->flags & VFS_O_NONBLOCK) != 0;
-    for (size_t iter = 0;; iter++) {
+    plat_timestamp_t deadline = pollDeadline();
+
+    for (;;) {
         PlatformMutexLock(c->store->lock);
         named_pipe_t *p = findPipe(c->store, c->name);
         if (p && p->data_len > 0) {
@@ -533,7 +563,7 @@ static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
         PlatformMutexUnlock(c->store->lock);
         if (eof)
             return 0;
-        if (nonblock || iter >= PIPE_POLL_MAX_ITERS)
+        if (nonblock || pollExpired(deadline))
             return -EAGAIN;
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    PIPE_POLL_INTERVAL_NS, 0) == -EINTR)

@@ -4,13 +4,18 @@ Changelog
 Unreleased
 ----------
 
-### Changed
-
 - A read of a socket opened with `O_NONBLOCK` answers `-EAGAIN` rather than
   waiting, as the pipe and serial drivers already do.
 - `PlatformNetWaitReadable` takes a timeout: negative waits, 0 only tests.
 - The Telegraph board holds sixteen named pipes, and its registry image slot
   is 192 KiB over sixteen refs rather than 256 KiB over twelve.
+
+### Fixed
+
+- A sleep shorter than one tick of the scheduler waits a whole tick on
+  ESP-IDF, where `usleep` below a tick spins on the CPU instead of blocking.
+- The blocking-read cap of a named pipe is a deadline of 5 s, not 5000 passes
+  of a 1 ms sleep.
 
 ### Removed
 
