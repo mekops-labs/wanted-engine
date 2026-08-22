@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Changed
+
+- The Telegraph board holds sixteen named pipes, and its registry image slot
+  is 192 KiB over sixteen refs rather than 256 KiB over twelve.
+
 0.13.0 (2026-08-17)
 -------------------
 
