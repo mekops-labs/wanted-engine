@@ -285,8 +285,8 @@ int PlatformNetWaitReadable(struct netCtx *c, int wakeFd, int64_t timeout_ns) {
             FD_SET(wakeFd, &r);
         }
 
-        int ready = select(high + 1, &r, NULL, NULL,
-                           timeout_ns >= 0 ? &tv : NULL);
+        int ready =
+            select(high + 1, &r, NULL, NULL, timeout_ns >= 0 ? &tv : NULL);
         if (ready < 0) {
             if (errno == EINTR) {
                 return -EINTR;
