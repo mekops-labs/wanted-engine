@@ -423,10 +423,10 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
         /* A stop ends the wait: a signal interrupts the sleep, and where the
          * platform has none the wake descriptor is raised instead. Return
          * -EINTR so the read unwinds and the terminate flag is honoured. */
-        if (PlatformWakeRaised(d->wakeFd))
-            return -EINTR;
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    UART_POLL_INTERVAL_NS, 0) == -EINTR)
+            return -EINTR;
+        if (PlatformWakeRaised(d->wakeFd))
             return -EINTR;
     }
 }
@@ -496,10 +496,10 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
             return n;
         if (f->nonblock)
             return -EAGAIN;
-        if (PlatformWakeRaised(d->wakeFd))
-            return -EINTR;
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    UART_POLL_INTERVAL_NS, 0) == -EINTR)
+            return -EINTR;
+        if (PlatformWakeRaised(d->wakeFd))
             return -EINTR;
     }
 }

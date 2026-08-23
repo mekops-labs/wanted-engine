@@ -277,14 +277,13 @@ int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
 
         if (nonblock || pollExpired(deadline))
             return -EAGAIN;
-        /* A stop ends the wait at once: a signal interrupts the sleep, and
-         * where the platform has none the wake descriptor is raised. */
-        if (PlatformWakeRaised(VfsWakeFd(c)))
-            return -EINTR;
         /* Sleep UNLOCKED so a worker torn down here cannot strand the shared
-         * mutex. */
+         * mutex. A signalled stop interrupts the sleep (EINTR); where the
+         * platform has no signal the wake descriptor is raised instead. */
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
+            return -EINTR;
+        if (PlatformWakeRaised(VfsWakeFd(c)))
             return -EINTR;
     }
 }
