@@ -8,11 +8,20 @@
 #include <stdint.h>
 #include <unistd.h>
 
+#include <freertos/FreeRTOS.h>
+
 #include <clock-posix.h>
 #include <platform.h>
 
 #define NS_PER_US 1000ULL
 #define USLEEP_CHUNK_US 1000000000U /* keep each usleep within useconds_t */
+
+/* One tick of the scheduler. Below it usleep spins on the CPU instead of
+ * blocking, which starves the idle task and trips the task watchdog, thus a
+ * sleep of any length waits at least this long.
+ */
+
+#define TICK_US ((uint64_t)portTICK_PERIOD_MS * 1000ULL)
 
 int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout,
                            plat_clk_flags_t flags) {
@@ -29,6 +38,10 @@ int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout,
     }
 
     uint64_t us = (duration + (NS_PER_US - 1)) / NS_PER_US;
+    if (us > 0 && us < TICK_US) {
+        us = TICK_US;
+    }
+
     while (us > 0) {
         useconds_t chunk =
             (us > USLEEP_CHUNK_US) ? USLEEP_CHUNK_US : (useconds_t)us;
