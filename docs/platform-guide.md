@@ -151,7 +151,6 @@ make nuttx-shell     # boot the sim to an interactive wsh prompt (host wrapper)
 
 Two hardware target families live in the tree. The **RP2350** is a **NuttX** target that shares `platform/nuttx/` with the simulator — only the board config, the registry backend, and the entry point differ. The **ESP32 family** (classic ESP32 + ESP32-S3) is a native **ESP-IDF** port under `platform/esp-idf/`.
 
-**Building any board is always `make defconfig <board> && make build`** (or `make build DEFCONFIG=<board>` in one step) — never a hand-built `podman`/`docker run`, `idf.py`, or cross-compiler command. The board's own `configs/<board>_defconfig` picks its target, chip/board string, and — for ESP-IDF or RP2350 — which toolchain container `make build` routes through on its own; see `Makefile`'s `build` target. If a board or setup genuinely isn't covered by this flow, that's a gap to add to the Makefile/Kconfig, not something to work around with a manual command.
 
 ### RP2350 (NuttX) — reference embedded target
 
