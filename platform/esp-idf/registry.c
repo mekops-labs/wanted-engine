@@ -65,11 +65,9 @@ static int compareEntries(const void *a, const void *b) {
     return strcmp(ea->version, eb->version);
 }
 
-/* Read a metadata file's recorded image size; 0 if the file is unreadable or
- * not a valid record (e.g. truncated by a crash mid-install). */
-/* Stored image length, or -1 where no read could resolve this entry. An entry
- * left by another slot stride is not listed: advertising one whose bytes have
- * moved leaves a supervisor relaunching an image it can never load. */
+/* Stored image length, or -1 where no read could resolve this entry. Listing
+ * one whose bytes moved leaves a supervisor relaunching an image it can never
+ * load, so a record from another slot stride is not listed. */
 static long readMetaSize(const char *path) {
     wapp_image_meta_t meta;
     FILE *f = fopen(path, "rb");

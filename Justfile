@@ -174,11 +174,9 @@ build:
         # the engine half, which carries no build-host paths.
         idf.py -DWANTED_DEFAULT_CONFIG="$cfg" \
             -DWANTED_DEFCONFIG="${board_defconfig}_defconfig" build
-        # Two artifacts, and they are not interchangeable. The merged image is
-        # flashable at offset 0 -- bootloader, partition table, app -- and is
-        # what a first flash over USB takes. An A/B slot takes the app image
-        # alone: staging the merged one writes the bootloader into the slot and
-        # overruns it, so emit the app image wherever the layout has slots.
+        # Two artifacts, not interchangeable: the merged image is flashable at
+        # offset 0 and is what a first flash takes, while an A/B slot takes the
+        # app image alone and a merged one overruns it.
         mkdir -p "$dist"
         idf.py merge-bin -o "$dist/wanted-$chip-merged.bin" >/dev/null
         echo "==> dist: $dist/wanted-$chip-merged.bin"
@@ -277,10 +275,8 @@ nuttx-clean:
 # Remove every build artifact (Linux + NuttX sim + wasm/wapps + submodule objects).
 clean:
     rm -rf {{build_dir}} build-nuttx registry
-    # The ESP-IDF project keeps its own .config, seeded from WANTED_DEFCONFIG on
-    # the first configure and preserved after. A later build with a different
-    # DEFCONFIG reuses the old one and reports success, so the tree has to go
-    # for a defconfig change to take.
+    # The ESP-IDF project keeps its own .config, and a stale tree carries a
+    # profile a later DEFCONFIG cannot displace.
     rm -rf platform/esp-idf/project/build
     # Every supervisor app.wasm is a gitignored build output, sheriff's included.
     rm -f wasm/*.wasm* wasm/supervisor/*/supervisor.tar wasm/supervisor/*/app.wasm

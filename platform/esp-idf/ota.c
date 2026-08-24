@@ -24,10 +24,9 @@
  * case. */
 #define OTA_REVERT_TIMEOUT_US (45U * 1000U * 1000U)
 
-/* Records the slot a staged image awaits its first boot in, because an older
- * bootloader grants no probation to read back. One image writes it and the
- * next reads it, so it is keyed by name: an address in RTC memory moves
- * between two builds, which is exactly the pair an update spans. */
+/* Records the slot a staged image awaits its first boot in. Keyed by name:
+ * one image writes it and the next reads it, and an RTC address moves between
+ * the two builds an update spans. */
 #define OTA_NVS_NAMESPACE "wanted_ota"
 #define OTA_NVS_STAGED_KEY "staged_slot"
 
@@ -63,10 +62,9 @@ static void hexEncode(const uint8_t *in, size_t len, char *out) {
     out[2 * len] = '\0';
 }
 
-/* The OTA seam comes up before whoever else initialises NVS, and init is
- * idempotent. Primed from PlatformOtaInit on the helper thread, before any
- * timer can reach the accessors below. A partition wanting an erase is not
- * this module's to erase: the marker is then simply unavailable. */
+/* NVS init is idempotent, and this seam comes up before whoever else does it.
+ * Primed from PlatformOtaInit before any timer reaches the accessors below; a
+ * partition wanting an erase is not this module's to erase. */
 static bool otaNvsReady(void) {
     static bool tried, ready;
 
