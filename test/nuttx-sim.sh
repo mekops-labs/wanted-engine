@@ -108,12 +108,22 @@ build_kernel() {
         }
         return 0
     fi
-    local apps_rel
+    local apps_rel board marker last_board
     apps_rel=$(realpath --relative-to="$NUTTX_DIR" "$APPS_DIR")
+    board=${NUTTX_BOARD:-sim:wanted}
     cd "$NUTTX_DIR"
-    if [ "${NUTTX_CLEAN:-0}" = 1 ] || [ ! -f .config ]; then
+    # A NuttX board's own .config lives in this one shared checkout, not per
+    # BUILD_DIR — reconfigure whenever the requested board differs from the
+    # one last configured here, the same guard cmake/Kconfig.cmake keeps for
+    # WANTED_DEFCONFIG. Without it, switching boards silently keeps building
+    # the previous board's kernel.
+    marker=.wanted-board-configured
+    last_board=""
+    [ -f "$marker" ] && last_board=$(cat "$marker")
+    if [ "${NUTTX_CLEAN:-0}" = 1 ] || [ ! -f .config ] || [ "$board" != "$last_board" ]; then
         make distclean >/dev/null 2>&1 || true
-        ./tools/configure.sh -a "$apps_rel" "${NUTTX_BOARD:-sim:wanted}" >/dev/null
+        ./tools/configure.sh -a "$apps_rel" "$board" >/dev/null
+        echo "$board" > "$marker"
     fi
     # DEFCONFIG names an engine envelope, from which the app Makefile generates
     # the engine's configuration header; unset, the Kconfig defaults apply. That
