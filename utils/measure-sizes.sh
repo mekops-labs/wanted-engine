@@ -163,13 +163,17 @@ openwrt_sdk_abi() { # $1 = SDK keyword | URL | directory
 }
 
 detect_abi() { # $1 = .config path
-    local cfg="$1" target board sdk
+    local cfg="$1" target board sdk chip
     target=$(sed -nE 's/^CONFIG_WANTED_TARGET="(.*)"$/\1/p' "$cfg")
     case "$target" in
         linux)
             ABI_KEY=linux; ABI_WHY="target linux — the build host" ;;
         esp-idf)
-            ABI_KEY=nuttx; ABI_WHY="target esp-idf — 32-bit xtensa/riscv" ;;
+            chip=$(sed -nE 's/^CONFIG_WANTED_TARGET_ESP_IDF_CHIP="(.*)"$/\1/p' "$cfg")
+            case "$chip" in
+                esp32|esp32s3) ABI_KEY=nuttx; ABI_WHY="target esp-idf, chip $chip — 32-bit xtensa" ;;
+                *)             ABI_KEY=nuttx; ABI_WHY="target esp-idf, chip '$chip' — 32-bit, architecture not recognised" ;;
+            esac ;;
         nuttx)
             board=$(sed -nE 's/^CONFIG_WANTED_TARGET_NUTTX_BOARD="(.*)"$/\1/p' "$cfg")
             case "$board" in
