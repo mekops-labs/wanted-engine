@@ -321,6 +321,8 @@ running platform is rejected at launch, not ignored.
 
 A wapp `open`s the `/net/<name>` node, then `read`/`write`s the stream and `close`s it; connection parameters come from the entry's `address`, not from the wapp. On NuttX, TLS is available where the board config enables `CONFIG_SYSTEM_WANTED_TLS` (the sim `wanted` config does); a build without it rejects the secure schemes at wapp launch.
 
+A read blocks until data arrives, as the pipe and serial drivers do; `O_NONBLOCK` answers `-EAGAIN` on an empty receive buffer instead of waiting.
+
 #### Serving on a socket
 
 An entry with `"role": "listen"` binds its `address` instead of connecting to it, and the wapp becomes the server. The role is a build option (`CONFIG_WANTED_VFS_SOCKET_LISTEN`); where it is absent, a config asking for it fails the launch.
