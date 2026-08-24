@@ -16,10 +16,9 @@ Unreleased
 - `/dev/ota`'s `rollback` reverts to the other slot on such a bootloader
   rather than returning with the boot partition unchanged.
 - A registry record on ESP-IDF names the slot stride it was written under, and
-  one naming another stride reads as absent. Changing `WANTED_MAX_WAPPS` or
-  `WANTED_MAX_WAPP_IMAGE_KB` re-seeds the registry; a device holding images
-  from the previous layout falls back to the built-in supervisor instead of
-  loading an image from the wrong offset.
+  one naming another stride reads as absent.
+- Changing `WANTED_MAX_WAPPS` or `WANTED_MAX_WAPP_IMAGE_KB` re-seeds the
+  registry instead of reading an old image at the wrong offset.
 
 0.14.0 (2026-08-24)
 -------------------
