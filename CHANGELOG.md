@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.14.0 (2026-08-24)
+-------------------
 
 ### Changed
 
@@ -22,8 +22,8 @@ Unreleased
 ### Removed
 
 - The boot selftests of the ESP-IDF entry point, and the concurrent-install
-  thread that wrote the registry forty times after every boot. The platform
-  name and the memory figures stay as a bring-up line.
+  thread that wrote the registry forty times after every boot.
+- The platform name and the memory figures stay as a bring-up log line.
 
 0.13.0 (2026-08-17)
 -------------------
