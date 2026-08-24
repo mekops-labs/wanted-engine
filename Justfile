@@ -161,10 +161,18 @@ build:
         # the engine half, which carries no build-host paths.
         idf.py -DWANTED_DEFAULT_CONFIG="$cfg" \
             -DWANTED_DEFCONFIG="${board_defconfig}_defconfig" build
-        # Flashable at offset 0; the app binary alone is not.
+        # Two artifacts, and they are not interchangeable. The merged image is
+        # flashable at offset 0 -- bootloader, partition table, app -- and is
+        # what a first flash over USB takes. An A/B slot takes the app image
+        # alone: staging the merged one writes the bootloader into the slot and
+        # overruns it, so emit the app image wherever the layout has slots.
         mkdir -p "$dist"
         idf.py merge-bin -o "$dist/wanted-$chip-merged.bin" >/dev/null
         echo "==> dist: $dist/wanted-$chip-merged.bin"
+        if grep -q '^ota_0' partitions.csv; then
+            install -m 0644 build/wanted-esp-idf.bin "$dist/wanted-$chip-ota.bin"
+            echo "==> dist: $dist/wanted-$chip-ota.bin"
+        fi
         ;;
     openwrt)
         WANTED_CONFIG="{{build_dir}}/.config" \

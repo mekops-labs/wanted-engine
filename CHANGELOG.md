@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- An ESP-IDF build with A/B slots emits `dist/esp-idf/wanted-<chip>-ota.bin`,
+  the app image an OTA slot takes, beside the merged flash image.
+
 0.14.0 (2026-08-24)
 -------------------
 
