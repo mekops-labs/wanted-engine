@@ -24,7 +24,7 @@
                 {"name": "registry", "address": "tcp://registry.lan:5000"}
             ],
             "envs": [
-                "SHERIFF_DEVICE_ID=urn:wanted:telegraph-01",
+                "SHERIFF_DEVICE_ID=device1",
                 "SHERIFF_STATE_KEY_1=0000000000000000000000000000000000000000000000000000000000000000",
                 "SHERIFF_SYNC_INTERVAL_S=5"
             ]
