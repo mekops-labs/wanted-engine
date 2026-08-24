@@ -19,3 +19,9 @@ CONFIG_WANTED_MAX_OPTIONS_SIZE=128
 CONFIG_WANTED_SUPERVISOR_SHERIFF=y
 CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-esp32s3-sheriff.json"
 CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN=y
+
+# Makes `make defconfig xiao_esp32s3-sheriff && make build` alone reach the
+# right target, chip and board.
+CONFIG_WANTED_TARGET_ESP_IDF=y
+CONFIG_WANTED_TARGET_ESP_IDF_CHIP="esp32s3"
+CONFIG_WANTED_TARGET_ESP_IDF_DEFCONFIG="xiao_esp32s3-sheriff"

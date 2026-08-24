@@ -15,8 +15,8 @@ CONFIG_ESP32_REV_MIN_3=y
 # those Kconfig symbols exist only under esp32s2/esp32s3/esp32p4).
 CONFIG_SPIRAM=y
 
-# No A/B rollback: the classic-part build uses a single factory app slot
-# (esp32-factory OTA_PROFILE) — see partitions-factory.csv.in.
+# No A/B rollback: the classic-part build uses a single factory app slot —
+# see partitions-factory.csv.in.
 
 # This board's console is a CP2102 USB-UART bridge (/dev/ttyUSB0) — the
 # classic part has no USB-Serial/JTAG peripheral.

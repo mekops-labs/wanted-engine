@@ -44,7 +44,9 @@ See [Architecture](docs/architecture.md) for the full conceptual overview.
 
 The environment is standardized via Podman/Docker. Commands are [`just`](https://just.systems) recipes that run inside the build container (`just --list` shows them all). On a bare host the root `Makefile` is a thin wrapper that runs the same recipe in the container — `make build` is just `just build` in the image. Inside the devcontainer or CI, call `just` directly.
 
-A few `make` targets are **not** `just` recipes: the wasm ones (`make wapps`, `make supervisor`, `make wasm`, `make sheriff`) run in the separate wapp-SDK container, and the hardware ones (`make esp32`, `make rp2350`) select a toolchain image. `make help` lists them.
+A few `make` targets are **not** `just` recipes: the wasm ones (`make wapps`, `make supervisor`, `make wasm`, `make sheriff`) run in the separate wapp-SDK container, and `make build` picks its container from the seeded `.config` (`make build DEFCONFIG=<board>` reaches an ESP-IDF or RP2350 toolchain image on its own — no per-board `make` target). `make help` lists them.
+
+**A specific board is always `make defconfig <board> && make build`** (or `make build DEFCONFIG=<board>` in one step) — never a hand-built `podman`/`idf.py`/cross-compiler command. See [Platform Guide § Hardware targets](docs/platform-guide.md#hardware-targets).
 
 ```bash
 just menuconfig      # configure this build dir (Kconfig; optional)

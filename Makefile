@@ -40,7 +40,7 @@ WAPP_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help shell menuconfig setconfig wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32 esp32-flash rp2350 rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync openwrt-package FORCE
+.PHONY: help shell menuconfig setconfig build wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32-flash rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync FORCE
 
 # make reads every word as its own goal, so `make defconfig openwrt` reaches just
 # as two recipes. Forward trailing goals as arguments and neutralise them as
@@ -88,12 +88,40 @@ menuconfig: ## edit the build configuration in the terminal UI [BUILD_DIR=...]
 	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src $(ENVS) \
 	    -e TERM="$${TERM:-xterm}" --entrypoint=just $(IMAGE) menuconfig
 
-# Builds from $(BUILD_DIR)'s .config — the one `make menuconfig` edits. The cross
-# build lands in a per-architecture dir, leaving the host build alone.
-openwrt-package: ## build a production OpenWRT .ipk [SDK=aarch64|mipsel|url|dir]
-	$(JUST) target openwrt
+# Board/target/image is configuration, not a choice of `make` target: DEFCONFIG
+# picks a board (configs/<name>_defconfig), and that board's own
+# CONFIG_WANTED_TARGET(...) picks which container image and invocation style
+# build it — read straight out of $(BUILD_DIR)/.config once `_config` has
+# seeded it. No board gets its own `make` target.
+#
+# A hardware board needs its wapp/supervisor prerequisites built first (the
+# wapp-SDK container `make wapps`/`make supervisor`/`make sheriff` targets
+# above) — inferred from .config so `make build` alone is genuinely enough,
+# not just a cleaner error pointing at another command to run by hand.
+build: ## build the configured target [DEFCONFIG=... seeds a fresh .config; SDK=... for openwrt]
+	$(JUST) _config
 	$(if $(SDK),$(JUST) setconfig 'WANTED_TARGET_OPENWRT_SDK="$(SDK)"',)
-	$(JUST) build
+	@target=$$(sed -n 's/^CONFIG_WANTED_TARGET="\(.*\)"$$/\1/p' $(BUILD_DIR)/.config); \
+	case "$$target" in \
+	    esp-idf) \
+	        chip=$$(sed -n 's/^CONFIG_WANTED_TARGET_ESP_IDF_CHIP="\(.*\)"$$/\1/p' $(BUILD_DIR)/.config); \
+	        extra=""; \
+	        grep -qx CONFIG_WANTED_SUPERVISOR_SHERIFF=y $(BUILD_DIR)/.config && extra=sheriff; \
+	        echo "==> esp-idf, chip $${chip:-esp32s3}: building wapps + supervisor$${extra:+ + $$extra}, then routing through $(ESP_IDF_IMAGE)"; \
+	        $(MAKE) wapps supervisor $$extra; \
+	        $(ESP_IDF_RUN) just build ;; \
+	    nuttx) \
+	        board=$$(sed -n 's/^CONFIG_WANTED_TARGET_NUTTX_BOARD="\(.*\)"$$/\1/p' $(BUILD_DIR)/.config); \
+	        case "$${board:-sim:wanted}" in \
+	            sim:*) $(JUST) build ;; \
+	            *) defcfg=$$(sed -n 's/^CONFIG_WANTED_TARGET_NUTTX_DEFCONFIG="\(.*\)"$$/\1/p' $(BUILD_DIR)/.config); \
+	               if [ "$${board#*:}" = sheriff ]; then sup=sheriff; else sup=supervisor; fi; \
+	               echo "==> nuttx board $$board: building $$sup, then routing through $(RP2350_IMAGE)"; \
+	               $(MAKE) $$sup; \
+	               $(RP2350_RUN) "cd /src && NUTTX_BOARD='$$board' DEFCONFIG='$${DEFCONFIG:-$$defcfg}' ./test/nuttx-sim.sh deps build" ;; \
+	        esac ;; \
+	    *) $(JUST) build ;; \
+	esac
 
 wsh-shell: supervisor ## build wsh and open the interactive wsh prompt on Linux (wanted-cli)
 	$(JUST) supervisor-variant wsh
@@ -144,35 +172,21 @@ ESP32_BAUD    ?= 460800
 # does not otherwise inherit this target's BUILD_DIR).
 ESP_IDF_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src -e BUILD_DIR=$(BUILD_DIR) $(ESP_IDF_IMAGE)
 
-esp32: BUILD_DIR = build-esp32-cfg
-esp32: DEFCONFIG = esp32-esp-idf
-esp32: supervisor ## cross-build the classic ESP32 firmware (ESP-IDF) -> dist/esp-idf/wanted-esp32-merged.bin
-	$(JUST) target esp-idf
-	$(JUST) setconfig 'WANTED_TARGET_ESP_IDF_CHIP="esp32"'
-	$(ESP_IDF_RUN) just build
-
 esp32-flash: ## flash the classic ESP32 ESP-IDF merged image [ESP32_PORT=/dev/ttyUSB0]
 	esptool.py -c esp32 -p $(ESP32_PORT) -b $(ESP32_BAUD) --before default_reset \
 	    --after hard_reset write_flash 0x0 \
 	    dist/esp-idf/wanted-esp32-merged.bin
 
 # --- RP2350 firmware (real hardware) --------------------------------------
-# Cross-builds the NuttX firmware for the Adafruit Feather RP2350 in the ARM
-# Cortex-M33 toolchain container ($(RP2350_IMAGE), from
-# docker/Containerfile.rp2350; distinct from the sim's $(IMAGE)). The engine app
-# is linked into nuttx-apps by `nuttx-sim.sh deps` (shared with the sim); the
-# boot ROMFS bakes the wsh supervisor, so `supervisor` is a prerequisite. The
-# rp23xx board POSTBUILD runs `picotool uf2 convert` -> third_party/nuttx/nuttx.uf2.
-#
-# WANTED board variants:
-#   make rp2350 RP2350_CONFIG=adafruit-feather-rp2350:wanted            # wsh supervisor
-#   make rp2350 RP2350_CONFIG=adafruit-feather-rp2350:sheriff  # Sheriff over USB-CDC
-# The `sheriff` config puts the console on UART0 (Debug Probe) and frees the
-# native USB-CDC for the Sheriff<->Deputy link; flash it over SWD with
-# `rp2350-flash-swd` and watch the console on the Probe's UART.
-RP2350_IMAGE  ?= localhost/wanted-rp2350
-RP2350_CONFIG ?= raspberrypi-pico-2:usbnsh
-RP2350_BIN    ?= third_party/nuttx/nuttx.uf2
+# `make build DEFCONFIG=rp2350_feather` (or pimoroni_pico2_plus_w) cross-builds
+# through $(RP2350_IMAGE), the ARM Cortex-M33 toolchain container (from
+# docker/Containerfile.rp2350; distinct from the sim's $(IMAGE)) — see `build`
+# above. Flashing and on-hardware debug stay their own targets below: which one
+# applies is a physical-setup choice (BOOTSEL vs a Debug Probe), not something
+# a defconfig can express. The rp23xx board POSTBUILD runs `picotool uf2
+# convert` -> third_party/nuttx/nuttx.uf2 as part of that build.
+RP2350_IMAGE ?= localhost/wanted-rp2350
+RP2350_BIN   ?= third_party/nuttx/nuttx.uf2
 # The xtensa image bypasses its UID-remap entrypoint under rootless podman; do
 # the same here and build as the container root (mapped back to the host user).
 RP2350_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(RP2350_IMAGE) -c
@@ -187,11 +201,6 @@ RP2350_OPENOCD = $(RUNNER_CMD) --rm --privileged -v /dev/bus/usb:/dev/bus/usb \
     -v "$(CURDIR):/src:Z" --entrypoint=/usr/local/bin/openocd $(RP2350_IMAGE) \
     -f interface/cmsis-dap.cfg -c 'transport select swd' -f target/rp2350.cfg \
     -c 'adapter speed 5000'
-
-rp2350: supervisor ## cross-build the RP2350 firmware -> third_party/nuttx/nuttx.uf2 [RP2350_CONFIG=...]
-	$(RP2350_RUN) 'cd /src && ./test/nuttx-sim.sh deps && cd third_party/nuttx && \
-	    { [ -f .config ] || ./tools/configure.sh -a ../nuttx-apps $(RP2350_CONFIG); } && \
-	    make -j"$$(nproc)"'
 
 rp2350-flash: ## flash $(RP2350_BIN) over USB; put board in BOOTSEL first (hold BOOTSEL, tap RESET) [RP2350_BIN=...]
 	picotool load -x $(RP2350_BIN)

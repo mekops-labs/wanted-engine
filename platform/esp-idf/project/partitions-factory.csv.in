@@ -1,6 +1,6 @@
 # Single-factory-app partition table for the classic ESP32 (4 MB flash) —
-# no A/B OTA slots (esp32-factory OTA_PROFILE, out of scope for the
-# reference-node build). Generated into partitions.csv by
+# no A/B OTA slots (out of scope for the reference-node build). Generated
+# into partitions.csv by
 # components/wanted_engine/CMakeLists.txt (configure_file, @ONLY) — do not
 # edit partitions.csv by hand, it is regenerated on every configure.
 #

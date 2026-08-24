@@ -18,3 +18,9 @@ CONFIG_WANTED_MAX_OPTIONS_SIZE=256
 
 CONFIG_WANTED_SUPERVISOR_WSH=y
 CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-rp2350-wsh.json"
+
+# Makes `make defconfig rp2350_feather && make build` alone reach the right
+# target, board and defconfig.
+CONFIG_WANTED_TARGET_NUTTX=y
+CONFIG_WANTED_TARGET_NUTTX_BOARD="adafruit-feather-rp2350:wanted"
+CONFIG_WANTED_TARGET_NUTTX_DEFCONFIG="rp2350_feather"

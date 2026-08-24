@@ -151,6 +151,8 @@ make nuttx-shell     # boot the sim to an interactive wsh prompt (host wrapper)
 
 Two hardware target families live in the tree. The **RP2350** is a **NuttX** target that shares `platform/nuttx/` with the simulator — only the board config, the registry backend, and the entry point differ. The **ESP32 family** (classic ESP32 + ESP32-S3) is a native **ESP-IDF** port under `platform/esp-idf/`.
 
+**Building any board is always `make defconfig <board> && make build`** (or `make build DEFCONFIG=<board>` in one step) — never a hand-built `podman`/`docker run`, `idf.py`, or cross-compiler command. The board's own `configs/<board>_defconfig` picks its target, chip/board string, and — for ESP-IDF or RP2350 — which toolchain container `make build` routes through on its own; see `Makefile`'s `build` target. If a board or setup genuinely isn't covered by this flow, that's a gap to add to the Makefile/Kconfig, not something to work around with a manual command.
+
 ### RP2350 (NuttX) — reference embedded target
 
 The reference constrained target, and the one the control-plane story is proven on.
@@ -158,7 +160,7 @@ The reference constrained target, and the one the control-plane story is proven 
 - **Core / boards** — ARM Cortex-M33 (RP2350). Two boards carry WANTED configs in the pinned NuttX fork: `adafruit-feather-rp2350:wanted` (the `wsh` debug supervisor) and `pimoroni-pico-2-plus-w:sheriff` (the Sheriff control-plane agent, with the onboard CYW43439 radio). A RISC-V/Hazard3 build of the silicon runs (PSRAM + `ostest` clean) but a WANTED board config for it is a deprioritized stretch.
 
   ```bash
-  make rp2350 RP2350_CONFIG=pimoroni-pico-2-plus-w:sheriff
+  make build DEFCONFIG=pimoroni_pico2_plus_w
   make rp2350-flash-swd    # flash over SWD via a Raspberry Pi Debug Probe (no BOOTSEL)
   ```
 
@@ -175,16 +177,18 @@ The reference constrained target, and the one the control-plane story is proven 
 The whole ESP32 family runs a native ESP-IDF port (`platform/esp-idf/`, `app_main`) — not NuttX — across two chips: the **ESP32-S3** (e.g. S3R8, octal PSRAM, 8 MB flash) and the **classic ESP32** (Waveshare ESP32 One, quad PSRAM, 4 MB flash). The project is multi-chip: `sdkconfig.defaults` holds the chip-independent settings, `sdkconfig.defaults.<chip>` (`esp32`, `esp32s3`) the per-chip PSRAM/console/flash-size differences, applied automatically by chip.
 
 ```bash
-just target esp-idf && just build   # S3 (default chip: esp32s3)
-make esp32                          # classic ESP32
-make esp32-flash                    # esptool over ESP32_PORT (default /dev/ttyUSB0)
+make build DEFCONFIG=xiao_esp32s3-sheriff       # a specific S3 board
+make build DEFCONFIG=esp32-esp-idf              # classic ESP32
+make esp32-flash                                # esptool over ESP32_PORT (default /dev/ttyUSB0)
 ```
+
+Inside the devcontainer or CI (already in a build environment, no host container to pick), the equivalent is `just target esp-idf && just build` for the default S3 board, or `DEFCONFIG=<board> just build` for any other.
 
 `just build` for esp-idf produces `dist/esp-idf/wanted-<chip>-merged.bin` (flashable at offset 0). Runs in the ESP-IDF toolchain image (`docker/Containerfile.esp-idf`), built locally rather than published. `just` must be the container *command*, not an `--entrypoint` override — the base image's entrypoint sources `export.sh`.
 
 - **Threads / stop** — FreeRTOS via the ESP-IDF pthread wrapper; cooperative stop (the WAMR terminate flag aborts the in-flight call).
 - **Registry / PSRAM** — flash-backed LittleFS registry (`registry_flash.c`); PSRAM via `extram.c` (8-byte-aligned allocations — WAMR's GC heap requires it).
-- **Flash layout** — S3: A/B (`ota_0`/`ota_1`) via the `s3-wapps`/`s3-storage`/`s3-sheriff`/`s3-telegraph-sheriff` OTA profiles. Classic ESP32: a single `factory` app slot (`esp32-factory` profile), no A/B.
+- **Flash layout** — derived from chip by `platform/esp-idf/board-defconfig.cmake`: S3 gets A/B (`ota_0`/`ota_1`), classic ESP32 a single `factory` app slot, no A/B. The board defconfig (`DEFCONFIG=<name>`, e.g. `xiao_esp32s3-sheriff`) fixes `CONFIG_WANTED_MAX_WAPPS`, which sizes the generated partitions.
 - **Worker stacks** — S3: PSRAM. Classic ESP32: internal DRAM only — a flash op fully disables the classic part's cache, so a PSRAM stack is unreachable during it.
 - **OTA** — A/B firmware update through `esp_ota_ops` (`ota.c`) on the S3, with a pending-verify / rollback seam. The classic part's single-factory layout has no A/B slot to roll back to.
 - **Secure sockets** — raw mbedTLS with ESP32-S3 hardware AES/SHA/ECC acceleration. No CA bundle is provisioned (`MBEDTLS_SSL_VERIFY_NONE`), so `tcps://` here is encrypted but **unauthenticated** — a demo transport, not production TLS.
@@ -194,7 +198,7 @@ make esp32-flash                    # esptool over ESP32_PORT (default /dev/ttyU
 
 A board that has never been online still needs wapps in its registry, so an image can be **seeded from the firmware**. The mechanism differs by host but the contract does not: a seed image is written into the writable registry only when its ref is absent there, so an image installed over a seeded ref survives the next boot rather than being overwritten on every start.
 
-On ESP-IDF the seed images are embedded into the app binary at configure time; `platform/esp-idf/registry-seed.sh` packages each `wapps/<name>/<name>.wasm` as `<out>/<name>.wapp`, and `make wapps` builds the inputs. A board whose wapps live in another repository names them in its OTA profile as `WANTED_EXTRA_SEEDS` entries of the form `<ref>=<path to .wasm>`; the extern declarations and the seed calls are generated from that list, so `app_main.c` names no board's wapp. `s3-telegraph-sheriff` is the worked example — it reads `TELEGRAPH_WAPPS` for the directory holding them, and a build without it carries the engine's own fixtures alone. On the NuttX boards the firmware carries them in the read-only ROMFS at `/rom/registry/*.wapp` and the boot shim copies them across on first boot.
+On ESP-IDF the seed images are embedded into the app binary at configure time; `platform/esp-idf/registry-seed.sh` packages each `wapps/<name>/<name>.wasm` as `<out>/<name>.wapp`, and `make wapps` builds the inputs. A board whose wapps live in another repository names them, in an optional `platform/esp-idf/board-extras/<defconfig>.cmake` keyed to its own defconfig, as `WANTED_EXTRA_SEEDS` entries of the form `<ref>=<path to .wasm>`; the extern declarations and the seed calls are generated from that list, so `app_main.c` names no board's wapp. `xiao_esp32s3-telegraph-sheriff_defconfig.cmake` is the worked example — it reads `TELEGRAPH_WAPPS` for the directory holding them, and a build without it carries the engine's own fixtures alone. On the NuttX boards the firmware carries them in the read-only ROMFS at `/rom/registry/*.wapp` and the boot shim copies them across on first boot.
 
 The firmware flasher wapp ships this way. It is seeded as `flasher:<supervisor version>` — the version of the supervisor tree it was built from, a bare semver at a tag (`flasher:0.3.3`) or the tag plus a short commit past one (`flasher:0.3.3-abc123`). It installs an engine firmware image and exits, which is why it must be present before any network is: the thing that would otherwise fetch it is what it exists to update. A version too long for a registry version field fails the build rather than being truncated.
 
@@ -265,7 +269,7 @@ just build
 | `esp-idf` | `CONFIG_WANTED_TARGET_ESP_IDF_CHIP` | `esp32s3` | `idf.py set-target` |
 | `openwrt` | the **OpenWrt SDK** choice — see below | `aarch64` | the OpenWrt SDK packaging script |
 
-**Boards and SDKs are pass-through strings, never enumerated here.** `sim:wanted` reaches `configure.sh` verbatim and the engine holds no opinion about which boards exist — modelling them would be a second source of truth that drifts from the vendor tree. The same string selects the simulator or real hardware; what differs for hardware is the toolchain container, which the `Makefile` picks (`make esp32`, `make rp2350`).
+**Boards and SDKs are pass-through strings, never enumerated here.** `sim:wanted` reaches `configure.sh` verbatim and the engine holds no opinion about which boards exist — modelling them would be a second source of truth that drifts from the vendor tree. The same string selects the simulator or real hardware; what differs for hardware is the toolchain container, which the host `Makefile`'s `build` target picks on its own by reading the seeded `.config` (`CONFIG_WANTED_TARGET_ESP_IDF_CHIP` / `CONFIG_WANTED_TARGET_NUTTX_BOARD`) — no per-board `make` target.
 
 Because `.config` is per build directory, two targets can be configured side by side:
 

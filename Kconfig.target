@@ -54,12 +54,29 @@ config WANTED_TARGET_NUTTX_BOARD
 	  <board>:<config> notation — sim:wanted for the simulator,
 	  esp32-devkitc:wanted for the classic ESP32.
 
+config WANTED_TARGET_NUTTX_DEFCONFIG
+	string "NuttX board defconfig"
+	depends on WANTED_TARGET_NUTTX
+	default ""
+	help
+	  This build's own board (configs/<name>_defconfig, sans suffix),
+	  passed to the NuttX app build as WANTED_DEFCONFIG. Empty means no
+	  engine defconfig — the sim:wanted default and its Kconfig defaults.
+
 config WANTED_TARGET_ESP_IDF_CHIP
 	string "ESP-IDF chip target"
 	depends on WANTED_TARGET_ESP_IDF
 	default "esp32s3"
 	help
 	  Passed to `idf.py set-target` unchanged.
+
+config WANTED_TARGET_ESP_IDF_DEFCONFIG
+	string "ESP-IDF board defconfig"
+	depends on WANTED_TARGET_ESP_IDF
+	default ""
+	help
+	  This build's own board (configs/<name>_defconfig, sans suffix).
+	  Empty means the generic per-chip board (esp32-esp-idf / xiao_esp32s3).
 
 choice
 	prompt "OpenWrt SDK"

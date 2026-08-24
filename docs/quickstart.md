@@ -37,6 +37,8 @@ just menuconfig   # Target -> linux | nuttx | esp-idf | openwrt
 
 The target, its board or SDK, the supervisor, and the resource envelope all live in one Kconfig menu, so there is no separate recipe per target — see the [Platform Guide](platform-guide.md#target-selection).
 
+**Building for a specific board** (an ESP32/ESP32-S3 variant, RP2350, a router) is `make defconfig <board> && make build`, or `make build DEFCONFIG=<board>` in one step — `configs/*_defconfig` names the board (`xiao_esp32s3-sheriff`, `rp2350_feather`, …). The board's own defconfig picks the target and, for a real toolchain, which container `make build` uses — there is no per-board recipe to remember. See [Platform Guide § Hardware targets](platform-guide.md#hardware-targets).
+
 ## Package a wapp into the registry
 
 The engine starts wapps by name from a **registry** — on Linux, the `./registry/` directory scanned for `<name>@<version>.wapp` images. A `.wapp` is an OCI-style ustar TAR holding `app.wasm` (and any optional data files). The compiled samples are not packaged automatically, so package `hello` once:

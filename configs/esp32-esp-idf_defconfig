@@ -25,7 +25,13 @@ CONFIG_WANTED_MAX_OPTIONS_SIZE=128
 
 # wsh is what the S3 bring-up config also embeds; the bring-up config grants
 # it the ota driver, a log mount and reachability sockets. esp_ota_ops calls
-# compile in but have nothing to roll back to on this chip's single-slot
-# layout (esp32-factory OTA_PROFILE) -- fine for a wsh bring-up shell.
+# compile in but have nothing to roll back to on this chip's single factory
+# app slot -- fine for a wsh bring-up shell.
 CONFIG_WANTED_SUPERVISOR_WSH=y
 CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-esp32s3.json"
+
+# Makes `make defconfig esp32-esp-idf && make build` alone reach the right
+# target, chip and board.
+CONFIG_WANTED_TARGET_ESP_IDF=y
+CONFIG_WANTED_TARGET_ESP_IDF_CHIP="esp32"
+CONFIG_WANTED_TARGET_ESP_IDF_DEFCONFIG="esp32-esp-idf"

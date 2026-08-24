@@ -15,3 +15,9 @@ CONFIG_WANTED_MAX_OPTIONS_SIZE=256
 
 CONFIG_WANTED_SUPERVISOR_SHERIFF=y
 CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-rp2350-wifi.json"
+
+# Makes `make defconfig pimoroni_pico2_plus_w && make build` alone reach the
+# right target, board and defconfig.
+CONFIG_WANTED_TARGET_NUTTX=y
+CONFIG_WANTED_TARGET_NUTTX_BOARD="pimoroni-pico-2-plus-w:sheriff"
+CONFIG_WANTED_TARGET_NUTTX_DEFCONFIG="pimoroni_pico2_plus_w"

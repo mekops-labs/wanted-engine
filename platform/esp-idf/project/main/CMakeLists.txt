@@ -17,13 +17,10 @@ foreach(_seed IN LISTS _seeds)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${_repo}/wapps/${_seed}/${_seed}.wasm")
 endforeach()
-# The flash-layout profile also names the board's extra seeds, and component
-# order does not say whether the engine component has read it yet. Reading it
-# here as well costs nothing: a profile file sets cache variables only.
-if(NOT OTA_PROFILE)
-    set(OTA_PROFILE "s3-wapps")
-endif()
-include("${_repo}/platform/esp-idf/ota-profiles/${OTA_PROFILE}.cmake")
+# This board's defconfig also names its extra seeds, and component order does
+# not say whether the engine component has resolved it yet. Reading it here
+# as well costs nothing: board-defconfig.cmake only sets cache variables.
+include("${_repo}/platform/esp-idf/board-defconfig.cmake")
 
 # A board carries wapps this repo does not hold: WANTED_EXTRA_SEEDS is a
 # list of <ref>=<path to .wasm>. Declarations and seed calls are

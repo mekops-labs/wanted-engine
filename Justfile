@@ -145,18 +145,22 @@ build:
         if ! grep -qx "CONFIG_IDF_TARGET=\"$chip\"" sdkconfig 2>/dev/null; then
             idf.py set-target "$chip"
         fi
-        # Flash-layout profile: per chip by default (esp32 -> single factory
-        # slot, esp32s3 -> A/B), overridable (e.g. OTA_PROFILE=s3-storage).
-        profile="${OTA_PROFILE:-}"
-        if [ -z "$profile" ]; then
+        # Board defconfig: DEFCONFIG wins; else this build's own default
+        # (WANTED_TARGET_ESP_IDF_DEFCONFIG); else per chip.
+        board_defconfig="{{defconfig}}"
+        if [ -z "$board_defconfig" ]; then
+            board_defconfig=$(just _cfg CONFIG_WANTED_TARGET_ESP_IDF_DEFCONFIG)
+        fi
+        if [ -z "$board_defconfig" ]; then
             case "$chip" in
-                esp32) profile="esp32-factory" ;;
-                *) profile="s3-wapps" ;;
+                esp32) board_defconfig="esp32-esp-idf" ;;
+                *) board_defconfig="xiao_esp32s3" ;;
             esac
         fi
         # Passed in: embedded in a host tree the engine's .config is narrowed to
         # the engine half, which carries no build-host paths.
-        idf.py -DWANTED_DEFAULT_CONFIG="$cfg" -DOTA_PROFILE="$profile" build
+        idf.py -DWANTED_DEFAULT_CONFIG="$cfg" \
+            -DWANTED_DEFCONFIG="${board_defconfig}_defconfig" build
         # Flashable at offset 0; the app binary alone is not.
         mkdir -p "$dist"
         idf.py merge-bin -o "$dist/wanted-$chip-merged.bin" >/dev/null
@@ -258,6 +262,9 @@ clean:
     # NuttX kernel objects + .config live in the submodule tree; an incremental
     # rebuild over a stale tree silently runs old code, so distclean it too.
     ./test/nuttx-sim.sh clean
+
+distclean: clean
+    rm -rf dist
 
 # --- lint / static analysis / security ------------------------------------
 

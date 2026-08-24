@@ -2,9 +2,8 @@
 # flash-size settings live in sdkconfig.defaults.<chip> (esp32, esp32s3),
 # applied alongside this file via SDKCONFIG_DEFAULTS (see Justfile).
 
-# Custom partition table: layout depends on the chip's OTA_PROFILE (A/B on
-# the S3, single factory app on the classic part) — generated from a
-# per-profile .csv.in template by the OTA_PROFILE mechanism.
+# Custom partition table: A/B on the S3, single factory app on the classic
+# part — generated from the matching .csv.in by board-defconfig.cmake.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 

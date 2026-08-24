@@ -25,7 +25,20 @@ just smoke-engine  # production supervisor instantiates cleanly
 make shell         # interactive shell in the build container (host wrapper)
 ```
 
-Override the container runtime or image with `RUNNER=docker` / `IMAGE=...` (on the `make` wrapper). The interactive/host targets (`shell`, `wsh-shell`, `nuttx-shell`, `esp32`, `esp32-flash`, `docs-sync`) live in the `Makefile`, not the `Justfile`.
+Override the container runtime or image with `RUNNER=docker` / `IMAGE=...` (on the `make` wrapper). The interactive/host targets (`shell`, `wsh-shell`, `nuttx-shell`, `esp32-flash`, `docs-sync`) live in the `Makefile`, not the `Justfile`.
+
+### Board / hardware builds
+
+Building a specific board (ESP32, ESP32-S3, RP2350, OpenWrt) is always:
+
+```bash
+make defconfig <board>   # configs/<board>_defconfig, e.g. xiao_esp32s3-sheriff, rp2350_feather
+make build                # reads that board's own target/chip/toolchain from .config
+```
+
+or equivalently `make build DEFCONFIG=<board>` in one step. Every board's defconfig self-declares its target and (for ESP-IDF/RP2350) which container image builds it — `make build` dispatches on its own. There is no per-board `make` target (no `esp32`, `esp32s3`, `rp2350`).
+
+**Never hand-construct the underlying command** — a raw `podman`/`docker run`, `idf.py build`, a bare cross-compiler invocation, a manual `cmake` configure — even to route around a failure. This flow already does the right thing for every board under `configs/`; see the [Platform Guide](docs/platform-guide.md#hardware-targets). If it does not cover what's needed (a new board, a missing toolchain image, something that genuinely cannot converge into `make build`), stop and ask the user to add the gap instead of improvising around it.
 
 **Run a single test group** (from `make shell` or any container shell):
 

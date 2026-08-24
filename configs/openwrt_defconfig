@@ -17,3 +17,7 @@ CONFIG_WANTED_VFS_SOCKET_LISTEN=y
 CONFIG_WANTED_SUPERVISOR_IMAGE_PATH="/usr/share/wanted/supervisor.tar"
 CONFIG_WANTED_DEFAULT_CONFIG="configs/openwrt.json"
 # CONFIG_WANTED_VFS_OTA is not set
+
+# Makes `make defconfig openwrt && make build` alone reach the right target.
+# SDK stays a runtime choice (SDK=... on `make build`), not baked in here.
+CONFIG_WANTED_TARGET_OPENWRT=y

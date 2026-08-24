@@ -91,18 +91,14 @@ endif()
 
 # The idf.py build is not the engine's top-level project, so point the
 # shared Kconfig step at the engine root and generate wanted-autoconf.h
-# here — the OTA profile below then selects the same envelope.
+# here — board-defconfig.cmake below then selects the same envelope.
 set(WANTED_ENGINE_ROOT ${ENGINE})
 
-# ESP-IDF flash-layout profile: couples MAX_WAPPS, the registry image ceiling
-# and the generated partitions.csv from one source, per chip. Each profile in
-# ota-profiles/ documents its own envelope.
-if(NOT OTA_PROFILE)
-    set(OTA_PROFILE "s3-wapps")
-endif()
-include(${ENGINE}/platform/esp-idf/ota-profiles/${OTA_PROFILE}.cmake)
+# Board defconfig + OTA flash-layout: couples MAX_WAPPS, the registry image
+# ceiling and the generated partitions.csv from one source.
+include(${ENGINE}/platform/esp-idf/board-defconfig.cmake)
 
-# The OTA profile above names the engine defconfig; generating it here is what
+# The include above names the engine defconfig; generating it here is what
 # makes CONFIG_WANTED_MAX_WAPPS below the same number the header carries.
 include(${ENGINE}/cmake/Kconfig.cmake)
 
@@ -155,10 +151,10 @@ math(EXPR OTA_PERSIST_KB "${OTA_POOL_KB} - ${OTA_WAPPS_KB}")
 
 # Build-time assert on the coupled quad: this is the derivation itself (not
 # an independent re-check), but it still catches a future slot-size/
-# OTA_PROFILE edit that pushes wapps past the pool.
+# defconfig edit that pushes wapps past the pool.
 if(OTA_WAPPS_KB GREATER OTA_POOL_KB)
     message(FATAL_ERROR
-        "OTA_PROFILE=${OTA_PROFILE}: CONFIG_WANTED_MAX_WAPPS=${CONFIG_WANTED_MAX_WAPPS} at "
+        "WANTED_DEFCONFIG=${WANTED_DEFCONFIG}: CONFIG_WANTED_MAX_WAPPS=${CONFIG_WANTED_MAX_WAPPS} at "
         "${WAPP_IMAGE_SLOT_SIZE_KB} KiB per image needs ${OTA_WAPPS_KB} KiB of wapps, "
         "exceeding the ${OTA_POOL_KB} KiB persist+wapps pool")
 endif()
