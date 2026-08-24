@@ -12,7 +12,10 @@
 #include <string.h>
 
 #include "esp_ota_ops.h"
+#include "esp_system.h"
 #include "esp_timer.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 
 #include <platform.h>
 
@@ -20,6 +23,12 @@
  * an operator waiting forever on a hung image -- 3x that measured worst
  * case. */
 #define OTA_REVERT_TIMEOUT_US (45U * 1000U * 1000U)
+
+/* Records the slot a staged image awaits its first boot in. Keyed by name:
+ * one image writes it and the next reads it, and an RTC address moves between
+ * the two builds an update spans. */
+#define OTA_NVS_NAMESPACE "wanted_ota"
+#define OTA_NVS_STAGED_KEY "staged_slot"
 
 static struct {
     bool inited;
@@ -53,12 +62,73 @@ static void hexEncode(const uint8_t *in, size_t len, char *out) {
     out[2 * len] = '\0';
 }
 
+/* NVS init is idempotent, and this seam comes up before whoever else does it.
+ * Primed from PlatformOtaInit before any timer reaches the accessors below; a
+ * partition wanting an erase is not this module's to erase. */
+static bool otaNvsReady(void) {
+    static bool tried, ready;
+
+    if (!tried) {
+        tried = true;
+        ready = nvs_flash_init() == ESP_OK;
+    }
+    return ready;
+}
+
+static void stagedSlotSet(uint32_t subtype) {
+    nvs_handle_t h;
+
+    if (!otaNvsReady() ||
+        nvs_open(OTA_NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK)
+        return;
+    if (nvs_set_u32(h, OTA_NVS_STAGED_KEY, subtype) == ESP_OK)
+        nvs_commit(h);
+    nvs_close(h);
+}
+
+static void stagedSlotClear(void) {
+    nvs_handle_t h;
+
+    if (!otaNvsReady() ||
+        nvs_open(OTA_NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK)
+        return;
+    if (nvs_erase_key(h, OTA_NVS_STAGED_KEY) == ESP_OK)
+        nvs_commit(h);
+    nvs_close(h);
+}
+
+/* True with *out set to the slot a staged image is waiting in. */
+static bool stagedSlotGet(uint32_t *out) {
+    nvs_handle_t h;
+
+    if (!otaNvsReady() ||
+        nvs_open(OTA_NVS_NAMESPACE, NVS_READONLY, &h) != ESP_OK)
+        return false;
+    bool found = nvs_get_u32(h, OTA_NVS_STAGED_KEY, out) == ESP_OK;
+    nvs_close(h);
+    return found;
+}
+
+/* Boot the slot the running image displaced. Does not return on success.
+ * Cancelling probation is the bootloader's path; where it granted none there
+ * is nothing to invalidate, so aim the next boot by hand. */
+static void otaRevertToOtherSlot(void) {
+    esp_ota_mark_app_invalid_rollback_and_reboot();
+
+    const esp_partition_t *previous = esp_ota_get_next_update_partition(NULL);
+    if (previous == NULL)
+        return;
+    if (esp_ota_set_boot_partition(previous) != ESP_OK)
+        return;
+    stagedSlotClear();
+    esp_restart();
+}
+
 static void revertTimerFired(void *arg) {
     (void)arg;
-    /* Runs on the esp_timer service task, whose stack is internal DRAM, so
-     * this needs no helper-thread indirection. Does not return on success: it
-     * invalidates the running slot, reverts the boot partition, and reboots. */
-    esp_ota_mark_app_invalid_rollback_and_reboot();
+    /* The esp_timer service task's stack is internal DRAM, so this needs no
+     * helper-thread indirection. */
+    otaRevertToOtherSlot();
 }
 
 /* Dedicated helper thread with an internal-DRAM stack, proxying every esp_ota_*
@@ -134,7 +204,14 @@ static void initJobFn(void *arg) {
     if (esp_ota_get_state_partition(g_ota.running, &state) != ESP_OK)
         state = ESP_OTA_IMG_UNDEFINED;
 
-    if (state == ESP_OTA_IMG_PENDING_VERIFY && !g_ota.revertArmed) {
+    /* The marker names the slot it was staged into, so a boot of the image
+     * this one displaced never arms a revert against a working slot. */
+    uint32_t staged;
+    bool awaitingFirstBoot =
+        stagedSlotGet(&staged) && staged == g_ota.running->subtype;
+
+    if ((state == ESP_OTA_IMG_PENDING_VERIFY || awaitingFirstBoot) &&
+        !g_ota.revertArmed) {
         esp_timer_create_args_t args;
         memset(&args, 0, sizeof(args));
         args.callback = revertTimerFired;
@@ -154,13 +231,24 @@ typedef struct {
     int rc;
 } confirmJob_t;
 
+/* Retire the engine's own probation: the running image is good. */
+static void otaRevertDisarm(void) {
+    stagedSlotClear();
+    if (g_ota.revertArmed) {
+        esp_timer_stop(g_ota.revertTimer);
+        esp_timer_delete(g_ota.revertTimer);
+        g_ota.revertArmed = false;
+    }
+}
+
 static void confirmJobFn(void *arg) {
     confirmJob_t *j = arg;
     esp_ota_img_states_t state;
 
     if (esp_ota_get_state_partition(g_ota.running, &state) == ESP_OK &&
         state != ESP_OTA_IMG_PENDING_VERIFY) {
-        j->rc = 0; /* already confirmed, or nothing pending: no-op */
+        otaRevertDisarm(); /* already confirmed, or nothing pending */
+        j->rc = 0;
         return;
     }
 
@@ -169,11 +257,7 @@ static void confirmJobFn(void *arg) {
         return;
     }
 
-    if (g_ota.revertArmed) {
-        esp_timer_stop(g_ota.revertTimer);
-        esp_timer_delete(g_ota.revertTimer);
-        g_ota.revertArmed = false;
-    }
+    otaRevertDisarm();
     j->rc = 0;
 }
 
@@ -280,6 +364,9 @@ static void commitJobFn(void *arg) {
     }
 
     err = esp_ota_set_boot_partition(g_ota.writeTarget);
+    if (err == ESP_OK) {
+        stagedSlotSet(g_ota.writeTarget->subtype);
+    }
     g_ota.writeTarget = NULL;
     j->rc = (err == ESP_OK) ? 0 : -EIO;
 }
@@ -307,7 +394,7 @@ static void abortJobFn(void *arg) {
 static void rollbackJobFn(void *arg) {
     (void)arg;
     /* Does not return on success -- reboots into the other slot. */
-    esp_ota_mark_app_invalid_rollback_and_reboot();
+    otaRevertToOtherSlot();
 }
 
 /* --- Public PlatformOta* seam: each call is a single round-trip to the

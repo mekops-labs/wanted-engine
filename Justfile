@@ -32,14 +32,27 @@ all: build test
 kconfig := "PYTHONPATH=" + justfile_directory() + "/tools/kconfiglib KCONFIG_CONFIG=" + build_dir + "/.config"
 kcl := justfile_directory() + "/tools/kconfiglib"
 
-# Ensure this build dir has a .config, then carry it forward over Kconfig edits
+# Ensure this build dir has a .config, then carry it forward over Kconfig edits.
+# A DEFCONFIG naming another profile re-seeds, on the marker cmake/Kconfig.cmake
+# keeps and in the form it writes, so the two agree on a dir they share.
 _config:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p {{build_dir}}
-    if [ ! -f {{build_dir}}/.config ] && [ -n "{{defconfig}}" ]; then
-        {{kconfig}} python3 {{kcl}}/defconfig.py --kconfig Kconfig \
-            configs/{{defconfig}}_defconfig
+    marker={{build_dir}}/.wanted-defconfig-seeded
+    want=""
+    if [ -n "{{defconfig}}" ]; then
+        want="{{defconfig}}_defconfig"
+    fi
+    seeded=$(cat "$marker" 2>/dev/null || true)
+    if [ -n "$want" ] && { [ ! -f {{build_dir}}/.config ] || [ "$seeded" != "$want" ]; }; then
+        if [ ! -f "configs/$want" ]; then
+            echo "kconfig: defconfig not found: configs/$want" >&2
+            exit 1
+        fi
+        echo "==> seeding {{build_dir}}/.config from $want"
+        {{kconfig}} python3 {{kcl}}/defconfig.py --kconfig Kconfig "configs/$want"
+        printf '%s' "$want" >"$marker"
     else
         {{kconfig}} python3 {{kcl}}/olddefconfig.py Kconfig
     fi
@@ -161,10 +174,16 @@ build:
         # the engine half, which carries no build-host paths.
         idf.py -DWANTED_DEFAULT_CONFIG="$cfg" \
             -DWANTED_DEFCONFIG="${board_defconfig}_defconfig" build
-        # Flashable at offset 0; the app binary alone is not.
+        # Two artifacts, not interchangeable: the merged image is flashable at
+        # offset 0 and is what a first flash takes, while an A/B slot takes the
+        # app image alone and a merged one overruns it.
         mkdir -p "$dist"
         idf.py merge-bin -o "$dist/wanted-$chip-merged.bin" >/dev/null
         echo "==> dist: $dist/wanted-$chip-merged.bin"
+        if grep -q '^ota_0' partitions.csv; then
+            install -m 0644 build/wanted-esp-idf.bin "$dist/wanted-$chip-ota.bin"
+            echo "==> dist: $dist/wanted-$chip-ota.bin"
+        fi
         ;;
     openwrt)
         WANTED_CONFIG="{{build_dir}}/.config" \
@@ -256,6 +275,9 @@ nuttx-clean:
 # Remove every build artifact (Linux + NuttX sim + wasm/wapps + submodule objects).
 clean:
     rm -rf {{build_dir}} build-nuttx registry
+    # The ESP-IDF project keeps its own .config, and a stale tree carries a
+    # profile a later DEFCONFIG cannot displace.
+    rm -rf platform/esp-idf/project/build
     # Every supervisor app.wasm is a gitignored build output, sheriff's included.
     rm -f wasm/*.wasm* wasm/supervisor/*/supervisor.tar wasm/supervisor/*/app.wasm
     rm -f wapps/*/*.wasm wapps/*/*.wasm.h wapps/*/*.o

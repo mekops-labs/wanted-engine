@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* On-disk record for one registry entry's flash-partition placement. The
@@ -10,10 +12,22 @@
 typedef struct {
     uint32_t magic;
     uint32_t slot;
-    uint32_t size; /* actual stored image length, <= WAPP_IMAGE_SLOT_SIZE */
+    uint32_t size;     /* actual stored image length, <= slotSize */
+    uint32_t slotSize; /* stride the slot offset was computed under */
 } wapp_image_meta_t;
 
-#define WAPP_IMAGE_META_MAGIC 0x57415049u /* "WAPI" */
+/* The index outlives a firmware whose slot geometry differs, so a record
+ * naming another stride points at bytes that moved; the magic keeps a record
+ * without the field from reading as one that has it. */
+#define WAPP_IMAGE_META_MAGIC 0x57415032u /* "WAP2" */
+
+/* True where `bytes` of record parse and name `slotSize`. Enumeration and
+ * image reads share it, or the registry lists an entry no read can resolve. */
+static inline bool WappImageMetaValid(const wapp_image_meta_t *meta,
+                                      size_t bytes, uint32_t slotSize) {
+    return bytes == sizeof(*meta) && meta->magic == WAPP_IMAGE_META_MAGIC &&
+           meta->slotSize == slotSize;
+}
 
 /* Registry metadata filename buffer, bounded generously above the fixed shape
  * REGISTRY_ROOT/name@version.wapp. Deliberately not PATH_MAX: 4096 on this

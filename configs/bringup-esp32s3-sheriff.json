@@ -22,7 +22,7 @@
                 {"name": "manager", "address": "tcp://10.42.0.1:8081"}
             ],
             "envs": [
-                "SHERIFF_DEVICE_ID=urn:wanted:esp32s3-demo",
+                "SHERIFF_DEVICE_ID=esp32s3-demo",
                 "SHERIFF_STATE_KEY_1=0000000000000000000000000000000000000000000000000000000000000000",
                 "SHERIFF_SYNC_INTERVAL_S=5"
             ]

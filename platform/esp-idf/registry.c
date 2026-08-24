@@ -65,18 +65,19 @@ static int compareEntries(const void *a, const void *b) {
     return strcmp(ea->version, eb->version);
 }
 
-/* Read a metadata file's recorded image size; 0 if the file is unreadable or
- * not a valid record (e.g. truncated by a crash mid-install). */
-static size_t readMetaSize(const char *path) {
+/* Stored image length, or -1 where no read could resolve this entry. Listing
+ * one whose bytes moved leaves a supervisor relaunching an image it can never
+ * load, so a record from another slot stride is not listed. */
+static long readMetaSize(const char *path) {
     wapp_image_meta_t meta;
     FILE *f = fopen(path, "rb");
     if (f == NULL)
-        return 0;
+        return -1;
     size_t r = fread(&meta, 1, sizeof(meta), f);
     fclose(f);
-    if (r != sizeof(meta) || meta.magic != WAPP_IMAGE_META_MAGIC)
-        return 0;
-    return (size_t)meta.size;
+    if (!WappImageMetaValid(&meta, r, WAPP_IMAGE_SLOT_SIZE))
+        return -1;
+    return (long)meta.size;
 }
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
@@ -115,9 +116,14 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
             continue;
         }
 
+        long size = readMetaSize(path);
+        if (size < 0) {
+            continue;
+        }
+
         if (registryList != NULL && filled < len) {
             parseEntry(&registryList[filled], de->d_name);
-            registryList[filled].size = readMetaSize(path);
+            registryList[filled].size = (size_t)size;
             filled++;
         }
         count++;
