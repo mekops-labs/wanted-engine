@@ -122,6 +122,20 @@ static void metaPath(char *out, size_t outLen, const char *name,
              REGISTRY_VERSION_SEPARATOR, version, REGISTRY_EXT);
 }
 
+/* Read one record, or -ENOENT where it is missing, truncated, or written
+ * under a slot geometry this build does not address. Every read goes through
+ * here: a record that survives a geometry change names bytes that moved. */
+static int metaLoad(const char *path, wapp_image_meta_t *out) {
+    FILE *f = fopen(path, "rb");
+    if (f == NULL)
+        return -ENOENT;
+    size_t r = fread(out, 1, sizeof(*out), f);
+    fclose(f);
+    if (!WappImageMetaValid(out, r, WAPP_IMAGE_SLOT_SIZE))
+        return -ENOENT;
+    return 0;
+}
+
 /* The install ref (vfs-wanted-registry.c's wapp-visible grammar) is
  * "<name>" or "<name>:<version>" — a plain ':', distinct from the on-disk
  * REGISTRY_VERSION_SEPARATOR ('@') metaPath uses for the metadata filename. */
@@ -178,13 +192,7 @@ static int scanUsedSlots(bool used[WAPP_IMAGE_MAX_SLOTS]) {
         if (n < 0 || (size_t)n >= sizeof(path))
             continue;
         wapp_image_meta_t meta;
-        FILE *f = fopen(path, "rb");
-        if (f == NULL)
-            continue;
-        size_t r = fread(&meta, 1, sizeof(meta), f);
-        fclose(f);
-        if (r == sizeof(meta) && meta.magic == WAPP_IMAGE_META_MAGIC &&
-            meta.slot < WAPP_IMAGE_MAX_SLOTS)
+        if (metaLoad(path, &meta) == 0 && meta.slot < WAPP_IMAGE_MAX_SLOTS)
             used[meta.slot] = true;
     }
     closedir(dir);
@@ -198,12 +206,7 @@ static int findExistingSlot(const char *name, const char *version) {
     wapp_image_meta_t meta;
 
     metaPath(path, sizeof(path), name, version);
-    FILE *f = fopen(path, "rb");
-    if (f == NULL)
-        return -ENOENT;
-    size_t r = fread(&meta, 1, sizeof(meta), f);
-    fclose(f);
-    if (r != sizeof(meta) || meta.magic != WAPP_IMAGE_META_MAGIC)
+    if (metaLoad(path, &meta) != 0)
         return -ENOENT;
     return (int)meta.slot;
 }
@@ -312,6 +315,7 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
             .magic = WAPP_IMAGE_META_MAGIC,
             .slot = (uint32_t)g_write.slot,
             .size = (uint32_t)g_write.written,
+            .slotSize = WAPP_IMAGE_SLOT_SIZE,
         };
         char path[WAPP_REG_PATH_MAX];
         metaPath(path, sizeof(path), g_write.name, g_write.version);
@@ -463,14 +467,9 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
 
     char path[WAPP_REG_PATH_MAX];
     metaPath(path, sizeof(path), resolved.name, resolved.version);
-    FILE *f = fopen(path, "rb");
-    if (f == NULL)
-        return -ENOENT;
     wapp_image_meta_t meta;
-    size_t r = fread(&meta, 1, sizeof(meta), f);
-    fclose(f);
-    if (r != sizeof(meta) || meta.magic != WAPP_IMAGE_META_MAGIC ||
-        meta.slot >= WAPP_IMAGE_MAX_SLOTS || meta.size == 0)
+    if (metaLoad(path, &meta) != 0 || meta.slot >= WAPP_IMAGE_MAX_SLOTS ||
+        meta.size == 0)
         return -ENOENT;
 
     const esp_partition_t *part = wappPartition();
@@ -521,13 +520,8 @@ int PlatformRegistryReadImage(const reg_entry_t *entry, uint8_t *buf,
 
     char path[WAPP_REG_PATH_MAX];
     metaPath(path, sizeof(path), entry->name, entry->version);
-    FILE *f = fopen(path, "rb");
-    if (f == NULL)
-        return -errno;
     wapp_image_meta_t meta;
-    size_t r = fread(&meta, 1, sizeof(meta), f);
-    fclose(f);
-    if (r != sizeof(meta) || meta.magic != WAPP_IMAGE_META_MAGIC)
+    if (metaLoad(path, &meta) != 0)
         return -ENOENT;
 
     const esp_partition_t *part = wappPartition();
