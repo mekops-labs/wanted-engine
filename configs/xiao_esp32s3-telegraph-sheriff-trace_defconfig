@@ -1,0 +1,33 @@
+# xiao_esp32s3-telegraph-sheriff with debug traces compiled in.
+#
+# Same envelope as that board, plus DEBUG_TRACE() call sites, for tracing
+# bring-up on the hardware. Not a deployment profile: the traces are a raw
+# write() per call site and affect timing.
+
+CONFIG_WANTED_MAX_WAPPS=16
+CONFIG_WANTED_MAX_WAPP_IMAGE_KB=192
+CONFIG_WANTED_WASM_STACK_SIZE=65536
+CONFIG_WANTED_WASM_HEAP_SIZE=0
+CONFIG_WANTED_WASM_WORKER_STACK_SIZE=65536
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=3
+CONFIG_WANTED_MAX_PATH_LEN=256
+CONFIG_WANTED_MAX_DRIVERS_CNT=6
+CONFIG_WANTED_MAX_OPTIONS_SIZE=128
+
+CONFIG_WANTED_VFS_UART=y
+CONFIG_WANTED_PIPE_MAX_PIPES=16
+CONFIG_WANTED_VFS_SOCKET_LISTEN=y
+
+CONFIG_WANTED_DEBUG_TRACES=y
+
+CONFIG_WANTED_SUPERVISOR_SHERIFF=y
+CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-esp32s3-telegraph-sheriff.json"
+CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN=y
+
+# Makes `just defconfig xiao_esp32s3-telegraph-sheriff-trace && just build`
+# alone reach the right target, chip and board (no DEFCONFIG override needed).
+# The board name below is this file's own: the ESP-IDF build reads it back to
+# seed its configuration, so naming the untraced board would build that one.
+CONFIG_WANTED_TARGET_ESP_IDF=y
+CONFIG_WANTED_TARGET_ESP_IDF_CHIP="esp32s3"
+CONFIG_WANTED_TARGET_ESP_IDF_DEFCONFIG="xiao_esp32s3-telegraph-sheriff-trace"
