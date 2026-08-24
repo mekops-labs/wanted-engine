@@ -9,6 +9,13 @@ Unreleased
 - An ESP-IDF build with A/B slots emits `dist/esp-idf/wanted-<chip>-ota.bin`,
   the app image an OTA slot takes, beside the merged flash image.
 
+### Fixed
+
+- A staged ESP-IDF image is reverted after 45 s without a confirm even where
+  the bootloader grants it no probation.
+- `/dev/ota`'s `rollback` reverts to the other slot on such a bootloader
+  rather than returning with the boot partition unchanged.
+
 0.14.0 (2026-08-24)
 -------------------
 
