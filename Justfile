@@ -264,6 +264,11 @@ nuttx-clean:
 # Remove every build artifact (Linux + NuttX sim + wasm/wapps + submodule objects).
 clean:
     rm -rf {{build_dir}} build-nuttx registry
+    # The ESP-IDF project keeps its own .config, seeded from WANTED_DEFCONFIG on
+    # the first configure and preserved after. A later build with a different
+    # DEFCONFIG reuses the old one and reports success, so the tree has to go
+    # for a defconfig change to take.
+    rm -rf platform/esp-idf/project/build
     # Every supervisor app.wasm is a gitignored build output, sheriff's included.
     rm -f wasm/*.wasm* wasm/supervisor/*/supervisor.tar wasm/supervisor/*/app.wasm
     rm -f wapps/*/*.wasm wapps/*/*.wasm.h wapps/*/*.o
