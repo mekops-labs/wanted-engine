@@ -53,7 +53,7 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/wapps/<name>/memory` | r | yes | Per-wapp WASM linear-memory accounting: `linear_cur` / `linear_max` (bytes) and `pages_cur` / `pages_max`. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`; `store_free` / `store_total`; `wasm_pages_free` — free WASM linear-memory pages, summed across every loaded wapp's headroom to its own ceiling. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `reg_slots` (images the registry can hold; `0` where it is bounded only by the filesystem), `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `uptime_ms` (milliseconds since the engine started, the origin log line stamps count from), `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `reg_slots` (images the registry can hold; `0` where it is bounded only by the filesystem), `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
@@ -62,6 +62,7 @@ Each entry reads its value in one shot; a second read on the same fd returns EOF
 ```text
 platform:	linux
 version:	0.8.0+gf0d012c.20260713121818
+uptime_ms:	38401250
 supervisor_abi:	3
 max_wapps:	3
 max_wapp_name:	15 B
@@ -129,10 +130,36 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
 | `config` | `mounts[]` | chosen `path` (e.g. `/etc/config`) | Read-only config-file injection, reachable outside `/dev`. |
 | `9p` | `mounts[]` | chosen `path` | 9P2000 client for an external FS plugin. The `options` URL is `tcp://<host>:<port>`, `udp://<host>:<port>`, or `unix://<socket-path>` for a server on the same box. |
-| `log` | `mounts[]` | chosen `path` | Read-only directory view of per-wapp captured logs. `<path>/<name>` reads wapp `<name>`'s ring-buffered output; the mount enumerates wapps with a live log slot. A `name=<wapp>` option scopes it to one wapp (default: all). The engine's own error channel appears as `.engine`, a name no image reference can carry; `name=.engine` scopes a grant to it alone. Grantable independently of `/dev/wanted`. |
+| `log` | `mounts[]` | chosen `path` | Read-only directory view of per-wapp captured logs. `<path>/<name>` reads wapp `<name>`'s ring-buffered output; the mount enumerates wapps with a live log slot. A `name=<wapp>` option scopes it to one wapp (default: all). The engine's own error channel appears as `.engine`, a name no image reference can carry; `name=.engine` scopes a grant to it alone. Grantable independently of `/dev/wanted`. Each line is prefixed `[+<ms>] ` — see [Log line stamps](#log-line-stamps). |
 | `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
 | `log` | console slot | — | Console capture: routes a wapp's stdout/stderr into its per-wapp log slot (read back via a `log` mount). |
 | `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` are lossy writers (drop oldest on a full ring); `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
+
+### Log line stamps
+
+Every captured log line opens with `[+<ms>] `, the milliseconds elapsed since
+the engine fixed its uptime origin at start:
+
+```
+[+12345] wanted: image install failed
+[+12362] wanted: NoSpaceLeft
+```
+
+The stamp is boot-relative because a device need not have a trustworthy wall
+clock — `/proc/clock_quality` reads `3` (uncalibrated) until something sets the
+time, and an absolute stamp written before then would be wrong rather than
+merely coarse. `/proc/wanted` reports the same counter as `uptime_ms`, so a
+reader that pairs one read of it with its own clock resolves every stamp in a
+ring to absolute time.
+
+A line is closed by a newline, not by the `write()` that carried it: a producer
+that flushes `"abc"` and then `"def\n"` yields one stamped line, and a line
+still open when the ring is read carries the stamp it opened with. Output that
+never emits a newline is stamped once, at its first byte.
+
+The prefix is stored in the ring, so it counts against
+`CONFIG_WANTED_LOG_CAP` (and `CONFIG_WANTED_LOG_PERSIST_CAP` for `.engine`)
+like any other output.
 
 ### Preopen capability rights
 
