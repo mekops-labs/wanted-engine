@@ -21,7 +21,15 @@ typedef struct {
     size_t len;    /* bytes stored, <= CONFIG_WANTED_LOG_CAP */
     uint64_t tick; /* last-access counter, for LRU eviction */
     bool used;
+    bool mid_line; /* a stamp is due while this is false */
 } log_slot_t;
+
+/* Nanoseconds per millisecond, the unit PlatformClockGetTime reports in. */
+#define NS_PER_MS 1000000ULL
+
+/* Written once at engine init, before any wapp thread exists, and only read
+ * after. */
+static uint64_t g_uptime_origin_ns;
 
 /* Two rings in memory a reset does not clear: one this boot writes, one the
  * previous boot left. `magic` tells a first boot from a re-used region, and
@@ -45,6 +53,29 @@ struct log_store_t {
     size_t pcap;
     bool prev_valid;
 };
+
+void LogStoreUptimeInit(void) {
+    plat_timestamp_t now = 0;
+    if (PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &now) == 0)
+        g_uptime_origin_ns = (uint64_t)now;
+}
+
+uint64_t LogStoreUptimeMs(void) {
+    plat_timestamp_t now = 0;
+    if (PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &now) != 0)
+        return 0;
+    if ((uint64_t)now < g_uptime_origin_ns)
+        return 0; /* a clock that stepped back reads as the origin */
+    return ((uint64_t)now - g_uptime_origin_ns) / NS_PER_MS;
+}
+
+/* Render the line stamp; 0 when it would not fit, which drops it rather than
+ * writing a partial one. */
+static size_t stamp(char *out, size_t cap) {
+    int n =
+        snprintf(out, cap, "[+%llu] ", (unsigned long long)LogStoreUptimeMs());
+    return (n > 0 && (size_t)n < cap) ? (size_t)n : 0;
+}
 
 log_store_t *LogStore(void) {
     static log_store_t *store = NULL;
@@ -173,6 +204,17 @@ static void persistAppend(log_store_t *s, const char *p, size_t n) {
     s->phdr->len[s->phdr->live] = (uint32_t)(used + n);
 }
 
+/* Caller holds the lock. Drops the oldest bytes once the ring is full. */
+static void slotPush(log_slot_t *sl, const char *p, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        sl->buf[(sl->start + sl->len) % CONFIG_WANTED_LOG_CAP] = p[i];
+        if (sl->len < CONFIG_WANTED_LOG_CAP)
+            sl->len++;
+        else
+            sl->start = (sl->start + 1) % CONFIG_WANTED_LOG_CAP;
+    }
+}
+
 void LogStoreAppend(log_store_t *s, const char *name, const void *buf,
                     size_t n) {
     if (!s || !name || !buf || n == 0)
@@ -182,25 +224,37 @@ void LogStoreAppend(log_store_t *s, const char *name, const void *buf,
     /* The engine's own channel is mirrored where a reset cannot clear it.
      * strncmp stops at the literal's own NUL well inside WAPP_MAX_NAME_LEN. */
     /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
-    if (strncmp(name, WANTED_ENGINE_LOG_NAME, WAPP_MAX_NAME_LEN) == 0) {
-        persistAppend(s, (const char *)buf, n);
-    }
+    bool engine = strncmp(name, WANTED_ENGINE_LOG_NAME, WAPP_MAX_NAME_LEN) == 0;
     log_slot_t *sl = slot_for(s, name);
-    if (sl) {
-        const char *p = (const char *)buf;
-        /* Only the last CONFIG_WANTED_LOG_CAP bytes can survive. */
-        if (n >= CONFIG_WANTED_LOG_CAP) {
-            p += n - CONFIG_WANTED_LOG_CAP;
-            n = CONFIG_WANTED_LOG_CAP;
+    if (sl == NULL) {
+        PlatformMutexUnlock(s->lock);
+        return;
+    }
+
+    /* A write carries whatever the producer flushed, so a line is closed by a
+     * newline and not by the call ending. */
+    const char *p = (const char *)buf;
+    size_t i = 0;
+    while (i < n) {
+        if (!sl->mid_line) {
+            char ts[LOG_STAMP_MAX];
+            size_t m = stamp(ts, sizeof(ts));
+            slotPush(sl, ts, m);
+            if (engine)
+                persistAppend(s, ts, m);
+            sl->mid_line = true;
         }
-        for (size_t i = 0; i < n; i++) {
-            sl->buf[(sl->start + sl->len) % CONFIG_WANTED_LOG_CAP] = p[i];
-            if (sl->len < CONFIG_WANTED_LOG_CAP)
-                sl->len++;
-            else
-                sl->start = (sl->start + 1) %
-                            CONFIG_WANTED_LOG_CAP; /* overwrite oldest */
+        size_t run = i;
+        while (run < n && p[run] != '\n')
+            run++;
+        if (run < n) {
+            run++;
+            sl->mid_line = false;
         }
+        slotPush(sl, p + i, run - i);
+        if (engine)
+            persistAppend(s, p + i, run - i);
+        i = run;
     }
     PlatformMutexUnlock(s->lock);
 }
