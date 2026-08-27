@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <wanted-api.h> /* WAPP_MAX_NAME_LEN */
 
@@ -20,14 +21,27 @@
  * reserved the same way. Present only when the store found one. */
 #define WANTED_PREV_LOG_NAME ".engine.prev"
 
+/* Widest "[+<ms>] " a stamp can occupy, including the NUL. */
+#define LOG_STAMP_MAX 26
+
 typedef struct log_store_t log_store_t;
+
+/* Fix the origin that line stamps and LogStoreUptimeMs count from. Called once
+ * at engine init; without it both count from the platform's own monotonic
+ * zero, which shifts them equally and stays resolvable. */
+void LogStoreUptimeInit(void);
+
+/* Milliseconds since that origin. Every line stamp counts from it, so a reader
+ * given this value resolves any stamp to its own clock. */
+uint64_t LogStoreUptimeMs(void);
 
 /* Process-global singleton, created on first use (NULL on allocation failure).
  * Shared by the log console driver (append) and the control plane (read). */
 log_store_t *LogStore(void);
 
-/* Append n bytes of wapp `name`'s output. Silently drops the oldest bytes once
- * the per-wapp ring is full. No-op on NULL store / name. */
+/* Append n bytes of wapp `name`'s output, prefixing each line with "[+<ms>] ".
+ * Silently drops the oldest bytes once the per-wapp ring is full. No-op on
+ * NULL store / name. */
 void LogStoreAppend(log_store_t *s, const char *name, const void *buf,
                     size_t n);
 

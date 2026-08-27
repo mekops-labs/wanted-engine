@@ -1,6 +1,15 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- Every captured log line opens with `[+<ms>] `, the milliseconds since the
+  engine started. A newline closes a line, not the write that carried it.
+- `/proc/wanted` reports `uptime_ms`, the counter those stamps count from.
+
 0.14.1 (2026-08-24)
 -------------------
 

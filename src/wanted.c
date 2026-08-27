@@ -365,6 +365,7 @@ static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
         (char *)buf, bufLen,
         "platform:\t%s\n"
         "version:\t%s\n"
+        "uptime_ms:\t%llu\n"
         "supervisor_abi:\t%d\n"
         "max_wapps:\t%d\n"
         "max_wapp_name:\t%d B\n"
@@ -378,12 +379,13 @@ static int procReadWanted(vfs_ctx_t c, void *buf, size_t bufLen) {
         "log_slots:\t%d\n"
         "reg_slots:\t%zu\n"
         "reset_reason:\t%s\n",
-        PlatformName(), WANTED_VERSION, WANTED_SUPERVISOR_ABI,
-        CONFIG_WANTED_MAX_WAPPS, WAPP_MAX_NAME_LEN, CONFIG_WANTED_MAX_PATH_LEN,
-        CONFIG_WANTED_WASM_STACK_SIZE, CONFIG_WANTED_WASM_HEAP_SIZE,
-        PlatformWorkerStackSize(), CONFIG_WANTED_WASM_MAX_MEMORY_PAGES,
-        CONFIG_WANTED_MAX_DRIVERS_CNT, CONFIG_WANTED_MAX_OPTIONS_SIZE,
-        CONFIG_WANTED_LOG_SLOTS, PlatformRegistrySlots(), resetReason());
+        PlatformName(), WANTED_VERSION, (unsigned long long)LogStoreUptimeMs(),
+        WANTED_SUPERVISOR_ABI, CONFIG_WANTED_MAX_WAPPS, WAPP_MAX_NAME_LEN,
+        CONFIG_WANTED_MAX_PATH_LEN, CONFIG_WANTED_WASM_STACK_SIZE,
+        CONFIG_WANTED_WASM_HEAP_SIZE, PlatformWorkerStackSize(),
+        CONFIG_WANTED_WASM_MAX_MEMORY_PAGES, CONFIG_WANTED_MAX_DRIVERS_CNT,
+        CONFIG_WANTED_MAX_OPTIONS_SIZE, CONFIG_WANTED_LOG_SLOTS,
+        PlatformRegistrySlots(), resetReason());
     if (w < 0)
         return -EIO;
 
@@ -1132,8 +1134,10 @@ int WantedStart(const char *cfg, size_t cfgLen) {
     int ret;
     wapp_t *app;
 
-    /* Before anything can log: the previous boot's ring is adopted here, and
-     * this boot's writes go to the other half. */
+    /* Before anything can log: the origin every line stamp counts from, then
+     * the previous boot's ring is adopted and this boot's writes go to the
+     * other half. */
+    LogStoreUptimeInit();
     LogStorePersistInit(LogStore());
 
     ret = WantedParseConfig(cfg, cfgLen);

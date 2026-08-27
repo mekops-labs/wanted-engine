@@ -16,6 +16,13 @@ static wapp_t make_wapp(const char *name) {
     return w;
 }
 
+/* Step over the "[+<ms>] " a line carries, so a test asserts on the payload.
+ * The value moves with the clock and is never asserted on directly. */
+static const char *afterStamp(const char *s) {
+    const char *sp = strchr(s, ' ');
+    return (s[0] == '[' && s[1] == '+' && sp != NULL) ? sp + 1 : s;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * vfs_log_driver — log console driver (src/vfs/vfs-log.c)
  * ═══════════════════════════════════════════════════════════════════════════
@@ -80,9 +87,9 @@ TEST(vfs_log_driver, WriteAppendsToLogStore) {
     d->Write(d->ctx, 0, msg, sizeof(msg) - 1);
 
     char out[64] = {0};
-    size_t n = LogStoreRead(LogStore(), "log-wt", out, sizeof(out));
-    TEST_ASSERT_EQUAL_size_t(sizeof(msg) - 1, n);
-    TEST_ASSERT_EQUAL_STRING_LEN(msg, out, sizeof(msg) - 1);
+    size_t n = LogStoreRead(LogStore(), "log-wt", out, sizeof(out) - 1);
+    TEST_ASSERT_GREATER_THAN_size_t(sizeof(msg) - 1, n);
+    TEST_ASSERT_EQUAL_STRING(msg, afterStamp(out));
 
     d->Destroy(d);
 }
@@ -117,9 +124,49 @@ TEST(log_store, AppendAndReadRoundtrip) {
     LogStoreAppend(LogStore(), "rtt", data, sizeof(data) - 1);
 
     char out[64] = {0};
-    size_t n = LogStoreRead(LogStore(), "rtt", out, sizeof(out));
-    TEST_ASSERT_EQUAL_size_t(sizeof(data) - 1, n);
-    TEST_ASSERT_EQUAL_STRING_LEN(data, out, sizeof(data) - 1);
+    size_t n = LogStoreRead(LogStore(), "rtt", out, sizeof(out) - 1);
+    TEST_ASSERT_GREATER_THAN_size_t(sizeof(data) - 1, n);
+    TEST_ASSERT_EQUAL_STRING(data, afterStamp(out));
+}
+
+TEST(log_store, EachLineCarriesItsOwnStamp) {
+    LogStoreAppend(LogStore(), "stamp2", "one\ntwo\n", 8);
+
+    char out[64] = {0};
+    LogStoreRead(LogStore(), "stamp2", out, sizeof(out) - 1);
+
+    const char *first = afterStamp(out);
+    TEST_ASSERT_EQUAL_STRING_LEN("one\n", first, 4);
+    TEST_ASSERT_EQUAL_STRING("two\n", afterStamp(first + 4));
+}
+
+/* A producer flushes when it likes, so a line split across writes must not be
+ * stamped twice. */
+TEST(log_store, AContinuedLineIsNotStampedAgain) {
+    LogStoreAppend(LogStore(), "stamp3", "abc", 3);
+    LogStoreAppend(LogStore(), "stamp3", "def\n", 4);
+
+    char out[64] = {0};
+    LogStoreRead(LogStore(), "stamp3", out, sizeof(out) - 1);
+    TEST_ASSERT_EQUAL_STRING("abcdef\n", afterStamp(out));
+}
+
+TEST(log_store, AStampOpensTheLineAfterANewline) {
+    LogStoreAppend(LogStore(), "stamp4", "done\n", 5);
+    LogStoreAppend(LogStore(), "stamp4", "next", 4);
+
+    char out[64] = {0};
+    LogStoreRead(LogStore(), "stamp4", out, sizeof(out) - 1);
+
+    const char *first = afterStamp(out);
+    TEST_ASSERT_EQUAL_STRING_LEN("done\n", first, 5);
+    TEST_ASSERT_EQUAL_STRING("next", afterStamp(first + 5));
+}
+
+TEST(log_store, UptimeAdvances) {
+    uint64_t a = LogStoreUptimeMs();
+    uint64_t b = LogStoreUptimeMs();
+    TEST_ASSERT_TRUE(b >= a);
 }
 
 TEST(log_store, ReadAbsentNameReturnsZero) {
@@ -147,6 +194,10 @@ TEST(log_store, AppendNullInputsAreNoOps) {
 
 TEST_GROUP_RUNNER(log_store) {
     RUN_TEST_CASE(log_store, AppendAndReadRoundtrip);
+    RUN_TEST_CASE(log_store, EachLineCarriesItsOwnStamp);
+    RUN_TEST_CASE(log_store, AContinuedLineIsNotStampedAgain);
+    RUN_TEST_CASE(log_store, AStampOpensTheLineAfterANewline);
+    RUN_TEST_CASE(log_store, UptimeAdvances);
     RUN_TEST_CASE(log_store, ReadAbsentNameReturnsZero);
     RUN_TEST_CASE(log_store, AppendIsNonDestructiveRead);
     RUN_TEST_CASE(log_store, AppendNullInputsAreNoOps);
