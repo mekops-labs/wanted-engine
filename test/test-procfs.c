@@ -11,9 +11,9 @@
 
 #include <vfs-procfs.h>
 #include <vfs-tarfs.h>
-#include <wanted-api.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
+#include <wanted-api.h>
 #include <wanted-vfs-api.h>
 
 static vfs_ctx_t vfs;
