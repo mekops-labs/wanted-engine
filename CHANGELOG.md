@@ -9,6 +9,10 @@ Unreleased
 - Every captured log line opens with `[+<ms>] `, the milliseconds since the
   engine started. A newline closes a line, not the write that carried it.
 - `/proc/wanted` reports `uptime_ms`, the counter those stamps count from.
+- `/proc/wanted` reports `max_layers`, `max_args` and `max_envs`: the
+  per-wapp ceilings a launch config is checked against.
+- `CONFIG_WANTED_MAX_LAYERS` sets the filesystem layers a wapp image may
+  stack, default 4, range 1-16.
 
 0.14.1 (2026-08-24)
 -------------------

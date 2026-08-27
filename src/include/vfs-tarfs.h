@@ -6,10 +6,11 @@
 #include <stdint.h>
 
 #include <vfs.h>
+#include <wanted-autoconf.h>
 
-/* Maximum number of OCI layers per wapp. Also used by wapp_t in wanted-api.h.
- */
-#define TARFS_MAX_LAYERS 4
+/* Layers per wapp image; sizes wapp_t's table in wanted-api.h too. Reported at
+ * /proc/wanted, so a supervisor can refuse a deployment naming more. */
+#define TARFS_MAX_LAYERS CONFIG_WANTED_MAX_LAYERS
 
 /* Opaque tarfs context — built from an ordered array of OCI TAR layers.
  * layers[0] is the topmost/newest; its entries shadow older layers. */

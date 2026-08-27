@@ -7,9 +7,13 @@
 
 #include "test-utils.h"
 
+#include <stdio.h>
+
 #include <vfs-procfs.h>
+#include <vfs-tarfs.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
+#include <wanted-api.h>
 #include <wanted-vfs-api.h>
 
 static vfs_ctx_t vfs;
@@ -575,4 +579,96 @@ TEST_GROUP_RUNNER(procfs_dir) {
     RUN_TEST_CASE(procfs_dir, RootReadDirListsChildren);
     RUN_TEST_CASE(procfs_dir, SubdirReadDirListsLeaves);
     RUN_TEST_CASE(procfs_dir, RootListingMarksDirEntry);
+}
+
+/***************************************/
+TEST_GROUP(procfs_wanted_info);
+/***************************************/
+
+/* Every ceiling a supervisor checks a launch config against is reported here.
+ * A missing line reads as "unknown" on that side, which is indistinguishable
+ * from an older engine, so absence is silent and has to be caught here. */
+static const char *const _kCeilingKeys[] = {
+    "max_wapps:\t",   "max_wapp_name:\t", "max_path:\t",
+    "max_drivers:\t", "max_options:\t",   "max_layers:\t",
+    "max_args:\t",    "max_envs:\t",      "wasm_max_pages:\t",
+};
+
+static vfs_ctx_t info_vfs;
+static char info_buf[1024];
+
+static size_t _ReadWantedInfo(void) {
+    int fd = VfsOpen(info_vfs, "/proc/wanted", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    memset(info_buf, 0, sizeof(info_buf));
+    int n = VfsRead(info_vfs, fd, info_buf, sizeof(info_buf) - 1);
+    VfsClose(info_vfs, fd);
+    TEST_ASSERT_GREATER_THAN_INT(0, n);
+    return (size_t)n;
+}
+
+TEST_SETUP(procfs_wanted_info) {
+    info_vfs = VfsInit();
+    ProcFs_Register(info_vfs, "wanted", WantedProcReadInfo, false);
+}
+
+TEST_TEAR_DOWN(procfs_wanted_info) { VfsDestroy(&info_vfs); }
+
+TEST(procfs_wanted_info, ReportsEveryCeiling) {
+    _ReadWantedInfo();
+    for (size_t i = 0; i < sizeof(_kCeilingKeys) / sizeof(_kCeilingKeys[0]);
+         i++) {
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(info_buf, _kCeilingKeys[i]),
+                                     _kCeilingKeys[i]);
+    }
+}
+
+/* The values are what the build configured, not a copy that can drift: a
+ * supervisor sizes its own bounds from them. */
+TEST(procfs_wanted_info, CeilingValuesAreTheConfiguredOnes) {
+    char expect[64];
+    _ReadWantedInfo();
+
+    snprintf(expect, sizeof(expect), "max_layers:\t%d\n", TARFS_MAX_LAYERS);
+    TEST_ASSERT_NOT_NULL(strstr(info_buf, expect));
+    snprintf(expect, sizeof(expect), "max_args:\t%d\n", WAPP_MAX_ARGS);
+    TEST_ASSERT_NOT_NULL(strstr(info_buf, expect));
+    snprintf(expect, sizeof(expect), "max_envs:\t%d\n", WAPP_MAX_ENVS);
+    TEST_ASSERT_NOT_NULL(strstr(info_buf, expect));
+    snprintf(expect, sizeof(expect), "max_wapps:\t%d\n",
+             CONFIG_WANTED_MAX_WAPPS);
+    TEST_ASSERT_NOT_NULL(strstr(info_buf, expect));
+}
+
+/* The layer ceiling is a build knob, and the reported value has to follow it
+ * rather than a constant that was right when it was written. */
+TEST(procfs_wanted_info, LayerCeilingFollowsTheBuildKnob) {
+    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_MAX_LAYERS, TARFS_MAX_LAYERS);
+}
+
+/* Identity comes first: a reader that cannot tell which engine it is talking
+ * to cannot judge any of the numbers below it. */
+TEST(procfs_wanted_info, ReportsIdentityAndAbi) {
+    _ReadWantedInfo();
+    TEST_ASSERT_NOT_NULL(strstr(info_buf, "platform:\t"));
+    TEST_ASSERT_NOT_NULL(strstr(info_buf, "version:\t"));
+    TEST_ASSERT_NOT_NULL(strstr(info_buf, "supervisor_abi:\t"));
+}
+
+/* A short buffer truncates; it must not run past the caller's end. */
+TEST(procfs_wanted_info, ShortReadDoesNotOverrun) {
+    char small[32];
+    memset(small, 0x7f, sizeof(small));
+    int n = WantedProcReadInfo(info_vfs, small, 16);
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(0, n);
+    TEST_ASSERT_LESS_OR_EQUAL_INT(16, n);
+    TEST_ASSERT_EQUAL_HEX8(0x7f, (unsigned char)small[16]);
+}
+
+TEST_GROUP_RUNNER(procfs_wanted_info) {
+    RUN_TEST_CASE(procfs_wanted_info, ReportsEveryCeiling);
+    RUN_TEST_CASE(procfs_wanted_info, CeilingValuesAreTheConfiguredOnes);
+    RUN_TEST_CASE(procfs_wanted_info, LayerCeilingFollowsTheBuildKnob);
+    RUN_TEST_CASE(procfs_wanted_info, ReportsIdentityAndAbi);
+    RUN_TEST_CASE(procfs_wanted_info, ShortReadDoesNotOverrun);
 }
