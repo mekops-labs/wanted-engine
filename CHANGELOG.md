@@ -6,6 +6,8 @@ Unreleased
 
 ### Added
 
+- `docker/publish-images.sh firmware -b BOARD -i BIN` publishes a built board
+  binary, labelled with its version, digest and size.
 - Every captured log line opens with `[+<ms>] `, the milliseconds since the
   engine started. A newline closes a line, not the write that carried it.
 - `/proc/wanted` reports `uptime_ms`, the counter those stamps count from.

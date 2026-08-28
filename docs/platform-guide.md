@@ -202,6 +202,29 @@ On ESP-IDF the seed images are embedded into the app binary at configure time; `
 
 The firmware flasher wapp ships this way. It is seeded as `flasher:<supervisor version>` — the version of the supervisor tree it was built from, a bare semver at a tag (`flasher:0.3.3`) or the tag plus a short commit past one (`flasher:0.3.3-abc123`). It installs an engine firmware image and exits, which is why it must be present before any network is: the thing that would otherwise fetch it is what it exists to update. A version too long for a registry version field fails the build rather than being truncated.
 
+### Publishing a firmware image
+
+A built board binary is published to the OCI registry the same way the toolchain images are — `docker/publish-images.sh`, driven by a Containerfile:
+
+```bash
+docker/publish-images.sh -b pimoroni_pico2_plus_w -i dist/nuttx/wanted.bin firmware          # build + verify
+docker/publish-images.sh -a ~/auth.json -b pimoroni_pico2_plus_w -i dist/nuttx/wanted.bin firmware
+```
+
+The reference is `registry.gitlab.com/mekops/wanted/wanted-engine/firmware/<board>:<version>`, one repository per board. Runners grant no privileged mode, so this runs on a developer machine, not in CI.
+
+`docker/Containerfile.firmware.in` is a template rendered per build, since the version changes every build. Three labels are stamped from the artifact itself:
+
+| Label | Value |
+|---|---|
+| `version` | The release tag without its leading `v`, which is also the version the engine reports and the tag the image publishes under. |
+| `firmware.digest` | `sha256:` plus the hash of the `.bin`. |
+| `firmware.size` | The `.bin`'s length in bytes. |
+
+The version is a release tag and nothing else: an untagged or dirty tree stamps itself `X.Y.Z+<timestamp>`, which is not a legal registry tag and would never match what the device reports, so the script refuses to publish one.
+
+The two firmware labels exist because `podman` always writes the layer as a **gzipped tar**, whose digest measures the archive rather than the image inside it. A control plane reads the labels off the image config to learn the image's own digest and size, and the device unwraps the layer as it flashes. The `verify` step re-hashes the source `.bin` and fails if the label disagrees.
+
 ## OpenWrt
 
 Routers, built as an `.ipk` package from an OpenWrt SDK. Unlike NuttX and ESP-IDF, OpenWrt builds the engine as an **external package** — it compiles no engine sources into its own tree and shares no symbol namespace.
