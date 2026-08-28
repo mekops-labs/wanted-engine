@@ -12,6 +12,9 @@
             },
             "drivers": [
                 {"name": "wanted"}
+            ],
+            "mounts": [
+                {"name": "log", "path": "/logs"}
             ]
         }
     }
