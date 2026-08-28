@@ -3,12 +3,18 @@
 # no Docker-in-Docker and only pulls them. Each version tag comes from the
 # Containerfile's own `LABEL version=`, so it cannot drift.
 #
-# Usage: docker/publish-images.sh [-a AUTHFILE] [build|wapp-sdk ...]
+# The `firmware` image is a built board binary instead: single-arch, one layer,
+# rendered from docker/Containerfile.firmware.in per build.
+#
+# Usage: docker/publish-images.sh [-a AUTHFILE] [-b BOARD -i BIN] [build|wapp-sdk|firmware ...]
 #   -a AUTHFILE   push (podman --authfile); omitted, only build + verify.
+#   -b BOARD      board name the firmware image is published under.
+#   -i BIN        path to the built firmware .bin.
 #
 #   docker/publish-images.sh                          # build + verify, no push
 #   docker/publish-images.sh -a ~/auth.json           # ... and push both
 #   docker/publish-images.sh -a ~/auth.json wapp-sdk  # just the wapp SDK image
+#   docker/publish-images.sh -a ~/auth.json -b rp2350_feather -i build/wanted.bin firmware
 set -euo pipefail
 
 REGISTRY=${REGISTRY:-registry.gitlab.com/mekops/wanted/wanted-engine}
@@ -18,14 +24,18 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CONTEXT=$ROOT/docker
 
 usage() {
-    echo "usage: docker/publish-images.sh [-a AUTHFILE] [build|wapp-sdk ...]" >&2
+    echo "usage: docker/publish-images.sh [-a AUTHFILE] [-b BOARD -i BIN] [build|wapp-sdk|firmware ...]" >&2
     exit 2
 }
 
 authfile=
-while getopts ':a:h' opt; do
+board=
+bin=
+while getopts ':a:b:i:h' opt; do
     case $opt in
         a) authfile=$OPTARG ;;
+        b) board=$OPTARG ;;
+        i) bin=$OPTARG ;;
         *) usage ;;
     esac
 done
@@ -46,8 +56,87 @@ containerfile_for() {
     case $1 in
         build)    echo "docker/Dockerfile" ;;
         wapp-sdk) echo "docker/Containerfile.wapp-sdk" ;;
-        *)        echo "FAIL: unknown image '$1' (want: build, wapp-sdk)" >&2; return 1 ;;
+        *)        echo "FAIL: unknown image '$1' (want: build, wapp-sdk, firmware)" >&2; return 1 ;;
     esac
+}
+
+# The version a firmware image publishes under is the release tag: off a tag
+# the build stamps `X.Y.Z+<timestamp>`, which no device would ever match, so
+# only a tagged, clean tree can publish.
+firmware_version() {
+    local tag
+    if ! tag=$(git -C "$ROOT" describe --tags --exact-match 2>/dev/null); then
+        echo "FAIL: HEAD is not tagged; a firmware image publishes under a release tag" >&2
+        return 1
+    fi
+    if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
+        echo "FAIL: working tree is dirty; the .bin would not match the tag it publishes under" >&2
+        return 1
+    fi
+    echo "${tag#v}"
+}
+
+# Render the firmware Containerfile for one .bin. The digest and size come from
+# the artifact itself, so `version_of` reads the version back out of the render
+# exactly as it does for a hand-written Containerfile.
+render_firmware() {
+    local ver=$1 image_bin=$2 out=$3
+    sed -e "s|@VERSION@|$ver|" \
+        -e "s|@DIGEST@|sha256:$(sha256sum "$image_bin" | cut -d" " -f1)|" \
+        -e "s|@SIZE@|$(stat -c %s "$image_bin")|" \
+        "$ROOT/docker/Containerfile.firmware.in" > "$out"
+}
+
+# One layer, and a firmware.digest label that still matches the source .bin.
+verify_firmware() {
+    local image=$1 image_bin=$2 layers labelled actual
+    layers=$(podman image inspect --format '{{len .RootFS.Layers}}' "$image")
+    if [ "$layers" != 1 ]; then
+        echo "FAIL: $image has $layers layers, want 1" >&2
+        return 1
+    fi
+    labelled=$(podman image inspect --format '{{index .Config.Labels "firmware.digest"}}' "$image")
+    actual="sha256:$(sha256sum "$image_bin" | cut -d' ' -f1)"
+    if [ "$labelled" != "$actual" ]; then
+        echo "FAIL: $image labels $labelled, .bin hashes to $actual" >&2
+        return 1
+    fi
+    echo "  one layer, firmware.digest $labelled"
+}
+
+# Build and push one board's firmware image: single-arch, so none of the
+# manifest-list machinery applies.
+publish_firmware() {
+    local ver cf image
+    if [ -z "$board" ] || [ -z "$bin" ]; then
+        echo "FAIL: firmware needs -b BOARD and -i BIN" >&2
+        return 1
+    fi
+    if [ ! -f "$bin" ]; then
+        echo "FAIL: firmware image not found: $bin" >&2
+        return 1
+    fi
+    bin=$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")
+
+    ver=$(firmware_version)
+    cf=$(mktemp)
+    trap 'rm -f "$cf"' RETURN
+    render_firmware "$ver" "$bin" "$cf"
+    ver=$(version_of "$cf")
+    image=$REGISTRY/firmware/$board:$ver
+
+    echo "==> building $image"
+    podman build -t "$image" --build-arg "BIN=$(basename "$bin")" -f "$cf" "$(dirname "$bin")"
+
+    echo "==> verifying $image"
+    verify_firmware "$image" "$bin"
+
+    if [ -z "$authfile" ]; then
+        echo "==> not pushing $image (no -a AUTHFILE)"
+        return 0
+    fi
+    echo "==> pushing $image"
+    podman push --authfile "$authfile" "$image"
 }
 
 # The image's own LABEL is the single source of truth for its version tag.
@@ -81,6 +170,11 @@ verify() {
 }
 
 for name in "${images[@]}"; do
+    if [ "$name" = firmware ]; then
+        publish_firmware
+        continue
+    fi
+
     cf=$(containerfile_for "$name")
     ver=$(version_of "$ROOT/$cf")
     image=$REGISTRY/$name:$ver
