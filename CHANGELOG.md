@@ -13,6 +13,15 @@ Unreleased
   per-wapp ceilings a launch config is checked against.
 - `CONFIG_WANTED_MAX_LAYERS` sets the filesystem layers a wapp image may
   stack, default 4, range 1-16.
+- `configs/example_config_wsh.json` mounts the per-wapp logs at `/logs`, so
+  the debug shell can read a wapp's captured output.
+
+### Fixed
+
+- `/proc/memory`'s `wasm_pages_free` counts each free wapp slot's per-wapp
+  ceiling, not only loaded wapps' headroom, which read zero on every device.
+- A `start` that fails to load or launch keeps the name's `create`
+  reservation, so a retry no longer needs a fresh `create` first.
 
 0.14.1 (2026-08-24)
 -------------------

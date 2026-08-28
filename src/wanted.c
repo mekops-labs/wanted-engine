@@ -319,9 +319,9 @@ static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
     PlatformMemoryStats(&heap_used, &heap_total);
     PlatformStorageStats(&store_free, &store_total);
 
-    /* Free WASM linear-memory pages: the sum, across every loaded wapp, of the
-     * headroom left before its own page ceiling. Live per-wapp figures already
-     * back /proc/wapps/<name>/memory; this aggregates the same sample. */
+    /* Free WASM linear-memory pages the engine can still commit. Loaded-wapp
+     * headroom alone reads zero forever: an image declaring max == initial is
+     * at its ceiling the moment it instantiates. Free slots are the other. */
     wapp_state_t states[CONFIG_WANTED_MAX_WAPPS];
     int n = PlatformWappGetState(states, CONFIG_WANTED_MAX_WAPPS);
     uint64_t wasm_pages_free = 0;
@@ -330,6 +330,12 @@ static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
             wasm_pages_free +=
                 states[i].mem_pages_max - states[i].mem_pages_cur;
     }
+    /* Plus every wapp slot still free, each able to take up to the per-wapp
+     * ceiling. A ceiling of 0 is "uncapped", which is not a page count, so
+     * an uncapped build contributes nothing here rather than a wrong figure. */
+    if (CONFIG_WANTED_WASM_MAX_MEMORY_PAGES > 0 && n < CONFIG_WANTED_MAX_WAPPS)
+        wasm_pages_free += (uint64_t)(CONFIG_WANTED_MAX_WAPPS - n) *
+                           CONFIG_WANTED_WASM_MAX_MEMORY_PAGES;
 
     int w =
         snprintf((char *)buf, bufLen,

@@ -220,13 +220,11 @@ static int startWapp(struct vfs_driver_ctx_t *d, const char *name,
     memset(wapp, 0, sizeof(*wapp));
     strncpy(wapp->name, name, WAPP_MAX_NAME_LEN - 1);
 
-    /* The launch attempt owns the reservation: copy its config onto the wapp
-     * and clear the slot now, so a failed load frees the pending pool and a
-     * later start never silently reuses stale config. */
-    if (pend != NULL) {
+    /* Copy the reservation's config, but hold the slot until the launch takes:
+     * a failed load or start must leave `create`'s reservation standing, or a
+     * retry needs a fresh `create` first. */
+    if (pend != NULL)
         wapp->cfg = pend->cfg;
-        memset(pend, 0, sizeof(*pend));
-    }
 
     /* Instance identity (wapp->name) is the path-supplied `name`; the loader
      * resolves the image's registry entry and stamps image identity onto the
@@ -265,6 +263,8 @@ static int startWapp(struct vfs_driver_ctx_t *d, const char *name,
     /* Ownership of `wapp` and its mapped image transfers to the platform
      * thread slot, which releases it when reused. Freeing here would be a
      * use-after-free against the just-spawned thread. */
+    if (pend != NULL)
+        memset(pend, 0, sizeof(*pend)); /* launched: reservation consumed */
     return ret;
 
 UNLOAD:
