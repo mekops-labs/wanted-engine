@@ -209,6 +209,7 @@ A built board binary is published to the OCI registry the same way the toolchain
 ```bash
 docker/publish-images.sh -b pimoroni_pico2_plus_w -i dist/nuttx/wanted.bin firmware          # build + verify
 docker/publish-images.sh -a ~/auth.json -b pimoroni_pico2_plus_w -i dist/nuttx/wanted.bin firmware
+docker/publish-images.sh -b pimoroni_pico2_plus_w -i dist/nuttx/wanted.bin -c nowifi firmware
 ```
 
 The reference is `registry.gitlab.com/mekops/wanted/wanted-engine/firmware/<board>:<version>`, one repository per board. Runners grant no privileged mode, so this runs on a developer machine, not in CI.
@@ -220,8 +221,17 @@ The reference is `registry.gitlab.com/mekops/wanted/wanted-engine/firmware/<boar
 | `version` | The release tag without its leading `v`, which is also the version the engine reports and the tag the image publishes under. |
 | `firmware.digest` | `sha256:` plus the hash of the `.bin`. |
 | `firmware.size` | The `.bin`'s length in bytes. |
+| `firmware.config` | SHA-256 of the `.config` the binary was built from. |
 
 The version is a release tag and nothing else: an untagged or dirty tree stamps itself `X.Y.Z+<timestamp>`, which is not a legal registry tag and would never match what the device reports, so the script refuses to publish one.
+
+### Two builds of one release
+
+A board whose `.config` changed is a different image, but the engine's version comes from `git describe` and so is unchanged. `-c VARIANT` names the configuration and tags the image `<release>-<variant>` — `0.15.0-nowifi` against `0.15.0`. The device compares tags, so two builds of one release must not share one.
+
+The variant must match `[A-Za-z0-9._]+`. A `-` or `+` inside it would move the **release core** — everything before the first `-` — which is what the device converges on and what `verify` re-checks against the release tag. `firmware.config` records which configuration the variant name stands for, so two images tagged `cfg1` can be told apart if they were never the same build.
+
+Publishing a variant is not a substitute for a release. A code change gets a new version; a variant says the code is the same and the configuration is not.
 
 The two firmware labels exist because `podman` always writes the layer as a **gzipped tar**, whose digest measures the archive rather than the image inside it. A control plane reads the labels off the image config to learn the image's own digest and size, and the device unwraps the layer as it flashes. The `verify` step re-hashes the source `.bin` and fails if the label disagrees.
 

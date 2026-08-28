@@ -78,6 +78,7 @@ The same script publishes a built board binary as an OCI image:
 ```sh
 docker/publish-images.sh -b <board> -i <path/to/wanted.bin> firmware
 docker/publish-images.sh -a ~/auth.json -b <board> -i <path/to/wanted.bin> firmware
+docker/publish-images.sh -b <board> -i <path/to/wanted.bin> -c nowifi firmware
 ```
 
 Single-arch and one layer, at `<registry>/firmware/<board>:<version>` — one
@@ -94,6 +95,12 @@ match the version the engine reports, so the script refuses.
 `podman` writes the layer as a gzipped tar whatever it holds, so the layer
 digest measures the archive. That is what the two labels are for — they name the
 image inside, which is the thing a device flashes and gates on.
+
+`-c VARIANT` tags a build `<release>-<variant>`, for a board whose `.config`
+changed while the engine's `git describe` version did not. The variant must
+match `[A-Za-z0-9._]+`: a `-` or `+` would move the release core the device
+converges on, which `verify` re-checks against the release tag. A fourth label,
+`firmware.config`, records the SHA-256 of the `.config` the binary came from.
 
 ## ESP-IDF cross-build image (`Containerfile.esp-idf`)
 
