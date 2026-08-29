@@ -71,6 +71,37 @@ tag, so a rebuilt tag must never change content.
 
 - initial image: wasi-sdk 33, Zig 0.14.1, TinyGo 0.41.1 (Go 1.26.4), Rust 1.96.0, Wasmtime v44.0.1, wabt
 
+## Firmware images (`Containerfile.firmware.in`)
+
+The same script publishes a built board binary as an OCI image:
+
+```sh
+docker/publish-images.sh -b <board> -i <path/to/wanted.bin> firmware
+docker/publish-images.sh -a ~/auth.json -b <board> -i <path/to/wanted.bin> firmware
+docker/publish-images.sh -b <board> -i <path/to/wanted.bin> -c nowifi firmware
+```
+
+Single-arch and one layer, at `<registry>/firmware/<board>:<version>` — one
+repository per board. The Containerfile is a template rendered per build, since
+a firmware version changes every build while the two toolchain images' versions
+are hand-edited. `LABEL version=` still carries the tag, read back by the same
+`version_of` the other images use; `firmware.digest` and `firmware.size` are
+computed from the `.bin` and re-checked against it by `verify`.
+
+The version is a release tag: off a tag or on a dirty tree the build stamps
+itself `X.Y.Z+<timestamp>`, which is not a legal registry tag and would never
+match the version the engine reports, so the script refuses.
+
+`podman` writes the layer as a gzipped tar whatever it holds, so the layer
+digest measures the archive. That is what the two labels are for — they name the
+image inside, which is the thing a device flashes and gates on.
+
+`-c VARIANT` tags a build `<release>-<variant>`, for a board whose `.config`
+changed while the engine's `git describe` version did not. The variant must
+match `[A-Za-z0-9._]+`: a `-` or `+` would move the release core the device
+converges on, which `verify` re-checks against the release tag. A fourth label,
+`firmware.config`, records the SHA-256 of the `.config` the binary came from.
+
 ## ESP-IDF cross-build image (`Containerfile.esp-idf`)
 
 A dedicated ESP-IDF image for building the engine as a native ESP-IDF firmware

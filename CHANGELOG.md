@@ -6,6 +6,12 @@ Unreleased
 
 ### Added
 
+- `docker/publish-images.sh firmware -b BOARD -i BIN` publishes a built board
+  binary, labelled with its version, digest, size and config hash.
+- `-c VARIANT` tags that image `<release>-<variant>`, so two builds of one
+  release that differ only in `.config` publish as two images.
+- `wapps/sheriff` submodule bumped to v0.6.0: the flasher unwraps a gzipped or
+  plain tar around a firmware image, and identifies it by tag, not release.
 - Every captured log line opens with `[+<ms>] `, the milliseconds since the
   engine started. A newline closes a line, not the write that carried it.
 - `/proc/wanted` reports `uptime_ms`, the counter those stamps count from.

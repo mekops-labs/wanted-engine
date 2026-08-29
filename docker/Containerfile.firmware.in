@@ -1,0 +1,13 @@
+# Template for a firmware image; docker/publish-images.sh renders the @...@
+# placeholders from the built .bin and builds the result.
+FROM scratch
+
+# The version tag the device must report to converge, and the identity of the
+# image inside this layer: both stamped from the artifact, never hand-typed.
+LABEL version="@VERSION@"
+LABEL firmware.digest="@DIGEST@"
+LABEL firmware.size="@SIZE@"
+LABEL firmware.config="@CONFIG@"
+
+ARG BIN
+COPY ${BIN} /firmware.bin
