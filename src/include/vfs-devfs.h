@@ -24,4 +24,4 @@ int DevFs_Seek(vfs_ctx_t c, void *handle, long off, vfs_whence_t whence,
                long *pos);
 int DevFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
                   uint64_t *cookie, size_t *bufUsed);
-int DevFs_Unlink(vfs_ctx_t c, void *handle, const char *path);
+int DevFs_UnlinkPath(vfs_ctx_t c, const char *suffix);

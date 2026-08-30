@@ -32,6 +32,29 @@ static const vfs_driver_t *lookupDrv(vfs_ctx_t c, const char *suffix) {
     return NULL;
 }
 
+/* Resolve `suffix` against the registered entry table — exact match, or a
+ * prefix match ("X" matches "X/rest", `sub_path`="rest"). Shared by Open and
+ * UnlinkPath so the two can never disagree on which driver a path is under. */
+static const vfs_driver_t *devfsResolve(vfs_ctx_t c, const char *suffix,
+                                        const char **sub_path) {
+    *sub_path = NULL;
+
+    const vfs_driver_t *drv = lookupDrv(c, suffix);
+    if (drv)
+        return drv;
+
+    for (uint8_t i = 0; i < c->devfs_cnt; i++) {
+        size_t nlen = strnlen(c->devfs[i].name, MAX_ENTRY_NAME_LEN);
+        if (nlen > 0 && strncmp(c->devfs[i].name, suffix, nlen) == 0 &&
+            suffix[nlen] == '/') {
+            *sub_path = suffix + nlen + 1;
+            return c->devfs[i].drv;
+        }
+    }
+
+    return NULL;
+}
+
 int DevFs_Register(vfs_ctx_t c, const char *name, const vfs_driver_t *driver) {
     if (!c || !name || *name == '\0' || !driver)
         return -EINVAL;
@@ -98,22 +121,8 @@ void *DevFs_Open(vfs_ctx_t c, const char *suffix, vfs_oflags_t flags,
         return NULL;
     }
 
-    const vfs_driver_t *drv = lookupDrv(c, suffix);
     const char *sub_path = NULL;
-
-    if (!drv) {
-        /* Prefix match: entry "X" matches suffix "X/rest", passes "rest" down.
-         */
-        for (uint8_t i = 0; i < c->devfs_cnt; i++) {
-            size_t nlen = strnlen(c->devfs[i].name, MAX_ENTRY_NAME_LEN);
-            if (nlen > 0 && strncmp(c->devfs[i].name, suffix, nlen) == 0 &&
-                suffix[nlen] == '/') {
-                drv = c->devfs[i].drv;
-                sub_path = suffix + nlen + 1;
-                break;
-            }
-        }
-    }
+    const vfs_driver_t *drv = devfsResolve(c, suffix, &sub_path);
 
     if (!drv) {
         if (out_err)
@@ -241,11 +250,16 @@ int DevFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
     return TRY_DRV(h->drv, ReadDir, h->drv_fd, buf, bufLen, cookie, bufUsed);
 }
 
-int DevFs_Unlink(vfs_ctx_t c, void *handle, const char *path) {
-    (void)c;
-    devfs_handle_t *h = handle;
-    if (!h) {
-        return -EBADF;
-    }
-    return TRY_DRV(h->drv, Unlink, h->drv_fd, path);
+int DevFs_UnlinkPath(vfs_ctx_t c, const char *suffix) {
+    const char *sub_path = NULL;
+    const vfs_driver_t *drv = devfsResolve(c, suffix, &sub_path);
+
+    if (!drv)
+        return -ENOENT;
+    /* An exact match names the entry itself (e.g. "wanted"), not a file
+     * inside it — nothing to unlink there. */
+    if (!sub_path)
+        return -EISDIR;
+
+    return TRY_DRV(drv, Unlink, -1, sub_path);
 }

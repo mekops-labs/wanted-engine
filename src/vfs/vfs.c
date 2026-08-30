@@ -926,16 +926,34 @@ int VfsUnlink(vfs_ctx_t c, int fd, const char *path) {
     if (NULL == path)
         return -EINVAL;
 
-    switch (c->fds[fd].type) {
-    case VFS_TYPE_DEV:
-        return DevFs_Unlink(c, c->fds[fd].internal_ctx, path);
-    /* PLATFORM belongs with DRIVER here as in mkdir and rmdir: a mounted
-     * filesystem is where a wapp's files are. */
-    case VFS_TYPE_PLATFORM:
-    case VFS_TYPE_DRIVER:
+    /* PLATFORM parent, relative path: the driver resolves it itself against
+     * its own preopen, bypassing the mount table — same bypass VfsOpenAt
+     * uses, and for the same reason (a host dirfd only the driver holds). */
+    if (c->fds[fd].type == VFS_TYPE_PLATFORM && path[0] != '/')
         return TRY_DRV(c->fds[fd].driver, Unlink, c->fds[fd].drv_fd, path);
+
+    char norm[VFS_FD_PATH_LEN];
+    int r = vfsResolvePath(c, fd, path, norm, sizeof(norm));
+    if (r < 0)
+        return r;
+
+    vfs_fd_type_t type;
+    const vfs_driver_t *mount_drv;
+    const char *suffix;
+    r = routeMatch(c, norm, &type, &mount_drv, &suffix);
+    if (r < 0)
+        return r;
+
+    switch (type) {
+    case VFS_TYPE_DEV:
+        return DevFs_UnlinkPath(c, suffix);
+    case VFS_TYPE_DRIVER:
+        return TRY_DRV(mount_drv, Unlink, -1, suffix);
     case VFS_TYPE_TARFS:
+    case VFS_TYPE_PROC:
         return -EROFS;
+    case VFS_TYPE_NET:
+        return -EINVAL;
     default:
         return -ENOTSUP;
     }
