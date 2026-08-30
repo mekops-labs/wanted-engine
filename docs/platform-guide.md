@@ -314,6 +314,33 @@ BUILD_DIR=build-mips just build      # .ipk, while build/ stays on linux
 
 The cost of configuring rather than naming the target is that a stale `.config` builds something other than what you expected. That is why the target is echoed at the top of every build.
 
+### Selecting the compiled-in launch config
+
+`WANTED_DEFAULT_CONFIG` names the launch config the build embeds — see [Configuration Reference → the compiled-in default](configuration-reference.md). A board defconfig may point this at a **bring-up config**: fixed placeholder identity for early board bring-up, not a specific deployment. `xiao_esp32s3-telegraph-sheriff_defconfig` does this — its own default is `configs/bringup-esp32s3-telegraph-sheriff.json`.
+
+A bring-up config's fields are structurally valid and pass every parser check. A placeholder device ID is a valid string. A placeholder trusted key is 64 valid hex characters. Nothing rejects it at build time.
+
+Before you publish an image for a specific deployed device, override `WANTED_DEFAULT_CONFIG` to that device's own launch config:
+
+```bash
+just setconfig 'WANTED_DEFAULT_CONFIG="configs/<device>.json"'
+just build
+```
+
+Confirm the override took, before you publish the image:
+
+```bash
+just _cfg CONFIG_WANTED_DEFAULT_CONFIG
+```
+
+Check the built binary for the deployed identity, not the bring-up one:
+
+```bash
+strings dist/<target>/wanted-*.bin | grep -E '<device ID>|<manager address>'
+```
+
+A device that boots a bring-up config trusts a placeholder key. See [Security Model → device identity and key custody](security-model.md#2-device-identity-and-key-custody) for why a low-order key (the all-zero placeholder is one) does not fail closed: the engine's verifier accepts it, so the device does not refuse a signed Desired State — it trusts one no one else can produce a legitimate signature for.
+
 ### How the tree is split
 
 One menu, three files:
