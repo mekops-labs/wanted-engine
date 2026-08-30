@@ -1,6 +1,18 @@
 Changelog
 =========
 
+0.15.1 (2026-08-30)
+-------------------
+
+### Fixed
+
+- VfsUnlink now resolves `path` and dispatches on the resolved mount. Fixed
+  registry unlink issue.
+
+### Changed
+
+- Bumped sheriff version to v0.6.1
+
 0.15.0 (2026-08-29)
 -------------------
 
