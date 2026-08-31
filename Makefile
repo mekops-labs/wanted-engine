@@ -189,7 +189,11 @@ RP2350_IMAGE ?= localhost/wanted-rp2350
 RP2350_BIN   ?= third_party/nuttx/nuttx.uf2
 # The xtensa image bypasses its UID-remap entrypoint under rootless podman; do
 # the same here and build as the container root (mapped back to the host user).
-RP2350_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(RP2350_IMAGE) -c
+# $(BUILD_DIR) must reach the container: nuttx-sim.sh reads the launch config
+# to compile in from $(BUILD_DIR)/.config, and silently falls back to the
+# example config when it finds none — so without this a non-default BUILD_DIR
+# ships firmware carrying the wrong config, with no error at build time.
+RP2350_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -e BUILD_DIR=$(BUILD_DIR) --entrypoint=/bin/sh $(RP2350_IMAGE) -c
 
 # openocd (RPi fork, shipped in $(RP2350_IMAGE)) driving the board over SWD via a
 # Raspberry Pi Debug Probe (CMSIS-DAP). Needs raw USB access, hence --privileged
