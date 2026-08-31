@@ -1061,29 +1061,55 @@ int VfsRename(vfs_ctx_t c, int old_fd, const char *old_path, int new_fd,
     if (!old_path || !new_path)
         return -EINVAL;
 
-    /* Both fds must reach the same writable backing store. Only PLATFORM
-     * (preopen-backed host fs) supports rename today; TarFS is read-only,
-     * ProcFS is read-only, NetFS doesn't define directory semantics. */
-    if (c->fds[old_fd].type != c->fds[new_fd].type)
+    /* PLATFORM parents, relative paths: each driver resolves its own path
+     * against its own preopen, bypassing the mount table — same bypass
+     * VfsUnlink uses, and for the same reason (a host dirfd only the driver
+     * holds). */
+    if (c->fds[old_fd].type == VFS_TYPE_PLATFORM && old_path[0] != '/' &&
+        c->fds[new_fd].type == VFS_TYPE_PLATFORM && new_path[0] != '/') {
+        const vfs_driver_t *old_drv = c->fds[old_fd].driver;
+        const vfs_driver_t *new_drv = c->fds[new_fd].driver;
+        if (old_drv != new_drv)
+            return -EXDEV;
+        return TRY_DRV(old_drv, Rename, c->fds[old_fd].drv_fd, old_path,
+                       c->fds[new_fd].drv_fd, new_path);
+    }
+
+    char old_norm[VFS_FD_PATH_LEN];
+    char new_norm[VFS_FD_PATH_LEN];
+    int r = vfsResolvePath(c, old_fd, old_path, old_norm, sizeof(old_norm));
+    if (r < 0)
+        return r;
+    r = vfsResolvePath(c, new_fd, new_path, new_norm, sizeof(new_norm));
+    if (r < 0)
+        return r;
+
+    vfs_fd_type_t old_type, new_type;
+    const vfs_driver_t *old_mount_drv, *new_mount_drv;
+    const char *old_suffix, *new_suffix;
+    r = routeMatch(c, old_norm, &old_type, &old_mount_drv, &old_suffix);
+    if (r < 0)
+        return r;
+    r = routeMatch(c, new_norm, &new_type, &new_mount_drv, &new_suffix);
+    if (r < 0)
+        return r;
+
+    if (old_type != new_type)
         return -EXDEV;
 
-    switch (c->fds[old_fd].type) {
+    switch (old_type) {
     case VFS_TYPE_TARFS:
     case VFS_TYPE_PROC:
         return -EROFS;
     case VFS_TYPE_NET:
         return -EINVAL;
-    case VFS_TYPE_PLATFORM:
-    case VFS_TYPE_DRIVER: {
-        const vfs_driver_t *old_drv = c->fds[old_fd].driver;
-        const vfs_driver_t *new_drv = c->fds[new_fd].driver;
-        if (old_drv != new_drv)
+    case VFS_TYPE_DRIVER:
+        if (old_mount_drv != new_mount_drv)
             return -EXDEV;
-        if (!old_drv || !old_drv->Rename)
+        if (!old_mount_drv->Rename)
             return -ENOSYS;
-        return old_drv->Rename(old_drv->ctx, c->fds[old_fd].drv_fd, old_path,
-                               c->fds[new_fd].drv_fd, new_path);
-    }
+        return old_mount_drv->Rename(old_mount_drv->ctx, -1, old_suffix, -1,
+                                     new_suffix);
     default:
         return -ENOTSUP;
     }
@@ -1097,19 +1123,31 @@ int VfsMkdir(vfs_ctx_t c, int fd, const char *path) {
     if (!path)
         return -EINVAL;
 
-    switch (c->fds[fd].type) {
+    if (c->fds[fd].type == VFS_TYPE_PLATFORM && path[0] != '/')
+        return TRY_DRV(c->fds[fd].driver, Mkdir, c->fds[fd].drv_fd, path);
+
+    char norm[VFS_FD_PATH_LEN];
+    int r = vfsResolvePath(c, fd, path, norm, sizeof(norm));
+    if (r < 0)
+        return r;
+
+    vfs_fd_type_t type;
+    const vfs_driver_t *mount_drv;
+    const char *suffix;
+    r = routeMatch(c, norm, &type, &mount_drv, &suffix);
+    if (r < 0)
+        return r;
+
+    switch (type) {
+    case VFS_TYPE_DRIVER:
+        if (!mount_drv->Mkdir)
+            return -ENOSYS;
+        return mount_drv->Mkdir(mount_drv->ctx, -1, suffix);
     case VFS_TYPE_TARFS:
     case VFS_TYPE_PROC:
         return -EROFS;
     case VFS_TYPE_NET:
         return -EINVAL;
-    case VFS_TYPE_PLATFORM:
-    case VFS_TYPE_DRIVER: {
-        const vfs_driver_t *drv = c->fds[fd].driver;
-        if (!drv || !drv->Mkdir)
-            return -ENOSYS;
-        return drv->Mkdir(drv->ctx, c->fds[fd].drv_fd, path);
-    }
     default:
         return -ENOTSUP;
     }
@@ -1123,19 +1161,31 @@ int VfsRmdir(vfs_ctx_t c, int fd, const char *path) {
     if (!path)
         return -EINVAL;
 
-    switch (c->fds[fd].type) {
+    if (c->fds[fd].type == VFS_TYPE_PLATFORM && path[0] != '/')
+        return TRY_DRV(c->fds[fd].driver, Rmdir, c->fds[fd].drv_fd, path);
+
+    char norm[VFS_FD_PATH_LEN];
+    int r = vfsResolvePath(c, fd, path, norm, sizeof(norm));
+    if (r < 0)
+        return r;
+
+    vfs_fd_type_t type;
+    const vfs_driver_t *mount_drv;
+    const char *suffix;
+    r = routeMatch(c, norm, &type, &mount_drv, &suffix);
+    if (r < 0)
+        return r;
+
+    switch (type) {
+    case VFS_TYPE_DRIVER:
+        if (!mount_drv->Rmdir)
+            return -ENOSYS;
+        return mount_drv->Rmdir(mount_drv->ctx, -1, suffix);
     case VFS_TYPE_TARFS:
     case VFS_TYPE_PROC:
         return -EROFS;
     case VFS_TYPE_NET:
         return -EINVAL;
-    case VFS_TYPE_PLATFORM:
-    case VFS_TYPE_DRIVER: {
-        const vfs_driver_t *drv = c->fds[fd].driver;
-        if (!drv || !drv->Rmdir)
-            return -ENOSYS;
-        return drv->Rmdir(drv->ctx, c->fds[fd].drv_fd, path);
-    }
     default:
         return -ENOTSUP;
     }
