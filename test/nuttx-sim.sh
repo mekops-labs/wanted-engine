@@ -117,13 +117,27 @@ deps() {
 # a config at first boot. It lands in src/include, on both this build's and
 # CMake's include path.
 default_config_header() {
-    local cfg
+    local dotconfig cfg
+    dotconfig=$ENGINE_DIR/${BUILD_DIR:-build}/.config
     cfg=$(sed -nE 's/^CONFIG_WANTED_DEFAULT_CONFIG="(.*)"$/\1/p' \
-        "$ENGINE_DIR/${BUILD_DIR:-build}/.config" 2>/dev/null || true)
+        "$dotconfig" 2>/dev/null || true)
+    # The sim stages its launch config into hostfs at run time, so this header
+    # goes unused there and the split-CI kernel job builds with no .config at
+    # all. A board has no such filesystem and boots on the header alone, so
+    # falling back there would ship firmware carrying a config nobody chose.
+    if [ -z "$cfg" ]; then
+        case "${NUTTX_BOARD:-sim:wanted}" in
+            sim:*) cfg=configs/example_config.json ;;
+            *)
+                echo "no CONFIG_WANTED_DEFAULT_CONFIG in $dotconfig —" \
+                    "configure that build dir before building a board" >&2
+                exit 1
+                ;;
+        esac
+    fi
     "$ENGINE_DIR/utils/default-config-header.sh" "$ENGINE_DIR" \
-        "${cfg:-configs/example_config.json}" \
-        "$ENGINE_DIR/src/include/wanted-config.h"
-    echo "generated wanted-config.h from ${cfg:-configs/example_config.json}"
+        "$cfg" "$ENGINE_DIR/src/include/wanted-config.h"
+    echo "generated wanted-config.h from $cfg"
 }
 
 # Stage the supervisor image + engine config into the sim's hostfs root (/data).
