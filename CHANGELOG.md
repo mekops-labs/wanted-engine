@@ -1,6 +1,14 @@
 Changelog
 =========
 
+0.15.2 (2026-08-31)
+-------------------
+
+### Fixed
+
+- `VfsMkdir`, `VfsRmdir`, and `VfsRename` now resolve the path and dispatch
+  on the resolved mount, matching `VfsOpenAt` and `VfsUnlink`.
+
 0.15.1 (2026-08-30)
 -------------------
 
