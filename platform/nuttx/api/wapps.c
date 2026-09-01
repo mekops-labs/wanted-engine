@@ -41,6 +41,16 @@ pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
  * The rp23xx counter is 24 bits of microseconds, capping it near 16.7 s. */
 #define BOARD_WDT_TIMEOUT_MS 8000
 
+/* How long a provisional boot has to bring the supervisor up before it is
+ * reverted. Sized from a measured boot-to-supervisor of ~13 s with headroom
+ * to spare, and matching the ESP-IDF backing's own deadline.
+ *
+ * This covers what the watchdog cannot: an image that runs this loop, and so
+ * keeps kicking the watchdog, but never gets its supervisor healthy. A wedged
+ * image is already handled, since the watchdog resets it and the loader will
+ * not choose an unconfirmed image again. */
+#define OTA_REVERT_DEADLINE_S 45
+
 #define FATAL(err, msg, ...)                                                   \
     {                                                                          \
         DEBUG_TRACE("Fatal: " msg, ##__VA_ARGS__);                             \
@@ -360,6 +370,14 @@ void PlatformRequestReboot(void) {
 void PlatformWappLoop(void) {
     bool supervisorOk;
     bool otaConfirmed = false;
+    platform_ota_state_t otaState;
+    bool otaProvisional =
+        PlatformOtaGetBootState(&otaState) == 0 && !otaState.confirmed;
+    unsigned otaElapsed = 0;
+
+    if (otaProvisional)
+        DEBUG_TRACE("ota: slot %c is provisional; %d s to confirm",
+                    otaState.active_slot, OTA_REVERT_DEADLINE_S);
 
     /* Armed here rather than before the engine starts: nothing kicks it until
      * this loop runs, and a boot that never reaches the loop is what the OTA
@@ -369,6 +387,16 @@ void PlatformWappLoop(void) {
     for (;;) {
         sleep(1);
         BoardWdtKick();
+
+        if (otaProvisional && !otaConfirmed &&
+            ++otaElapsed >= OTA_REVERT_DEADLINE_S) {
+            LOG_ERROR("ota: slot %c did not confirm in %d s; reverting",
+                      otaState.active_slot, OTA_REVERT_DEADLINE_S);
+            PlatformOtaRollback();
+            /* Only reached if the revert did not take; the watchdog is still
+             * armed and the loader will not choose this image again. */
+            otaProvisional = false;
+        }
 
         pthread_mutex_lock(&state_mtx);
         int shutdown = shutdown_requested;
