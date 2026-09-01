@@ -136,6 +136,95 @@ static void provision_sheriff_identity(void) {
                 REGISTRY_VOLUME);
 }
 
+/* Sheriff's storage root, as the shipped launch configs mount it. The
+ * provisioning blob and the secret a join redeems both live here. */
+#define SHERIFF_STORE_DIR "sheriff"
+#define SHERIFF_PROVISION_FILE SHERIFF_STORE_DIR "/provision"
+#define SHERIFF_SECRET_FILE SHERIFF_STORE_DIR "/secret"
+#define SHERIFF_BLOB_MAX 512
+
+static bool file_exists(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+/* One line, with the trailing newline stripped. Returns its length, or -1 at
+ * end of input. Unlike read_console_line it does not retry an empty line: a
+ * blank line is what ends the paste. */
+static int read_raw_line(char *buf, size_t bufSz) {
+    if (fgets(buf, (int)bufSz, stdin) == NULL)
+        return -1;
+    size_t n = strlen(buf);
+    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+        buf[--n] = '\0';
+    return (int)n;
+}
+
+/* Take a provisioning blob over the console and place it where Sheriff looks
+ * for it, so a bench board can enrol without a filesystem it cannot otherwise
+ * write to. Paths are relative to REGISTRY_VOLUME (chdir'd by the caller).
+ *
+ * Prompts only on a board that holds neither a blob nor a redeemed secret, so
+ * a provisioned board boots straight through. Like the Wi-Fi prompt it blocks
+ * on a console with nobody attached; an empty first line skips it. */
+static void provision_sheriff_blob(void) {
+    /* The redeemed secret, not the blob, is what says a board is enrolled: a
+     * blob that was mistyped or has expired must be replaceable. */
+    if (file_exists(SHERIFF_SECRET_FILE)) {
+        DEBUG_TRACE("sheriff already enrolled, not prompting");
+        return;
+    }
+
+    printf("sheriff provisioning: paste device_id=, join_token= and "
+           "state_key= lines,\n"
+           "  then a line reading 'end' (send 'end' now to skip)\n");
+    fflush(stdout);
+
+    char blob[SHERIFF_BLOB_MAX];
+    size_t used = 0;
+    char line[160];
+    int len;
+
+    /* Empty lines are ignored rather than terminating: a "\r\n"-terminated
+     * send leaves a bare '\n' behind, so one arrives after every pasted line.
+     * That is why the paste ends on a sentinel and not on a blank line. */
+    while ((len = read_raw_line(line, sizeof(line))) >= 0) {
+        if (len == 0)
+            continue;
+        if (strcmp(line, "end") == 0)
+            break;
+        if (used + (size_t)len + 1 >= sizeof(blob)) {
+            printf("sheriff provisioning: blob too long, discarded\n");
+            return;
+        }
+        memcpy(blob + used, line, (size_t)len);
+        used += (size_t)len;
+        blob[used++] = '\n';
+    }
+
+    if (used == 0) {
+        DEBUG_TRACE("no provisioning blob entered, skipping");
+        return;
+    }
+
+    mkdir(SHERIFF_STORE_DIR, 0755);
+    int fd = open(SHERIFF_PROVISION_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+        printf("sheriff provisioning: cannot write %s: %s\n",
+               SHERIFF_PROVISION_FILE, strerror(errno));
+        return;
+    }
+    ssize_t wrote = write(fd, blob, used);
+    close(fd);
+    if (wrote != (ssize_t)used) {
+        printf("sheriff provisioning: short write to %s\n",
+               SHERIFF_PROVISION_FILE);
+        return;
+    }
+    printf("sheriff provisioning: %u bytes stored; it enrols on this boot\n",
+           (unsigned)used);
+}
+
 /* Constraints on the shipped config: the `platform` mount's src must be under
  * REGISTRY_VOLUME, and the manager socket must be named "manager". Its address
  * depends on the radio, so picking the wrong file fails at runtime. */
@@ -357,6 +446,7 @@ int wanted_rp2350_main(int argc, char *argv[]) {
             strcmp(CONFIG_SYSTEM_WANTED_BOOT_ROMFS_SUPERVISOR, "sheriff") == 0;
         if (sheriffDemo) {
             provision_sheriff_identity();
+            provision_sheriff_blob();
         }
     }
 
