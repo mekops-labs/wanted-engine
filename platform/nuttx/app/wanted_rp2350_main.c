@@ -7,12 +7,14 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/boardctl.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <nuttx/usb/cdcacm.h>
@@ -480,45 +482,63 @@ static void connect_usb_cdcacm(void) {
 /* Bring up the USB-CDC console: connect the CDCACM class driver, then block
  * until a host terminal opens the port and sends a few carriage returns before
  * binding fd 0-2, or early engine output races the terminal attaching. */
+/* How long to wait for a host terminal before giving up and booting anyway.
+ * Long enough to plug in and press a key, short enough that a board nobody is
+ * watching still reaches the engine. */
+#define USB_CONSOLE_WAIT_S 30
+
+/* Adopt the USB CDC as the console, but only if a terminal actually answers.
+ *
+ * The three newlines are a handshake, not decoration: a CDC write with no host
+ * reading it blocks, so redirecting stdio to an unattended port would hang the
+ * engine on its first printf -- worse than having no console at all. Hence the
+ * two outcomes here are "a terminal said hello, use it" and "nobody did, leave
+ * stdio alone and boot".
+ *
+ * Waiting without a deadline is what this used to do, and it made an
+ * unattended board on the `:wanted` config wait forever for a person. */
 static void bring_up_usb_console(void) {
     connect_usb_cdcacm();
 
-    for (;;) {
-        int fd;
-        do {
-            fd = open(CDCACM_DEVPATH, O_RDWR);
-            if (fd < 0) {
-                sleep(2);
-            }
-        } while (fd < 0);
+    const time_t deadline = time(NULL) + USB_CONSOLE_WAIT_S;
+    int fd = -1;
 
-        int nlc = 0;
-        bool dropped = false;
-        while (nlc < 3) {
-            char inch = 0;
-            ssize_t n = read(fd, &inch, 1);
-            if (n == 1 && (inch == '\n' || inch == '\r')) {
-                nlc++;
-            } else if (n <= 0) {
-                close(fd);
-                dropped = true;
-                break;
-            } else {
-                nlc = 0;
-            }
-        }
-        if (dropped) {
-            continue;
-        }
-
-        dup2(fd, 0);
-        dup2(fd, 1);
-        dup2(fd, 2);
-        if (fd > 2) {
-            close(fd);
-        }
+    while (fd < 0 && time(NULL) < deadline) {
+        fd = open(CDCACM_DEVPATH, O_RDWR);
+        if (fd < 0)
+            sleep(1);
+    }
+    if (fd < 0) {
+        DEBUG_TRACE("usb console: %s never appeared; booting without it",
+                    CDCACM_DEVPATH);
         return;
     }
+
+    int nlc = 0;
+    while (nlc < 3 && time(NULL) < deadline) {
+        struct pollfd pfd = {.fd = fd, .events = POLLIN};
+        char inch = 0;
+
+        if (poll(&pfd, 1, 500) <= 0)
+            continue;
+        if (read(fd, &inch, 1) != 1)
+            break; /* host went away */
+        nlc = (inch == '\n' || inch == '\r') ? nlc + 1 : 0;
+    }
+
+    if (nlc < 3) {
+        /* Not adopted: writing to a port nobody reads would block the boot. */
+        close(fd);
+        DEBUG_TRACE("usb console: no terminal within %d s; booting without it",
+                    USB_CONSOLE_WAIT_S);
+        return;
+    }
+
+    dup2(fd, 0);
+    dup2(fd, 1);
+    dup2(fd, 2);
+    if (fd > 2)
+        close(fd);
 }
 #endif /* !CONFIG_UART0_SERIAL_CONSOLE */
 
