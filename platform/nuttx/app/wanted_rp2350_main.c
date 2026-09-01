@@ -268,18 +268,100 @@ static void read_console_line(const char *prompt, char *buf, size_t bufSz) {
     }
 }
 
-static void wifi_connect_bringup(void) {
-    char ssid[WIFI_SSID_MAX_LEN + 1] = {0};
-    char pass[WIFI_PASS_MAX_LEN + 1] = {0};
+/* Credentials live on the state volume, never in the firmware image and never
+ * in committed config -- the two places a shared secret must not appear. The
+ * file is the device's own, alongside the supervisor's enrolment secret, and
+ * anyone with the debug port can read either regardless.
+ *
+ * Persisting them is what makes the board survive a power cycle unattended: a
+ * console prompt on every boot means a headless device needs a person in front
+ * of it, which is the same failure as never retrying an association. */
+#ifdef CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT
+#define WIFI_CRED_PATH CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT "/wifi-cred"
 
-    read_console_line("wifi ssid: ", ssid, sizeof(ssid));
-    if (ssid[0] == '\0') {
-        DEBUG_TRACE("wifi_connect_bringup: no ssid entered, skipping");
+/* `ssid\npassphrase\n`. An open passphrase is the empty second line. */
+static bool wifi_cred_read(char *ssid, size_t ssidSz, char *pass,
+                           size_t passSz) {
+    char buf[WIFI_SSID_MAX_LEN + WIFI_PASS_MAX_LEN + 4];
+    int fd = open(WIFI_CRED_PATH, O_RDONLY);
+
+    if (fd < 0)
+        return false;
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0)
+        return false;
+    buf[n] = '\0';
+
+    char *nl = strchr(buf, '\n');
+    if (nl == NULL)
+        return false;
+    *nl = '\0';
+    if (buf[0] == '\0' || strlen(buf) >= ssidSz)
+        return false;
+
+    char *rest = nl + 1;
+    char *end = strchr(rest, '\n');
+    if (end != NULL)
+        *end = '\0';
+    if (strlen(rest) >= passSz)
+        return false;
+
+    strncpy(ssid, buf, ssidSz - 1);
+    ssid[ssidSz - 1] = '\0';
+    strncpy(pass, rest, passSz - 1);
+    pass[passSz - 1] = '\0';
+    return true;
+}
+
+static void wifi_cred_write(const char *ssid, const char *pass) {
+    char buf[WIFI_SSID_MAX_LEN + WIFI_PASS_MAX_LEN + 4];
+    int n = snprintf(buf, sizeof(buf), "%s\n%s\n", ssid, pass);
+
+    if (n < 0 || (size_t)n >= sizeof(buf))
+        return;
+
+    int fd = open(WIFI_CRED_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+        DEBUG_TRACE("wifi: cannot store credentials: %s", strerror(errno));
         return;
     }
-    read_console_line("wifi passphrase: ", pass, sizeof(pass));
+    if (write(fd, buf, (size_t)n) != n)
+        DEBUG_TRACE("wifi: short write storing credentials");
+    close(fd);
+    memset(buf, 0, sizeof(buf));
+    printf("wifi: credentials stored for next boot\n");
+}
+#else
+static bool wifi_cred_read(char *ssid, size_t ssidSz, char *pass,
+                           size_t passSz) {
+    (void)ssid;
+    (void)ssidSz;
+    (void)pass;
+    (void)passSz;
+    return false;
+}
+static void wifi_cred_write(const char *ssid, const char *pass) {
+    (void)ssid;
+    (void)pass;
+}
+#endif
 
+/* False when nothing was entered, which is how an operator skips the join. */
+static bool wifi_prompt(char *ssid, size_t ssidSz, char *pass, size_t passSz) {
+    read_console_line("wifi ssid: ", ssid, ssidSz);
+    if (ssid[0] == '\0') {
+        DEBUG_TRACE("wifi_connect_bringup: no ssid entered, skipping");
+        return false;
+    }
+    read_console_line("wifi passphrase: ", pass, passSz);
+    return true;
+}
+
+static int wifi_associate(const char *ssid, const char *pass) {
     struct wpa_wconfig_s conf;
+    int ret = -1;
+
     memset(&conf, 0, sizeof(conf));
     conf.ifname = WIFI_IFNAME;
     conf.sta_mode = WAPI_MODE_MANAGED;
@@ -300,7 +382,6 @@ static void wifi_connect_bringup(void) {
 
     netlib_ifup(WIFI_IFNAME);
 
-    int ret = -1;
     for (int attempt = 0; attempt < WIFI_ASSOC_TRIES; attempt++) {
         ret = wpa_driver_wext_associate(&conf);
         printf("wifi: associate attempt %d -> %d\n", attempt, ret);
@@ -310,30 +391,66 @@ static void wifi_connect_bringup(void) {
             sleep(WIFI_ASSOC_RETRY_S);
     }
 
-    if (ret != 0)
+    memset(&conf, 0, sizeof(conf));
+    return ret;
+}
+
+static void wifi_dhcp(void) {
+    struct in_addr ip;
+
+    /* dhcpc_open() returns EINVAL this early in boot, before the network
+     * stack has settled; a short delay avoids it. */
+    sleep(2);
+    for (int attempt = 0; attempt < 5; attempt++) {
+        int dhcpRet = netlib_obtain_ipv4addr(WIFI_IFNAME);
+        memset(&ip, 0, sizeof(ip));
+        netlib_get_ipv4addr(WIFI_IFNAME, &ip);
+        printf("wifi: dhcp attempt %d -> %d, ip -> %s\n", attempt, dhcpRet,
+               inet_ntoa(ip));
+        if (dhcpRet == 0 && ip.s_addr != 0)
+            break;
+    }
+}
+
+static void wifi_connect_bringup(void) {
+    char ssid[WIFI_SSID_MAX_LEN + 1] = {0};
+    char pass[WIFI_PASS_MAX_LEN + 1] = {0};
+    bool stored = wifi_cred_read(ssid, sizeof(ssid), pass, sizeof(pass));
+
+    if (stored)
+        printf("wifi: joining \"%s\" from stored credentials\n", ssid);
+    else if (!wifi_prompt(ssid, sizeof(ssid), pass, sizeof(pass)))
+        return;
+
+    int ret = wifi_associate(ssid, pass);
+
+    /* Stored credentials that stopped working must not strand the board:
+     * fall back to asking, rather than leaving it off the network for good. */
+    if (ret != 0 && stored) {
+        printf("wifi: stored credentials did not associate\n");
+        if (!wifi_prompt(ssid, sizeof(ssid), pass, sizeof(pass)))
+            goto out;
+        stored = false;
+        ret = wifi_associate(ssid, pass);
+    }
+
+    if (ret != 0) {
         printf("wifi: not associated after %d attempts; continuing without "
                "network\n",
                WIFI_ASSOC_TRIES);
-
-    if (ret == 0) {
-        struct in_addr ip;
-        /* dhcpc_open() returns EINVAL this early in boot, before the
-         * network stack has settled; a short delay avoids it. */
-        sleep(2);
-        for (int attempt = 0; attempt < 5; attempt++) {
-            int dhcpRet = netlib_obtain_ipv4addr(WIFI_IFNAME);
-            memset(&ip, 0, sizeof(ip));
-            netlib_get_ipv4addr(WIFI_IFNAME, &ip);
-            printf("wifi: dhcp attempt %d -> %d, ip -> %s\n", attempt, dhcpRet,
-                   inet_ntoa(ip));
-            if (dhcpRet == 0 && ip.s_addr != 0)
-                break;
-        }
+        goto out;
     }
 
+    /* Only credentials that actually associated are kept, so a typo is not
+     * stored and then replayed on every boot. */
+    if (!stored)
+        wifi_cred_write(ssid, pass);
+
+    wifi_dhcp();
+
+out:
     memset(ssid, 0, sizeof(ssid));
     memset(pass, 0, sizeof(pass));
-    memset(&conf, 0, sizeof(conf));
 }
 #endif /* CONFIG_RP23XX_INFINEON_CYW43439 */
 
