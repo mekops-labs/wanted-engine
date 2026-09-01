@@ -92,6 +92,32 @@
 #define PT_WORDS_PER_PARTITION 2
 #define PT_QUERY_WORDS 16
 
+/* BootROM lock protocol, replicated for the same reason the table lookup is.
+ *
+ * The hashing ROM APIs do not take the SHA-256 lock themselves; they only
+ * check it, and the check passes while nobody holds the enable lock. Holding
+ * it is therefore the caller's job, and it is what keeps a ROM call off the
+ * SHA-256 hardware while something else is driving it — nothing in this build
+ * does today, but the peripheral is shared and enabling a hardware digest
+ * backend would make it contended with no failure that points back here.
+ *
+ * The enable lock is deliberately not taken: it makes the ROM reject every
+ * unlocked call across all its APIs, so opting in needs an audit of every ROM
+ * call site rather than only the hashing ones.
+ *
+ * BOOTLOCKs are hardware spinlocks in BOOTRAM. A read yields nonzero to
+ * exactly one claimant; writing zero releases. */
+#define BOOTRAM_BOOTLOCK(n) (0x400e0000U + 0x80cU + ((uint32_t)(n) * 4U))
+#define BOOTROM_LOCK_SHA_256 0
+
+static bool romLockAcquire(int lockNum) {
+    return *(volatile uint32_t *)(uintptr_t)BOOTRAM_BOOTLOCK(lockNum) != 0;
+}
+
+static void romLockRelease(int lockNum) {
+    *(volatile uint32_t *)(uintptr_t)BOOTRAM_BOOTLOCK(lockNum) = 0;
+}
+
 typedef void *(*rom_table_lookup_fn)(uint32_t code, uint32_t mask);
 typedef int (*rom_get_partition_table_info_fn)(uint32_t *out, uint32_t words,
                                                uint32_t partitionAndFlags);
@@ -149,6 +175,9 @@ static bool bootConfirmed(void) {
         return true;
     }
 
+    /* Unlocked deliberately: the ROM's sys-info API does not hash, so it
+     * neither uses the SHA-256 hardware nor checks the lock. Taking one here
+     * would only add a way for a call that cannot fail to fail. */
     int filled = sysInfo(words, BOOT_INFO_WORDS, SYS_INFO_BOOT_INFO);
     if (filled != BOOT_INFO_WORDS || words[0] != SYS_INFO_BOOT_INFO) {
         DEBUG_TRACE("ota: boot info unavailable (%d); reporting confirmed",
@@ -171,8 +200,15 @@ static char slotForOffset(intptr_t offset, int *countOut) {
     if (info == NULL || offset < 0)
         return '\0';
 
+    if (!romLockAcquire(BOOTROM_LOCK_SHA_256)) {
+        DEBUG_TRACE("ota: sha-256 lock busy; no slot resolved");
+        return '\0';
+    }
+
     int filled =
         info(words, PT_QUERY_WORDS, PT_INFO_PARTITION_LOCATION_AND_FLAGS);
+    romLockRelease(BOOTROM_LOCK_SHA_256);
+
     if (filled < 2 || words[0] != PT_INFO_PARTITION_LOCATION_AND_FLAGS)
         return '\0';
 
