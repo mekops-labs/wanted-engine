@@ -134,6 +134,7 @@ static struct {
     int fd;
     bool writing;
     bool pendingSwap;
+    char lastFailedSlot;
     char pendingDigest[FIRMWARE_DIGEST_HEX_LEN + 1];
     size_t buffered;
     uint8_t unit[OTA_PROGRAM_UNIT];
@@ -235,6 +236,53 @@ static char slotForOffset(intptr_t offset, int *countOut) {
     return '\0';
 }
 
+/* A slot that booted and never confirmed is remembered across the revert
+ * reboot, because the loader will not report it: it hands out the state of the
+ * boot it just did, not a history. One letter in a file on the state volume,
+ * which board bring-up mounts before the engine starts.
+ *
+ * This records the case our own code can see -- an image that ran and failed
+ * to become healthy. An image the loader refuses outright never runs anything
+ * of ours, so nothing here can record it. */
+#ifdef CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT
+#define OTA_FAILED_SLOT_PATH                                                   \
+    CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT "/ota-failed-slot"
+
+static char readFailedSlot(void) {
+    char c = '\0';
+    int fd = open(OTA_FAILED_SLOT_PATH, O_RDONLY);
+
+    if (fd < 0)
+        return '\0';
+    if (read(fd, &c, 1) != 1 || (c != 'a' && c != 'b'))
+        c = '\0';
+    close(fd);
+    return c;
+}
+
+static void writeFailedSlot(char slot) {
+    int fd = open(OTA_FAILED_SLOT_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+    if (fd < 0) {
+        DEBUG_TRACE("ota: cannot record the failed slot: %d", errno);
+        return;
+    }
+    if (write(fd, &slot, 1) != 1)
+        DEBUG_TRACE("ota: short write recording the failed slot");
+    close(fd);
+}
+
+/* Cleared when a new image is staged rather than when one confirms: a stale
+ * record would make the next staged image read as already failed, and be
+ * refused before it had ever been booted. The control plane keeps its own
+ * record of which version failed, so nothing is lost by forgetting here. */
+static void clearFailedSlot(void) { (void)unlink(OTA_FAILED_SLOT_PATH); }
+#else
+static char readFailedSlot(void) { return '\0'; }
+static void writeFailedSlot(char slot) { (void)slot; }
+static void clearFailedSlot(void) {}
+#endif
+
 int PlatformOtaInit(void) {
     intptr_t offset = runningStorageOffset();
 
@@ -244,6 +292,7 @@ int PlatformOtaInit(void) {
     g_ota.slotCount = 0;
     g_ota.activeSlot = slotForOffset(offset, &g_ota.slotCount);
     g_ota.confirmed = bootConfirmed();
+    g_ota.lastFailedSlot = readFailedSlot();
     g_ota.inited = true;
 
     if (g_ota.activeSlot == '\0') {
@@ -272,10 +321,10 @@ int PlatformOtaGetBootState(platform_ota_state_t *out) {
      * state of the boot it just did, not a running tally. */
     out->boot_attempts = g_ota.confirmed ? 0 : 1;
 
-    /* Empty on purpose: the loader reports diagnostics for the boot it just
-     * did rather than a history, so a truthful value needs a record of our
-     * own. Reporting a slot here would be inventing one. */
-    out->last_failed_slot = '\0';
+    /* The loader reports diagnostics for the boot it just did rather than a
+     * history, so this is our own record: the slot of an image that ran and
+     * never confirmed, kept across the revert reboot. */
+    out->last_failed_slot = g_ota.lastFailedSlot;
 
     /* The staged image's own hash, taken from its block chain at commit. It
      * is what a control plane confirms a boot against -- the same kind of
@@ -311,6 +360,9 @@ int PlatformOtaBeginWrite(void) {
         return -EPERM;
     if (g_ota.writing)
         return -EBUSY;
+
+    clearFailedSlot();
+    g_ota.lastFailedSlot = '\0';
 
     int fd = open(OTA_SLOT_DEVPATH, O_RDWR);
     if (fd < 0)
@@ -515,6 +567,13 @@ int PlatformOtaCommit(void) {
 }
 
 int PlatformOtaRollback(void) {
+    /* Before the reboot, which does not return: the running slot is the one
+     * being reverted away from, so it is the one that failed. */
+    if (g_ota.activeSlot != '\0') {
+        writeFailedSlot(g_ota.activeSlot);
+        g_ota.lastFailedSlot = g_ota.activeSlot;
+    }
+
     int fd = open(OTA_SLOT_DEVPATH, O_RDWR);
     if (fd < 0)
         return -errno;
