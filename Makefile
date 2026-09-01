@@ -193,7 +193,9 @@ RP2350_BIN   ?= third_party/nuttx/nuttx.uf2
 # to compile in from $(BUILD_DIR)/.config, and silently falls back to the
 # example config when it finds none — so without this a non-default BUILD_DIR
 # ships firmware carrying the wrong config, with no error at build time.
-RP2350_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -e BUILD_DIR=$(BUILD_DIR) --entrypoint=/bin/sh $(RP2350_IMAGE) -c
+RP2350_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -e BUILD_DIR=$(BUILD_DIR) \
+    $(call fwd,NUTTX_CLEAN) $(call fwd,NUTTX_SKIP_BUILD) \
+    --entrypoint=/bin/sh $(RP2350_IMAGE) -c
 
 # openocd (RPi fork, shipped in $(RP2350_IMAGE)) driving the board over SWD via a
 # Raspberry Pi Debug Probe (CMSIS-DAP). Needs raw USB access, hence --privileged
