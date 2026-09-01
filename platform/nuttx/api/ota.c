@@ -16,6 +16,7 @@
 #include <nuttx/config.h>
 #endif
 
+#include <board-ota.h>
 #include <platform.h>
 
 #ifdef CONFIG_ARCH_CHIP_RP23XX
@@ -36,6 +37,16 @@
  * included: the board header defining it is off the app include path, so
  * this value is part of the device's contract and must match it. */
 #define OTA_IOC_CONFIRM _MTDIOC(0x00f0)
+
+/* Boots the update slot as a flash-update boot, so the loader prefers it
+ * and treats the boot as provisional. Does not return on success. */
+#define OTA_IOC_BOOT_SLOT _MTDIOC(0x00f1)
+
+/* A picobin block opens with this marker; a staged image carries one in its
+ * first erase block. Enough to reject an empty or truncated slot, while the
+ * loader's own hash check remains the real gate at boot. */
+#define PICOBIN_BLOCK_MARKER_START 0xffffded3U
+#define OTA_HEADER_SCAN_BYTES 4096
 
 /* BootROM function table lookup, replicated rather than included: the chip's
  * rom header lives under arch/arm/src and is off the app include path. */
@@ -86,6 +97,7 @@ static struct {
     /* Streaming write session, open between BeginWrite and Abort/Commit. */
     int fd;
     bool writing;
+    bool pendingSwap;
     size_t buffered;
     uint8_t unit[OTA_PROGRAM_UNIT];
 } g_ota;
@@ -287,6 +299,72 @@ int PlatformOtaAbort(void) {
     return 0;
 }
 
+/* Reject a slot holding no recognisable image, so a truncated or empty
+ * stream is caught here rather than as a failed boot. */
+static int stagedImageLooksSane(int fd) {
+    uint8_t head[OTA_HEADER_SCAN_BYTES];
+
+    if (lseek(fd, 0, SEEK_SET) < 0)
+        return -errno;
+    if (read(fd, head, sizeof(head)) != (ssize_t)sizeof(head))
+        return -EIO;
+
+    for (size_t i = 0; i + sizeof(uint32_t) <= sizeof(head); i += 4) {
+        uint32_t word;
+        memcpy(&word, head + i, sizeof(word));
+        if (word == PICOBIN_BLOCK_MARKER_START)
+            return 0;
+    }
+    return -EBADMSG;
+}
+
+int PlatformOtaCommit(void) {
+    if (!g_ota.writing)
+        return -EPERM;
+
+    /* Pad the tail to a whole program unit; erased flash reads as 0xff. */
+    if (g_ota.buffered > 0) {
+        memset(g_ota.unit + g_ota.buffered, 0xff,
+               OTA_PROGRAM_UNIT - g_ota.buffered);
+        int rc = writeUnit(g_ota.unit);
+        if (rc < 0) {
+            endSession();
+            return rc;
+        }
+        g_ota.buffered = 0;
+    }
+
+    int rc = stagedImageLooksSane(g_ota.fd);
+    endSession();
+    if (rc < 0)
+        return rc;
+
+    g_ota.pendingSwap = true;
+    return 0;
+}
+
+int PlatformOtaRollback(void) {
+    int fd = open(OTA_SLOT_DEVPATH, O_RDWR);
+    if (fd < 0)
+        return -errno;
+
+    int rc = ioctl(fd, OTA_IOC_BOOT_SLOT, 0) < 0 ? -errno : 0;
+    close(fd);
+    return rc;
+}
+
+void BoardOtaBootPending(void) {
+    if (!g_ota.pendingSwap)
+        return;
+
+    int fd = open(OTA_SLOT_DEVPATH, O_RDWR);
+    if (fd < 0)
+        return;
+
+    (void)ioctl(fd, OTA_IOC_BOOT_SLOT, 0);
+    close(fd);
+}
+
 #else /* !CONFIG_ARCH_CHIP_RP23XX */
 
 int PlatformOtaInit(void) { return 0; }
@@ -314,6 +392,12 @@ int PlatformOtaWrite(const uint8_t *buf, size_t len) {
 
 int PlatformOtaAbort(void) { return -ENOSYS; }
 
+int PlatformOtaCommit(void) { return -ENOSYS; }
+
+int PlatformOtaRollback(void) { return -ENOSYS; }
+
+void BoardOtaBootPending(void) {}
+
 #endif /* CONFIG_ARCH_CHIP_RP23XX */
 
 #ifdef CONFIG_ARCH_CHIP_RP23XX
@@ -333,7 +417,3 @@ int PlatformOtaConfirm(void) {
 int PlatformOtaConfirm(void) { return 0; }
 
 #endif
-
-int PlatformOtaCommit(void) { return -ENOSYS; }
-
-int PlatformOtaRollback(void) { return -ENOSYS; }

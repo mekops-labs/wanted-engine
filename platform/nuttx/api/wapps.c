@@ -18,6 +18,7 @@
 #include <sys/boardctl.h>
 #endif
 
+#include <board-ota.h>
 #include <board-wdt.h>
 #include <platform.h>
 #include <wanted-api.h>
@@ -383,6 +384,9 @@ void PlatformWappLoop(void) {
         }
         if (reboot) {
             BoardWdtDisarm();
+            /* Boots a committed image as provisional; returns if none is
+             * staged, and the ordinary reset below then runs. */
+            BoardOtaBootPending();
 #ifdef __NuttX__
             boardctl(BOARDIOC_RESET, 0);
 #endif
