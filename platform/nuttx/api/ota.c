@@ -25,6 +25,7 @@
 #define ROM_TABLE_CODE(c1, c2) ((c1) | ((c2) << 8))
 #define ROM_FUNC_GET_PARTITION_TABLE_INFO ROM_TABLE_CODE('G', 'P')
 #define ROM_FUNC_FLASH_RUNTIME_TO_STORAGE_ADDR ROM_TABLE_CODE('F', 'A')
+#define ROM_FUNC_GET_SYS_INFO ROM_TABLE_CODE('G', 'S')
 #define RT_FLAG_FUNC_ARM_SEC 0x0004
 #define RT_FLAG_FUNC_ARM_NONSEC 0x0010
 
@@ -40,6 +41,13 @@
 /* Runtime base of XIP flash; the ROM translates it to the booted slot. */
 #define XIP_RUNTIME_BASE 0x10000000U
 
+/* Boot info is an echoed flags word then boot_word, diagnostic and two
+ * reboot params. The try-before-you-buy flags are boot_word's top byte. */
+#define SYS_INFO_BOOT_INFO 0x0040
+#define BOOT_INFO_WORDS 5
+#define BOOT_INFO_TBYB_SHIFT 24
+#define BOOT_TBYB_BUY_PENDING 0x01U
+
 /* Each partition contributes a location word then a flags word, after one
  * echoed flags word. */
 #define PT_WORDS_PER_PARTITION 2
@@ -49,11 +57,14 @@ typedef void *(*rom_table_lookup_fn)(uint32_t code, uint32_t mask);
 typedef int (*rom_get_partition_table_info_fn)(uint32_t *out, uint32_t words,
                                                uint32_t partitionAndFlags);
 typedef intptr_t (*rom_flash_runtime_to_storage_addr_fn)(uintptr_t addr);
+typedef int (*rom_get_sys_info_fn)(uint32_t *out, uint32_t words,
+                                   uint32_t flags);
 
 static struct {
     bool inited;
     char activeSlot;
     int slotCount;
+    bool confirmed;
 } g_ota;
 
 /* The engine runs secure on this board; fall back to the non-secure table so a
@@ -77,6 +88,30 @@ static intptr_t runningStorageOffset(void) {
     if (toStorage == NULL)
         return -ENOSYS;
     return toStorage((uintptr_t)XIP_RUNTIME_BASE);
+}
+
+/* Whether this boot has no buy pending, i.e. nothing to roll back. A boot
+ * state the ROM will not report is treated as confirmed: it is not evidence
+ * of a pending buy, and claiming one arms a revert against the other slot. */
+static bool bootConfirmed(void) {
+    uint32_t words[BOOT_INFO_WORDS];
+    rom_get_sys_info_fn sysInfo =
+        (rom_get_sys_info_fn)romFuncLookup(ROM_FUNC_GET_SYS_INFO);
+
+    if (sysInfo == NULL) {
+        DEBUG_TRACE("ota: no sys-info entry point; reporting confirmed");
+        return true;
+    }
+
+    int filled = sysInfo(words, BOOT_INFO_WORDS, SYS_INFO_BOOT_INFO);
+    if (filled != BOOT_INFO_WORDS || words[0] != SYS_INFO_BOOT_INFO) {
+        DEBUG_TRACE("ota: boot info unavailable (%d); reporting confirmed",
+                    filled);
+        return true;
+    }
+
+    uint32_t tbyb = (words[1] >> BOOT_INFO_TBYB_SHIFT) & 0xffU;
+    return (tbyb & BOOT_TBYB_BUY_PENDING) == 0;
 }
 
 /* Resolve which partition holds `offset`, as a slot letter. '\0' if none does,
@@ -123,6 +158,7 @@ int PlatformOtaInit(void) {
 
     g_ota.slotCount = 0;
     g_ota.activeSlot = slotForOffset(offset, &g_ota.slotCount);
+    g_ota.confirmed = bootConfirmed();
     g_ota.inited = true;
 
     if (g_ota.activeSlot == '\0') {
@@ -144,7 +180,7 @@ int PlatformOtaGetBootState(platform_ota_state_t *out) {
     /* An image with no partition table behind it still runs; report it as the
      * first slot so the wire text stays well-defined. */
     out->active_slot = g_ota.activeSlot != '\0' ? g_ota.activeSlot : 'a';
-    out->confirmed = true;
+    out->confirmed = g_ota.confirmed;
     out->pending_swap = false;
     out->last_failed_slot = '\0';
     out->boot_attempts = 0;
