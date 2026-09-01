@@ -266,10 +266,24 @@ int PlatformOtaGetBootState(platform_ota_state_t *out) {
      * first slot so the wire text stays well-defined. */
     out->active_slot = g_ota.activeSlot != '\0' ? g_ota.activeSlot : 'a';
     out->confirmed = g_ota.confirmed;
-    out->pending_swap = false;
+    out->pending_swap = g_ota.pendingSwap;
+
+    /* An unconfirmed slot is on its first attempt: the loader hands out the
+     * state of the boot it just did, not a running tally. */
+    out->boot_attempts = g_ota.confirmed ? 0 : 1;
+
+    /* Empty on purpose: the loader reports diagnostics for the boot it just
+     * did rather than a history, so a truthful value needs a record of our
+     * own. Reporting a slot here would be inventing one. */
     out->last_failed_slot = '\0';
-    out->boot_attempts = 0;
-    out->pending_digest[0] = '\0';
+
+    /* The staged image's own hash, taken from its block chain at commit. It
+     * is what a control plane confirms a boot against -- the same kind of
+     * hash PlatformFirmwareDigest reports for the running image, so the two
+     * are comparable. Empty until a commit fills it. */
+    strncpy(out->pending_digest, g_ota.pendingDigest,
+            sizeof(out->pending_digest) - 1);
+    out->pending_digest[sizeof(out->pending_digest) - 1] = '\0';
     return 0;
 }
 
