@@ -11,6 +11,7 @@
             },
             "drivers": [
                 {"name": "wanted"},
+                {"name": "ota"},
                 {"name": "sha256"},
                 {"name": "ed25519"},
                 {"name": "inflate"}
