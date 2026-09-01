@@ -241,6 +241,14 @@ static void provision_sheriff_blob(void) {
 #define WIFI_SSID_MAX_LEN 32
 #define WIFI_PASS_MAX_LEN 63
 
+/* Association is retried because a single attempt strands the board: the
+ * credentials are wiped from memory once this returns, so a transient failure
+ * -- an AP still coming up, a missed beacon -- costs a power cycle and
+ * re-entry by hand. Bounded rather than endless, so a board with no AP in
+ * range still reaches the engine instead of blocking boot forever. */
+#define WIFI_ASSOC_TRIES 5
+#define WIFI_ASSOC_RETRY_S 3
+
 /* Read one line, retrying once on an empty result: a "\r\n"-terminated send
  * leaves a bare '\n' in the cooked-mode input queue, which the next prompt
  * consumes as an empty line. One retry skips exactly that stray line. */
@@ -291,8 +299,22 @@ static void wifi_connect_bringup(void) {
     }
 
     netlib_ifup(WIFI_IFNAME);
-    int ret = wpa_driver_wext_associate(&conf);
-    printf("wifi: associate -> %d\n", ret);
+
+    int ret = -1;
+    for (int attempt = 0; attempt < WIFI_ASSOC_TRIES; attempt++) {
+        ret = wpa_driver_wext_associate(&conf);
+        printf("wifi: associate attempt %d -> %d\n", attempt, ret);
+        if (ret == 0)
+            break;
+        if (attempt + 1 < WIFI_ASSOC_TRIES)
+            sleep(WIFI_ASSOC_RETRY_S);
+    }
+
+    if (ret != 0)
+        printf("wifi: not associated after %d attempts; continuing without "
+               "network\n",
+               WIFI_ASSOC_TRIES);
+
     if (ret == 0) {
         struct in_addr ip;
         /* dhcpc_open() returns EINVAL this early in boot, before the
