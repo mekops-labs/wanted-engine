@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <malloc.h>
 
+#include <board-ota.h>
 #include <platform.h>
 
 void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
@@ -24,7 +25,5 @@ const char *PlatformName(void) { return "nuttx"; }
 
 /* No build-time image digest on this target. */
 int PlatformFirmwareDigest(char *buf, size_t bufLen) {
-    (void)buf;
-    (void)bufLen;
-    return -ENOSYS;
+    return BoardImageDigestRunning(buf, bufLen);
 }
