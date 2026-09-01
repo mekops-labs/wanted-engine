@@ -6,6 +6,12 @@
 # An argument of the form <name>=<path> takes the .wasm from that path, which
 # is how a board seeds a wapp built outside this repository.
 #
+# The filename is the image's identity, so a name carrying no `@<version>`
+# seeds an image with an empty version. That is fine for a wapp a desired
+# state names by tag, and wrong for one resolved by version: the supervisor
+# asks for the flasher at a pinned version, and an unversioned seed can never
+# answer it. Pass such a wapp as `<name>@<version>[=<path>]`.
+#
 # Usage: registry-seed.sh <repo-root> <out-dir> <name>[=<path>]...
 set -euo pipefail
 
