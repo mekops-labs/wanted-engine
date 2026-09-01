@@ -41,6 +41,15 @@ A few symbols carry a contract the signature does not show. A port that gets the
 
 **A UART port must be exclusive, and not every OS gives that for free.** ESP-IDF does — `uart_driver_install` refuses a port that is already installed. Linux does not: two opens of one tty both succeed, so the Linux backing takes `TIOCEXCL` itself. `PlatformUartConfigure` drains the transmit buffer before applying new line settings, so a reconfiguration cannot truncate a byte already on the wire, then discards the receive buffer, because bytes received under the old settings cannot be decoded under the new ones. It must never substitute the nearest achievable baud rate: that produces a link that looks configured and corrupts data.
 
+**A supervisor that manages firmware needs the `ota` driver in its own launch
+config.** It opens `/dev/ota` to read the boot state an update is judged
+against — which slot is active, whether the boot is still provisional, and the
+digest of a staged image. Without the grant that read fails and the supervisor
+falls back to comparing version strings, which cannot separate two builds of
+one release. The driver is reserved: a Desired State may not grant it to an
+arbitrary wapp, and it reaches the installer only through the launch config the
+supervisor mints for it.
+
 **`PlatformOta*` slots are always named `a` and `b`** — the first and second physical app slots (ESP-IDF's `ota_0`/`ota_1`, a boot-root subdirectory on Linux) — so the `/dev/ota` wire text reads the same whatever bootloader backs it. `PlatformOtaRollback` may reboot the board during the call rather than scheduling the revert, so a caller must not assume control returns.
 
 **`PlatformExtramEarlyInit` exists because of allocation order, not laziness.** On a target where PSRAM shares one merged heap with internal RAM, the pool needs a large contiguous block, and any earlier allocation can fragment the region it would come from. Call it as early as boot allows; it is idempotent and harmless where PSRAM is a separate heap, since `PlatformExtramMalloc` lazy-initialises anyway.
