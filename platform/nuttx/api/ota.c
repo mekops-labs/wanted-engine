@@ -443,7 +443,7 @@ int BoardImageDigestRunning(char *buf, size_t bufLen) {
         return rc;
 
     hexEncode(digest, sizeof(digest), buf);
-    return 0;
+    return FIRMWARE_DIGEST_HEX_LEN;
 }
 
 /* Reject a slot holding no recognisable image, so a truncated or empty

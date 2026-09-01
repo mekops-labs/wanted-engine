@@ -15,7 +15,9 @@
 void BoardOtaBootPending(void);
 
 /* Lowercase hex SHA-256 of the running image, taken from the hash the seal
- * writes into it. `bufLen` holds FIRMWARE_DIGEST_HEX_LEN + 1. */
+ * writes into it. `bufLen` holds FIRMWARE_DIGEST_HEX_LEN + 1. Returns the
+ * length written, matching PlatformFirmwareDigest: its caller treats a zero
+ * as "this target stamps no digest" and drops the line. */
 int BoardImageDigestRunning(char *buf, size_t bufLen);
 
 #endif /* BOARD_OTA_H */
