@@ -40,7 +40,7 @@ WAPP_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help shell menuconfig setconfig wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32-flash rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign rp2350-partition-table rp2350-seal rp2350-flash-partition-table rp2350-flash-slot docs-sync FORCE
+.PHONY: help shell menuconfig setconfig build wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32-flash rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign rp2350-partition-table rp2350-seal rp2350-flash-partition-table rp2350-flash-slot docs-sync FORCE
 
 # make reads every word as its own goal, so `make defconfig openwrt` reaches just
 # as two recipes. Forward trailing goals as arguments and neutralise them as
