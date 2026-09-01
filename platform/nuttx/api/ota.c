@@ -5,9 +5,12 @@
  * single confirmed slot. See docs/platform-guide for the flash map. */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
+#include <unistd.h>
 
 #ifdef __NuttX__
 #include <nuttx/config.h>
@@ -18,6 +21,16 @@
 #ifdef CONFIG_ARCH_CHIP_RP23XX
 
 #include <debug_trace.h>
+#include <nuttx/fs/ioctl.h>
+#include <nuttx/mtd/mtd.h>
+#include <sys/ioctl.h>
+
+/* The update slot, published by the board over the image slot the running
+ * firmware did not boot from. */
+#define OTA_SLOT_DEVPATH "/dev/otaslot"
+
+/* Smallest unit the backing can program; a short tail is padded to it. */
+#define OTA_PROGRAM_UNIT 256
 
 /* BootROM function table lookup, replicated rather than included: the chip's
  * rom header lives under arch/arm/src and is off the app include path. */
@@ -65,6 +78,11 @@ static struct {
     char activeSlot;
     int slotCount;
     bool confirmed;
+    /* Streaming write session, open between BeginWrite and Abort/Commit. */
+    int fd;
+    bool writing;
+    size_t buffered;
+    uint8_t unit[OTA_PROGRAM_UNIT];
 } g_ota;
 
 /* The engine runs secure on this board; fall back to the non-secure table so a
@@ -156,6 +174,9 @@ static char slotForOffset(intptr_t offset, int *countOut) {
 int PlatformOtaInit(void) {
     intptr_t offset = runningStorageOffset();
 
+    /* Zeroed statics would name stdin as the session descriptor. */
+    g_ota.fd = -1;
+
     g_ota.slotCount = 0;
     g_ota.activeSlot = slotForOffset(offset, &g_ota.slotCount);
     g_ota.confirmed = bootConfirmed();
@@ -188,6 +209,79 @@ int PlatformOtaGetBootState(platform_ota_state_t *out) {
     return 0;
 }
 
+/* Hand one whole program unit to the backing, which takes nothing less. */
+static int writeUnit(const uint8_t *unit) {
+    ssize_t n = write(g_ota.fd, unit, OTA_PROGRAM_UNIT);
+
+    if (n < 0)
+        return -errno;
+    if (n != (ssize_t)OTA_PROGRAM_UNIT)
+        return -EIO;
+    return 0;
+}
+
+static void endSession(void) {
+    if (g_ota.fd >= 0)
+        close(g_ota.fd);
+    g_ota.fd = -1;
+    g_ota.writing = false;
+    g_ota.buffered = 0;
+}
+
+int PlatformOtaBeginWrite(void) {
+    if (!g_ota.inited)
+        return -EPERM;
+    if (g_ota.writing)
+        return -EBUSY;
+
+    int fd = open(OTA_SLOT_DEVPATH, O_RDWR);
+    if (fd < 0)
+        return -errno;
+
+    if (ioctl(fd, MTDIOC_BULKERASE, 0) < 0) {
+        int err = -errno;
+        close(fd);
+        return err;
+    }
+
+    g_ota.fd = fd;
+    g_ota.writing = true;
+    g_ota.buffered = 0;
+    return 0;
+}
+
+int PlatformOtaWrite(const uint8_t *buf, size_t len) {
+    if (buf == NULL)
+        return -EINVAL;
+    if (!g_ota.writing)
+        return -EPERM;
+
+    while (len > 0) {
+        size_t room = OTA_PROGRAM_UNIT - g_ota.buffered;
+        size_t take = len < room ? len : room;
+
+        memcpy(g_ota.unit + g_ota.buffered, buf, take);
+        g_ota.buffered += take;
+        buf += take;
+        len -= take;
+
+        if (g_ota.buffered == OTA_PROGRAM_UNIT) {
+            int rc = writeUnit(g_ota.unit);
+            if (rc < 0) {
+                endSession();
+                return rc;
+            }
+            g_ota.buffered = 0;
+        }
+    }
+    return 0;
+}
+
+int PlatformOtaAbort(void) {
+    endSession();
+    return 0;
+}
+
 #else /* !CONFIG_ARCH_CHIP_RP23XX */
 
 int PlatformOtaInit(void) { return 0; }
@@ -205,10 +299,6 @@ int PlatformOtaGetBootState(platform_ota_state_t *out) {
     return 0;
 }
 
-#endif /* CONFIG_ARCH_CHIP_RP23XX */
-
-int PlatformOtaConfirm(void) { return 0; }
-
 int PlatformOtaBeginWrite(void) { return -ENOSYS; }
 
 int PlatformOtaWrite(const uint8_t *buf, size_t len) {
@@ -217,8 +307,12 @@ int PlatformOtaWrite(const uint8_t *buf, size_t len) {
     return -ENOSYS;
 }
 
-int PlatformOtaCommit(void) { return -ENOSYS; }
-
 int PlatformOtaAbort(void) { return -ENOSYS; }
+
+#endif /* CONFIG_ARCH_CHIP_RP23XX */
+
+int PlatformOtaConfirm(void) { return 0; }
+
+int PlatformOtaCommit(void) { return -ENOSYS; }
 
 int PlatformOtaRollback(void) { return -ENOSYS; }
