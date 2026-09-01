@@ -32,6 +32,11 @@
 /* Smallest unit the backing can program; a short tail is padded to it. */
 #define OTA_PROGRAM_UNIT 256
 
+/* Confirms the running image on the backing. Declared here rather than
+ * included: the board header defining it is off the app include path, so
+ * this value is part of the device's contract and must match it. */
+#define OTA_IOC_CONFIRM _MTDIOC(0x00f0)
+
 /* BootROM function table lookup, replicated rather than included: the chip's
  * rom header lives under arch/arm/src and is off the app include path. */
 #define BOOTROM_TABLE_LOOKUP_OFFSET 0x16
@@ -311,7 +316,23 @@ int PlatformOtaAbort(void) { return -ENOSYS; }
 
 #endif /* CONFIG_ARCH_CHIP_RP23XX */
 
+#ifdef CONFIG_ARCH_CHIP_RP23XX
+
+int PlatformOtaConfirm(void) {
+    int fd = open(OTA_SLOT_DEVPATH, O_RDWR);
+    if (fd < 0)
+        return -errno;
+
+    int rc = ioctl(fd, OTA_IOC_CONFIRM, 0) < 0 ? -errno : 0;
+    close(fd);
+    return rc;
+}
+
+#else
+
 int PlatformOtaConfirm(void) { return 0; }
+
+#endif
 
 int PlatformOtaCommit(void) { return -ENOSYS; }
 
