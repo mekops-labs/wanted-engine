@@ -240,10 +240,30 @@ rp2350-partition-table: ## build the A/B partition table -> $(RP2350_PT_BIN) [RP
 	$(RP2350_RUN) 'cd /src && mkdir -p $(dir $(RP2350_PT_BIN)) && \
 	    picotool partition create $(RP2350_PT_JSON) $(RP2350_PT_BIN)'
 
-rp2350-seal: ## stamp $(RP2350_BIN) with a version and hash -> $(RP2350_SEALED) [RP2350_MAJOR/MINOR=...]
+# An image staged over the air is marked try-before-you-buy, so the loader
+# boots it provisionally and reverts unless the firmware confirms it. The
+# factory image must not carry the mark, or first boot waits for a confirm
+# that nothing has yet been able to give -- hence opt-in, not the default.
+# picotool cannot set the bit, so it is set before sealing and the hash then
+# covers it; `picotool info` reports it either way.
+RP2350_TBYB ?= 0
+RP2350_TBYB_BIN    = $(dir $(RP2350_SEALED))tbyb.bin
+RP2350_TBYB_SEALED = $(dir $(RP2350_SEALED))tbyb-sealed.bin
+RP2350_LINK_ADDR   = 0x10000000
+
+rp2350-seal: ## stamp $(RP2350_BIN) with a version and hash -> $(RP2350_SEALED) [RP2350_MAJOR/MINOR=... RP2350_TBYB=1]
 	$(RP2350_RUN) 'cd /src && mkdir -p $(dir $(RP2350_SEALED)) && \
-	    picotool seal --hash --major $(RP2350_MAJOR) --minor $(RP2350_MINOR) \
-	    $(RP2350_BIN) $(RP2350_SEALED)'
+	    if [ "$(RP2350_TBYB)" = 1 ]; then \
+	        python3 utils/picobin-tbyb.py $(RP2350_BIN) $(RP2350_TBYB_BIN) && \
+	        picotool seal --hash --major $(RP2350_MAJOR) --minor $(RP2350_MINOR) \
+	            $(RP2350_TBYB_BIN) -t bin -o $(RP2350_LINK_ADDR) \
+	            $(RP2350_TBYB_SEALED) -t bin && \
+	        picotool uf2 convert $(RP2350_TBYB_SEALED) -t bin $(RP2350_SEALED) \
+	            -o $(RP2350_LINK_ADDR) --family rp2350-arm-s; \
+	    else \
+	        picotool seal --hash --major $(RP2350_MAJOR) --minor $(RP2350_MINOR) \
+	            $(RP2350_BIN) $(RP2350_SEALED); \
+	    fi'
 
 rp2350-flash-partition-table: ## write the partition table over USB; wipes the part, so re-flash a slot after [RP2350_PT_BIN=...]
 	picotool load $(RP2350_PT_BIN)
