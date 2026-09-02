@@ -180,6 +180,19 @@ The reference constrained target, and the one the control-plane story is proven 
 - **Control plane over USB-CDC** — on a board with no radio, Sheriff reaches a host Deputy over the native USB-CDC using the engine's `serial://` socket scheme (a device path in place of `host:port`). The full reconcile loop runs on real hardware (verified on the Feather RP2350): State Report uplink → Ed25519-verified signed Desired State → wapp `RUNNING`, and a wrongly-signed Desired State is rejected. This is the ecosystem's first genuine (not demo-stubbed) signed-workload verification on embedded hardware.
 - **Secure boot** — validated entirely offline via `picotool seal --sign` (`make rp2350-sign`); the one-way OTP `SECURE_BOOT_ENABLE` fuse is deliberately never burned.
 
+  **Two artifacts must be signed, not one.** Under secure boot the loader verifies the partition table as well as the image, so a signed image behind an unsigned table leaves a board that will not boot at all once the fuse is set. Both recipes take the same opt-in key, off by default so an ordinary build needs no key to exist:
+
+  ```sh
+  make rp2350-partition-table RP2350_SIGN_KEY=keys/rp2350-dev/signing_key.pem
+  make rp2350-seal RP2350_TBYB=1 RP2350_SIGN_KEY=keys/rp2350-dev/signing_key.pem
+  ```
+
+  The try-before-you-buy mark is patched into the `IMAGE_DEF` *before* the seal, so the signature covers it and one artifact carries version, mark, hash and signature together. `test/rp2350-sign-verify.sh` asserts that pairing on one image and checks both negatives — a tampered signed image and a tampered signed-and-marked image must each report `signature: incorrect`.
+
+  **`--rollback` is deliberately unused.** It writes a monotonic rollback version to OTP on a secure chip, and raising it permanently refuses every image below it — including the *other* A/B slot, which after an update holds the older build. That is the slot the revert path boots, so bumping a rollback version would disarm the rollback this design depends on. Keeping it constant would be harmless and pointless, since raising it is the only thing it is for. Revisit only with a threat model that actually requires downgrade prevention, and only in a flow that accepts a one-way fuse.
+
+  Signing changes what is on flash, so it was checked on hardware with the fuse unburned: a signed table plus a signed image boots, mounts both volumes, resolves its OTA slots, and reports a firmware digest that matches `picotool`'s own hash for the artifact — the block walk copes with the extra signature block. With the fuse unburned the ROM does not enforce signatures, so this shows the artifacts are correct and does not show the ROM accepting them.
+
 ### ESP32 family (ESP-IDF)
 
 The whole ESP32 family runs a native ESP-IDF port (`platform/esp-idf/`, `app_main`) — not NuttX — across two chips: the **ESP32-S3** (e.g. S3R8, octal PSRAM, 8 MB flash) and the **classic ESP32** (Waveshare ESP32 One, quad PSRAM, 4 MB flash). The project is multi-chip: `sdkconfig.defaults` holds the chip-independent settings, `sdkconfig.defaults.<chip>` (`esp32`, `esp32s3`) the per-chip PSRAM/console/flash-size differences, applied automatically by chip.

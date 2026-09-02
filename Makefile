@@ -236,9 +236,17 @@ RP2350_SEALED ?= dist/rp2350/nuttx-sealed.uf2
 # Which slot a flash targets: 0 is A, 1 is B.
 RP2350_SLOT   ?= 0
 
-rp2350-partition-table: ## build the A/B partition table -> $(RP2350_PT_BIN) [RP2350_CONFIG=...]
+# Secure boot verifies the partition table as well as the image, so a board
+# with the fuse set will not boot an unsigned one -- and the fuse is one-way.
+# Opt-in like RP2350_TBYB: a factory flow signs, a bench flow need not, and the
+# key never has to exist for an ordinary build.
+RP2350_SIGN_KEY ?=
+RP2350_PT_SIGN = $(if $(RP2350_SIGN_KEY),--sign $(RP2350_SIGN_KEY),)
+
+rp2350-partition-table: ## build the A/B partition table -> $(RP2350_PT_BIN) [RP2350_CONFIG=... RP2350_SIGN_KEY=...]
 	$(RP2350_RUN) 'cd /src && mkdir -p $(dir $(RP2350_PT_BIN)) && \
-	    picotool partition create $(RP2350_PT_JSON) $(RP2350_PT_BIN)'
+	    picotool partition create $(RP2350_PT_JSON) $(RP2350_PT_BIN) \
+	        $(RP2350_PT_SIGN)'
 
 # An image staged over the air is marked try-before-you-buy, so the loader
 # boots it provisionally and reverts unless the firmware confirms it. The
@@ -251,18 +259,25 @@ RP2350_TBYB_BIN    = $(dir $(RP2350_SEALED))tbyb.bin
 RP2350_TBYB_SEALED = $(dir $(RP2350_SEALED))tbyb-sealed.bin
 RP2350_LINK_ADDR   = 0x10000000
 
-rp2350-seal: ## stamp $(RP2350_BIN) with a version and hash -> $(RP2350_SEALED) [RP2350_MAJOR/MINOR=... RP2350_TBYB=1]
+# The signature covers the try-before-you-buy bit because the bit is patched in
+# before the seal, so one artifact carries both. The key argument is positional
+# after the output, which is why it trails each invocation.
+RP2350_SEAL_SIGN = $(if $(RP2350_SIGN_KEY),--sign,)
+
+rp2350-seal: ## stamp $(RP2350_BIN) with a version and hash -> $(RP2350_SEALED) [RP2350_MAJOR/MINOR=... RP2350_TBYB=1 RP2350_SIGN_KEY=...]
 	$(RP2350_RUN) 'cd /src && mkdir -p $(dir $(RP2350_SEALED)) && \
 	    if [ "$(RP2350_TBYB)" = 1 ]; then \
 	        python3 utils/picobin-tbyb.py $(RP2350_BIN) $(RP2350_TBYB_BIN) && \
-	        picotool seal --hash --major $(RP2350_MAJOR) --minor $(RP2350_MINOR) \
+	        picotool seal --hash $(RP2350_SEAL_SIGN) \
+	            --major $(RP2350_MAJOR) --minor $(RP2350_MINOR) \
 	            $(RP2350_TBYB_BIN) -t bin -o $(RP2350_LINK_ADDR) \
-	            $(RP2350_TBYB_SEALED) -t bin && \
+	            $(RP2350_TBYB_SEALED) -t bin $(RP2350_SIGN_KEY) && \
 	        picotool uf2 convert $(RP2350_TBYB_SEALED) -t bin $(RP2350_SEALED) \
 	            -o $(RP2350_LINK_ADDR) --family rp2350-arm-s; \
 	    else \
-	        picotool seal --hash --major $(RP2350_MAJOR) --minor $(RP2350_MINOR) \
-	            $(RP2350_BIN) $(RP2350_SEALED); \
+	        picotool seal --hash $(RP2350_SEAL_SIGN) \
+	            --major $(RP2350_MAJOR) --minor $(RP2350_MINOR) \
+	            $(RP2350_BIN) $(RP2350_SEALED) $(RP2350_SIGN_KEY); \
 	    fi'
 
 rp2350-flash-partition-table: ## write the partition table over USB; wipes the part, so re-flash a slot after [RP2350_PT_BIN=...]
