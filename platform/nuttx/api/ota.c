@@ -18,6 +18,7 @@
 
 #include <board-ota.h>
 #include <platform.h>
+#include <wanted_log.h>
 
 #ifdef CONFIG_ARCH_CHIP_RP23XX
 
@@ -340,10 +341,14 @@ int PlatformOtaGetBootState(platform_ota_state_t *out) {
 static int writeUnit(const uint8_t *unit) {
     ssize_t n = write(g_ota.fd, unit, OTA_PROGRAM_UNIT);
 
-    if (n < 0)
+    if (n < 0) {
+        LOG_ERROR("ota: writing a program unit failed: %d", errno);
         return -errno;
-    if (n != (ssize_t)OTA_PROGRAM_UNIT)
+    }
+    if (n != (ssize_t)OTA_PROGRAM_UNIT) {
+        LOG_ERROR("ota: short write: %d of %d bytes", (int)n, OTA_PROGRAM_UNIT);
         return -EIO;
+    }
     return 0;
 }
 
@@ -365,8 +370,10 @@ int PlatformOtaBeginWrite(void) {
     g_ota.lastFailedSlot = '\0';
 
     int fd = open(OTA_SLOT_DEVPATH, O_RDWR);
-    if (fd < 0)
+    if (fd < 0) {
+        LOG_ERROR("ota: cannot open %s: %d", OTA_SLOT_DEVPATH, errno);
         return -errno;
+    }
 
     if (ioctl(fd, MTDIOC_BULKERASE, 0) < 0) {
         int err = -errno;
@@ -541,6 +548,7 @@ int PlatformOtaCommit(void) {
                OTA_PROGRAM_UNIT - g_ota.buffered);
         int rc = writeUnit(g_ota.unit);
         if (rc < 0) {
+            LOG_ERROR("ota: commit: writing the padded tail failed: %d", rc);
             endSession();
             return rc;
         }
@@ -548,6 +556,8 @@ int PlatformOtaCommit(void) {
     }
 
     int rc = stagedImageLooksSane(g_ota.fd);
+    if (rc < 0)
+        LOG_ERROR("ota: commit: the staged slot holds no usable image: %d", rc);
     if (rc == 0) {
         uint8_t digest[IMAGE_DIGEST_BYTES];
 
