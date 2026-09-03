@@ -94,10 +94,10 @@ static void seed_registry(void) {
 /* Provisions the supervisor's identity and a launch config carrying a
  * `platform` mount and `manager` socket. Identity is written through POSIX
  * calls, since there is no interactive way to write raw CBOR. */
-#define SHERIFF_IDENTITY_DIR "sheriff/identity" /* under REGISTRY_VOLUME */
-#define SHERIFF_DEVICE_ID "rp2350-01"
+#define SUPERVISOR_IDENTITY_DIR "sheriff/identity" /* under REGISTRY_VOLUME */
+#define SUPERVISOR_DEVICE_ID "rp2350-01"
 
-static const uint8_t sheriff_demo_pubkey[32] = {
+static const uint8_t supervisor_demo_pubkey[32] = {
     0xd0, 0x4a, 0xb2, 0x32, 0x74, 0x2b, 0xb4, 0xab, 0x3a, 0x13, 0x68,
     0xbd, 0x46, 0x15, 0xe4, 0xe6, 0xd0, 0x22, 0x4a, 0xb7, 0x1a, 0x01,
     0x6b, 0xaf, 0x85, 0x20, 0xa3, 0x32, 0xc9, 0x77, 0x87, 0x37,
@@ -113,7 +113,7 @@ static void write_marshal_pubkeys(const char *path) {
         return;
     }
     write(fd, header, sizeof(header));
-    write(fd, sheriff_demo_pubkey, sizeof(sheriff_demo_pubkey));
+    write(fd, supervisor_demo_pubkey, sizeof(supervisor_demo_pubkey));
     close(fd);
 }
 
@@ -123,27 +123,28 @@ static void write_device_id(const char *path) {
         DEBUG_TRACE("write %s failed: %s", path, strerror(errno));
         return;
     }
-    write(fd, SHERIFF_DEVICE_ID, strlen(SHERIFF_DEVICE_ID));
+    write(fd, SUPERVISOR_DEVICE_ID, strlen(SUPERVISOR_DEVICE_ID));
     close(fd);
 }
 
 /* Idempotent: O_TRUNC overwrites in place. Paths are relative to
  * REGISTRY_VOLUME (chdir'd by the caller). */
-static void provision_sheriff_identity(void) {
+static void provision_supervisor_identity(void) {
     mkdir("sheriff", 0755);
-    mkdir(SHERIFF_IDENTITY_DIR, 0755);
-    write_marshal_pubkeys(SHERIFF_IDENTITY_DIR "/marshal_pubkeys.cbor");
-    write_device_id(SHERIFF_IDENTITY_DIR "/device_id");
-    DEBUG_TRACE("sheriff identity provisioned under %s/" SHERIFF_IDENTITY_DIR,
-                REGISTRY_VOLUME);
+    mkdir(SUPERVISOR_IDENTITY_DIR, 0755);
+    write_marshal_pubkeys(SUPERVISOR_IDENTITY_DIR "/marshal_pubkeys.cbor");
+    write_device_id(SUPERVISOR_IDENTITY_DIR "/device_id");
+    DEBUG_TRACE(
+        "supervisor identity provisioned under %s/" SUPERVISOR_IDENTITY_DIR,
+        REGISTRY_VOLUME);
 }
 
-/* Sheriff's storage root, as the shipped launch configs mount it. The
+/* The supervisor's storage root, as the shipped launch configs mount it. The
  * provisioning blob and the secret a join redeems both live here. */
-#define SHERIFF_STORE_DIR "sheriff"
-#define SHERIFF_PROVISION_FILE SHERIFF_STORE_DIR "/provision"
-#define SHERIFF_SECRET_FILE SHERIFF_STORE_DIR "/secret"
-#define SHERIFF_BLOB_MAX 512
+#define SUPERVISOR_STORE_DIR "sheriff"
+#define SUPERVISOR_PROVISION_FILE SUPERVISOR_STORE_DIR "/provision"
+#define SUPERVISOR_SECRET_FILE SUPERVISOR_STORE_DIR "/secret"
+#define SUPERVISOR_BLOB_MAX 512
 
 static bool file_exists(const char *path) {
     struct stat st;
@@ -162,27 +163,28 @@ static int read_raw_line(char *buf, size_t bufSz) {
     return (int)n;
 }
 
-/* Take a provisioning blob over the console and place it where Sheriff looks
- * for it, so a bench board can enrol without a filesystem it cannot otherwise
- * write to. Paths are relative to REGISTRY_VOLUME (chdir'd by the caller).
+/* Take a provisioning blob over the console and place it where the
+ * supervisor looks for it, so a bench board can enrol without a filesystem it
+ * cannot otherwise write to. Paths are relative to REGISTRY_VOLUME (chdir'd
+ * by the caller).
  *
  * Prompts only on a board that holds neither a blob nor a redeemed secret, so
  * a provisioned board boots straight through. Like the Wi-Fi prompt it blocks
  * on a console with nobody attached; an empty first line skips it. */
-static void provision_sheriff_blob(void) {
+static void provision_supervisor_blob(void) {
     /* The redeemed secret, not the blob, is what says a board is enrolled: a
      * blob that was mistyped or has expired must be replaceable. */
-    if (file_exists(SHERIFF_SECRET_FILE)) {
-        DEBUG_TRACE("sheriff already enrolled, not prompting");
+    if (file_exists(SUPERVISOR_SECRET_FILE)) {
+        DEBUG_TRACE("supervisor already enrolled, not prompting");
         return;
     }
 
-    printf("sheriff provisioning: paste device_id=, join_token= and "
+    printf("supervisor provisioning: paste device_id=, join_token= and "
            "state_key= lines,\n"
            "  then a line reading 'end' (send 'end' now to skip)\n");
     fflush(stdout);
 
-    char blob[SHERIFF_BLOB_MAX];
+    char blob[SUPERVISOR_BLOB_MAX];
     size_t used = 0;
     char line[160];
     int len;
@@ -196,7 +198,7 @@ static void provision_sheriff_blob(void) {
         if (strcmp(line, "end") == 0)
             break;
         if (used + (size_t)len + 1 >= sizeof(blob)) {
-            printf("sheriff provisioning: blob too long, discarded\n");
+            printf("supervisor provisioning: blob too long, discarded\n");
             return;
         }
         memcpy(blob + used, line, (size_t)len);
@@ -209,21 +211,22 @@ static void provision_sheriff_blob(void) {
         return;
     }
 
-    mkdir(SHERIFF_STORE_DIR, 0755);
-    int fd = open(SHERIFF_PROVISION_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    mkdir(SUPERVISOR_STORE_DIR, 0755);
+    int fd =
+        open(SUPERVISOR_PROVISION_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0) {
-        printf("sheriff provisioning: cannot write %s: %s\n",
-               SHERIFF_PROVISION_FILE, strerror(errno));
+        printf("supervisor provisioning: cannot write %s: %s\n",
+               SUPERVISOR_PROVISION_FILE, strerror(errno));
         return;
     }
     ssize_t wrote = write(fd, blob, used);
     close(fd);
     if (wrote != (ssize_t)used) {
-        printf("sheriff provisioning: short write to %s\n",
-               SHERIFF_PROVISION_FILE);
+        printf("supervisor provisioning: short write to %s\n",
+               SUPERVISOR_PROVISION_FILE);
         return;
     }
-    printf("sheriff provisioning: %u bytes stored; it enrols on this boot\n",
+    printf("supervisor provisioning: %u bytes stored; it enrols on this boot\n",
            (unsigned)used);
 }
 
@@ -595,22 +598,22 @@ int wanted_rp2350_main(int argc, char *argv[]) {
 
     /* Board bring-up already mounted REGISTRY_VOLUME. Done after the console
      * is up so failures here are visible instead of silently lost. */
-    bool sheriffDemo = false;
+    bool supervisorDemo = false;
     if (chdir(REGISTRY_VOLUME) < 0) {
         perror("chdir " REGISTRY_VOLUME);
     } else {
         DEBUG_TRACE("chdir %s ok", REGISTRY_VOLUME);
         seed_registry();
-        sheriffDemo =
+        supervisorDemo =
             strcmp(CONFIG_SYSTEM_WANTED_BOOT_ROMFS_SUPERVISOR, "sheriff") == 0;
-        if (sheriffDemo) {
-            provision_sheriff_identity();
-            provision_sheriff_blob();
+        if (supervisorDemo) {
+            provision_supervisor_identity();
+            provision_supervisor_blob();
         }
     }
 
 #ifdef CONFIG_RP23XX_INFINEON_CYW43439
-    if (sheriffDemo) {
+    if (supervisorDemo) {
         wifi_connect_bringup();
     }
 #endif
@@ -620,7 +623,7 @@ int wanted_rp2350_main(int argc, char *argv[]) {
     report_boot_slot();
 
     int rc;
-    if (sheriffDemo) {
+    if (supervisorDemo) {
         rc = WantedStart(wantedDefaultConfig, strlen(wantedDefaultConfig));
     } else {
         rc = wanted_main(argc, argv);
