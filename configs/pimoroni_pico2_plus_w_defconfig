@@ -13,6 +13,10 @@ CONFIG_WANTED_MAX_PATH_LEN=512
 CONFIG_WANTED_MAX_DRIVERS_CNT=8
 CONFIG_WANTED_MAX_OPTIONS_SIZE=256
 
+# Fleet-managed wapps on this board serve over the network (a log viewer, a
+# remote shell), and a launch config naming "role": "listen" fails without it.
+CONFIG_WANTED_VFS_SOCKET_LISTEN=y
+
 CONFIG_WANTED_SUPERVISOR_SHERIFF=y
 CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-rp2350-wifi.json"
 

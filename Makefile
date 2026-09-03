@@ -40,7 +40,7 @@ WAPP_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help shell menuconfig setconfig build wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32-flash rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign docs-sync FORCE
+.PHONY: help shell menuconfig setconfig build wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32-flash rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign rp2350-partition-table rp2350-seal rp2350-flash-partition-table rp2350-flash-slot docs-sync FORCE
 
 # make reads every word as its own goal, so `make defconfig openwrt` reaches just
 # as two recipes. Forward trailing goals as arguments and neutralise them as
@@ -189,7 +189,13 @@ RP2350_IMAGE ?= localhost/wanted-rp2350
 RP2350_BIN   ?= third_party/nuttx/nuttx.uf2
 # The xtensa image bypasses its UID-remap entrypoint under rootless podman; do
 # the same here and build as the container root (mapped back to the host user).
-RP2350_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" --entrypoint=/bin/sh $(RP2350_IMAGE) -c
+# $(BUILD_DIR) must reach the container: nuttx-sim.sh reads the launch config
+# to compile in from $(BUILD_DIR)/.config, and silently falls back to the
+# example config when it finds none — so without this a non-default BUILD_DIR
+# ships firmware carrying the wrong config, with no error at build time.
+RP2350_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -e BUILD_DIR=$(BUILD_DIR) \
+    $(call fwd,NUTTX_CLEAN) $(call fwd,NUTTX_SKIP_BUILD) \
+    --entrypoint=/bin/sh $(RP2350_IMAGE) -c
 
 # openocd (RPi fork, shipped in $(RP2350_IMAGE)) driving the board over SWD via a
 # Raspberry Pi Debug Probe (CMSIS-DAP). Needs raw USB access, hence --privileged
@@ -213,6 +219,72 @@ rp2350-reset: ## reset the running board over SWD via a Raspberry Pi Debug Probe
 
 rp2350-sign: ## sign $(RP2350_BIN) and validate the signature offline (no OTP, no device) [RP2350_BIN=...]
 	$(RP2350_RUN) './test/rp2350-sign-verify.sh $(RP2350_BIN)'
+
+# A/B image slots. The bootrom picks between two image partitions by version
+# and reverts an unconfirmed one, and it translates whichever slot it booted
+# to the image's link address, so one build runs from either. The table is
+# per board because the slot bounds follow the part's size; it is named from
+# the board half of RP2350_CONFIG.
+RP2350_BOARD   = $(firstword $(subst :, ,$(RP2350_CONFIG)))
+RP2350_PT_JSON = configs/rp2350-partitions/$(RP2350_BOARD).json
+RP2350_PT_BIN ?= dist/rp2350/partition-table.uf2
+# Version-ordered slot selection reads these; bump RP2350_MINOR per build so a
+# staged image outranks the one it replaces.
+RP2350_MAJOR  ?= 1
+RP2350_MINOR  ?= 0
+RP2350_SEALED ?= dist/rp2350/nuttx-sealed.uf2
+# Which slot a flash targets: 0 is A, 1 is B.
+RP2350_SLOT   ?= 0
+
+# Secure boot verifies the partition table as well as the image, so a board
+# with the fuse set will not boot an unsigned one -- and the fuse is one-way.
+# Opt-in like RP2350_TBYB: a factory flow signs, a bench flow need not, and the
+# key never has to exist for an ordinary build.
+RP2350_SIGN_KEY ?=
+RP2350_PT_SIGN = $(if $(RP2350_SIGN_KEY),--sign $(RP2350_SIGN_KEY),)
+
+rp2350-partition-table: ## build the A/B partition table -> $(RP2350_PT_BIN) [RP2350_CONFIG=... RP2350_SIGN_KEY=...]
+	$(RP2350_RUN) 'cd /src && mkdir -p $(dir $(RP2350_PT_BIN)) && \
+	    picotool partition create $(RP2350_PT_JSON) $(RP2350_PT_BIN) \
+	        $(RP2350_PT_SIGN)'
+
+# An image staged over the air is marked try-before-you-buy, so the loader
+# boots it provisionally and reverts unless the firmware confirms it. The
+# factory image must not carry the mark, or first boot waits for a confirm
+# that nothing has yet been able to give -- hence opt-in, not the default.
+# picotool cannot set the bit, so it is set before sealing and the hash then
+# covers it; `picotool info` reports it either way.
+RP2350_TBYB ?= 0
+RP2350_TBYB_BIN    = $(dir $(RP2350_SEALED))tbyb.bin
+RP2350_TBYB_SEALED = $(dir $(RP2350_SEALED))tbyb-sealed.bin
+RP2350_LINK_ADDR   = 0x10000000
+
+# The signature covers the try-before-you-buy bit because the bit is patched in
+# before the seal, so one artifact carries both. The key argument is positional
+# after the output, which is why it trails each invocation.
+RP2350_SEAL_SIGN = $(if $(RP2350_SIGN_KEY),--sign,)
+
+rp2350-seal: ## stamp $(RP2350_BIN) with a version and hash -> $(RP2350_SEALED) [RP2350_MAJOR/MINOR=... RP2350_TBYB=1 RP2350_SIGN_KEY=...]
+	$(RP2350_RUN) 'cd /src && mkdir -p $(dir $(RP2350_SEALED)) && \
+	    if [ "$(RP2350_TBYB)" = 1 ]; then \
+	        python3 utils/picobin-tbyb.py $(RP2350_BIN) $(RP2350_TBYB_BIN) && \
+	        picotool seal --hash $(RP2350_SEAL_SIGN) \
+	            --major $(RP2350_MAJOR) --minor $(RP2350_MINOR) \
+	            $(RP2350_TBYB_BIN) -t bin -o $(RP2350_LINK_ADDR) \
+	            $(RP2350_TBYB_SEALED) -t bin $(RP2350_SIGN_KEY) && \
+	        picotool uf2 convert $(RP2350_TBYB_SEALED) -t bin $(RP2350_SEALED) \
+	            -o $(RP2350_LINK_ADDR) --family rp2350-arm-s; \
+	    else \
+	        picotool seal --hash $(RP2350_SEAL_SIGN) \
+	            --major $(RP2350_MAJOR) --minor $(RP2350_MINOR) \
+	            $(RP2350_BIN) $(RP2350_SEALED) $(RP2350_SIGN_KEY); \
+	    fi'
+
+rp2350-flash-partition-table: ## write the partition table over USB; wipes the part, so re-flash a slot after [RP2350_PT_BIN=...]
+	picotool load $(RP2350_PT_BIN)
+
+rp2350-flash-slot: ## flash $(RP2350_SEALED) into slot $(RP2350_SLOT) over USB (0=A, 1=B) [RP2350_SLOT=...]
+	picotool load -p $(RP2350_SLOT) -x $(RP2350_SEALED)
 
 # docs-sync runs on the host, not in the build container: it only copies Markdown
 # (no toolchain needed) to the destination directory. Pass DOCS_DEST.

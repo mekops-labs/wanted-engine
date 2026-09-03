@@ -19,6 +19,11 @@
 #define TRAPPER_STATE "/dev/wanted/wapps/" TRAPPER "/state"
 #define SUPERVISOR_STATE "/dev/wanted/wapps/supervisor/state"
 
+#define OTA_CTL "/dev/ota"
+#define OTA_SLOT OTA_CTL "/slot"
+/* Holds the whole status block; the driver caps its own snapshot below this. */
+#define OTA_STATUS_CAP 256
+
 /* Launched test wapps get a null stdin and the "log" console, so their output
  * is captured per-wapp and a wapp's stdio teardown cannot close the
  * supervisor's stdout. No interior whitespace: the parser wants one value. */
@@ -705,6 +710,51 @@ static void crashloop_check(void) {
  * The version separator is '@' (VFAT-legal), not ':'. */
 #define WRITER_CFG_BODY                                                        \
     "{\"image\":\"duplex:0.0.1-1\",\"envs\":[\"ROLE=writer\"]}"
+/* /dev/ota node wiring: the control node reports every status field, the image
+ * sink refuses reads, and both the command grammar and the subpath routing
+ * reject what they should. Asserts shape, not values: the backing differs per
+ * platform (a real A/B store on Linux, a single-slot stub elsewhere), and
+ * nothing here issues a command that would mutate a slot. */
+static void ota_check(void) {
+    char buf[OTA_STATUS_CAP];
+
+    int n = read_path(OTA_CTL, buf, sizeof(buf));
+    tap_ok(n > 0 && strstr(buf, "active_slot: ") != NULL &&
+               strstr(buf, "status: ") != NULL &&
+               strstr(buf, "pending_slot: ") != NULL &&
+               strstr(buf, "last_failed_slot: ") != NULL &&
+               strstr(buf, "boot_attempts: ") != NULL,
+           "ota: /dev/ota reports the full boot-state block");
+
+    /* Echo what this platform's backing actually reports; the assertions here
+     * only check the block's shape. Splits buf in place, which the re-read
+     * below overwrites. */
+    for (char *l = buf, *e; (e = strchr(l, '\n')) != NULL; l = e + 1) {
+        *e = '\0';
+        tap_diag(l);
+    }
+
+    /* A fresh snapshot per drain cycle, so a second reader is not served an
+     * exhausted one. */
+    tap_ok(read_path(OTA_CTL, buf, sizeof(buf)) == n,
+           "ota: /dev/ota re-reads a fresh snapshot");
+
+    /* The image sink takes bytes and never yields them back. */
+    int sfd = open(OTA_SLOT, O_RDONLY);
+    int sread = (sfd < 0) ? -1 : (int)read(sfd, buf, sizeof(buf));
+    if (sfd >= 0)
+        close(sfd);
+    tap_ok(sread < 0, "ota: /dev/ota/slot refuses reads");
+
+    tap_ok(write_path(OTA_CTL, "frobnicate\n") < 0,
+           "ota: /dev/ota rejects an unknown command");
+
+    int bfd = open(OTA_CTL "/bogus", O_RDONLY);
+    if (bfd >= 0)
+        close(bfd);
+    tap_ok(bfd < 0, "ota: an unknown /dev/ota subpath does not resolve");
+}
+
 static void pipe_duplex_check(void) {
     char buf[128];
 
@@ -1205,6 +1255,7 @@ int main(void) {
         {"bind_mount_escape_check", bind_mount_escape_check},
         {"listen_check", listen_check},
         {"dgram_listen_check", dgram_listen_check},
+        {"ota_check", ota_check},
         {"pipe_duplex_check", pipe_duplex_check},
         {"multi_reader_pipe_check", multi_reader_pipe_check},
         {"robustness_checks", robustness_checks},

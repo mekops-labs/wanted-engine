@@ -7,6 +7,17 @@
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
+# The layer cache names each entry by its full OCI digest -- "sha256:" plus
+# 64 hex, so 71 characters -- and the supervisor also writes registry entries
+# under those names. The component default of 64 is below that, so a staged
+# layer fails to land with a name-too-long error that reads as a transport
+# fault. 96 leaves headroom without inflating littlefs's per-file metadata.
+#
+# littlefs records name_max in the superblock and honours the smaller of that
+# and the configured value, so a device formatted under the old limit keeps it
+# until its persist partition is reformatted.
+CONFIG_LITTLEFS_OBJ_NAME_LEN=96
+
 # POSIX threads for the wapp lifecycle (matches the Linux/NuttX platform).
 CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
 

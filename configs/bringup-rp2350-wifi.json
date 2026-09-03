@@ -11,6 +11,7 @@
             },
             "drivers": [
                 {"name": "wanted"},
+                {"name": "ota"},
                 {"name": "sha256"},
                 {"name": "ed25519"},
                 {"name": "inflate"}
@@ -27,7 +28,7 @@
             ],
             "envs": [
                 "SHERIFF_DEVICE_ID=",
-                "SHERIFF_MARSHAL_KEY_1=REPLACE_WITH_64_HEX_CHARS"
+                "SHERIFF_STATE_KEY_1=REPLACE_WITH_64_HEX_CHARS"
             ]
         }
     }

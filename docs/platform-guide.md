@@ -41,6 +41,15 @@ A few symbols carry a contract the signature does not show. A port that gets the
 
 **A UART port must be exclusive, and not every OS gives that for free.** ESP-IDF does — `uart_driver_install` refuses a port that is already installed. Linux does not: two opens of one tty both succeed, so the Linux backing takes `TIOCEXCL` itself. `PlatformUartConfigure` drains the transmit buffer before applying new line settings, so a reconfiguration cannot truncate a byte already on the wire, then discards the receive buffer, because bytes received under the old settings cannot be decoded under the new ones. It must never substitute the nearest achievable baud rate: that produces a link that looks configured and corrupts data.
 
+**A supervisor that manages firmware needs the `ota` driver in its own launch
+config.** It opens `/dev/ota` to read the boot state an update is judged
+against — which slot is active, whether the boot is still provisional, and the
+digest of a staged image. Without the grant that read fails and the supervisor
+falls back to comparing version strings, which cannot separate two builds of
+one release. The driver is reserved: a Desired State may not grant it to an
+arbitrary wapp, and it reaches the installer only through the launch config the
+supervisor mints for it.
+
 **`PlatformOta*` slots are always named `a` and `b`** — the first and second physical app slots (ESP-IDF's `ota_0`/`ota_1`, a boot-root subdirectory on Linux) — so the `/dev/ota` wire text reads the same whatever bootloader backs it. `PlatformOtaRollback` may reboot the board during the call rather than scheduling the revert, so a caller must not assume control returns.
 
 **`PlatformExtramEarlyInit` exists because of allocation order, not laziness.** On a target where PSRAM shares one merged heap with internal RAM, the pool needs a large contiguous block, and any earlier allocation can fragment the region it would come from. Call it as early as boot allows; it is idempotent and harmless where PSRAM is a separate heap, since `PlatformExtramMalloc` lazy-initialises anyway.
@@ -171,6 +180,21 @@ The reference constrained target, and the one the control-plane story is proven 
 - **Control plane over USB-CDC** — on a board with no radio, Sheriff reaches a host Deputy over the native USB-CDC using the engine's `serial://` socket scheme (a device path in place of `host:port`). The full reconcile loop runs on real hardware (verified on the Feather RP2350): State Report uplink → Ed25519-verified signed Desired State → wapp `RUNNING`, and a wrongly-signed Desired State is rejected. This is the ecosystem's first genuine (not demo-stubbed) signed-workload verification on embedded hardware.
 - **Secure boot** — validated entirely offline via `picotool seal --sign` (`make rp2350-sign`); the one-way OTP `SECURE_BOOT_ENABLE` fuse is deliberately never burned.
 
+  **Two artifacts must be signed, not one.** Under secure boot the loader verifies the partition table as well as the image, so a signed image behind an unsigned table leaves a board that will not boot at all once the fuse is set. Both recipes take the same opt-in key, off by default so an ordinary build needs no key to exist:
+
+  ```sh
+  make rp2350-partition-table RP2350_SIGN_KEY=keys/rp2350-dev/signing_key.pem
+  make rp2350-seal RP2350_TBYB=1 RP2350_SIGN_KEY=keys/rp2350-dev/signing_key.pem
+  ```
+
+  The try-before-you-buy mark is patched into the `IMAGE_DEF` *before* the seal, so the signature covers it and one artifact carries version, mark, hash and signature together. `test/rp2350-sign-verify.sh` asserts that pairing on one image and checks both negatives — a tampered signed image and a tampered signed-and-marked image must each report `signature: incorrect`.
+
+  **The picobin version and the firmware version are independent.** The OCI tag and the engine version travel together; the `--major`/`--minor` given to `seal` is what the loader orders slots by on an ordinary reset. Rolling a device back to an older build therefore means sealing that older build at a *higher* picobin version, or it boots once and then reverts to the newer slot at the next power cycle with nothing reporting a fault.
+
+  **`--rollback` is deliberately unused.** It writes a monotonic rollback version to OTP on a secure chip, and raising it permanently refuses every image below it — including the *other* A/B slot, which after an update holds the older build. That is the slot the revert path boots, so bumping a rollback version would disarm the rollback this design depends on. Keeping it constant would be harmless and pointless, since raising it is the only thing it is for. Revisit only with a threat model that actually requires downgrade prevention, and only in a flow that accepts a one-way fuse.
+
+  Signing changes what is on flash, so it was checked on hardware with the fuse unburned: a signed table plus a signed image boots, mounts both volumes, resolves its OTA slots, and reports a firmware digest that matches `picotool`'s own hash for the artifact — the block walk copes with the extra signature block. With the fuse unburned the ROM does not enforce signatures, so this shows the artifacts are correct and does not show the ROM accepting them.
+
 ### ESP32 family (ESP-IDF)
 
 The whole ESP32 family runs a native ESP-IDF port (`platform/esp-idf/`, `app_main`) — not NuttX — across two chips: the **ESP32-S3** (e.g. S3R8, octal PSRAM, 8 MB flash) and the **classic ESP32** (Waveshare ESP32 One, quad PSRAM, 4 MB flash). The project is multi-chip: `sdkconfig.defaults` holds the chip-independent settings, `sdkconfig.defaults.<chip>` (`esp32`, `esp32s3`) the per-chip PSRAM/console/flash-size differences, applied automatically by chip.
@@ -198,7 +222,7 @@ Inside the devcontainer or CI (already in a build environment, no host container
 
 A board that has never been online still needs wapps in its registry, so an image can be **seeded from the firmware**. The mechanism differs by host but the contract does not: a seed image is written into the writable registry only when its ref is absent there, so an image installed over a seeded ref survives the next boot rather than being overwritten on every start.
 
-On ESP-IDF the seed images are embedded into the app binary at configure time; `platform/esp-idf/registry-seed.sh` packages each `wapps/<name>/<name>.wasm` as `<out>/<name>.wapp`, and `make wapps` builds the inputs. A board whose wapps live in another repository names them, in an optional `platform/esp-idf/board-extras/<defconfig>.cmake` keyed to its own defconfig, as `WANTED_EXTRA_SEEDS` entries of the form `<ref>=<path to .wasm>`; the extern declarations and the seed calls are generated from that list, so `app_main.c` names no board's wapp. `xiao_esp32s3-telegraph-sheriff_defconfig.cmake` is the worked example — it reads `TELEGRAPH_WAPPS` for the directory holding them, and a build without it carries the engine's own fixtures alone. On the NuttX boards the firmware carries them in the read-only ROMFS at `/rom/registry/*.wapp` and the boot shim copies them across on first boot.
+On ESP-IDF the seed images are embedded into the app binary at configure time; `platform/esp-idf/registry-seed.sh` packages each `wapps/<name>/<name>.wasm` as `<out>/<name>.wapp`, and `make wapps` builds the inputs. A wapp that ships `<name>.version` beside its wasm is seeded as `<name>@<version>.wapp` instead: the filename is the image's identity, so a wapp resolved by version — the supervisor's firmware installer is one — cannot be found under a name that carries none. The version comes from the file the build writes, not from an argument, so the seeded ref cannot name a version the image is not. A board whose wapps live in another repository names them, in an optional `platform/esp-idf/board-extras/<defconfig>.cmake` keyed to its own defconfig, as `WANTED_EXTRA_SEEDS` entries of the form `<ref>=<path to .wasm>`; the extern declarations and the seed calls are generated from that list, so `app_main.c` names no board's wapp. `xiao_esp32s3-telegraph-sheriff_defconfig.cmake` is the worked example — it reads `TELEGRAPH_WAPPS` for the directory holding them, and a build without it carries the engine's own fixtures alone. On the NuttX boards the firmware carries them in the read-only ROMFS at `/rom/registry/*.wapp` and the boot shim copies them across on first boot.
 
 The firmware flasher wapp ships this way. It is seeded as `flasher:<supervisor version>` — the version of the supervisor tree it was built from, a bare semver at a tag (`flasher:0.3.3`) or the tag plus a short commit past one (`flasher:0.3.3-abc123`). It installs an engine firmware image and exits, which is why it must be present before any network is: the thing that would otherwise fetch it is what it exists to update. A version too long for a registry version field fails the build rather than being truncated.
 

@@ -219,6 +219,7 @@ nuttx-syscontrol:
     - build-gcc
     - build-wasm
   variables:
+    GIT_STRATEGY: clone
     WAPPS_PREBUILT: "1"
     NUTTX_SKIP_BUILD: "0"
     NUTTX_CLEAN: "1"

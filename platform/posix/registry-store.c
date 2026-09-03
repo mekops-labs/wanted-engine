@@ -9,7 +9,16 @@
 #include <stdio.h>
 #include <string.h>
 
+/* The target's own config header, not the generic one: a platform that puts
+ * the registry on a dedicated filesystem redefines REGISTRY_ROOT there, and
+ * including only the base would silently write to the relative default. A
+ * board has no working directory for that default to resolve against. */
+#ifdef __NuttX__
+#include <config-nuttx.h>
+#else
 #include <platform-config.h>
+#endif
+
 #include <platform.h>
 
 int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,

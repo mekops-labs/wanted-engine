@@ -7,18 +7,22 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/boardctl.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <nuttx/usb/cdcacm.h>
 
+#include <config-nuttx.h>
 #include <platform.h>
 #include <wanted.h>
+#include <wanted_log.h>
 
 #include "boot-romfs.h" /* generated: boot_romfs_img[], boot_romfs_img_len */
 #include "debug_trace.h"
@@ -39,8 +43,8 @@
 int wanted_main(int argc, char *argv[]);
 
 #define SEED_DIR                                                               \
-    ROMFS_MOUNTPT "/registry"   /* /rom/registry (bundled factory wapps) */
-#define REGISTRY_DIR "registry" /* relative to REGISTRY_VOLUME (chdir'd) */
+    ROMFS_MOUNTPT "/registry" /* /rom/registry (bundled factory wapps) */
+#define REGISTRY_DIR REGISTRY_ROOT
 #define SEED_COPY_BUF 1024
 
 /* Copy one factory image from the read-only boot ROMFS into the writable
@@ -90,10 +94,10 @@ static void seed_registry(void) {
 /* Provisions the supervisor's identity and a launch config carrying a
  * `platform` mount and `manager` socket. Identity is written through POSIX
  * calls, since there is no interactive way to write raw CBOR. */
-#define SHERIFF_IDENTITY_DIR "sheriff/identity" /* under REGISTRY_VOLUME */
-#define SHERIFF_DEVICE_ID "rp2350-01"
+#define SUPERVISOR_IDENTITY_DIR "sheriff/identity" /* under REGISTRY_VOLUME */
+#define SUPERVISOR_DEVICE_ID "rp2350-01"
 
-static const uint8_t sheriff_demo_pubkey[32] = {
+static const uint8_t supervisor_demo_pubkey[32] = {
     0xd0, 0x4a, 0xb2, 0x32, 0x74, 0x2b, 0xb4, 0xab, 0x3a, 0x13, 0x68,
     0xbd, 0x46, 0x15, 0xe4, 0xe6, 0xd0, 0x22, 0x4a, 0xb7, 0x1a, 0x01,
     0x6b, 0xaf, 0x85, 0x20, 0xa3, 0x32, 0xc9, 0x77, 0x87, 0x37,
@@ -109,7 +113,7 @@ static void write_marshal_pubkeys(const char *path) {
         return;
     }
     write(fd, header, sizeof(header));
-    write(fd, sheriff_demo_pubkey, sizeof(sheriff_demo_pubkey));
+    write(fd, supervisor_demo_pubkey, sizeof(supervisor_demo_pubkey));
     close(fd);
 }
 
@@ -119,19 +123,111 @@ static void write_device_id(const char *path) {
         DEBUG_TRACE("write %s failed: %s", path, strerror(errno));
         return;
     }
-    write(fd, SHERIFF_DEVICE_ID, strlen(SHERIFF_DEVICE_ID));
+    write(fd, SUPERVISOR_DEVICE_ID, strlen(SUPERVISOR_DEVICE_ID));
     close(fd);
 }
 
 /* Idempotent: O_TRUNC overwrites in place. Paths are relative to
  * REGISTRY_VOLUME (chdir'd by the caller). */
-static void provision_sheriff_identity(void) {
+static void provision_supervisor_identity(void) {
     mkdir("sheriff", 0755);
-    mkdir(SHERIFF_IDENTITY_DIR, 0755);
-    write_marshal_pubkeys(SHERIFF_IDENTITY_DIR "/marshal_pubkeys.cbor");
-    write_device_id(SHERIFF_IDENTITY_DIR "/device_id");
-    DEBUG_TRACE("sheriff identity provisioned under %s/" SHERIFF_IDENTITY_DIR,
-                REGISTRY_VOLUME);
+    mkdir(SUPERVISOR_IDENTITY_DIR, 0755);
+    write_marshal_pubkeys(SUPERVISOR_IDENTITY_DIR "/marshal_pubkeys.cbor");
+    write_device_id(SUPERVISOR_IDENTITY_DIR "/device_id");
+    DEBUG_TRACE(
+        "supervisor identity provisioned under %s/" SUPERVISOR_IDENTITY_DIR,
+        REGISTRY_VOLUME);
+}
+
+/* The supervisor's storage root, as the shipped launch configs mount it. The
+ * provisioning blob and the secret a join redeems both live here. */
+#define SUPERVISOR_STORE_DIR "sheriff"
+#define SUPERVISOR_PROVISION_FILE SUPERVISOR_STORE_DIR "/provision"
+#define SUPERVISOR_SECRET_FILE SUPERVISOR_STORE_DIR "/secret"
+#define SUPERVISOR_BLOB_MAX 512
+
+static bool file_exists(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+/* One line, with the trailing newline stripped. Returns its length, or -1 at
+ * end of input. Unlike read_console_line it does not retry an empty line: a
+ * blank line is what ends the paste. */
+static int read_raw_line(char *buf, size_t bufSz) {
+    if (fgets(buf, (int)bufSz, stdin) == NULL)
+        return -1;
+    size_t n = strlen(buf);
+    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+        buf[--n] = '\0';
+    return (int)n;
+}
+
+/* Take a provisioning blob over the console and place it where the
+ * supervisor looks for it, so a bench board can enrol without a filesystem it
+ * cannot otherwise write to. Paths are relative to REGISTRY_VOLUME (chdir'd
+ * by the caller).
+ *
+ * Prompts only on a board that holds neither a blob nor a redeemed secret, so
+ * a provisioned board boots straight through. Like the Wi-Fi prompt it blocks
+ * on a console with nobody attached; an empty first line skips it. */
+static void provision_supervisor_blob(void) {
+    /* The redeemed secret, not the blob, is what says a board is enrolled: a
+     * blob that was mistyped or has expired must be replaceable. */
+    if (file_exists(SUPERVISOR_SECRET_FILE)) {
+        DEBUG_TRACE("supervisor already enrolled, not prompting");
+        return;
+    }
+
+    printf("supervisor provisioning: paste device_id=, join_token= and "
+           "state_key= lines,\n"
+           "  then a line reading 'end' (send 'end' now to skip)\n");
+    fflush(stdout);
+
+    char blob[SUPERVISOR_BLOB_MAX];
+    size_t used = 0;
+    char line[160];
+    int len;
+
+    /* Empty lines are ignored rather than terminating: a "\r\n"-terminated
+     * send leaves a bare '\n' behind, so one arrives after every pasted line.
+     * That is why the paste ends on a sentinel and not on a blank line. */
+    while ((len = read_raw_line(line, sizeof(line))) >= 0) {
+        if (len == 0)
+            continue;
+        if (strcmp(line, "end") == 0)
+            break;
+        if (used + (size_t)len + 1 >= sizeof(blob)) {
+            printf("supervisor provisioning: blob too long, discarded\n");
+            return;
+        }
+        memcpy(blob + used, line, (size_t)len);
+        used += (size_t)len;
+        blob[used++] = '\n';
+    }
+
+    if (used == 0) {
+        DEBUG_TRACE("no provisioning blob entered, skipping");
+        return;
+    }
+
+    mkdir(SUPERVISOR_STORE_DIR, 0755);
+    int fd =
+        open(SUPERVISOR_PROVISION_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+        printf("supervisor provisioning: cannot write %s: %s\n",
+               SUPERVISOR_PROVISION_FILE, strerror(errno));
+        return;
+    }
+    ssize_t wrote = write(fd, blob, used);
+    close(fd);
+    if (wrote != (ssize_t)used) {
+        printf("supervisor provisioning: short write to %s\n",
+               SUPERVISOR_PROVISION_FILE);
+        return;
+    }
+    printf("supervisor provisioning: %u bytes stored; it enrols on this boot\n",
+           (unsigned)used);
 }
 
 /* Constraints on the shipped config: the `platform` mount's src must be under
@@ -149,6 +245,14 @@ static void provision_sheriff_identity(void) {
 #define WIFI_IFNAME "wlan0"
 #define WIFI_SSID_MAX_LEN 32
 #define WIFI_PASS_MAX_LEN 63
+
+/* Association is retried because a single attempt strands the board: the
+ * credentials are wiped from memory once this returns, so a transient failure
+ * -- an AP still coming up, a missed beacon -- costs a power cycle and
+ * re-entry by hand. Bounded rather than endless, so a board with no AP in
+ * range still reaches the engine instead of blocking boot forever. */
+#define WIFI_ASSOC_TRIES 5
+#define WIFI_ASSOC_RETRY_S 3
 
 /* Read one line, retrying once on an empty result: a "\r\n"-terminated send
  * leaves a bare '\n' in the cooked-mode input queue, which the next prompt
@@ -169,18 +273,100 @@ static void read_console_line(const char *prompt, char *buf, size_t bufSz) {
     }
 }
 
-static void wifi_connect_bringup(void) {
-    char ssid[WIFI_SSID_MAX_LEN + 1] = {0};
-    char pass[WIFI_PASS_MAX_LEN + 1] = {0};
+/* Credentials live on the state volume, never in the firmware image and never
+ * in committed config -- the two places a shared secret must not appear. The
+ * file is the device's own, alongside the supervisor's enrolment secret, and
+ * anyone with the debug port can read either regardless.
+ *
+ * Persisting them is what makes the board survive a power cycle unattended: a
+ * console prompt on every boot means a headless device needs a person in front
+ * of it, which is the same failure as never retrying an association. */
+#ifdef CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT
+#define WIFI_CRED_PATH CONFIG_RP23XX_FLASH_MTD_MOUNTPOINT "/wifi-cred"
 
-    read_console_line("wifi ssid: ", ssid, sizeof(ssid));
-    if (ssid[0] == '\0') {
-        DEBUG_TRACE("wifi_connect_bringup: no ssid entered, skipping");
+/* `ssid\npassphrase\n`. An open passphrase is the empty second line. */
+static bool wifi_cred_read(char *ssid, size_t ssidSz, char *pass,
+                           size_t passSz) {
+    char buf[WIFI_SSID_MAX_LEN + WIFI_PASS_MAX_LEN + 4];
+    int fd = open(WIFI_CRED_PATH, O_RDONLY);
+
+    if (fd < 0)
+        return false;
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0)
+        return false;
+    buf[n] = '\0';
+
+    char *nl = strchr(buf, '\n');
+    if (nl == NULL)
+        return false;
+    *nl = '\0';
+    if (buf[0] == '\0' || strlen(buf) >= ssidSz)
+        return false;
+
+    char *rest = nl + 1;
+    char *end = strchr(rest, '\n');
+    if (end != NULL)
+        *end = '\0';
+    if (strlen(rest) >= passSz)
+        return false;
+
+    strncpy(ssid, buf, ssidSz - 1);
+    ssid[ssidSz - 1] = '\0';
+    strncpy(pass, rest, passSz - 1);
+    pass[passSz - 1] = '\0';
+    return true;
+}
+
+static void wifi_cred_write(const char *ssid, const char *pass) {
+    char buf[WIFI_SSID_MAX_LEN + WIFI_PASS_MAX_LEN + 4];
+    int n = snprintf(buf, sizeof(buf), "%s\n%s\n", ssid, pass);
+
+    if (n < 0 || (size_t)n >= sizeof(buf))
+        return;
+
+    int fd = open(WIFI_CRED_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+        DEBUG_TRACE("wifi: cannot store credentials: %s", strerror(errno));
         return;
     }
-    read_console_line("wifi passphrase: ", pass, sizeof(pass));
+    if (write(fd, buf, (size_t)n) != n)
+        DEBUG_TRACE("wifi: short write storing credentials");
+    close(fd);
+    memset(buf, 0, sizeof(buf));
+    printf("wifi: credentials stored for next boot\n");
+}
+#else
+static bool wifi_cred_read(char *ssid, size_t ssidSz, char *pass,
+                           size_t passSz) {
+    (void)ssid;
+    (void)ssidSz;
+    (void)pass;
+    (void)passSz;
+    return false;
+}
+static void wifi_cred_write(const char *ssid, const char *pass) {
+    (void)ssid;
+    (void)pass;
+}
+#endif
 
+/* False when nothing was entered, which is how an operator skips the join. */
+static bool wifi_prompt(char *ssid, size_t ssidSz, char *pass, size_t passSz) {
+    read_console_line("wifi ssid: ", ssid, ssidSz);
+    if (ssid[0] == '\0') {
+        DEBUG_TRACE("wifi_connect_bringup: no ssid entered, skipping");
+        return false;
+    }
+    read_console_line("wifi passphrase: ", pass, passSz);
+    return true;
+}
+
+static int wifi_associate(const char *ssid, const char *pass) {
     struct wpa_wconfig_s conf;
+    int ret = -1;
+
     memset(&conf, 0, sizeof(conf));
     conf.ifname = WIFI_IFNAME;
     conf.sta_mode = WAPI_MODE_MANAGED;
@@ -200,27 +386,76 @@ static void wifi_connect_bringup(void) {
     }
 
     netlib_ifup(WIFI_IFNAME);
-    int ret = wpa_driver_wext_associate(&conf);
-    printf("wifi: associate -> %d\n", ret);
-    if (ret == 0) {
-        struct in_addr ip;
-        /* dhcpc_open() returns EINVAL this early in boot, before the
-         * network stack has settled; a short delay avoids it. */
-        sleep(2);
-        for (int attempt = 0; attempt < 5; attempt++) {
-            int dhcpRet = netlib_obtain_ipv4addr(WIFI_IFNAME);
-            memset(&ip, 0, sizeof(ip));
-            netlib_get_ipv4addr(WIFI_IFNAME, &ip);
-            printf("wifi: dhcp attempt %d -> %d, ip -> %s\n", attempt, dhcpRet,
-                   inet_ntoa(ip));
-            if (dhcpRet == 0 && ip.s_addr != 0)
-                break;
-        }
+
+    for (int attempt = 0; attempt < WIFI_ASSOC_TRIES; attempt++) {
+        ret = wpa_driver_wext_associate(&conf);
+        printf("wifi: associate attempt %d -> %d\n", attempt, ret);
+        if (ret == 0)
+            break;
+        if (attempt + 1 < WIFI_ASSOC_TRIES)
+            sleep(WIFI_ASSOC_RETRY_S);
     }
 
+    memset(&conf, 0, sizeof(conf));
+    return ret;
+}
+
+static void wifi_dhcp(void) {
+    struct in_addr ip;
+
+    /* dhcpc_open() returns EINVAL this early in boot, before the network
+     * stack has settled; a short delay avoids it. */
+    sleep(2);
+    for (int attempt = 0; attempt < 5; attempt++) {
+        int dhcpRet = netlib_obtain_ipv4addr(WIFI_IFNAME);
+        memset(&ip, 0, sizeof(ip));
+        netlib_get_ipv4addr(WIFI_IFNAME, &ip);
+        printf("wifi: dhcp attempt %d -> %d, ip -> %s\n", attempt, dhcpRet,
+               inet_ntoa(ip));
+        if (dhcpRet == 0 && ip.s_addr != 0)
+            break;
+    }
+}
+
+static void wifi_connect_bringup(void) {
+    char ssid[WIFI_SSID_MAX_LEN + 1] = {0};
+    char pass[WIFI_PASS_MAX_LEN + 1] = {0};
+    bool stored = wifi_cred_read(ssid, sizeof(ssid), pass, sizeof(pass));
+
+    if (stored)
+        printf("wifi: joining \"%s\" from stored credentials\n", ssid);
+    else if (!wifi_prompt(ssid, sizeof(ssid), pass, sizeof(pass)))
+        return;
+
+    int ret = wifi_associate(ssid, pass);
+
+    /* Stored credentials that stopped working must not strand the board:
+     * fall back to asking, rather than leaving it off the network for good. */
+    if (ret != 0 && stored) {
+        printf("wifi: stored credentials did not associate\n");
+        if (!wifi_prompt(ssid, sizeof(ssid), pass, sizeof(pass)))
+            goto out;
+        stored = false;
+        ret = wifi_associate(ssid, pass);
+    }
+
+    if (ret != 0) {
+        printf("wifi: not associated after %d attempts; continuing without "
+               "network\n",
+               WIFI_ASSOC_TRIES);
+        goto out;
+    }
+
+    /* Only credentials that actually associated are kept, so a typo is not
+     * stored and then replayed on every boot. */
+    if (!stored)
+        wifi_cred_write(ssid, pass);
+
+    wifi_dhcp();
+
+out:
     memset(ssid, 0, sizeof(ssid));
     memset(pass, 0, sizeof(pass));
-    memset(&conf, 0, sizeof(conf));
 }
 #endif /* CONFIG_RP23XX_INFINEON_CYW43439 */
 
@@ -250,47 +485,88 @@ static void connect_usb_cdcacm(void) {
 /* Bring up the USB-CDC console: connect the CDCACM class driver, then block
  * until a host terminal opens the port and sends a few carriage returns before
  * binding fd 0-2, or early engine output races the terminal attaching. */
+/* How long to wait for a host terminal before giving up and booting anyway.
+ * Long enough to plug in and press a key, short enough that a board nobody is
+ * watching still reaches the engine. */
+#define USB_CONSOLE_WAIT_S 30
+
+/* Adopt the USB CDC as the console, but only if a terminal actually answers.
+ *
+ * The three newlines are a handshake, not decoration: a CDC write with no host
+ * reading it blocks, so redirecting stdio to an unattended port would hang the
+ * engine on its first printf -- worse than having no console at all. Hence the
+ * two outcomes here are "a terminal said hello, use it" and "nobody did, leave
+ * stdio alone and boot".
+ *
+ * Waiting without a deadline is what this used to do, and it made an
+ * unattended board on the `:wanted` config wait forever for a person. */
 static void bring_up_usb_console(void) {
     connect_usb_cdcacm();
 
-    for (;;) {
-        int fd;
-        do {
-            fd = open(CDCACM_DEVPATH, O_RDWR);
-            if (fd < 0) {
-                sleep(2);
-            }
-        } while (fd < 0);
+    const time_t deadline = time(NULL) + USB_CONSOLE_WAIT_S;
+    int fd = -1;
 
-        int nlc = 0;
-        bool dropped = false;
-        while (nlc < 3) {
-            char inch = 0;
-            ssize_t n = read(fd, &inch, 1);
-            if (n == 1 && (inch == '\n' || inch == '\r')) {
-                nlc++;
-            } else if (n <= 0) {
-                close(fd);
-                dropped = true;
-                break;
-            } else {
-                nlc = 0;
-            }
-        }
-        if (dropped) {
-            continue;
-        }
-
-        dup2(fd, 0);
-        dup2(fd, 1);
-        dup2(fd, 2);
-        if (fd > 2) {
-            close(fd);
-        }
+    while (fd < 0 && time(NULL) < deadline) {
+        fd = open(CDCACM_DEVPATH, O_RDWR);
+        if (fd < 0)
+            sleep(1);
+    }
+    if (fd < 0) {
+        DEBUG_TRACE("usb console: %s never appeared; booting without it",
+                    CDCACM_DEVPATH);
         return;
     }
+
+    int nlc = 0;
+    while (nlc < 3 && time(NULL) < deadline) {
+        struct pollfd pfd = {.fd = fd, .events = POLLIN};
+        char inch = 0;
+
+        if (poll(&pfd, 1, 500) <= 0)
+            continue;
+        if (read(fd, &inch, 1) != 1)
+            break; /* host went away */
+        nlc = (inch == '\n' || inch == '\r') ? nlc + 1 : 0;
+    }
+
+    if (nlc < 3) {
+        /* Not adopted: writing to a port nobody reads would block the boot. */
+        close(fd);
+        DEBUG_TRACE("usb console: no terminal within %d s; booting without it",
+                    USB_CONSOLE_WAIT_S);
+        return;
+    }
+
+    dup2(fd, 0);
+    dup2(fd, 1);
+    dup2(fd, 2);
+    if (fd > 2)
+        close(fd);
 }
 #endif /* !CONFIG_UART0_SERIAL_CONSOLE */
+
+/* Read the boot state and record a slot that failed. An unconfirmed active
+ * slot on a repeat attempt means the loader already tried an image and came
+ * back, which is the one account of a bad update that outlives the reboot
+ * that hid it. Goes to the engine's error channel, which survives a reset. */
+static void report_boot_slot(void) {
+    if (PlatformOtaInit() != 0) {
+        DEBUG_TRACE("ota: boot state unavailable");
+        return;
+    }
+
+    platform_ota_state_t st;
+    if (PlatformOtaGetBootState(&st) != 0)
+        return;
+
+    DEBUG_TRACE("ota: booted slot %c (%s), attempt %d", st.active_slot,
+                st.confirmed ? "confirmed" : "unconfirmed", st.boot_attempts);
+
+    if (!st.confirmed && st.boot_attempts > 1)
+        LOG_ERROR("ota: slot %c did not confirm after %d attempts; "
+                  "the loader reverted",
+                  st.active_slot, st.boot_attempts);
+}
 
 int wanted_rp2350_main(int argc, char *argv[]) {
     /* Must run before anything else (littlefs/ROMFS mount, seed_registry
@@ -322,27 +598,32 @@ int wanted_rp2350_main(int argc, char *argv[]) {
 
     /* Board bring-up already mounted REGISTRY_VOLUME. Done after the console
      * is up so failures here are visible instead of silently lost. */
-    bool sheriffDemo = false;
+    bool supervisorDemo = false;
     if (chdir(REGISTRY_VOLUME) < 0) {
         perror("chdir " REGISTRY_VOLUME);
     } else {
         DEBUG_TRACE("chdir %s ok", REGISTRY_VOLUME);
         seed_registry();
-        sheriffDemo =
+        supervisorDemo =
             strcmp(CONFIG_SYSTEM_WANTED_BOOT_ROMFS_SUPERVISOR, "sheriff") == 0;
-        if (sheriffDemo) {
-            provision_sheriff_identity();
+        if (supervisorDemo) {
+            provision_supervisor_identity();
+            provision_supervisor_blob();
         }
     }
 
 #ifdef CONFIG_RP23XX_INFINEON_CYW43439
-    if (sheriffDemo) {
+    if (supervisorDemo) {
         wifi_connect_bringup();
     }
 #endif
 
+    /* Before the engine starts, so a slot that failed is recorded even if the
+     * supervisor never comes up. */
+    report_boot_slot();
+
     int rc;
-    if (sheriffDemo) {
+    if (supervisorDemo) {
         rc = WantedStart(wantedDefaultConfig, strlen(wantedDefaultConfig));
     } else {
         rc = wanted_main(argc, argv);

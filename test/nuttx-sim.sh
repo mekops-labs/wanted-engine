@@ -14,6 +14,8 @@
 #   NUTTX_SKIP_BUILD=1  run-only: skip deps + kernel build, just stage + run
 #                       against a prebuilt $NUTTX_DIR/nuttx (split-CI run jobs)
 #   NUTTX_CLEAN=1       force a full distclean + reconfigure before building
+#   NUTTX_DEPS_FORCE=1  reset the forks even when they carry local work, which
+#                       deps refuses to discard by default
 set -euo pipefail
 
 ENGINE_DIR=${ENGINE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -31,7 +33,50 @@ SUPERVISOR_TAR=$ENGINE_DIR/wasm/supervisor/$SUPERVISOR_VARIANT/supervisor.tar
 # Link the engine/wamr sources into the nuttx-apps app package. Each fork's
 # checked-out commit is left as-is, and only the source symlinks are
 # checkout-location specific, so they are created here and left untracked.
+# Refuse to run when a fork carries work this function would destroy. Both
+# paths below are lossy: the scrub removes the module store, taking any local
+# commits with it, and `submodule update --force` discards tracked changes.
+# Neither announces itself, so a build can silently link sources the checkout
+# no longer has. Returns 1 and explains; NUTTX_DEPS_FORCE=1 skips the check.
+check_forks_disposable() {
+    local sm status dirty rc=0
+
+    for sm in third_party/nuttx third_party/nuttx-apps; do
+        status=$(git -C "$ENGINE_DIR" submodule status -- "$sm" 2>/dev/null || true)
+        case "$status" in
+            # Absent or unreadable: nothing to lose, and the scrub is the point.
+            ''|-*) continue ;;
+            # A different commit than the pin — local commits live here.
+            +*)
+                echo "ERROR: $sm is not at its pinned commit:" >&2
+                echo "    ${status#?}" >&2
+                echo "  Push the fork and move the pin, or re-run with" >&2
+                echo "  NUTTX_DEPS_FORCE=1 to discard it." >&2
+                rc=1
+                continue
+                ;;
+        esac
+
+        # At the pin, so only tracked edits are at risk: `update --force`
+        # reverts those and leaves untracked build output alone.
+        dirty=$(git -C "$ENGINE_DIR/$sm" status --porcelain -uno 2>/dev/null || true)
+        if [ -n "$dirty" ]; then
+            echo "ERROR: $sm has uncommitted changes:" >&2
+            echo "$dirty" | sed 's/^/    /' >&2
+            echo "  Commit them and move the pin, or re-run with" >&2
+            echo "  NUTTX_DEPS_FORCE=1 to discard them." >&2
+            rc=1
+        fi
+    done
+
+    return $rc
+}
+
 deps() {
+    if [ "${NUTTX_DEPS_FORCE:-0}" != 1 ]; then
+        check_forks_disposable
+    fi
+
     # The forks are excluded from CI's recursive submodule fetch, so a worktree
     # can survive a prior run without its module store and `submodule update
     # --init` would abort cloning into it. Scrub any inconsistent leftover.
@@ -72,13 +117,27 @@ deps() {
 # a config at first boot. It lands in src/include, on both this build's and
 # CMake's include path.
 default_config_header() {
-    local cfg
+    local dotconfig cfg
+    dotconfig=$ENGINE_DIR/${BUILD_DIR:-build}/.config
     cfg=$(sed -nE 's/^CONFIG_WANTED_DEFAULT_CONFIG="(.*)"$/\1/p' \
-        "$ENGINE_DIR/${BUILD_DIR:-build}/.config" 2>/dev/null || true)
+        "$dotconfig" 2>/dev/null || true)
+    # The sim stages its launch config into hostfs at run time, so this header
+    # goes unused there and the split-CI kernel job builds with no .config at
+    # all. A board has no such filesystem and boots on the header alone, so
+    # falling back there would ship firmware carrying a config nobody chose.
+    if [ -z "$cfg" ]; then
+        case "${NUTTX_BOARD:-sim:wanted}" in
+            sim:*) cfg=configs/example_config.json ;;
+            *)
+                echo "no CONFIG_WANTED_DEFAULT_CONFIG in $dotconfig —" \
+                    "configure that build dir before building a board" >&2
+                exit 1
+                ;;
+        esac
+    fi
     "$ENGINE_DIR/utils/default-config-header.sh" "$ENGINE_DIR" \
-        "${cfg:-configs/example_config.json}" \
-        "$ENGINE_DIR/src/include/wanted-config.h"
-    echo "generated wanted-config.h from ${cfg:-configs/example_config.json}"
+        "$cfg" "$ENGINE_DIR/src/include/wanted-config.h"
+    echo "generated wanted-config.h from $cfg"
 }
 
 # Stage the supervisor image + engine config into the sim's hostfs root (/data).
