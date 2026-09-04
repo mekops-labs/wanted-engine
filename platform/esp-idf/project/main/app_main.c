@@ -1,8 +1,12 @@
 /* ESP-IDF entry point for the WANTED engine. */
 
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "sdkconfig.h"
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
@@ -100,6 +104,164 @@ static void seedWapp(const char *ref, const uint8_t *start,
     ESP_LOGI(TAG, "seed: %s (%u bytes) -> write=%d finish=%d", ref,
              (unsigned)len, w, fin);
 }
+
+#if CONFIG_WANTED_SUPERVISOR_SHERIFF
+/* The supervisor's storage root, as the shipped launch configs mount it
+ * (src= SUPERVISOR_STORE_DIR under the "platform" mount). The provisioning
+ * blob and the secret a join redeems both live here. */
+#define SUPERVISOR_STORE_DIR "/data/sheriff"
+#define SUPERVISOR_PROVISION_FILE SUPERVISOR_STORE_DIR "/provision"
+#define SUPERVISOR_SECRET_FILE SUPERVISOR_STORE_DIR "/secret"
+#define SUPERVISOR_BLOB_MAX 512
+
+static bool fileExists(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+/* One line, with the trailing newline stripped. Returns its length, or -1 at
+ * end of input. Unlike readConsoleLine it does not retry an empty line: a
+ * blank line ends an empty paste. */
+static int readRawLine(char *buf, size_t bufSz) {
+    if (fgets(buf, (int)bufSz, stdin) == NULL)
+        return -1;
+    size_t n = strlen(buf);
+    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+        buf[--n] = '\0';
+    return (int)n;
+}
+
+/* The value of a `"field": "..."` pair in a flat JSON object, unescaped
+ * (Deputy's field values never carry a backslash or embedded quote). Returns
+ * its length, or -1 if the field is absent or its value does not fit `out`. */
+static int jsonStringField(const char *json, const char *field, char *out,
+                           size_t outSz) {
+    char needle[32];
+    int needleLen = snprintf(needle, sizeof(needle), "\"%s\"", field);
+    if (needleLen <= 0 || (size_t)needleLen >= sizeof(needle))
+        return -1;
+    const char *p = strstr(json, needle);
+    if (p == NULL)
+        return -1;
+    p = strchr(p + needleLen, ':');
+    if (p == NULL)
+        return -1;
+    p++;
+    while (*p == ' ' || *p == '\t')
+        p++;
+    if (*p != '"')
+        return -1;
+    p++;
+    const char *end = strchr(p, '"');
+    if (end == NULL)
+        return -1;
+    size_t len = (size_t)(end - p);
+    if (len >= outSz)
+        return -1;
+    memcpy(out, p, len);
+    out[len] = '\0';
+    return (int)len;
+}
+
+/* Take the enrolment blob `deputy device enrol` prints — pretty-printed JSON
+ * with device_id, join_token, state_key and an optional manager — pasted
+ * verbatim over the console, and place it where the supervisor looks for it
+ * so a bench board can enrol without a filesystem it cannot otherwise write
+ * to. Skips a board that already holds a redeemed secret. */
+static void provisionSupervisorBlob(void) {
+    /* The redeemed secret, not the blob, is what says a board is enrolled: a
+     * blob that was mistyped or has expired must be replaceable. */
+    if (fileExists(SUPERVISOR_SECRET_FILE)) {
+        ESP_LOGI(TAG,
+                 "supervisor provisioning: already enrolled, not prompting");
+        return;
+    }
+
+    printf("supervisor provisioning: paste the JSON from 'deputy device "
+           "enrol'\n"
+           "  (or press enter to skip)\n");
+    fflush(stdout);
+
+    char json[SUPERVISOR_BLOB_MAX];
+    size_t used = 0;
+    char line[160];
+    int len;
+    int depth = 0;
+    bool started = false;
+
+    /* The paste ends where its JSON object closes: brace depth returns to
+     * zero after having opened, rather than on any sentinel or blank line. */
+    while ((len = readRawLine(line, sizeof(line))) >= 0) {
+        if (!started) {
+            if (len == 0) {
+                ESP_LOGI(TAG,
+                         "supervisor provisioning: no blob entered, skipping");
+                return;
+            }
+            started = true;
+        }
+        if (used + (size_t)len + 1 >= sizeof(json)) {
+            printf("supervisor provisioning: blob too long, discarded\n");
+            return;
+        }
+        memcpy(json + used, line, (size_t)len);
+        used += (size_t)len;
+        json[used++] = '\n';
+        for (int i = 0; i < len; i++) {
+            if (line[i] == '{')
+                depth++;
+            else if (line[i] == '}')
+                depth--;
+        }
+        if (depth <= 0 && used > 0)
+            break;
+    }
+    json[used] = '\0';
+
+    char deviceId[80], joinToken[80], stateKey[80], manager[160];
+    if (jsonStringField(json, "device_id", deviceId, sizeof(deviceId)) < 0 ||
+        jsonStringField(json, "join_token", joinToken, sizeof(joinToken)) < 0 ||
+        jsonStringField(json, "state_key", stateKey, sizeof(stateKey)) < 0) {
+        printf("supervisor provisioning: blob missing device_id, join_token "
+               "or state_key\n");
+        return;
+    }
+    int managerLen = jsonStringField(json, "manager", manager, sizeof(manager));
+
+    char blob[SUPERVISOR_BLOB_MAX];
+    int n = snprintf(blob, sizeof(blob),
+                     "device_id=%s\njoin_token=%s\nstate_key=%s\n", deviceId,
+                     joinToken, stateKey);
+    if (managerLen > 0 && n > 0 && (size_t)n < sizeof(blob)) {
+        n += snprintf(blob + (size_t)n, sizeof(blob) - (size_t)n,
+                      "manager=%s\n", manager);
+    }
+    if (n <= 0 || (size_t)n >= sizeof(blob)) {
+        printf("supervisor provisioning: blob too long, discarded\n");
+        return;
+    }
+    size_t blobLen = (size_t)n;
+
+    mkdir(SUPERVISOR_STORE_DIR, 0755);
+    int fd =
+        open(SUPERVISOR_PROVISION_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+        printf("supervisor provisioning: cannot write %s: %s\n",
+               SUPERVISOR_PROVISION_FILE, strerror(errno));
+        return;
+    }
+    ssize_t wrote = write(fd, blob, blobLen);
+    close(fd);
+    if (wrote != (ssize_t)blobLen) {
+        printf("supervisor provisioning: short write to %s\n",
+               SUPERVISOR_PROVISION_FILE);
+        return;
+    }
+    printf("supervisor provisioning: device %s stored; it enrols on this "
+           "boot\n",
+           deviceId);
+}
+#endif /* CONFIG_WANTED_SUPERVISOR_SHERIFF */
 
 #if CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN
 #define WIFI_CONF_PATH "/data/wifi.conf"
@@ -241,6 +403,11 @@ void app_main(void) {
     PlatformSetProcessArgs(0, NULL);
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || CONFIG_ESP_CONSOLE_UART_DEFAULT
     consoleUseBlockingDriver();
+#endif
+#if CONFIG_WANTED_SUPERVISOR_SHERIFF
+    /* After the blocking console driver, for the same reason the Wi-Fi
+     * prompt needs it: the blob prompt also reads a line from stdin. */
+    provisionSupervisorBlob();
 #endif
 #if CONFIG_WANTED_ESP_IDF_WIFI_BOOT_JOIN
     /* After the blocking console driver: the credential prompt reads a line,
