@@ -76,6 +76,15 @@ if(_flasher_version_len GREATER 14)
         "WAPP_MAX_VERSION_LEN (it bounds WAPP_MAX_IMAGE_REF_LEN, nothing on the wire).")
 endif()
 
+# registry-seed.sh names the seed by version, so a version-pinned resolve can
+# find it; EMBED_FILES needs a name stable across versions instead, since the
+# embedded symbol (_binary_flasher_wapp_start/_end, declared in app_main.c)
+# must not move with every version bump.
+set(_flasher_seed "${_seed_dir}/flasher@${_flasher_version}.wapp")
+set(_flasher_embed "${CMAKE_CURRENT_BINARY_DIR}/flasher.wapp")
+file(COPY_FILE "${_flasher_seed}" "${_flasher_embed}" ONLY_IF_DIFFERENT)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_flasher_seed}")
+
 # Launch config as a blob — no filesystem holds one at first boot.
 # EMBED_TXTFILES appends the NUL app_main.c needs. A cache variable, not
 # a CONFIG_ symbol: this host tree's .config is narrowed to Kconfig.engine.
@@ -120,7 +129,7 @@ idf_component_register(SRCS "app_main.c"
                        PRIV_REQUIRES ${_priv_requires}
                        EMBED_FILES
                            "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/wifi-connect.wapp"
-                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/flasher.wapp"
+                           "${_flasher_embed}"
                            ${_extra_embed}
                        EMBED_TXTFILES "${_cfg_staged}")
 
