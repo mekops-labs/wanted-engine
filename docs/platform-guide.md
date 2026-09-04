@@ -172,6 +172,8 @@ The reference constrained target, and the one the control-plane story is proven 
   make rp2350-flash-swd    # flash over SWD via a Raspberry Pi Debug Probe (no BOOTSEL)
   ```
 
+  `make build` also runs `utils/rp2350-package-ota.sh` and drops `dist/nuttx/<board>-ota.bin` — the bare app image an OTA slot takes (see [Publishing a firmware image](#publishing-a-firmware-image)); the SWD/BOOTSEL targets above flash the ELF/UF2 instead, which are offset-aware and not interchangeable with it.
+
 - **Registry** — a LittleFS volume on a reserved region of the internal QSPI flash (the flash-MTD backend), written through the RP2350 ROM flash routines. Full wapp lifecycle (`create → start → running → stop → exited`) is hardware-verified.
 - **PSRAM** — 8 MB external PSRAM on QMI CS1 (GPIO8), merged with internal SRAM into one ~8.5 MiB heap (`RP23XX_PSRAM_HEAP_SINGLE`). The large engine buffers (WAMR linear memory, the wapp image cache) live in PSRAM while worker stacks stay in scarce internal SRAM. Measured ceiling: ~38 concurrent wapps. Because flash program/erase and PSRAM share the QMI hardware, the internal-flash MTD driver cleans the XIP cache and saves/restores the CS1 registers around every flash op — without which a flash write silently corrupts PSRAM.
 - **Crypto** — a **real Ed25519 verify**: NuttX's vendored mbedTLS has no Ed25519, so the port vendors `orlp/ed25519` (verify-only) behind `PlatformEd25519Verify`. The ESP-IDF port uses the same vendored backend.
@@ -228,12 +230,12 @@ The firmware flasher wapp ships this way. It is seeded as `flasher:<supervisor v
 
 ### Publishing a firmware image
 
-A built board binary is published to the OCI registry the same way the toolchain images are — `docker/publish-images.sh`, driven by a Containerfile:
+A built board binary is published to the OCI registry the same way the toolchain images are — `docker/publish-images.sh`, driven by a Containerfile. The image it wants is the bare app image the OTA slot takes, not a flashable-at-offset-0 image: on ESP-IDF that's `dist/esp-idf/wanted-$chip-ota.bin` (`idf.py merge-bin`'s `wanted-$chip-merged.bin` sibling); on RP2350 it's `dist/nuttx/<board>-ota.bin`, produced by `utils/rp2350-package-ota.sh` as part of `make build DEFCONFIG=<rp2350 board>` (an `objcopy -O binary` of the ELF — `picotool` has no raw-bin output mode, only `uf2`/`elf`/on-device formats, so it cannot produce this artifact):
 
 ```bash
-docker/publish-images.sh -b pimoroni_pico2_plus_w -i dist/nuttx/wanted.bin firmware          # build + verify
-docker/publish-images.sh -a ~/auth.json -b pimoroni_pico2_plus_w -i dist/nuttx/wanted.bin firmware
-docker/publish-images.sh -b pimoroni_pico2_plus_w -i dist/nuttx/wanted.bin -c nowifi firmware
+docker/publish-images.sh -b pimoroni_pico2_plus_w -i dist/nuttx/pimoroni-pico-2-plus-w-ota.bin firmware          # build + verify
+docker/publish-images.sh -a ~/auth.json -b pimoroni_pico2_plus_w -i dist/nuttx/pimoroni-pico-2-plus-w-ota.bin firmware
+docker/publish-images.sh -b pimoroni_pico2_plus_w -i dist/nuttx/pimoroni-pico-2-plus-w-ota.bin -c nowifi firmware
 ```
 
 The reference is `registry.gitlab.com/mekops/wanted/wanted-engine/firmware/<board>:<version>`, one repository per board. Runners grant no privileged mode, so this runs on a developer machine, not in CI.

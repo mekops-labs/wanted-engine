@@ -118,7 +118,7 @@ build: ## build the configured target [DEFCONFIG=... seeds a fresh .config; SDK=
 	               if [ "$${board#*:}" = sheriff ]; then sup=sheriff; else sup=supervisor; fi; \
 	               echo "==> nuttx board $$board: building $$sup, then routing through $(RP2350_IMAGE)"; \
 	               $(MAKE) $$sup; \
-	               $(RP2350_RUN) "cd /src && NUTTX_BOARD='$$board' DEFCONFIG='$${DEFCONFIG:-$$defcfg}' ./test/nuttx-sim.sh deps build" ;; \
+	               $(RP2350_RUN) "cd /src && NUTTX_BOARD='$$board' DEFCONFIG='$${DEFCONFIG:-$$defcfg}' ./test/nuttx-sim.sh deps build && ./utils/rp2350-package-ota.sh third_party/nuttx/nuttx '$${board%%:*}' dist/nuttx" ;; \
 	        esac ;; \
 	    *) $(JUST) build ;; \
 	esac
