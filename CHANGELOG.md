@@ -1,6 +1,52 @@
 Changelog
 =========
 
+0.16.0 (2026-09-04)
+-------------------
+
+### Added
+
+- RP2350 boards report and act on an A/B slot pair from the BootROM's own
+  partition table: stage an image, confirm it once the supervisor reaches
+  `RUNNING`, or auto-revert on a boot that never confirms.
+- A staged RP2350 image runs provisionally until confirmed; the board
+  watchdog is armed and kicked each run-loop iteration, and disarmed before
+  an orderly reboot or poweroff.
+- `/proc/wanted` and `/dev/ota` report the running image's digest, boot
+  attempt count, the staged image's pending digest, and the slot an image
+  last failed to confirm from.
+- A staging failure names the step and the code that refused it, instead of
+  reporting only an outcome class.
+- The RP2350 partition table is signed alongside the image; a signed image
+  behind an unsigned table is refused once the secure-boot fuse is set.
+- A bench RP2350 or ESP32-S3 board with no stored enrolment secret prompts
+  for a provisioning blob over the console at bring-up and writes it where
+  Sheriff looks.
+- RP2350 Wi-Fi credentials persist on the state volume once associated; a
+  board reconnects from them and prompts only when none are held.
+- `utils/rp2350-package-ota.sh` produces a bare OTA app image
+  (`dist/nuttx/<board>-ota.bin`) via `objcopy`, wired into
+  `make build DEFCONFIG=<rp2350 board>`.
+- The Pimoroni Pico 2 Plus W board config compiles in listening sockets.
+
+### Changed
+
+- Bumped `wapps/sheriff` to v0.7.0.
+- The state-key env var is `SHERIFF_STATE_KEY_<id>`; the four launch
+  configs still setting the old `SHERIFF_MARSHAL_KEY_<id>` name are updated.
+
+### Fixed
+
+- A registry image install landed relative to the working directory rather
+  than the platform's registry mount, failing with `ENOENT` on a board.
+- An ESP-IDF registry ref's filename was too short to hold a 71-character
+  OCI digest; existing devices keep the old limit until reformatted.
+- An RP2350 board no longer blocks boot waiting on the USB console.
+- RP2350 Wi-Fi association is retried before giving up.
+- A seeded wapp is named by the version it was actually built with.
+- The RP2350 supervisor board config grants the `ota` driver Sheriff needs
+  to judge a firmware update against the real boot state.
+
 0.15.2 (2026-08-31)
 -------------------
 
