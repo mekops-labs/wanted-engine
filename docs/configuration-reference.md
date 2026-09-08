@@ -99,12 +99,12 @@ Entry shapes per section:
 | `pipe` | console slot | Live console: backs the slot with a named pipe in the shared store, so a peer wapp reads the stream at `/dev/pipe/<name>`. The pipe is auto-named `<wapp>.<slot>` (e.g. `app.out`) unless `options` pins `name=`. `out`/`err` are lossy (drop oldest on a full ring so an unread console never wedges the wapp); `in` reads a peer's writes. | `name=feed` |
 | `platform` | console slot / `mounts` | As a console slot: the engine's native stdio (fds 0/1/2). In `mounts[]`: a bind mount of a host directory as a native WASI preopen at `path`; `options` set the host source and access mode. | `src=/etc/app,ro` |
 | `volume` | `mounts` | An engine-managed persistent store mounted at `path`. The engine owns the host location, so the wapp names only a volume — no host path. Private per wapp by default; `shared` makes it a cross-wapp store. Portable across hosts. | `name=cache` |
-| `socket` | `sockets` | TCP/UDP, plain or TLS, outbound or listening. The transport is the entry's `address`. | `tcp://localhost:8888` |
+| `socket` | `sockets` | TCP/UDP, plain or TLS, outbound or listening. Also `unix://<path>` (AF_UNIX, hosted platforms only). The transport is the entry's `address`. | `tcp://localhost:8888` |
 | `9p` | `mounts` | 9P2000 client for an external FS plugin. The `options` URL picks the transport: `tcp`/`udp` to reach a server over the network, `unix` to reach one on the same box over a filesystem socket. | `unix:///run/uci-9p.sock` |
 | `config` | `mounts` | Read-only config-file injection (e.g. mounted at `/etc/config`). | `{"config_file":"/config.json"}` |
 | `wanted` | `drivers` | The control-plane namespace at `/dev/wanted` (privileged). | — |
 
-A socket `address` is a URL, where the scheme picks the transport: `<scheme>://<host>:<port>` with `tcp`/`udp` (plain) or `tcps`/`udps` (TLS/DTLS), or `serial://<device-path>` (a local UART / USB-CDC byte-stream device in place of a network connection). See the [VFS Reference](vfs-reference.md).
+A socket `address` is a URL, where the scheme picks the transport: `<scheme>://<host>:<port>` with `tcp`/`udp` (plain) or `tcps`/`udps` (TLS/DTLS); `serial://<device-path>` (a local UART / USB-CDC byte-stream device in place of a network connection); or `unix://<path>` (an AF_UNIX stream socket reached over the filesystem, hosted platforms only, `CONFIG_WANTED_VFS_SOCKET_UNIX`). See the [VFS Reference](vfs-reference.md).
 
 ### Listening sockets
 

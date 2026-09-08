@@ -341,7 +341,7 @@ running platform is rejected at launch, not ignored.
 
 ### `socket` — the `/net/` network namespace
 
-`/net/` routes to the socket driver. A `sockets[]` entry is created at `/net/<name>` (the name is the node label) and carries the transport described by its `address` — a URL, `<scheme>://<host>:<port>` for the network schemes or `serial://<device-path>` for a local device. The entry's `role` decides the direction: `connect` (the default) reaches the address, `listen` binds it:
+`/net/` routes to the socket driver. A `sockets[]` entry is created at `/net/<name>` (the name is the node label) and carries the transport described by its `address` — a URL, `<scheme>://<host>:<port>` for the network schemes, or a bare path for `serial://` / `unix://`. The entry's `role` decides the direction: `connect` (the default) reaches the address, `listen` binds it:
 
 | Scheme | Transport |
 |--------|-----------|
@@ -350,6 +350,7 @@ running platform is rejected at launch, not ignored.
 | `tcps://host:port` | TLS TCP — Linux (OpenSSL); ESP-IDF and the NuttX sim (shared raw-mbedTLS layer; no CA bundle provisioned, so encrypted but unauthenticated) |
 | `udps://host:port` | DTLS UDP (Linux only) |
 | `serial:///dev/ttyACM0` | A local point-to-point byte-stream device — a UART or USB-CDC — in place of a network connection; a bare device path, no host or port |
+| `unix:///run/some.sock` | AF_UNIX stream socket — a bare filesystem path, no host or port. `CONFIG_WANTED_VFS_SOCKET_UNIX`, hosted platforms only (Linux/OpenWRT); not offered on NuttX or ESP-IDF |
 
 A wapp `open`s the `/net/<name>` node, then `read`/`write`s the stream and `close`s it; connection parameters come from the entry's `address`, not from the wapp. On NuttX, TLS is available where the board config enables `CONFIG_SYSTEM_WANTED_TLS` (the sim `wanted` config does); a build without it rejects the secure schemes at wapp launch.
 

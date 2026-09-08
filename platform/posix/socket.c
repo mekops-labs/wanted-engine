@@ -13,6 +13,7 @@
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -31,6 +32,8 @@ struct netCtx {
 #endif
     int socket;
     bool isSerial; /* plain device fd: read()/write(), not recv()/send() */
+    bool isUnix;   /* AF_UNIX: PlatformNetConnect/Listen take a filesystem
+                    * path in place of a hostname, no port. */
     bool dgram;
     /* Datagram peer, learned from the last recvfrom() on a bound socket: the
      * VFS carries no address alongside a payload, so a bound datagram socket
@@ -42,6 +45,8 @@ struct netCtx {
 struct netCtx *PlatformNetOpen(int socket_type) {
     int sock;
     int type;
+    int family = AF_INET;
+    bool isUnix = false;
 
     struct netCtx *netCtx;
 
@@ -79,11 +84,18 @@ struct netCtx *PlatformNetOpen(int socket_type) {
         DEBUG_TRACE("not implemented");
         return NULL;
 #endif
+#ifdef CONFIG_WANTED_VFS_SOCKET_UNIX
+    case VFS_SKT_UNIX:
+        type = SOCK_STREAM;
+        family = AF_UNIX;
+        isUnix = true;
+        break;
+#endif
     default:
         return NULL;
     }
 
-    if ((sock = socket(AF_INET, type, 0)) < 0) {
+    if ((sock = socket(family, type, 0)) < 0) {
         return NULL;
     }
 
@@ -96,6 +108,7 @@ struct netCtx *PlatformNetOpen(int socket_type) {
 
     netCtx->socket = sock;
     netCtx->dgram = (type == SOCK_DGRAM);
+    netCtx->isUnix = isUnix;
 #if SECURE_SOCKETS
     if (socket_type == VFS_SKT_STCP || socket_type == VFS_SKT_SUDP) {
         netCtx->secure = true;
@@ -157,6 +170,38 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
         c->socket = fd;
         return 0;
     }
+
+#ifdef CONFIG_WANTED_VFS_SOCKET_UNIX
+    if (c->isUnix) {
+        (void)port;
+        struct sockaddr_un uaddr;
+        size_t pathLen = strlen(hostname);
+
+        if (pathLen == 0 || pathLen >= sizeof(uaddr.sun_path)) {
+            if (c->socket >= 0) {
+                close(c->socket);
+                c->socket = -1;
+            }
+            return -EINVAL;
+        }
+
+        memset(&uaddr, 0, sizeof(uaddr));
+        uaddr.sun_family = AF_UNIX;
+        memcpy(uaddr.sun_path, hostname, pathLen + 1);
+
+        if (connect(c->socket, (struct sockaddr *)&uaddr, sizeof(uaddr)) !=
+            0) {
+            int err = errno;
+            if (c->socket >= 0) {
+                close(c->socket);
+                c->socket = -1;
+            }
+            return -err;
+        }
+
+        return 0;
+    }
+#endif
 
     if ((host = gethostbyname(hostname)) == NULL) {
         if (c->socket >= 0) {
@@ -225,6 +270,40 @@ int PlatformNetListen(struct netCtx *c, const char *bindAddr, uint16_t port,
         /* A TLS server needs a certificate and a private key, and nothing
          * supplies them. */
         return -ENOTSUP;
+    }
+#endif
+
+#ifdef CONFIG_WANTED_VFS_SOCKET_UNIX
+    if (c->isUnix) {
+        (void)port;
+        struct sockaddr_un uaddr;
+        size_t pathLen = strlen(bindAddr);
+
+        if (pathLen == 0 || pathLen >= sizeof(uaddr.sun_path)) {
+            return -EINVAL;
+        }
+
+        memset(&uaddr, 0, sizeof(uaddr));
+        uaddr.sun_family = AF_UNIX;
+        memcpy(uaddr.sun_path, bindAddr, pathLen + 1);
+
+        /* A stale socket file from a previous run must go, or bind() fails
+         * with EADDRINUSE even though nothing is listening on it. */
+        (void)unlink(bindAddr);
+
+        if (bind(c->socket, (struct sockaddr *)&uaddr, sizeof(uaddr)) != 0) {
+            return -errno;
+        }
+
+        if (c->dgram) {
+            return 0;
+        }
+
+        if (listen(c->socket, backlog) != 0) {
+            return -errno;
+        }
+
+        return 0;
     }
 #endif
 

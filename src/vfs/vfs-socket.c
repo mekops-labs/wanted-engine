@@ -82,6 +82,7 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
     switch (type) {
     case VFS_SKT_TCP:
     case VFS_SKT_STCP:
+    case VFS_SKT_UNIX:
         return VFS_FILETYPE_SOCKET_STREAM;
     case VFS_SKT_UDP:
     case VFS_SKT_SUDP:
@@ -94,7 +95,13 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
 }
 
 static bool isStream(uint8_t type) {
-    return type == VFS_SKT_TCP || type == VFS_SKT_STCP;
+    return type == VFS_SKT_TCP || type == VFS_SKT_STCP ||
+           type == VFS_SKT_UNIX;
+}
+
+/* A bare filesystem path, like a serial device - no host:port to parse. */
+static bool isPathAddressed(uint8_t type) {
+    return type == VFS_SKT_SERIAL || type == VFS_SKT_UNIX;
 }
 
 static bool isSecure(uint8_t type) {
@@ -114,6 +121,10 @@ static bool schemeToType(const char *scheme, size_t len, uint8_t *type) {
         *type = VFS_SKT_SUDP;
     else if (len == 6 && strncmp(scheme, "serial", 6) == 0)
         *type = VFS_SKT_SERIAL;
+#ifdef CONFIG_WANTED_VFS_SOCKET_UNIX
+    else if (len == 4 && strncmp(scheme, "unix", 4) == 0)
+        *type = VFS_SKT_UNIX;
+#endif
     else
         return false;
     return true;
@@ -260,11 +271,12 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     }
 
     const char *host = sep + 3;
-    if (type == VFS_SKT_SERIAL) {
-        /* "serial:///dev/ttyACM0" - a bare device path, no port to parse. */
+    if (isPathAddressed(type)) {
+        /* "serial:///dev/ttyACM0" or "unix:///var/run/ubus/ubus.sock" - a
+         * bare path, no port to parse. */
         size_t hostLen = strlen(host);
         if (hostLen == 0 || hostLen >= MAX_ADDR_LEN) {
-            DEBUG_TRACE("socket address: bad device path");
+            DEBUG_TRACE("socket address: bad path");
             return NULL;
         }
         memcpy(addr, host, hostLen);

@@ -66,6 +66,21 @@ config WANTED_VFS_SOCKET_MAX_CONNS
 	  paid per listening socket. A launch config's max_conns lowers it further;
 	  neither raises it. Accepting past the cap returns -ENFILE.
 
+config WANTED_VFS_SOCKET_UNIX
+	bool "unix — local (AF_UNIX) domain sockets"
+	depends on WANTED_VFS_SOCKET
+	# Hosted platforms only: NuttX and ESP-IDF have no AF_UNIX, and their
+	# Kconfig trees don't source Kconfig.target, so WANTED_TARGET_LINUX/
+	# WANTED_TARGET_OPENWRT read as unset there — this option drops out
+	# of the menu on those builds rather than offering a choice that
+	# would fail at socket-open time.
+	depends on WANTED_TARGET_LINUX || WANTED_TARGET_OPENWRT
+	default n
+	help
+	  Adds unix:// to sockets[]: a bare filesystem path, no port, e.g.
+	  "unix:///run/some.sock". Lets a wapp reach a same-box daemon
+	  directly, no loopback port and no extra process in between.
+
 config WANTED_VFS_SHA256
 	bool "sha256 — streaming digest device"
 	default y
