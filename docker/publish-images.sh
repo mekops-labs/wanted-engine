@@ -3,7 +3,10 @@
 # no Docker-in-Docker and only pulls them. Each version tag comes from the
 # Containerfile's own `LABEL version=`, so it cannot drift. The `firmware`
 # image is a built board binary instead: single-arch, one layer, rendered from
-# docker/Containerfile.firmware.in per build.
+# docker/Containerfile.firmware.in per build. A tagged, clean tree publishes
+# under the release tag; anything else publishes under a dev version — the
+# nearest tag, short hash, build timestamp, and `dirty` if the tree is — that
+# no real release will ever carry.
 #
 # Usage: docker/publish-images.sh [-a AUTHFILE] [-b BOARD -i BIN] [image ...]
 #   -a AUTHFILE   push (podman --authfile); omitted, only build + verify.
@@ -63,20 +66,26 @@ containerfile_for() {
     esac
 }
 
-# The version a firmware image publishes under is the release tag: off a tag
-# the build stamps `X.Y.Z+<timestamp>`, which no device would ever match, so
-# only a tagged, clean tree can publish.
+# The version a firmware image publishes under. A tagged, clean tree
+# publishes under the bare release tag. Anything else — a commit past the
+# tag, or an uncommitted change — publishes under a dev version no release
+# will ever carry: the nearest tag, the short hash, a build timestamp, and
+# `dirty` if the tree is. Dots only, never a dash: firmware_tag and
+# verify_firmware split the published tag on its first `-` to recover this
+# string, so a dash here would be misread as the variant boundary.
 firmware_version() {
-    local tag
-    if ! tag=$(git -C "$ROOT" describe --tags --exact-match 2>/dev/null); then
-        echo "FAIL: HEAD is not tagged; a firmware image publishes under a release tag" >&2
-        return 1
+    local tag hash dirty base
+    if tag=$(git -C "$ROOT" describe --tags --exact-match 2>/dev/null) &&
+        [ -z "$(git -C "$ROOT" status --porcelain)" ]; then
+        echo "${tag#v}"
+        return 0
     fi
-    if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
-        echo "FAIL: working tree is dirty; the .bin would not match the tag it publishes under" >&2
-        return 1
-    fi
-    echo "${tag#v}"
+
+    hash=$(git -C "$ROOT" rev-parse --short=7 HEAD 2>/dev/null || echo 0000000)
+    dirty=""
+    [ -n "$(git -C "$ROOT" status --porcelain)" ] && dirty=".dirty"
+    base=$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
+    echo "${base#v}.dev.g${hash}${dirty}.$(date -u +%Y%m%d%H%M%S)"
 }
 
 # The tag a firmware image publishes under. A variant names the build's
