@@ -286,7 +286,7 @@ clean:
     ./test/nuttx-sim.sh clean
 
 distclean: clean
-    rm -rf dist
+    rm -rf build-* dist
 
 # --- lint / static analysis / security ------------------------------------
 
