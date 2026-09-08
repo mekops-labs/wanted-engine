@@ -92,7 +92,7 @@ the image at a fixed path, so the binary is compiled to read it from there.
 Ed25519 signature verification. OpenSSL is not shipped in the SDK, so the recipe
 stages it once per SDK (`scripts/feeds` + `make package/openssl/compile`); the
 result is cached in the SDK. Runtime `Depends` are derived from the binary's
-linked libraries (`libopenssl`, plus `libatomic` on 32-bit MIPS).
+linked libraries (`libopenssl3`, plus `libatomic` on 32-bit MIPS).
 
 Under the hood the recipe calls `openwrt-package.sh`, which drives
 `cmake/toolchain-openwrt.cmake` and `make-ipk.sh` — use those directly for a

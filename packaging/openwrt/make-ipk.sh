@@ -37,7 +37,7 @@ needed=$(readelf -d "$BIN" 2>/dev/null | sed -n 's/.*NEEDED.*\[\(.*\)\]/\1/p')
 deps="libc, jshn"
 printf '%s\n' "$needed" | grep -q '^libgcc_s'        && deps="$deps, libgcc"
 printf '%s\n' "$needed" | grep -q '^libatomic'       && deps="$deps, libatomic"
-printf '%s\n' "$needed" | grep -qE '^lib(ssl|crypto)' && deps="$deps, libopenssl"
+printf '%s\n' "$needed" | grep -qE '^lib(ssl|crypto)' && deps="$deps, libopenssl3"
 
 cat > "$ctrl/control" <<EOF
 Package: wanted-engine
