@@ -131,7 +131,24 @@ static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
         return VfsRegister(ctx->vfs, path, drv);
     }
 
-    return WantedInstallDriver(ctx->vfs, wapp, name, path, options);
+    int rc = WantedInstallDriver(ctx->vfs, wapp, name, path, options);
+    if (rc < 0)
+        LOG_ERROR("console.%s '%s': cannot install: %s", CONSOLE_SLOT[idx],
+                  name, strerror(-rc));
+    return rc;
+}
+
+/* Install one launch-config entry, naming it and the reason when its driver
+ * cannot be built. The caller only sums the codes, so this is the last point
+ * at which a failing grant is still identifiable. */
+static int installEntry(vfs_ctx_t vfs, const wapp_t *wapp, const char *section,
+                        size_t idx, const char *name, const char *path,
+                        const char *options) {
+    int rc = WantedInstallDriver(vfs, wapp, name, path, options);
+    if (rc < 0)
+        LOG_ERROR("%s[%zu] '%s': cannot install at %s: %s", section, idx, name,
+                  path, strerror(-rc));
+    return rc;
 }
 
 /* True when `path` is the reserved namespace `ns` itself or a path beneath it
@@ -699,7 +716,8 @@ int WantedWappRun(wapp_data_t *ctx) {
         }
         char mount[CONFIG_WANTED_MAX_PATH_LEN];
         snprintf(mount, sizeof(mount), WANTED_DEV_MOUNT_FMT, d->name);
-        ret += WantedInstallDriver(ctx->vfs, wapp, d->name, mount, d->options);
+        ret += installEntry(ctx->vfs, wapp, "drivers", i, d->name, mount,
+                            d->options);
     }
 
     /* sockets[]: named sockets created at /net/<name>. The transport spec is
@@ -714,7 +732,8 @@ int WantedWappRun(wapp_data_t *ctx) {
         }
         char mount[CONFIG_WANTED_MAX_PATH_LEN];
         snprintf(mount, sizeof(mount), WANTED_NET_MOUNT_FMT, s->name);
-        ret += WantedInstallDriver(ctx->vfs, wapp, "socket", mount, s->options);
+        ret += installEntry(ctx->vfs, wapp, "sockets", i, s->name, mount,
+                            s->options);
     }
 
     /* mounts[]: file/backend drivers bound at an arbitrary absolute path. The
@@ -825,13 +844,14 @@ int WantedWappRun(wapp_data_t *ctx) {
             }
 #endif /* CONFIG_WANTED_VFS_LOGMOUNT */
         } else {
-            ret += WantedInstallDriver(ctx->vfs, wapp, m->name, m->path,
-                                       m->options);
+            ret += installEntry(ctx->vfs, wapp, "mounts", i, m->name, m->path,
+                                m->options);
         }
     }
 
     if (ret < 0) {
-        DEBUG_TRACE("error installing drivers");
+        LOG_ERROR("wapp '%s': not launched, a grant could not be installed",
+                  wapp->name);
         goto _freeVfs;
     }
 
