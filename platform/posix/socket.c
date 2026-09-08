@@ -2,7 +2,9 @@
 
 /* Shared POSIX BSD sockets. TLS (secure sockets) is compiled in only when
  * SECURE_SOCKETS is set (the Linux build with OpenSSL); other targets reject
- * the secure socket types. */
+ * the secure socket types. AF_UNIX (the unix:// scheme) is compiled in only
+ * when WANTED_SOCKET_UNIX_TRANSPORT is set (a hosted target with
+ * CONFIG_WANTED_VFS_SOCKET_UNIX enabled); other targets reject it. */
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -13,9 +15,12 @@
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
-#include <sys/un.h>
 #include <termios.h>
 #include <unistd.h>
+
+#ifdef WANTED_SOCKET_UNIX_TRANSPORT
+#include <sys/un.h>
+#endif
 
 #include <debug_trace.h>
 #include <vfs-drivers.h>
@@ -84,7 +89,7 @@ struct netCtx *PlatformNetOpen(int socket_type) {
         DEBUG_TRACE("not implemented");
         return NULL;
 #endif
-#ifdef CONFIG_WANTED_VFS_SOCKET_UNIX
+#ifdef WANTED_SOCKET_UNIX_TRANSPORT
     case VFS_SKT_UNIX:
         type = SOCK_STREAM;
         family = AF_UNIX;
@@ -171,7 +176,7 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
         return 0;
     }
 
-#ifdef CONFIG_WANTED_VFS_SOCKET_UNIX
+#ifdef WANTED_SOCKET_UNIX_TRANSPORT
     if (c->isUnix) {
         (void)port;
         struct sockaddr_un uaddr;
@@ -189,8 +194,7 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
         uaddr.sun_family = AF_UNIX;
         memcpy(uaddr.sun_path, hostname, pathLen + 1);
 
-        if (connect(c->socket, (struct sockaddr *)&uaddr, sizeof(uaddr)) !=
-            0) {
+        if (connect(c->socket, (struct sockaddr *)&uaddr, sizeof(uaddr)) != 0) {
             int err = errno;
             if (c->socket >= 0) {
                 close(c->socket);
@@ -273,7 +277,7 @@ int PlatformNetListen(struct netCtx *c, const char *bindAddr, uint16_t port,
     }
 #endif
 
-#ifdef CONFIG_WANTED_VFS_SOCKET_UNIX
+#ifdef WANTED_SOCKET_UNIX_TRANSPORT
     if (c->isUnix) {
         (void)port;
         struct sockaddr_un uaddr;

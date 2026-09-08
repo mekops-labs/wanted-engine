@@ -187,6 +187,15 @@ if (WANTED_PLATFORM STREQUAL "linux")
     target_compile_definitions(${project} PRIVATE WANTED_9P_UNIX_TRANSPORT=1)
 endif()
 
+# Local (AF_UNIX) transport for the socket driver's unix:// scheme, opt-in via
+# CONFIG_WANTED_VFS_SOCKET_UNIX. Same hosted-only reasoning as 9p above; the
+# platform half (the AF_UNIX connect/listen in posix/socket.c) gets the
+# matching define in platform/linux/CMakeLists.txt, so the two halves of the
+# driver always agree about whether unix:// exists.
+if (CONFIG_WANTED_VFS_SOCKET_UNIX AND WANTED_PLATFORM STREQUAL "linux")
+    target_compile_definitions(${project} PRIVATE WANTED_SOCKET_UNIX_TRANSPORT=1)
+endif()
+
 # Add debug symbols
 target_compile_options(${project} PUBLIC -g)
 

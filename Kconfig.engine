@@ -69,12 +69,16 @@ config WANTED_VFS_SOCKET_MAX_CONNS
 config WANTED_VFS_SOCKET_UNIX
 	bool "unix — local (AF_UNIX) domain sockets"
 	depends on WANTED_VFS_SOCKET
-	# Hosted platforms only: NuttX and ESP-IDF have no AF_UNIX, and their
-	# Kconfig trees don't source Kconfig.target, so WANTED_TARGET_LINUX/
-	# WANTED_TARGET_OPENWRT read as unset there — this option drops out
-	# of the menu on those builds rather than offering a choice that
-	# would fail at socket-open time.
-	depends on WANTED_TARGET_LINUX || WANTED_TARGET_OPENWRT
+	# Hosted platforms only (Linux, OpenWRT): NuttX and ESP-IDF have no
+	# AF_UNIX family. The platform gate lives in the build system, not
+	# here — wanted-autoconf.h is generated from Kconfig.engine read
+	# alone, so a symbol that depended on a target symbol would resolve
+	# to n and never reach the compiler. CMake injects the
+	# WANTED_SOCKET_UNIX_TRANSPORT build define when this is set and the
+	# target is hosted, and the C code keys off that — the same shape as
+	# TLS (SECURE_SOCKETS) and the 9p driver (WANTED_9P_UNIX_TRANSPORT).
+	# On NuttX/ESP-IDF this option is a no-op, not a build or runtime
+	# failure.
 	default n
 	help
 	  Adds unix:// to sockets[]: a bare filesystem path, no port, e.g.

@@ -80,3 +80,12 @@ target_include_directories(platform_linux
 if (WANTED_DEBUG_TRACES)
     target_compile_definitions(platform_linux PRIVATE DEBUG=1)
 endif()
+
+# AF_UNIX connect/listen in posix/socket.c — the platform half of the socket
+# driver's unix:// scheme. This directory only builds for WANTED_PLATFORM
+# "linux" (which OpenWRT also uses), so the config symbol is the whole gate
+# here; src/CMakeLists.txt applies the matching platform check for the core
+# half, keeping the two in step.
+if (CONFIG_WANTED_VFS_SOCKET_UNIX)
+    target_compile_definitions(platform_linux PRIVATE WANTED_SOCKET_UNIX_TRANSPORT=1)
+endif()

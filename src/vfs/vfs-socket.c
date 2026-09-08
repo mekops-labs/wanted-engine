@@ -95,8 +95,7 @@ static vfs_filetype_t convertSocketType(uint8_t type) {
 }
 
 static bool isStream(uint8_t type) {
-    return type == VFS_SKT_TCP || type == VFS_SKT_STCP ||
-           type == VFS_SKT_UNIX;
+    return type == VFS_SKT_TCP || type == VFS_SKT_STCP || type == VFS_SKT_UNIX;
 }
 
 /* A bare filesystem path, like a serial device - no host:port to parse. */
@@ -121,7 +120,7 @@ static bool schemeToType(const char *scheme, size_t len, uint8_t *type) {
         *type = VFS_SKT_SUDP;
     else if (len == 6 && strncmp(scheme, "serial", 6) == 0)
         *type = VFS_SKT_SERIAL;
-#ifdef CONFIG_WANTED_VFS_SOCKET_UNIX
+#ifdef WANTED_SOCKET_UNIX_TRANSPORT
     else if (len == 4 && strncmp(scheme, "unix", 4) == 0)
         *type = VFS_SKT_UNIX;
 #endif

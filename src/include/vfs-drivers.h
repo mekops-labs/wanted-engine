@@ -26,11 +26,11 @@ enum vfs_socket_type_t {
                      * guarantee) needs a framing/retry layer on top of this,
                      * not provided here. */
     VFS_SKT_UNIX,   /* AF_UNIX stream socket reached over the filesystem, e.g.
-                     * "unix:///run/some.sock" - a bare path, no port. Hosted
-                     * platforms only (CONFIG_WANTED_VFS_SOCKET_UNIX); the
-                     * point is talking to a same-box daemon directly from a
-                     * wapp, with no network stack and no extra process in
-                     * the middle. */
+                     * "unix:///run/some.sock" - a bare path, no port. Opt-in
+                     * (CONFIG_WANTED_VFS_SOCKET_UNIX) and hosted platforms
+                     * only; the point is talking to a same-box daemon directly
+                     * from a wapp, with no network stack and no extra process
+                     * in the middle. */
 };
 
 typedef vfs_driver_t *(*VfsInitFunction_t)(const wapp_t *wapp,
