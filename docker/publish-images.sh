@@ -70,17 +70,30 @@ containerfile_for() {
 }
 
 # The version a firmware image publishes under. A tagged, clean tree
-# publishes under the bare release tag. Anything else — a commit past the
-# tag, or an uncommitted change — publishes under a dev version no release
-# will ever carry: the nearest tag, the short hash, a build timestamp, and
-# `dirty` if the tree is. Dots only, never a dash: firmware_tag and
-# verify_firmware split the published tag on its first `-` to recover this
-# string, so a dash here would be misread as the variant boundary.
+# publishes under the bare release tag.
+#
+# Off a tag, the .bin already carries the dev version WANTED_VERSION stamped
+# into it at build time (cmake/VersionFromGit.cmake, the same git-derived
+# scheme, computed at build rather than publish time) -- so that string is
+# read back out of the artifact rather than deriving a second one now, which
+# would timestamp differently from what the device itself reports at boot.
+# SemVer's `+` before the hash/timestamp metadata is illegal in an OCI tag,
+# so it becomes a dot, matching every other separator here; the rest is used
+# verbatim. Falls back to deriving one locally only when nothing embedded
+# matches -- an artifact built without a `+g<hash>.<timestamp>` engine
+# version, for instance.
 firmware_version() {
-    local tag hash dirty base
+    local bin=$1 tag embedded hash dirty base
     if tag=$(git -C "$ROOT" describe --tags --exact-match 2>/dev/null) &&
         [ -z "$(git -C "$ROOT" status --porcelain)" ]; then
         echo "${tag#v}"
+        return 0
+    fi
+
+    embedded=$(strings "$bin" 2>/dev/null |
+        grep -E '^[0-9]+\.[0-9]+\.[0-9]+\+g[0-9a-f]+\.[0-9]{14}$' | head -1 || true)
+    if [ -n "$embedded" ]; then
+        echo "${embedded/+/.}"
         return 0
     fi
 
@@ -190,7 +203,7 @@ publish_firmware() {
     fi
     bin=$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")
 
-    release=$(firmware_version)
+    release=$(firmware_version "$bin")
     ver=$(firmware_tag "$release")
     cf=$(mktemp)
     trap 'rm -f "$cf"' RETURN
