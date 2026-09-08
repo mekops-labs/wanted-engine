@@ -103,6 +103,30 @@ log "packaging .ipk"
 cfg_sym=$(sed -nE 's/^CONFIG_WANTED_DEFAULT_CONFIG="(.*)"$/\1/p' "$DOTCONFIG")
 CONFIG_JSON="$("$REPO/utils/default-config.sh" "$REPO" "${cfg_sym:-configs/example_config.json}")"
 log "default configuration: ${cfg_sym:-configs/example_config.json}"
-ver="$(cd "$REPO" && git describe --tags 2>/dev/null | sed 's/^v//' || echo 0.0.0)"
+# A tagged, clean checkout packages as the tag alone (e.g. "0.16.0"). Anything
+# else — a commit past the tag, or uncommitted changes — packages as an
+# extended version carrying the short hash, a "dirty" marker when applicable,
+# and a build timestamp, so two .ipk's from an unclean tree are never mistaken
+# for the same build: "0.16.0-g1234567-dirty-20260908143022".
+build_stamp="$(date -u +%Y%m%d%H%M%S)"
+raw="$(cd "$REPO" && git describe --tags --dirty --long --match 'v*' 2>/dev/null || true)"
+if [[ "$raw" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g([0-9a-f]+)(-dirty)?$ ]]; then
+    tag="${BASH_REMATCH[1]}"
+    count="${BASH_REMATCH[2]}"
+    hash="${BASH_REMATCH[3]}"
+    dirty="${BASH_REMATCH[4]}"
+    if [ "$count" = "0" ] && [ -z "$dirty" ]; then
+        ver="$tag"
+    else
+        ver="${tag}-g${hash}${dirty}-${build_stamp}"
+    fi
+else
+    # No reachable "v*" tag at all: always an extended version, never a bare
+    # "0.0.0" that could collide with a real early release.
+    hash="$(cd "$REPO" && git rev-parse --short=7 HEAD 2>/dev/null || echo 0000000)"
+    dirty=""
+    (cd "$REPO" && git diff --quiet && git diff --cached --quiet) || dirty="-dirty"
+    ver="0.0.0-g${hash}${dirty}-${build_stamp}"
+fi
 sh "$REPO/packaging/openwrt/make-ipk.sh" "$OPKG_ARCH" "$bdir/cmd/wanted-cli" \
    "$SUPERVISOR" "$ver" "$OUT" "$CONFIG_JSON"
