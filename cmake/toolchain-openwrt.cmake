@@ -31,6 +31,12 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
+# pkg-config is an external process CMAKE_FIND_ROOT_PATH does not reach —
+# FindOpenSSL's static-lib search falls back to it and otherwise leaks the
+# build container's own host-arch openssl.pc. Restrict it to the sysroot.
+set(ENV{PKG_CONFIG_LIBDIR} "${_owrt_sysroot}/usr/lib/pkgconfig")
+set(ENV{PKG_CONFIG_PATH} "")
+
 # The OpenWRT gcc searches only its own sysroot, so SDK-staged libs (libopenssl)
 # need these explicitly; -isystem keeps their headers out of -Werror.
 set(CMAKE_C_FLAGS_INIT "-isystem ${_owrt_sysroot}/usr/include")

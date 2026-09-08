@@ -2,6 +2,13 @@
 # purpose — a configuration that asked for TLS must not quietly produce a
 # binary without it.
 if(CONFIG_WANTED_VFS_SOCKET_TLS)
+    # Static only when the CLI itself links -static (cmd/CMakeLists.txt):
+    # forcing it otherwise pulls in a static OpenSSL built for a fully static
+    # link (may need -lz/-lzstd we never add) when a normal dynamic one would
+    # have resolved cleanly.
+    if(CONFIG_WANTED_BUILD_STATIC_CLI)
+        set(OPENSSL_USE_STATIC_LIBS TRUE)
+    endif()
     find_package(OpenSSL REQUIRED)
     set(SECURE_SOCKETS TRUE)
 else()
