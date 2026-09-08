@@ -140,13 +140,16 @@ static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
 
 /* Install one launch-config entry, naming it and the reason when its driver
  * cannot be built. The caller only sums the codes, so this is the last point
- * at which a failing grant is still identifiable. */
+ * at which a failing grant is still identifiable.
+ *
+ * `driver` selects the backing and `label` is the entry's own name: a socket
+ * entry is served by the `socket` driver whatever the config called it. */
 static int installEntry(vfs_ctx_t vfs, const wapp_t *wapp, const char *section,
-                        size_t idx, const char *name, const char *path,
-                        const char *options) {
-    int rc = WantedInstallDriver(vfs, wapp, name, path, options);
+                        size_t idx, const char *driver, const char *label,
+                        const char *path, const char *options) {
+    int rc = WantedInstallDriver(vfs, wapp, driver, path, options);
     if (rc < 0)
-        LOG_ERROR("%s[%zu] '%s': cannot install at %s: %s", section, idx, name,
+        LOG_ERROR("%s[%zu] '%s': cannot install at %s: %s", section, idx, label,
                   path, strerror(-rc));
     return rc;
 }
@@ -716,8 +719,8 @@ int WantedWappRun(wapp_data_t *ctx) {
         }
         char mount[CONFIG_WANTED_MAX_PATH_LEN];
         snprintf(mount, sizeof(mount), WANTED_DEV_MOUNT_FMT, d->name);
-        ret += installEntry(ctx->vfs, wapp, "drivers", i, d->name, mount,
-                            d->options);
+        ret += installEntry(ctx->vfs, wapp, "drivers", i, d->name, d->name,
+                            mount, d->options);
     }
 
     /* sockets[]: named sockets created at /net/<name>. The transport spec is
@@ -732,8 +735,8 @@ int WantedWappRun(wapp_data_t *ctx) {
         }
         char mount[CONFIG_WANTED_MAX_PATH_LEN];
         snprintf(mount, sizeof(mount), WANTED_NET_MOUNT_FMT, s->name);
-        ret += installEntry(ctx->vfs, wapp, "sockets", i, s->name, mount,
-                            s->options);
+        ret += installEntry(ctx->vfs, wapp, "sockets", i, "socket", s->name,
+                            mount, s->options);
     }
 
     /* mounts[]: file/backend drivers bound at an arbitrary absolute path. The
@@ -844,8 +847,8 @@ int WantedWappRun(wapp_data_t *ctx) {
             }
 #endif /* CONFIG_WANTED_VFS_LOGMOUNT */
         } else {
-            ret += installEntry(ctx->vfs, wapp, "mounts", i, m->name, m->path,
-                                m->options);
+            ret += installEntry(ctx->vfs, wapp, "mounts", i, m->name, m->name,
+                                m->path, m->options);
         }
     }
 
