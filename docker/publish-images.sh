@@ -3,16 +3,19 @@
 # no Docker-in-Docker and only pulls them. Each version tag comes from the
 # Containerfile's own `LABEL version=`, so it cannot drift. The `firmware`
 # image is a built board binary instead: single-arch, one layer, rendered from
-# docker/Containerfile.firmware.in per build. A tagged, clean tree publishes
+# docker/Containerfile.firmware.in per build, published as
+# REGISTRY/wanted-engine:<release>-<board>[-<variant>] with matching
+# firmware.board and firmware.variant labels. A tagged, clean tree publishes
 # under the release tag; anything else publishes under a dev version — the
 # nearest tag, short hash, build timestamp, and `dirty` if the tree is — that
 # no real release will ever carry.
 #
 # Usage: docker/publish-images.sh [-a AUTHFILE] [-b BOARD -i BIN] [image ...]
 #   -a AUTHFILE   push (podman --authfile); omitted, only build + verify.
-#   -b BOARD      board name the firmware image is published under.
+#   -b BOARD      board name, in the tag and the firmware.board label.
 #   -i BIN        path to the built firmware .bin.
-#   -c VARIANT    configuration name, tagged <release>-<variant>.
+#   -c VARIANT    configuration name, in the tag and the firmware.variant
+#                 label.
 #
 #   docker/publish-images.sh                          # build + verify, no push
 #   docker/publish-images.sh -a ~/auth.json           # ... and push both
@@ -88,20 +91,25 @@ firmware_version() {
     echo "${base#v}.dev.g${hash}${dirty}.$(date -u +%Y%m%d%H%M%S)"
 }
 
-# The tag a firmware image publishes under. A variant names the build's
-# config, so two builds of one release never share a tag; it goes after the
-# release, never inside it, since that is what convergence judges.
+# The tag a firmware image publishes under: <release>-<board>[-<variant>]. The
+# board and an optional variant both go after the release, never inside it,
+# since that is what convergence judges; release itself is guaranteed free of
+# '-', so the first '-' in the tag always marks its end.
 firmware_tag() {
     local release=$1
+    if ! [[ $board =~ ^[A-Za-z0-9._]+$ ]]; then
+        echo "FAIL: board '$board' must match [A-Za-z0-9._]+; a '-' or '+' would move the release core" >&2
+        return 1
+    fi
     if [ -z "$variant" ]; then
-        echo "$release"
+        echo "$release-$board"
         return 0
     fi
     if ! [[ $variant =~ ^[A-Za-z0-9._]+$ ]]; then
         echo "FAIL: variant '$variant' must match [A-Za-z0-9._]+; a '-' or '+' would move the release core" >&2
         return 1
     fi
-    echo "$release-$variant"
+    echo "$release-$board-$variant"
 }
 
 # The configuration the binary was built from, so the image records which one
@@ -121,18 +129,22 @@ config_hash() {
 # the artifact itself, so `version_of` reads the version back out of the render
 # exactly as it does for a hand-written Containerfile.
 render_firmware() {
-    local ver=$1 image_bin=$2 out=$3
+    local ver=$1 image_bin=$2 board=$3 variant=$4 out=$5
     sed -e "s|@VERSION@|$ver|" \
         -e "s|@DIGEST@|sha256:$(sha256sum "$image_bin" | cut -d" " -f1)|" \
         -e "s|@SIZE@|$(stat -c %s "$image_bin")|" \
         -e "s|@CONFIG@|$(config_hash "$image_bin")|" \
+        -e "s|@BOARD@|$board|" \
+        -e "s|@VARIANT@|$variant|" \
         "$ROOT/docker/Containerfile.firmware.in" > "$out"
 }
 
-# One layer, a firmware.digest label that still matches the source .bin, and a
-# tag whose release core is the release itself.
+# One layer, a firmware.digest label that still matches the source .bin, a
+# firmware.board/firmware.variant label matching what was asked for, and a tag
+# whose release core is the release itself.
 verify_firmware() {
-    local image=$1 image_bin=$2 release=$3 layers labelled actual tagged core
+    local image=$1 image_bin=$2 release=$3 board=$4 variant=$5
+    local layers labelled actual tagged core label_board label_variant
     layers=$(podman image inspect --format '{{len .RootFS.Layers}}' "$image")
     if [ "$layers" != 1 ]; then
         echo "FAIL: $image has $layers layers, want 1" >&2
@@ -150,11 +162,22 @@ verify_firmware() {
         echo "FAIL: $image tags release '$core', built from '$release'" >&2
         return 1
     fi
-    echo "  one layer, release $core, firmware.digest $labelled"
+    label_board=$(podman image inspect --format '{{index .Config.Labels "firmware.board"}}' "$image")
+    if [ "$label_board" != "$board" ]; then
+        echo "FAIL: $image labels board '$label_board', built for '$board'" >&2
+        return 1
+    fi
+    label_variant=$(podman image inspect --format '{{index .Config.Labels "firmware.variant"}}' "$image")
+    if [ "$label_variant" != "$variant" ]; then
+        echo "FAIL: $image labels variant '$label_variant', built for '$variant'" >&2
+        return 1
+    fi
+    echo "  one layer, release $core, board $label_board, firmware.digest $labelled"
 }
 
-# Build and push one board's firmware image: single-arch, so none of the
-# manifest-list machinery applies.
+# Build and push one firmware image: single-arch, so none of the manifest-list
+# machinery applies. Board and variant both live in the tag, not the path, so
+# every board's images share the one wanted-engine repository.
 publish_firmware() {
     local release ver cf image
     if [ -z "$board" ] || [ -z "$bin" ]; then
@@ -171,15 +194,15 @@ publish_firmware() {
     ver=$(firmware_tag "$release")
     cf=$(mktemp)
     trap 'rm -f "$cf"' RETURN
-    render_firmware "$ver" "$bin" "$cf"
+    render_firmware "$ver" "$bin" "$board" "$variant" "$cf"
     ver=$(version_of "$cf")
-    image=$REGISTRY/firmware/$board:$ver
+    image=$REGISTRY/wanted-engine:$ver
 
     echo "==> building $image"
     podman build -t "$image" --build-arg "BIN=$(basename "$bin")" -f "$cf" "$(dirname "$bin")"
 
     echo "==> verifying $image"
-    verify_firmware "$image" "$bin" "$release"
+    verify_firmware "$image" "$bin" "$release" "$board" "$variant"
 
     if [ -z "$authfile" ]; then
         echo "==> not pushing $image (no -a AUTHFILE)"

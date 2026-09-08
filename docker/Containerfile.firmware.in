@@ -8,6 +8,8 @@ LABEL version="@VERSION@"
 LABEL firmware.digest="@DIGEST@"
 LABEL firmware.size="@SIZE@"
 LABEL firmware.config="@CONFIG@"
+LABEL firmware.board="@BOARD@"
+LABEL firmware.variant="@VARIANT@"
 
 ARG BIN
 COPY ${BIN} /firmware.bin
