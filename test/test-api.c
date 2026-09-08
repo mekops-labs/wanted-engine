@@ -35,4 +35,35 @@ TEST(wanted_api, runSimpleWasm) {
     TEST_ASSERT_EQUAL_INT(0, ret);
 }
 
-TEST_GROUP_RUNNER(wanted_api) { RUN_TEST_CASE(wanted_api, runSimpleWasm); }
+/* A sockets[] entry is served by the `socket` driver whatever the config named
+ * it; the name only labels the /net node. Resolving the entry's own name
+ * instead fails the grant with -ENODEV, so a supervisor granting `manager` and
+ * `registry` never launches. */
+TEST(wanted_api, runWithNamedSocketGrant) {
+    wapp_data_t ctx;
+    wapp_t w = {0};
+    int ret;
+
+    w.layers[0] = test_wasi;
+    w.layer_lens[0] = test_wasi_len;
+    w.layer_cnt = 1;
+    strcpy(w.cfg.console[0].name, "null");
+    strcpy(w.cfg.console[1].name, "null");
+    strcpy(w.cfg.console[2].name, "null");
+
+    /* Named anything but "socket", which is the whole point. */
+    strcpy(w.cfg.sockets[0].name, "manager");
+    strcpy(w.cfg.sockets[0].options, "tcp://127.0.0.1:9999");
+    w.cfg.socketsCnt = 1;
+
+    ctx.id = 0;
+    ctx.wapp = &w;
+
+    ret = WantedWappRun(&ctx);
+    TEST_ASSERT_EQUAL_INT(0, ret);
+}
+
+TEST_GROUP_RUNNER(wanted_api) {
+    RUN_TEST_CASE(wanted_api, runSimpleWasm);
+    RUN_TEST_CASE(wanted_api, runWithNamedSocketGrant);
+}
