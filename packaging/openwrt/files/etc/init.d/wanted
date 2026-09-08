@@ -17,25 +17,20 @@ DATADIR=/srv/wanted
 . /usr/share/libubox/jshn.sh
 
 render_config() {
-	local device_id manager registry keys interval missing key
+	local device_id manager registry interval
 
 	config_load wanted
 	config_get device_id main device_id
 	config_get manager   main manager
 	config_get registry  main registry
 	config_get interval  main sync_interval
-	# A list option comes back space-separated; each item is '<id>:<64 hex>'.
-	config_get keys      main marshal_key
 
 	[ -n "$device_id" ] || device_id=$(uci -q get system.@system[0].hostname)
 	[ -n "$device_id" ] || device_id=$(cat /proc/sys/kernel/hostname)
 
-	missing=
-	[ -n "$manager" ] || missing="$missing manager"
-	[ -n "$keys" ] || missing="$missing marshal_key"
-	if [ -n "$missing" ]; then
+	if [ -z "$manager" ]; then
 		logger -t wanted -p daemon.err \
-			"not starting — unset in /etc/config/wanted:$missing"
+			"not starting — unset in /etc/config/wanted: manager"
 		return 1
 	fi
 
@@ -65,12 +60,8 @@ render_config() {
 	fi
 	json_close_array
 	json_add_array envs
+	# Fallback only — the provisioning blob's device_id wins once enrolled.
 	json_add_string "" "SHERIFF_DEVICE_ID=$device_id"
-	# One env var per key, the id from the '<id>:<hex>' entry into the name.
-	# shellcheck disable=SC2086  # word-split the space-separated list on purpose
-	for key in $keys; do
-		json_add_string "" "SHERIFF_MARSHAL_KEY_${key%%:*}=${key#*:}"
-	done
 	[ -n "$interval" ] && json_add_string "" "SHERIFF_SYNC_INTERVAL_S=$interval"
 	json_close_array
 	json_select ..

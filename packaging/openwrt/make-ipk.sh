@@ -50,7 +50,7 @@ Installed-Size: $isize
 Description: WANTED engine — a WebAssembly nanocontainer VFS router.
  Runs sandboxed WebAssembly applications (wapps) under a built-in supervisor;
  deployment settings in UCI (/etc/config/wanted), managed by procd. The service
- stays down until the control-plane endpoint and Marshal key are set.
+ stays down until the control-plane endpoint is set and the device is enrolled.
 EOF
 
 # Preserve user edits to the config across upgrades.

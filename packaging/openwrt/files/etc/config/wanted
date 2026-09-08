@@ -1,17 +1,16 @@
-# WANTED engine — deployment settings. The service stays down until manager and
-# at least one marshal_key are set.
+# WANTED engine — deployment settings. The service stays down until manager is
+# set. Identity (device id, trusted key) comes from Sheriff's provisioning
+# blob at /srv/wanted/sheriff/provision, not from here — see the Deputy
+# enrolment flow.
 #
 #   uci set wanted.main.manager='tcps://marshal.example:8443'
-#   uci add_list wanted.main.marshal_key='1:<64 hex chars>'
 #   uci commit wanted && /etc/init.d/wanted restart
 
 config wanted 'main'
-	# Empty takes the system hostname.
+	# Empty takes the system hostname; overridden by the provisioning blob's
+	# device_id once enrolled.
 	option device_id ''
 
 	option manager ''
 	option registry ''            # optional
 	option sync_interval ''       # optional; reconcile cadence in seconds
-
-	# One entry per Marshal key, '<id>:<64 hex>'. At least one is required.
-	# list marshal_key '1:0000000000000000000000000000000000000000000000000000000000000000'

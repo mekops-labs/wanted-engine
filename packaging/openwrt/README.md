@@ -26,19 +26,21 @@ at every start, so a stale render cannot outlive a config change or a reboot.
 ```sh
 uci set wanted.main.manager='tcps://marshal.example:8443'
 uci set wanted.main.registry='tcps://registry.example:5000'   # optional
-uci add_list wanted.main.marshal_key='1:<64 hex chars>'       # one per Marshal key
-uci set wanted.main.device_id='node-01'                       # optional; hostname otherwise
+uci set wanted.main.device_id='node-01'                       # optional; hostname otherwise, until enrolled
 uci set wanted.main.sync_interval='60'                        # optional; reconcile seconds
 uci commit wanted && /etc/init.d/wanted restart
 ```
 
-`manager` and at least one `marshal_key` are empty by default and the service
-**refuses to start** without them, logging which are unset — a node that cannot
-reach or verify its control plane is not worth running. Each `marshal_key` list
-entry is `<id>:<64 hex>`; the id is the rotation key id the control plane signs
-with. `device_id` and the keys reach Sheriff through the launch config's
-`envs[]`, read on every boot and never stored on the device: change a value in
-UCI and restart, and it takes effect — there is no `identity/` state to wipe.
+`manager` is empty by default and the service **refuses to start** without
+it, logging that it's unset — a node that cannot reach its control plane is
+not worth running.
+
+Identity (device id, trusted key) is **not** set through UCI. It comes from
+Sheriff's provisioning blob — `device_id`, `state_key`, `join_token` — dropped
+at `/srv/wanted/sheriff/provision` after `deputy device enrol`; the blob is
+the single source of truth once present. `device_id` in UCI only reaches
+Sheriff as a pre-enrolment fallback (via the launch config's `envs[]`) and is
+overridden by the blob's own `device_id` the moment enrolment completes.
 
 ## Supervisor resolution: built-in, upgradable
 
@@ -104,7 +106,8 @@ opkg install wanted-engine_<version>_<arch>.ipk
 
 `opkg` places the files, registers both config files as conffiles (edits survive
 upgrades), and enables the `procd` service — which then stays down until UCI
-carries an endpoint and a key. Set those, `/etc/init.d/wanted restart`, and check
+carries a `manager` endpoint. Set that, drop the provisioning blob at
+`/srv/wanted/sheriff/provision`, `/etc/init.d/wanted restart`, and check
 `logread -e wanted` if it does not come up.
 
 ## Notes
