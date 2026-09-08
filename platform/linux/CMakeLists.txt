@@ -36,13 +36,19 @@ set(sources
     api/random.c
     api/registry.c
     api/wapps.c
-    api/ota.c
 )
 
 if (SECURE_SOCKETS)
     set (sources
         ${sources}
         api/ssocket.c
+    )
+endif ()
+
+if (CONFIG_WANTED_VFS_OTA)
+    set (sources
+        ${sources}
+        api/ota.c
     )
 endif ()
 
