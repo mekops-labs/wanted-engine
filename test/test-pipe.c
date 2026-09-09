@@ -394,3 +394,104 @@ TEST_GROUP_RUNNER(pipe_shared) {
     RUN_TEST_CASE(pipe_shared, ReaderSeesEofAfterWriterInOtherWappCloses);
     RUN_TEST_CASE(pipe_shared, NonblockReadBeforeAnyWriterReturnsEagain);
 }
+
+/***************************************/
+TEST_GROUP(pipe_console);
+/***************************************/
+
+/* A console slot is installed straight into a stdio fd by VfsRegister, so the
+ * two ends are separate drivers over one named pipe in the shared store. */
+static pipe_store_t *cstore;
+static vfs_ctx_t cvfs;
+
+TEST_SETUP(pipe_console) {
+    cstore = PipeStoreNew();
+    cvfs = VfsInit();
+}
+
+TEST_TEAR_DOWN(pipe_console) {
+    VfsDestroy(&cvfs);
+    PipeStoreFree(cstore);
+    cstore = NULL;
+}
+
+static void consoleOut(const char *name) {
+    VfsRegister(cvfs, "<stdout>",
+                VfsPipeConsoleCreate(cstore, name, false, VFS_O_WRONLY));
+}
+
+static void consoleIn(const char *name) {
+    VfsRegister(cvfs, "<stdin>",
+                VfsPipeConsoleCreate(cstore, name, true, VFS_O_RDONLY));
+}
+
+/* A console writer delivers or refuses; it never discards buffered bytes to
+ * make room, which would corrupt a framed stream without telling either end. */
+TEST(pipe_console, FullRingShortWritesRatherThanDropping) {
+    consoleOut("wire");
+
+    static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
+    memset(payload, 0xAB, sizeof(payload));
+    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_PIPE_BUF_SIZE,
+                          VfsWrite(cvfs, VFS_STDOUT, payload, sizeof(payload)));
+
+    uint8_t extra = 0xFF;
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsWrite(cvfs, VFS_STDOUT, &extra, 1));
+}
+
+/* The first bytes written must still be the first bytes read: a ring that
+ * dropped its oldest to fit would hand the reader a stream missing its head. */
+TEST(pipe_console, KeepsTheOldestBytesWhenTheRingFills) {
+    consoleOut("head");
+    consoleIn("head");
+
+    static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
+    memset(payload, 0xAB, sizeof(payload));
+    payload[0] = 0x01;
+    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_PIPE_BUF_SIZE,
+                          VfsWrite(cvfs, VFS_STDOUT, payload, sizeof(payload)));
+    uint8_t extra = 0xFF;
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsWrite(cvfs, VFS_STDOUT, &extra, 1));
+
+    uint8_t got[4] = {0};
+    TEST_ASSERT_EQUAL_INT((int)sizeof(got),
+                          VfsRead(cvfs, VFS_STDIN, got, sizeof(got)));
+    TEST_ASSERT_EQUAL_UINT8(0x01, got[0]);
+}
+
+/* A producer restarting detaches its writer for a moment. Its consumer must
+ * read that as "nothing yet", or it would exit on a peer that is coming back.
+ */
+TEST(pipe_console, WriterLeavingIsNotEndOfStream) {
+    consoleOut("restart");
+    consoleIn("restart");
+
+    VfsClose(cvfs, VFS_STDOUT); /* the producer exits */
+
+    char buf[8];
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(cvfs, VFS_STDIN, buf, sizeof(buf)));
+}
+
+/* Buffered bytes outlive the producer, so a consumer reading after its peer
+ * left still receives what it missed. */
+TEST(pipe_console, BufferedBytesSurviveTheWriterLeaving) {
+    consoleOut("keep");
+    consoleIn("keep");
+
+    const char msg[] = "pending";
+    TEST_ASSERT_EQUAL_INT((int)(sizeof(msg) - 1),
+                          VfsWrite(cvfs, VFS_STDOUT, msg, sizeof(msg) - 1));
+    VfsClose(cvfs, VFS_STDOUT);
+
+    char buf[16] = {0};
+    TEST_ASSERT_EQUAL_INT((int)(sizeof(msg) - 1),
+                          VfsRead(cvfs, VFS_STDIN, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN(msg, buf, sizeof(msg) - 1);
+}
+
+TEST_GROUP_RUNNER(pipe_console) {
+    RUN_TEST_CASE(pipe_console, FullRingShortWritesRatherThanDropping);
+    RUN_TEST_CASE(pipe_console, KeepsTheOldestBytesWhenTheRingFills);
+    RUN_TEST_CASE(pipe_console, WriterLeavingIsNotEndOfStream);
+    RUN_TEST_CASE(pipe_console, BufferedBytesSurviveTheWriterLeaving);
+}
