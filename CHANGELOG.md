@@ -4,15 +4,52 @@ Changelog
 Unreleased
 ----------
 
+### Added
+
+- `unix://<path>` (AF_UNIX) sockets on hosted platforms, behind
+  `CONFIG_WANTED_VFS_SOCKET_UNIX`.
+
 ### Changed
 
-- A console pipe short-writes and returns `EAGAIN` on a full ring instead of
-  dropping its oldest buffered bytes.
+- A console pipe short-writes and then holds a blocking writer on a full ring,
+  returning `EAGAIN` at the poll cap. `O_NONBLOCK` returns `EAGAIN` at once.
 - A console pipe reports no end-of-stream while its writer is detached; a
   reader gets `EAGAIN` until a writer attaches again.
 - A versionless `supervisor.imagePath` runs whichever of the installed and
   firmware-carried supervisors is newer; `supervisor.keepInstalled` holds the
   installed one.
+- OpenWRT takes device identity from `/srv/wanted/sheriff/provision`.
+  `device_id` and `marshal_key` are gone from `/etc/config/wanted`.
+- The OpenWRT runtime dependency is `libopenssl3`.
+- An OpenWRT `.ipk` carries the version `git describe` reports.
+- Firmware images publish under `<registry>/wanted-engine`, tagged
+  `<release>-<board>[-<variant>]`.
+- An untagged tree publishes a firmware image under the version embedded in
+  the `.bin`.
+- A launch-config grant that fails to install is named in the logged error.
+- `distclean` removes `build-*` directories.
+- Bumped `wapps/sheriff` to v0.8.0.
+
+### Fixed
+
+- An Ed25519 public key at a small-order point is refused.
+- `fd_read` and `fd_write` report the bytes already moved when a later iovec
+  fails, so a retrying guest cannot duplicate or lose them.
+- A named socket grant resolves through the socket driver again.
+- `PlatformNetListen` removes an AF_UNIX bind path only when no process
+  answers on it.
+- The Linux registry backend wrote past the caller's array once the registry
+  held more entries than the array.
+- Every CMake platform stamps the supervisor version its build carries, which
+  a versionless `supervisor.imagePath` needs to compare.
+- An ESP-IDF build reconfigures when the supervisor image or its `app.version`
+  changes.
+- A pre-release tag such as `v0.17.0-rc1` publishes and verifies a firmware
+  image.
+- The OpenWRT service logs a leftover `device_id`/`marshal_key` and a missing
+  provisioning blob.
+- Cross builds link OpenSSL statically.
+- `platform/linux/api/ota.c` compiles only with `CONFIG_WANTED_VFS_OTA` set.
 
 0.16.0 (2026-09-04)
 -------------------
