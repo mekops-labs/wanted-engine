@@ -14,6 +14,7 @@
 #include <wanted_log.h>
 #include <wanted_malloc.h>
 
+#include <version.h>
 #include <vfs-devfs.h>
 #include <vfs-drivers.h>
 #include <vfs-pipe.h>
@@ -1020,9 +1021,65 @@ static int loadSupervisorFromRegistry(const char *path, wapp_t *w) {
     return PlatformRegistryWappLoad(&e, w);
 }
 
+/* Version the firmware's own supervisor image was built from. Empty where the
+ * build does not stamp one, which reads as unordered and changes nothing. */
+#ifndef WANTED_SUPERVISOR_BUNDLED_VERSION
+#define WANTED_SUPERVISOR_BUNDLED_VERSION ""
+#endif
+
+/* Version a versionless `registry:<name>` reference resolves to, by the same
+ * first-name-match rule the loader uses. False when the registry holds none. */
+static bool installedSupervisorVersion(const char *ref, char *out, size_t len) {
+    reg_entry_t list[CONFIG_WANTED_MAX_WAPPS];
+
+    if (strchr(ref, ':') != NULL) /* pinned by the config; not ours to judge */
+        return false;
+
+    int num = PlatformRegistryRead(list, CONFIG_WANTED_MAX_WAPPS);
+    if (num < 0)
+        return false;
+    if (num > CONFIG_WANTED_MAX_WAPPS)
+        num = CONFIG_WANTED_MAX_WAPPS;
+
+    for (int i = 0; i < num; i++) {
+        if (strncmp(list[i].name, ref, WAPP_MAX_NAME_LEN) == 0) {
+            strncpy(out, list[i].version, len - 1);
+            out[len - 1] = '\0';
+            return true;
+        }
+    }
+    return false;
+}
+
+/* True when the firmware carries a newer supervisor than the installed one a
+ * versionless reference would load. A firmware update replaces only the image
+ * the app partition holds, so without this an older installed supervisor keeps
+ * running for as long as it stays installed. */
+static bool bundledSupervisorIsNewer(const char *path,
+                                     const wantedConfig_t *cfg) {
+    char installed[WAPP_MAX_VERSION_LEN];
+
+    if (cfg == NULL || !cfg->supervisorPreferBundled)
+        return false;
+    if (!supervisorIsRegistryRef(path))
+        return false;
+
+    const char *ref = path + sizeof(SUPERVISOR_REGISTRY_PREFIX) - 1;
+    if (!installedSupervisorVersion(ref, installed, sizeof(installed)))
+        return false;
+
+    return VersionNewer(WANTED_SUPERVISOR_BUNDLED_VERSION, installed);
+}
+
 /* Load the supervisor image, falling back to the compiled-in one. */
 static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
     const char *path = supervisorImagePath(cfg);
+
+    if (bundledSupervisorIsNewer(path, cfg)) {
+        DEBUG_TRACE("firmware supervisor %s is newer than %s; running it",
+                    WANTED_SUPERVISOR_BUNDLED_VERSION, path);
+        path = SUPERVISOR_IMAGE_PATH;
+    }
 
     int ret = supervisorIsRegistryRef(path)
                   ? loadSupervisorFromRegistry(path, w)

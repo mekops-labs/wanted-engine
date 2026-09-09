@@ -10,6 +10,7 @@ set(core_srcs
     ${ENGINE}/src/wanted_wasm_api.c
     ${ENGINE}/src/wanted-vfs-api.c
     ${ENGINE}/src/log-store.c
+    ${ENGINE}/src/version.c
     ${ENGINE}/src/extra-drivers-none.c
 )
 
@@ -179,6 +180,17 @@ if(NOT EXISTS "${_supervisor_tar}")
         "Build it with `make sheriff`, or `make supervisor` for wsh/selftest.")
 endif()
 message(STATUS "Supervisor image: ${_supervisor_tar}")
+
+# app.version sits beside the image, written by the rule that built it. Absent
+# for a supervisor whose build does not stamp one, which compares as unordered
+# and leaves an installed supervisor in place.
+get_filename_component(_supervisor_dir "${_supervisor_tar}" DIRECTORY)
+set(_supervisor_version "")
+if(EXISTS "${_supervisor_dir}/app.version")
+    file(READ "${_supervisor_dir}/app.version" _supervisor_version)
+    string(STRIP "${_supervisor_version}" _supervisor_version)
+endif()
+message(STATUS "Supervisor version: ${_supervisor_version}")
 idf_component_register(
     SRCS ${core_srcs} ${vfs_srcs} ${wasi_srcs} ${vendor_srcs} ${platform_srcs}
     INCLUDE_DIRS ${ENGINE}/include ${WANTED_AUTOCONF_DIR}
@@ -194,6 +206,9 @@ idf_component_register(
     REQUIRES wamr esp_hw_support pthread esp_partition lwip esp_wifi esp_event nvs_flash mbedtls esp_timer joltwallet__littlefs ${driver_requires}
     EMBED_FILES ${_supervisor_tar}
 )
+
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    WANTED_SUPERVISOR_BUNDLED_VERSION="${_supervisor_version}")
 
 # TLS backend for this platform: the engine asks through its own
 # Kconfig, and ESP-IDF answers with the mbedTLS it already ships.

@@ -78,6 +78,7 @@ static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
 
     memcpy(b, buf, len);
     memset(out, 0, sizeof(wantedConfig_t));
+    out->supervisorPreferBundled = true;
 
     json_t const *json = json_create(b, m, sizeof m / sizeof *m);
     if (!json || JSON_OBJ != json_getType(json)) {
@@ -101,6 +102,11 @@ static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
         if (imgPath)
             strncpy(out->supervisorImagePath, imgPath,
                     sizeof(out->supervisorImagePath) - 1);
+
+        json_t const *keep = json_getProperty(supervisor, "keepInstalled");
+        out->supervisorPreferBundled =
+            !(keep && JSON_BOOLEAN == json_getType(keep) &&
+              json_getBoolean(keep));
 
         if (WantedParseCtrlAction(supervisor, NULL, NULL,
                                   &out->supervisorCfg) == 0) {
