@@ -26,7 +26,6 @@ at every start, so a stale render cannot outlive a config change or a reboot.
 ```sh
 uci set wanted.main.manager='tcps://marshal.example:8443'
 uci set wanted.main.registry='tcps://registry.example:5000'   # optional
-uci set wanted.main.device_id='node-01'                       # optional; hostname otherwise, until enrolled
 uci set wanted.main.sync_interval='60'                        # optional; reconcile seconds
 uci commit wanted && /etc/init.d/wanted restart
 ```
@@ -35,12 +34,13 @@ uci commit wanted && /etc/init.d/wanted restart
 it, logging that it's unset — a node that cannot reach its control plane is
 not worth running.
 
-Identity (device id, trusted key) is **not** set through UCI. It comes from
-Sheriff's provisioning blob — `device_id`, `state_key`, `join_token` — dropped
-at `/srv/wanted/sheriff/provision` after `deputy device enrol`; the blob is
-the single source of truth once present. `device_id` in UCI only reaches
-Sheriff as a pre-enrolment fallback (via the launch config's `envs[]`) and is
-overridden by the blob's own `device_id` the moment enrolment completes.
+Identity (device id, trusted key) has **no** UCI path, in either direction.
+It comes only from Sheriff's provisioning blob — `device_id`, `state_key`,
+`join_token` — dropped at `/srv/wanted/sheriff/provision` after
+`deputy device enrol`, the same placed file every other Linux-family target
+reads. A device id selects which twin and per-device secret a report is
+checked against, so a UCI value disagreeing with the blob's would target the
+wrong device silently, where a wrong address merely fails to connect.
 
 ## Supervisor resolution: built-in, upgradable
 

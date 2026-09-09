@@ -7,10 +7,6 @@
 #   uci commit wanted && /etc/init.d/wanted restart
 
 config wanted 'main'
-	# Empty takes the system hostname; overridden by the provisioning blob's
-	# device_id once enrolled.
-	option device_id ''
-
 	option manager ''
 	option registry ''            # optional
 	option sync_interval ''       # optional; reconcile cadence in seconds

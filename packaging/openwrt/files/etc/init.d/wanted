@@ -17,16 +17,12 @@ DATADIR=/srv/wanted
 . /usr/share/libubox/jshn.sh
 
 render_config() {
-	local device_id manager registry interval
+	local manager registry interval
 
 	config_load wanted
-	config_get device_id main device_id
 	config_get manager   main manager
 	config_get registry  main registry
 	config_get interval  main sync_interval
-
-	[ -n "$device_id" ] || device_id=$(uci -q get system.@system[0].hostname)
-	[ -n "$device_id" ] || device_id=$(cat /proc/sys/kernel/hostname)
 
 	if [ -z "$manager" ]; then
 		logger -t wanted -p daemon.err \
@@ -60,8 +56,8 @@ render_config() {
 	fi
 	json_close_array
 	json_add_array envs
-	# Fallback only — the provisioning blob's device_id wins once enrolled.
-	json_add_string "" "SHERIFF_DEVICE_ID=$device_id"
+	# Identity is never carried here: it reaches Sheriff only through the
+	# provisioning blob at $DATADIR/sheriff/provision.
 	[ -n "$interval" ] && json_add_string "" "SHERIFF_SYNC_INTERVAL_S=$interval"
 	json_close_array
 	json_select ..
