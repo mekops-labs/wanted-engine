@@ -156,6 +156,10 @@ typedef struct wantedConfig_t {
     wapp_config_t supervisorCfg;
     char supervisorImagePath
         [CONFIG_WANTED_MAX_PATH_LEN]; /* empty = use compiled-in default */
+    /* Run the firmware's own supervisor when it is newer than the installed
+     * one a versionless registry reference resolves to. Cleared by
+     * `.supervisor.keepInstalled`, which holds the installed one. */
+    bool supervisorPreferBundled;
     bool privileged; /* enables privileged /proc entries when true */
 } wantedConfig_t;
 

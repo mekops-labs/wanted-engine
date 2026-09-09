@@ -76,10 +76,14 @@ endif
 ifeq ($(VARIANT),sheriff)
 ZIG         ?= zig
 SHERIFF_SRC := $(DIR)../../wapps/sheriff
-$(VARIANT_DIR)/app.wasm: $(wildcard $(SHERIFF_SRC)/src/*.zig) $(SHERIFF_SRC)/build.zig
+# app.version records the tree the wasm was built from, so the engine can tell
+# a bundled supervisor from an installed one. Written by the rule that produces
+# the wasm, so it cannot name a version the image is not.
+$(VARIANT_DIR)/app.wasm $(VARIANT_DIR)/app.version &: $(wildcard $(SHERIFF_SRC)/src/*.zig) $(SHERIFF_SRC)/build.zig
 	mkdir -p $(VARIANT_DIR)
 	cd $(SHERIFF_SRC) && $(ZIG) build
-	cp $(SHERIFF_SRC)/zig-out/bin/sheriff.wasm $@
+	cp $(SHERIFF_SRC)/zig-out/bin/sheriff.wasm $(VARIANT_DIR)/app.wasm
+	$(DIR)../../wapps/flasher/registry-version.sh $(SHERIFF_SRC) > $(VARIANT_DIR)/app.version
 endif
 
 # wifi-connect's app.wasm is compiled from the wapps/wifi-connect/ source tree.
