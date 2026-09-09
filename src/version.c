@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-#include <version.h>
+#include <wanted-version.h>
 
 #define VERSION_PARTS 3
 

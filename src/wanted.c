@@ -14,7 +14,6 @@
 #include <wanted_log.h>
 #include <wanted_malloc.h>
 
-#include <version.h>
 #include <vfs-devfs.h>
 #include <vfs-drivers.h>
 #include <vfs-pipe.h>
@@ -23,6 +22,7 @@
 #include <vfs-tarfs.h>
 #include <vfs.h>
 #include <wanted-api.h>
+#include <wanted-version.h>
 #include <wanted-vfs-api.h>
 #include <wanted.h>
 

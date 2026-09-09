@@ -2,7 +2,7 @@
 
 #include "unity_fixture.h"
 
-#include <version.h>
+#include <wanted-version.h>
 
 /***************************************/
 TEST_GROUP(version_order);
