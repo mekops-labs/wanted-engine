@@ -138,12 +138,9 @@ static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
     return rc;
 }
 
-/* Install one launch-config entry, naming it and the reason when its driver
- * cannot be built. The caller only sums the codes, so this is the last point
- * at which a failing grant is still identifiable.
- *
- * `driver` selects the backing and `label` is the entry's own name: a socket
- * entry is served by the `socket` driver whatever the config called it. */
+/* `driver` selects the backing; `label` is the entry's own config name, and
+ * a socket entry is served by the `socket` driver regardless of its label.
+ * Logs the section, index, and label of an entry whose driver fails. */
 static int installEntry(vfs_ctx_t vfs, const wapp_t *wapp, const char *section,
                         size_t idx, const char *driver, const char *label,
                         const char *path, const char *options) {

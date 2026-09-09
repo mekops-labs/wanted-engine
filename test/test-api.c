@@ -35,10 +35,8 @@ TEST(wanted_api, runSimpleWasm) {
     TEST_ASSERT_EQUAL_INT(0, ret);
 }
 
-/* A sockets[] entry is served by the `socket` driver whatever the config named
- * it; the name only labels the /net node. Resolving the entry's own name
- * instead fails the grant with -ENODEV, so a supervisor granting `manager` and
- * `registry` never launches. */
+/* A sockets[] entry is served by the `socket` driver regardless of its own
+ * name, which only labels the /net node. */
 TEST(wanted_api, runWithNamedSocketGrant) {
     wapp_data_t ctx;
     wapp_t w = {0};

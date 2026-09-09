@@ -1,10 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Shared POSIX BSD sockets. TLS (secure sockets) is compiled in only when
- * SECURE_SOCKETS is set (the Linux build with OpenSSL); other targets reject
- * the secure socket types. AF_UNIX (the unix:// scheme) is compiled in only
- * when WANTED_SOCKET_UNIX_TRANSPORT is set (a hosted target with
- * CONFIG_WANTED_VFS_SOCKET_UNIX enabled); other targets reject it. */
+/* Shared POSIX BSD sockets. TLS needs SECURE_SOCKETS; AF_UNIX needs
+ * WANTED_SOCKET_UNIX_TRANSPORT. Targets without either reject that type. */
 
 #include <arpa/inet.h>
 #include <errno.h>

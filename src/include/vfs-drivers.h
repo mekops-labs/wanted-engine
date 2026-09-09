@@ -17,20 +17,12 @@ enum vfs_socket_type_t {
     VFS_SKT_UDP,
     VFS_SKT_STCP,   /* secure tcp */
     VFS_SKT_SUDP,   /* secure udp */
-    VFS_SKT_SERIAL, /* any point-to-point byte-stream device reachable as a
-                     * plain character device - UART, USB-CDC, or an ISM/LoRa
-                     * module's AT-command UART bridge - e.g.
-                     * "serial:///dev/ttyACM0" - no port. Assumes a reliable,
-                     * ordered byte stream: a raw packet-radio link with no
-                     * UART bridge (lossy, size-limited, no ordering
-                     * guarantee) needs a framing/retry layer on top of this,
-                     * not provided here. */
-    VFS_SKT_UNIX,   /* AF_UNIX stream socket reached over the filesystem, e.g.
-                     * "unix:///run/some.sock" - a bare path, no port. Opt-in
-                     * (CONFIG_WANTED_VFS_SOCKET_UNIX) and hosted platforms
-                     * only; the point is talking to a same-box daemon directly
-                     * from a wapp, with no network stack and no extra process
-                     * in the middle. */
+    VFS_SKT_SERIAL, /* point-to-point byte-stream device (UART, USB-CDC, an
+                     * AT-command bridge), e.g. "serial:///dev/ttyACM0", no
+                     * port. Assumes a reliable, ordered stream. */
+    VFS_SKT_UNIX,   /* AF_UNIX stream socket over the filesystem, e.g.
+                     * "unix:///run/some.sock", no port. Opt-in
+                     * (CONFIG_WANTED_VFS_SOCKET_UNIX), hosted platforms only. */
 };
 
 typedef vfs_driver_t *(*VfsInitFunction_t)(const wapp_t *wapp,
