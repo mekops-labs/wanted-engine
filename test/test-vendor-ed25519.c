@@ -59,9 +59,36 @@ TEST(vendor_ed25519, RFC8032Test1_WrongMessage_Rejected) {
     TEST_ASSERT_EQUAL_INT(0, ok);
 }
 
+/* The identity point (0,1). With it as the public key, R = identity and
+ * S = 0 satisfies the cofactorless equation for every message. */
+static const unsigned char identity_key[32] = {
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+TEST(vendor_ed25519, LowOrderKey_IdentityPoint_ForgedSignatureRejected) {
+    static const unsigned char msg[] = {'a', 'n', 'y'};
+    unsigned char forged[64];
+    memset(forged, 0, sizeof(forged));
+    forged[0] = 0x01;
+    int ok = ed25519_verify(forged, msg, sizeof(msg), identity_key);
+    TEST_ASSERT_EQUAL_INT(0, ok);
+}
+
+TEST(vendor_ed25519, LowOrderKey_AllZero_Rejected) {
+    unsigned char zerokey[32];
+    memset(zerokey, 0, sizeof(zerokey));
+    int ok = ed25519_verify(sig, NULL, 0, zerokey);
+    TEST_ASSERT_EQUAL_INT(0, ok);
+}
+
 TEST_GROUP_RUNNER(vendor_ed25519) {
     RUN_TEST_CASE(vendor_ed25519, RFC8032Test1_EmptyMessage_Verifies);
     RUN_TEST_CASE(vendor_ed25519, RFC8032Test1_TamperedSignature_Rejected);
     RUN_TEST_CASE(vendor_ed25519, RFC8032Test1_TamperedPubkey_Rejected);
     RUN_TEST_CASE(vendor_ed25519, RFC8032Test1_WrongMessage_Rejected);
+    RUN_TEST_CASE(vendor_ed25519,
+                  LowOrderKey_IdentityPoint_ForgedSignatureRejected);
+    RUN_TEST_CASE(vendor_ed25519, LowOrderKey_AllZero_Rejected);
 }
