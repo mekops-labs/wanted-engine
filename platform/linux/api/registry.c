@@ -52,6 +52,7 @@ static int nameLenWithoutExt(const char *name) {
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
     struct dirent **namelist;
     struct stat s;
+    size_t filled = 0;
     int n, i = 0;
     int d;
 
@@ -73,8 +74,9 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
         return -errno;
     }
 
-    for (i = 0; i < n; i++, len--) {
-        if (registryList != NULL && len > 0) {
+    for (i = 0; i < n; i++) {
+        if (registryList != NULL && filled < len) {
+            memset(&registryList[filled], 0, sizeof(registryList[filled]));
             size_t entryNameLen =
                 min(nameLenWithoutExt(namelist[i]->d_name) + 1,
                     WAPP_MAX_NAME_LEN + 1 + WAPP_MAX_VERSION_LEN);
@@ -87,18 +89,19 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
                 nameLen = ver - namelist[i]->d_name;
                 size_t verLen = entryNameLen - nameLen;
 
-                strncpy(registryList[i].version, ver, verLen);
-                registryList[i].version[verLen - 1] = '\0';
+                strncpy(registryList[filled].version, ver, verLen);
+                registryList[filled].version[verLen - 1] = '\0';
             }
 
-            strncpy(registryList[i].name, namelist[i]->d_name, nameLen);
-            registryList[i].name[nameLen - 1] = '\0';
+            strncpy(registryList[filled].name, namelist[i]->d_name, nameLen);
+            registryList[filled].name[nameLen - 1] = '\0';
 
             if (fstatat(d, namelist[i]->d_name, &s, 0) == 0) {
-                registryList[i].size = s.st_size;
+                registryList[filled].size = s.st_size;
             } else {
-                registryList[i].size = 0;
+                registryList[filled].size = 0;
             }
+            filled++;
         }
 
         free(namelist[i]);
@@ -126,6 +129,8 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
 
         reg_entry_t list[REGISTRY_MAX_ENTRIES];
         num = PlatformRegistryRead(list, num);
+        if (num > REGISTRY_MAX_ENTRIES)
+            num = REGISTRY_MAX_ENTRIES;
 
         const reg_entry_t *match = NULL;
         for (int i = 0; i < num; i++) {

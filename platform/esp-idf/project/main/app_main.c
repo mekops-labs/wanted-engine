@@ -68,6 +68,10 @@ static bool registryHasRef(const char *ref) {
     reg_entry_t list[REGISTRY_SEED_LIST];
     int n = PlatformRegistryRead(list, REGISTRY_SEED_LIST);
 
+    /* The registry total, capped at what the call filled. */
+    if (n > REGISTRY_SEED_LIST)
+        n = REGISTRY_SEED_LIST;
+
     const char *colon = strchr(ref, ':');
     size_t nameLen = (colon != NULL) ? (size_t)(colon - ref) : strlen(ref);
     const char *version = (colon != NULL) ? colon + 1 : "";

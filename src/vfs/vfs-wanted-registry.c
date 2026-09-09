@@ -130,7 +130,8 @@ static int refreshEntries(vfs_driver_ctx_t d) {
 
     if (ret < 0)
         return ret;
-    d->nEntries = ret;
+    /* The registry total, capped at what the call filled. */
+    d->nEntries = ret > MAX_REG_ENTRIES ? MAX_REG_ENTRIES : ret;
 
     return 0;
 }
