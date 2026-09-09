@@ -46,6 +46,7 @@ A minimal `{"system": {}}` is a valid config.
 |-------|------|---------|--------|
 | `system.privileged` | boolean | `false` | Enables the privileged `/proc` entries (`wapps`, `memory`). When false they are hidden from reads and enumeration. |
 | `supervisor.imagePath` | string | (build option) | Where the supervisor TAR image comes from: a path, or `registry:<name>[:<version>]` for one the wapp registry holds. Overrides the compiled-in default. |
+| `supervisor.keepInstalled` | boolean | `false` | Keeps the installed supervisor even when the firmware carries a newer one. See below. |
 | `supervisor.params` | object | (compiled-in) | The supervisor's own launch config — same schema as a wapp `config` node. |
 
 ### `supervisor.imagePath` resolution
@@ -57,6 +58,38 @@ The supervisor image is resolved in priority order:
 3. `./wasm/supervisor/sheriff/supervisor.tar`.
 
 A value of the form `registry:<name>[:<version>]` names an image in the wapp registry instead of a path, resolved the way a launch config's `image` is: a bare name takes the first match, a tag pins the version. This is the source a board uses when its image path is compiled into the firmware — the registry is the one place a control plane can install into — and `reload-supervisor` then adopts whatever the registry holds at that moment. A registry image that fails to load falls back to the compiled-in one, as a staged path does.
+
+### `supervisor.keepInstalled` — which supervisor wins
+
+A firmware update replaces the supervisor image the app partition carries. It
+does not touch the wapp registry, so a supervisor installed through the control
+plane stays where it is. With `imagePath` naming a versionless
+`registry:<name>`, the installed one would keep running however old it became.
+
+By default the engine compares the two and runs the newer: the version the
+firmware was built with against the version the registry entry carries. The
+comparison is `<major>.<minor>.<patch>`, and a `-<commit>` suffix means a build
+made past that tag, so `0.7.0-abc123` is newer than `0.7.0`. Two builds past
+the same tag carry no ordering between them, so neither displaces the other and
+the device keeps what it runs.
+
+Three cases leave the installed supervisor alone: an `imagePath` that pins a
+version (`registry:supervisor:0.7.0`), which is read as a deliberate choice; a
+firmware whose build stamps no supervisor version, which cannot be compared;
+and a registry holding no entry under that name.
+
+Set `keepInstalled` to `true` to hold the installed supervisor regardless. The
+case for it is a supervisor build under test on a bench device: without it, the
+next firmware flash carrying a newer release silently replaces the build being
+tested. Leave it unset in the fleet, where a device flashed with newer firmware
+should run the supervisor that firmware was built and tested against.
+
+```json
+"supervisor": {
+    "imagePath": "registry:supervisor",
+    "keepInstalled": true
+}
+```
 
 ### `supervisor.params` — launch config
 

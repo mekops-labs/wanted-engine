@@ -10,6 +10,9 @@ Unreleased
   dropping its oldest buffered bytes.
 - A console pipe reports no end-of-stream while its writer is detached; a
   reader gets `EAGAIN` until a writer attaches again.
+- A versionless `supervisor.imagePath` runs whichever of the installed and
+  firmware-carried supervisors is newer; `supervisor.keepInstalled` holds the
+  installed one.
 
 0.16.0 (2026-09-04)
 -------------------
