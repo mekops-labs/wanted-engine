@@ -177,6 +177,24 @@ message("-- Supervisor image: ${_supervisor_image}")
 target_compile_definitions(${project} PRIVATE
     SUPERVISOR_IMAGE_PATH="${_supervisor_image}")
 
+# app.version sits beside the in-tree image, written by the rule that built it.
+# It stamps which supervisor this build carries, so a versionless
+# `supervisor.imagePath` can compare it against the installed one. Empty for a
+# supervisor whose build writes none, which compares as unordered.
+string(REGEX REPLACE "^\\./" "" _supervisor_rel "${CONFIG_WANTED_SUPERVISOR_IMAGE}")
+get_filename_component(_supervisor_dir "${CMAKE_SOURCE_DIR}/${_supervisor_rel}" DIRECTORY)
+set(_supervisor_version "")
+if(EXISTS "${_supervisor_dir}/app.version")
+    file(READ "${_supervisor_dir}/app.version" _supervisor_version)
+    string(STRIP "${_supervisor_version}" _supervisor_version)
+    # Read at configure time, so a rebuilt supervisor must force a reconfigure.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${_supervisor_dir}/app.version")
+endif()
+message("-- Supervisor version: ${_supervisor_version}")
+target_compile_definitions(${project} PRIVATE
+    WANTED_SUPERVISOR_BUNDLED_VERSION="${_supervisor_version}")
+
 # Engine version string (git-derived SemVer), surfaced at /proc/wanted.
 target_compile_definitions(${project} PRIVATE
     WANTED_VERSION="${SEMVER}")

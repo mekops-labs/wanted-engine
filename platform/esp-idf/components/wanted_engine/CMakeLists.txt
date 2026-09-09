@@ -189,7 +189,14 @@ set(_supervisor_version "")
 if(EXISTS "${_supervisor_dir}/app.version")
     file(READ "${_supervisor_dir}/app.version" _supervisor_version)
     string(STRIP "${_supervisor_version}" _supervisor_version)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${_supervisor_dir}/app.version")
 endif()
+# Both are read at configure time while EMBED_FILES re-links the tar at build
+# time, so a rebuilt supervisor must force a reconfigure to keep the stamped
+# version and the embedded image the same build.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${_supervisor_tar}")
 message(STATUS "Supervisor version: ${_supervisor_version}")
 idf_component_register(
     SRCS ${core_srcs} ${vfs_srcs} ${wasi_srcs} ${vendor_srcs} ${platform_srcs}
