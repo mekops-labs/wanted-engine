@@ -19,7 +19,7 @@ void PipeStoreFree(pipe_store_t *store);
 vfs_driver_t *PipeDriverCreate(pipe_store_t *store);
 
 /* Create a console driver bound to the named pipe `name` in `store`. `forRead`
- * selects the `in` direction; otherwise it is a lossy writer for out/err.
- * Installed directly as a stream fd through VfsRegister, with no Open call. */
+ * selects the `in` direction; a writer short-writes, then -EAGAIN on a full
+ * ring. Installed directly as a stream fd through VfsRegister, no Open call. */
 vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
                                    bool forRead, vfs_oflags_t flags);
