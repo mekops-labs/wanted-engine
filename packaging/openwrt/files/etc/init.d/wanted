@@ -17,12 +17,26 @@ DATADIR=/srv/wanted
 . /usr/share/libubox/jshn.sh
 
 render_config() {
-	local manager registry interval
+	local manager registry interval legacy_id legacy_key
 
 	config_load wanted
 	config_get manager   main manager
 	config_get registry  main registry
 	config_get interval  main sync_interval
+	config_get legacy_id  main device_id
+	config_get legacy_key main marshal_key
+
+	# An upgrade keeps /etc/config/wanted as a conffile, so an operator's file
+	# can still carry the identity options this service reads nowhere.
+	if [ -n "$legacy_id" ] || [ -n "$legacy_key" ]; then
+		logger -t wanted -p daemon.warn \
+			"ignoring device_id/marshal_key in /etc/config/wanted — identity comes from $DATADIR/sheriff/provision"
+	fi
+
+	if [ ! -s "$DATADIR/sheriff/provision" ]; then
+		logger -t wanted -p daemon.warn \
+			"no provisioning blob at $DATADIR/sheriff/provision — the supervisor stays in maintenance mode until the device is enrolled"
+	fi
 
 	if [ -z "$manager" ]; then
 		logger -t wanted -p daemon.err \
