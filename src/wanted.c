@@ -970,6 +970,9 @@ void WantedWappTerminate(wapp_data_t *ctx) {
  * is consumed at the next respawn; `pinBuiltin` survives a reload. */
 static volatile uint8_t supervisorReloadArmed;
 static volatile uint8_t supervisorPinBuiltin;
+/* Which image the last load took, so the health machine judges what is
+ * running rather than what the configuration asked for. */
+static bool supervisorRanBuiltin;
 
 /* Image path to read: configured normally, compiled-in once rolled back. */
 static const char *supervisorImagePath(const wantedConfig_t *cfg) {
@@ -1091,6 +1094,8 @@ static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
         path = SUPERVISOR_IMAGE_PATH;
         ret = PlatformWappLoad(path, w);
     }
+    supervisorRanBuiltin = (strcmp(path, SUPERVISOR_IMAGE_PATH) == 0);
+
     if (ret < 0) {
         DEBUG_TRACE("failed to load supervisor image from %s: %d", path, ret);
         /* Drop the layer bookkeeping so the struct keeps its invariant: a
@@ -1125,14 +1130,12 @@ int WantedSupervisorRollback(void) {
 #define SUPERVISOR_HEALTHY_TICKS 10
 
 /* True while the running image is a staged one, thus a rollback has somewhere
- * to go. */
+ * to go. Reads what the last load actually took, since a configured image is
+ * not always the one that ran. */
 static bool supervisorStaged(void) {
-    const wantedConfig_t *cfg = WantedGetConfig();
-
     if (supervisorPinBuiltin)
         return false;
-    return cfg != NULL && cfg->supervisorImagePath[0] != '\0' &&
-           strcmp(cfg->supervisorImagePath, SUPERVISOR_IMAGE_PATH) != 0;
+    return !supervisorRanBuiltin;
 }
 
 supervisorHealth_t WantedSupervisorObserve(bool running, bool failed,
