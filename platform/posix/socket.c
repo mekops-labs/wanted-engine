@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #ifdef WANTED_SOCKET_UNIX_TRANSPORT
+#include <sys/stat.h>
 #include <sys/un.h>
 #endif
 
@@ -252,6 +253,45 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
     return 0;
 }
 
+#ifdef WANTED_SOCKET_UNIX_TRANSPORT
+/* True for a socket file no process serves: connect() to one answers
+ * ECONNREFUSED. Anything else at the path is left alone. */
+static bool unixBindPathIsStale(const char *path, bool dgram) {
+    struct sockaddr_un uaddr;
+    struct stat st;
+    size_t pathLen = strlen(path);
+    int probe;
+    bool stale;
+
+    if (pathLen >= sizeof(uaddr.sun_path)) {
+        return false;
+    }
+
+    if (stat(path, &st) != 0) {
+        return false;
+    }
+
+    if (!S_ISSOCK(st.st_mode)) {
+        return false;
+    }
+
+    probe = socket(AF_UNIX, dgram ? SOCK_DGRAM : SOCK_STREAM, 0);
+    if (probe < 0) {
+        return false;
+    }
+
+    memset(&uaddr, 0, sizeof(uaddr));
+    uaddr.sun_family = AF_UNIX;
+    memcpy(uaddr.sun_path, path, pathLen + 1);
+
+    errno = 0;
+    stale = connect(probe, (struct sockaddr *)&uaddr, sizeof(uaddr)) != 0 &&
+            errno == ECONNREFUSED;
+    close(probe);
+    return stale;
+}
+#endif
+
 int PlatformNetListen(struct netCtx *c, const char *bindAddr, uint16_t port,
                       int backlog) {
     const struct hostent *host;
@@ -289,8 +329,11 @@ int PlatformNetListen(struct netCtx *c, const char *bindAddr, uint16_t port,
         memcpy(uaddr.sun_path, bindAddr, pathLen + 1);
 
         /* A stale socket file from a previous run must go, or bind() fails
-         * with EADDRINUSE even though nothing is listening on it. */
-        (void)unlink(bindAddr);
+         * with EADDRINUSE even though nothing is listening on it. A served
+         * one stays: removing it would cut off whoever answers there. */
+        if (unixBindPathIsStale(bindAddr, c->dgram)) {
+            (void)unlink(bindAddr);
+        }
 
         if (bind(c->socket, (struct sockaddr *)&uaddr, sizeof(uaddr)) != 0) {
             return -errno;
