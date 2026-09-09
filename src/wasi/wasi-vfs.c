@@ -670,9 +670,14 @@ static int32_t wasi_fd_read(wasm_exec_env_t exec_env, int32_t fd,
         if (!addr)
             return __WASI_ERRNO_FAULT;
 
+        /* Bytes already moved are reported as a short count; failing the
+         * whole call would make the guest re-read them. */
         int ret = VfsRead(ctx->vfsCtx, fd, addr, len);
-        if (ret < 0)
+        if (ret < 0) {
+            if (res > 0)
+                break;
             return errno_to_wasi(ret);
+        }
         res += ret;
         if ((uint32_t)ret < len)
             break;
@@ -710,9 +715,14 @@ static int32_t wasi_fd_write(wasm_exec_env_t exec_env, int32_t fd,
         if (!addr)
             return __WASI_ERRNO_FAULT;
 
+        /* Bytes already moved are reported as a short count; failing the
+         * whole call would make the guest re-send them. */
         int ret = VfsWrite(ctx->vfsCtx, fd, addr, len);
-        if (ret < 0)
+        if (ret < 0) {
+            if (res > 0)
+                break;
             return errno_to_wasi(ret);
+        }
         res += ret;
         if ((uint32_t)ret < len)
             break;
