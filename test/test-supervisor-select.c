@@ -32,13 +32,13 @@ TEST(supervisor_select, PrefersTheBundledImageByDefault) {
 }
 
 TEST(supervisor_select, KeepInstalledHoldsTheInstalledImage) {
-    TEST_ASSERT_FALSE(
-        parse(SUPERVISOR_CFG(",\"keepInstalled\":true"))->supervisorPreferBundled);
+    TEST_ASSERT_FALSE(parse(SUPERVISOR_CFG(",\"keepInstalled\":true"))
+                          ->supervisorPreferBundled);
 }
 
 TEST(supervisor_select, KeepInstalledFalseIsTheDefaultSpeltOut) {
-    TEST_ASSERT_TRUE(
-        parse(SUPERVISOR_CFG(",\"keepInstalled\":false"))->supervisorPreferBundled);
+    TEST_ASSERT_TRUE(parse(SUPERVISOR_CFG(",\"keepInstalled\":false"))
+                         ->supervisorPreferBundled);
 }
 
 /* A config naming no supervisor at all still carries the default, so the field
@@ -50,14 +50,15 @@ TEST(supervisor_select, ADefaultSurvivesAConfigWithNoSupervisorBlock) {
 
 /* A non-boolean is not an opt-out: only `true` holds the installed image. */
 TEST(supervisor_select, ANonBooleanDoesNotOptOut) {
-    TEST_ASSERT_TRUE(
-        parse(SUPERVISOR_CFG(",\"keepInstalled\":\"yes\""))->supervisorPreferBundled);
+    TEST_ASSERT_TRUE(parse(SUPERVISOR_CFG(",\"keepInstalled\":\"yes\""))
+                         ->supervisorPreferBundled);
 }
 
 TEST_GROUP_RUNNER(supervisor_select) {
     RUN_TEST_CASE(supervisor_select, PrefersTheBundledImageByDefault);
     RUN_TEST_CASE(supervisor_select, KeepInstalledHoldsTheInstalledImage);
     RUN_TEST_CASE(supervisor_select, KeepInstalledFalseIsTheDefaultSpeltOut);
-    RUN_TEST_CASE(supervisor_select, ADefaultSurvivesAConfigWithNoSupervisorBlock);
+    RUN_TEST_CASE(supervisor_select,
+                  ADefaultSurvivesAConfigWithNoSupervisorBlock);
     RUN_TEST_CASE(supervisor_select, ANonBooleanDoesNotOptOut);
 }
