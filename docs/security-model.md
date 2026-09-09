@@ -138,7 +138,7 @@ Embedded targets have a fixed memory budget, so the engine treats resource exhau
 
 - `MAX_WAPPS` bounds concurrent instances; a `start` past the cap is rejected cleanly with `-ENOSPC` (verified on the ESP32-S3: the supervisor plus 19 wapps fit, the 20th is rejected).
 - Per-wapp stack, heap, and linear-memory caps are compile-time (see [Platform Guide → Resource limits](platform-guide.md#resource-limits)); envelopes (`tiny`/`constrained`/`small`/`big`) tune them per target class, and a board defconfig may narrow them further.
-- Console pipes are **lossy** (`out`/`err` drop oldest on a full ring) so an unread peer console cannot wedge the writer — a wapp cannot DoS the engine by spamming stdout.
+- Console pipes **deliver or refuse**: a full ring short-writes and then returns `EAGAIN`, so an unread peer throttles the writer rather than costing it bytes. A wapp cannot DoS the engine by spamming stdout — the ring is bounded and the writer is told when it is full.
 - The launch-config parser uses a bounded token pool and a 2048-byte stack buffer; an oversized config returns `-EMSGSIZE` rather than overflowing.
 
 What this layer guarantees: a single wapp cannot exhaust engine memory or wedge the run loop by resource abuse. What it does not: it does not bound CPU — a wapp that busy-loops holds its thread until `stop`; the platform's stop mechanism (a cooperative `SIGUSR2` plus the WAMR terminate flag) is the recourse.

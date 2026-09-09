@@ -1,6 +1,16 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Changed
+
+- A console pipe short-writes and returns `EAGAIN` on a full ring instead of
+  dropping its oldest buffered bytes.
+- A console pipe reports no end-of-stream while its writer is detached; a
+  reader gets `EAGAIN` until a writer attaches again.
+
 0.16.0 (2026-09-04)
 -------------------
 

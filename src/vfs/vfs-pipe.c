@@ -37,6 +37,9 @@ typedef struct named_pipe_t {
     int writers;
     int readers;
     bool writer_seen; /* a writer has attached at least once → enables EOF */
+    /* A console slot's pipe outlives the wapp holding it, so the gap while a
+     * writer restarts reads as "nothing yet" rather than end-of-stream. */
+    bool persistent;
     bool active;
 } named_pipe_t;
 
@@ -266,10 +269,9 @@ int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
             PlatformMutexUnlock(store->lock);
             return n;
         }
-        /* No data buffered. EOF only once a writer has existed and all closed;
-         * otherwise this is a would-block (a writer is attached, or none has
-         * ever attached and we wait for the first). */
-        if (p->writer_seen && p->writers <= 0) {
+        /* No data buffered. EOF only once a writer has existed, all closed,
+         * and the pipe is not a console's; anything else is a would-block. */
+        if (p->writer_seen && p->writers <= 0 && !p->persistent) {
             PlatformMutexUnlock(store->lock);
             return 0;
         }
@@ -470,8 +472,9 @@ static int _bDestroy(vfs_driver_t *drv) {
 }
 
 /* Pipe console driver — backs a console slot with a named pipe in the shared
- * store, so a peer wapp reads the stream live. out/err are lossy writers: a
- * full ring drops oldest bytes, so an unread console cannot wedge the wapp. */
+ * store, so a peer wapp reads the stream live. A full ring short-writes and
+ * then reports -EAGAIN, so a slow reader throttles the writer, never silently
+ * losing its bytes. */
 
 typedef struct {
     pipe_store_t *store;
@@ -479,25 +482,6 @@ typedef struct {
     bool forRead;
     int flags;
 } pipe_console_t;
-
-/* Caller holds store->lock. Drop the oldest buffered bytes as needed so the
- * most recent `nbyte` (capped to the ring) always fit; never blocks. */
-static int ringWriteLossy(named_pipe_t *p, const void *buf, size_t nbyte) {
-    const uint8_t *src = (const uint8_t *)buf;
-    size_t keep = nbyte;
-    if (keep > CONFIG_WANTED_PIPE_BUF_SIZE) {
-        src += keep - CONFIG_WANTED_PIPE_BUF_SIZE;
-        keep = CONFIG_WANTED_PIPE_BUF_SIZE;
-    }
-    size_t space = CONFIG_WANTED_PIPE_BUF_SIZE - p->data_len;
-    if (keep > space) {
-        size_t drop = keep - space;
-        p->rpos = (p->rpos + drop) % CONFIG_WANTED_PIPE_BUF_SIZE;
-        p->data_len -= drop;
-    }
-    (void)ringWrite(p, src, keep);
-    return (int)nbyte; /* lossy: always report the whole write consumed */
-}
 
 static void consoleDetach(pipe_console_t *c) {
     PlatformMutexLock(c->store->lock);
@@ -534,7 +518,7 @@ static int _pcWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
     named_pipe_t *p = findPipe(c->store, c->name);
     if (!p)
         p = allocPipe(c->store, c->name);
-    int n = p ? ringWriteLossy(p, buf, nbyte) : -ENOSPC;
+    int n = p ? ringWrite(p, buf, nbyte) : -ENOSPC;
     PlatformMutexUnlock(c->store->lock);
     return n;
 }
@@ -558,7 +542,7 @@ static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
             PlatformMutexUnlock(c->store->lock);
             return n;
         }
-        bool eof = p && p->writer_seen && p->writers <= 0;
+        bool eof = p && p->writer_seen && p->writers <= 0 && !p->persistent;
         PlatformMutexUnlock(c->store->lock);
         if (eof)
             return 0;
@@ -619,6 +603,7 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
     if (!p)
         p = allocPipe(store, c->name);
     if (p) {
+        p->persistent = true;
         if (forRead) {
             p->readers++;
         } else {

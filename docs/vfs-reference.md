@@ -138,7 +138,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `log` | `mounts[]` | chosen `path` | Read-only directory view of per-wapp captured logs. `<path>/<name>` reads wapp `<name>`'s ring-buffered output; the mount enumerates wapps with a live log slot. A `name=<wapp>` option scopes it to one wapp (default: all). The engine's own error channel appears as `.engine`, a name no image reference can carry; `name=.engine` scopes a grant to it alone. Grantable independently of `/dev/wanted`. Each line is prefixed `[+<ms>] ` — see [Log line stamps](#log-line-stamps). |
 | `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
 | `log` | console slot | — | Console capture: routes a wapp's stdout/stderr into its per-wapp log slot (read back via a `log` mount). |
-| `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` are lossy writers (drop oldest on a full ring); `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
+| `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` short-write and then return `EAGAIN` on a full ring, never dropping bytes; `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
 
 ### Log line stamps
 
