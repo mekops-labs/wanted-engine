@@ -105,11 +105,16 @@ firmware_version() {
 }
 
 # The tag a firmware image publishes under: <release>-<board>[-<variant>]. The
-# board and an optional variant both go after the release, never inside it,
-# since that is what convergence judges; release itself is guaranteed free of
-# '-', so the first '-' in the tag always marks its end.
+# board and an optional variant both go after the release, since that is what
+# convergence judges. A release may itself hold a '-' (a pre-release tag such
+# as 0.17.0-rc1), so verify_firmware recovers the release by removing the
+# board/variant suffix it asked for.
 firmware_tag() {
     local release=$1
+    if ! [[ $release =~ ^[A-Za-z0-9._-]+$ ]]; then
+        echo "FAIL: release '$release' must match [A-Za-z0-9._-]+ to be an OCI tag" >&2
+        return 1
+    fi
     if ! [[ $board =~ ^[A-Za-z0-9._]+$ ]]; then
         echo "FAIL: board '$board' must match [A-Za-z0-9._]+; a '-' or '+' would move the release core" >&2
         return 1
@@ -154,7 +159,8 @@ render_firmware() {
 
 # One layer, a firmware.digest label that still matches the source .bin, a
 # firmware.board/firmware.variant label matching what was asked for, and a tag
-# whose release core is the release itself.
+# whose release core, once the board/variant suffix is removed, is the release
+# itself.
 verify_firmware() {
     local image=$1 image_bin=$2 release=$3 board=$4 variant=$5
     local layers labelled actual tagged core label_board label_variant
@@ -170,7 +176,11 @@ verify_firmware() {
         return 1
     fi
     tagged=$(podman image inspect --format '{{index .Config.Labels "version"}}' "$image")
-    core=${tagged%%-*}
+    if [ -n "$variant" ]; then
+        core=${tagged%-$board-$variant}
+    else
+        core=${tagged%-$board}
+    fi
     if [ "$core" != "$release" ]; then
         echo "FAIL: $image tags release '$core', built from '$release'" >&2
         return 1
