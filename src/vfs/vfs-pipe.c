@@ -55,8 +55,8 @@ typedef struct pipe_handle_t {
     bool is_root;
 } pipe_handle_t;
 
-/* The wait of a blocking read ends at a deadline, thus the cap means the same
- * on a platform whose sleep rounds up to a scheduler tick.
+/* A blocking read or write ends its wait at a deadline, thus the cap means the
+ * same on a platform whose sleep rounds up to a scheduler tick.
  */
 
 static plat_timestamp_t pollDeadline(void) {
@@ -292,17 +292,36 @@ int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
 
 int PipeDriver_Write(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
                      const void *buf, size_t nbyte) {
-    (void)c;
     pipe_handle_t *h = handle;
     if (!h || h->is_root || !h->pipe)
         return -EBADF;
 
     pipe_store_t *store = (pipe_store_t *)drv->ctx;
     named_pipe_t *p = h->pipe;
-    PlatformMutexLock(store->lock);
-    int n = ringWrite(p, buf, nbyte);
-    PlatformMutexUnlock(store->lock);
-    return n;
+    bool nonblock = (h->flags & VFS_O_NONBLOCK) != 0;
+
+    plat_timestamp_t deadline = pollDeadline();
+
+    for (;;) {
+        PlatformMutexLock(store->lock);
+        int n = ringWrite(p, buf, nbyte);
+        PlatformMutexUnlock(store->lock);
+        if (n != -EAGAIN)
+            return n;
+
+        /* Full ring. A blocking writer waits for the reader to drain, up to
+         * the same safety cap the read side uses. */
+        if (nonblock || pollExpired(deadline))
+            return -EAGAIN;
+        /* Sleep UNLOCKED so a worker torn down here cannot strand the shared
+         * mutex. A signalled stop interrupts the sleep (EINTR); where the
+         * platform has no signal the wake descriptor is raised instead. */
+        if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
+                                   PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
+            return -EINTR;
+        if (PlatformWakeRaised(VfsWakeFd(c)))
+            return -EINTR;
+    }
 }
 
 int PipeDriver_Stat(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
@@ -473,8 +492,8 @@ static int _bDestroy(vfs_driver_t *drv) {
 
 /* Pipe console driver — backs a console slot with a named pipe in the shared
  * store, so a peer wapp reads the stream live. A full ring short-writes and
- * then reports -EAGAIN, so a slow reader throttles the writer, never silently
- * losing its bytes. */
+ * then blocks to the poll cap, so a slow reader throttles the writer, never
+ * silently losing its bytes. */
 
 typedef struct {
     pipe_store_t *store;
@@ -514,13 +533,27 @@ static int _pcWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
     if (c->forRead)
         return -EBADF; /* the `in` console is read-only */
 
-    PlatformMutexLock(c->store->lock);
-    named_pipe_t *p = findPipe(c->store, c->name);
-    if (!p)
-        p = allocPipe(c->store, c->name);
-    int n = p ? ringWrite(p, buf, nbyte) : -ENOSPC;
-    PlatformMutexUnlock(c->store->lock);
-    return n;
+    bool nonblock = (c->flags & VFS_O_NONBLOCK) != 0;
+    plat_timestamp_t deadline = pollDeadline();
+
+    for (;;) {
+        PlatformMutexLock(c->store->lock);
+        named_pipe_t *p = findPipe(c->store, c->name);
+        if (!p)
+            p = allocPipe(c->store, c->name);
+        int n = p ? ringWrite(p, buf, nbyte) : -ENOSPC;
+        PlatformMutexUnlock(c->store->lock);
+        if (n != -EAGAIN)
+            return n;
+
+        /* Full ring. A blocking writer waits for the reader to drain, up to
+         * the same safety cap the read side uses. */
+        if (nonblock || pollExpired(deadline))
+            return -EAGAIN;
+        if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
+                                   PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
+            return -EINTR;
+    }
 }
 
 static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {

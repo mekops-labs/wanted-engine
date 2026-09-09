@@ -177,6 +177,8 @@ TEST(pipe_rw, DataPersistsAfterWriterCloses) {
     VfsClose(vfs, reader);
 }
 
+/* A blocking writer waits for the reader to drain and gives up at the safety
+ * cap. Nothing drains here, so the write reaches the cap and reports EAGAIN. */
 TEST(pipe_rw, WriteToFullBufferReturnsEagain) {
     /* Fill the ring, then write one byte past it. */
     int writer = VfsOpen(vfs, "/dev/pipe/full", VFS_O_WRONLY);
@@ -194,6 +196,31 @@ TEST(pipe_rw, WriteToFullBufferReturnsEagain) {
     uint8_t extra = 0xFF;
     n = VfsWrite(vfs, writer, &extra, 1);
     TEST_ASSERT_EQUAL_INT(-EAGAIN, n);
+
+    VfsClose(vfs, writer);
+    VfsClose(vfs, reader);
+}
+
+TEST(pipe_rw, NonblockWriteToFullBufferReturnsEagainAtOnce) {
+    int writer =
+        VfsOpen(vfs, "/dev/pipe/nbfull", VFS_O_WRONLY | VFS_O_NONBLOCK);
+    int reader = VfsOpen(vfs, "/dev/pipe/nbfull", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(writer >= 0);
+    TEST_ASSERT_TRUE(reader >= 0);
+
+    static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
+    memset(payload, 0xAB, sizeof(payload));
+    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_PIPE_BUF_SIZE,
+                          VfsWrite(vfs, writer, payload, sizeof(payload)));
+
+    uint8_t extra = 0xFF;
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsWrite(vfs, writer, &extra, 1));
+
+    /* Draining makes room, and the same writer then makes progress. */
+    uint8_t got[4] = {0};
+    TEST_ASSERT_EQUAL_INT((int)sizeof(got),
+                          VfsRead(vfs, reader, got, sizeof(got)));
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(vfs, writer, &extra, 1));
 
     VfsClose(vfs, writer);
     VfsClose(vfs, reader);
@@ -227,6 +254,7 @@ TEST_GROUP_RUNNER(pipe_rw) {
     RUN_TEST_CASE(pipe_rw, ReadAfterWriterClosedWithNoDataReturnsEof);
     RUN_TEST_CASE(pipe_rw, DataPersistsAfterWriterCloses);
     RUN_TEST_CASE(pipe_rw, WriteToFullBufferReturnsEagain);
+    RUN_TEST_CASE(pipe_rw, NonblockWriteToFullBufferReturnsEagainAtOnce);
     RUN_TEST_CASE(pipe_rw, PartialReadLeavesRemainder);
 }
 
@@ -420,15 +448,34 @@ static void consoleOut(const char *name) {
                 VfsPipeConsoleCreate(cstore, name, false, VFS_O_WRONLY));
 }
 
+static void consoleOutNonblock(const char *name) {
+    VfsRegister(cvfs, "<stdout>",
+                VfsPipeConsoleCreate(cstore, name, false,
+                                     VFS_O_WRONLY | VFS_O_NONBLOCK));
+}
+
 static void consoleIn(const char *name) {
     VfsRegister(cvfs, "<stdin>",
                 VfsPipeConsoleCreate(cstore, name, true, VFS_O_RDONLY));
 }
 
-/* A console writer delivers or refuses; it never discards buffered bytes to
+/* A console writer delivers or waits; it never discards buffered bytes to
  * make room, which would corrupt a framed stream without telling either end. */
 TEST(pipe_console, FullRingShortWritesRatherThanDropping) {
     consoleOut("wire");
+
+    static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
+    memset(payload, 0xAB, sizeof(payload));
+    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_PIPE_BUF_SIZE,
+                          VfsWrite(cvfs, VFS_STDOUT, payload, sizeof(payload)));
+
+    uint8_t extra = 0xFF;
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsWrite(cvfs, VFS_STDOUT, &extra, 1));
+}
+
+/* O_NONBLOCK gives a producer that cannot wait an immediate refusal. */
+TEST(pipe_console, NonblockWriterRefusesAFullRingAtOnce) {
+    consoleOutNonblock("nbwire");
 
     static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
     memset(payload, 0xAB, sizeof(payload));
@@ -491,6 +538,7 @@ TEST(pipe_console, BufferedBytesSurviveTheWriterLeaving) {
 
 TEST_GROUP_RUNNER(pipe_console) {
     RUN_TEST_CASE(pipe_console, FullRingShortWritesRatherThanDropping);
+    RUN_TEST_CASE(pipe_console, NonblockWriterRefusesAFullRingAtOnce);
     RUN_TEST_CASE(pipe_console, KeepsTheOldestBytesWhenTheRingFills);
     RUN_TEST_CASE(pipe_console, WriterLeavingIsNotEndOfStream);
     RUN_TEST_CASE(pipe_console, BufferedBytesSurviveTheWriterLeaving);

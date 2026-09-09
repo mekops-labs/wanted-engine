@@ -30,6 +30,7 @@ A named pipe over a single process-wide store: a pipe opened by one wapp is visi
 
 - **Ring buffer** of 4096 bytes; up to 8 concurrent named pipes.
 - **Reads block by default.** With no data and a writer attached (or none yet seen), a read sleeps and retries; `O_NONBLOCK` opts out. A bounded safety cap limits the wait.
+- **Writes block by default.** A write short-writes into the space the ring has. On a full ring it sleeps and retries until the reader drains, under the same safety cap, then returns `EAGAIN`. `O_NONBLOCK` returns `EAGAIN` at once.
 - **EOF** is returned only once a writer has attached and all writers have closed.
 
 ```c
@@ -138,7 +139,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `log` | `mounts[]` | chosen `path` | Read-only directory view of per-wapp captured logs. `<path>/<name>` reads wapp `<name>`'s ring-buffered output; the mount enumerates wapps with a live log slot. A `name=<wapp>` option scopes it to one wapp (default: all). The engine's own error channel appears as `.engine`, a name no image reference can carry; `name=.engine` scopes a grant to it alone. Grantable independently of `/dev/wanted`. Each line is prefixed `[+<ms>] ` — see [Log line stamps](#log-line-stamps). |
 | `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
 | `log` | console slot | — | Console capture: routes a wapp's stdout/stderr into its per-wapp log slot (read back via a `log` mount). |
-| `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` short-write and then return `EAGAIN` on a full ring, never dropping bytes; `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
+| `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` short-write, then wait on a full ring until the reader drains, and return `EAGAIN` at the safety cap, never dropping bytes; `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
 
 ### Log line stamps
 
