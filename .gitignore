@@ -6,6 +6,7 @@ compile_commands.json
 .openwrt-sdk/
 wasm/*.wasm*
 wasm/supervisor/*/supervisor.tar
+wasm/supervisor/*/app.version
 # Supervisor app.wasm are build outputs: wsh/selftest compiled from wapps/,
 # sheriff built from the wapps/sheriff submodule (see wasm/supervisor/Makefile).
 wasm/supervisor/wsh/app.wasm
