@@ -19,6 +19,8 @@ Unreleased
   fails verification. `system.enforceImageVerify` raises it, and no source
   lowers it.
 - `/proc/wanted` reports `image_verify` and `image_verify_floor`.
+- A registry entry's descriptor carries `signed`, true for a signed or
+  firmware-seeded image.
 
 ### Changed
 

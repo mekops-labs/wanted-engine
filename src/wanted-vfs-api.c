@@ -344,9 +344,14 @@ int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
     /* Inspecting a registry entry returns a small descriptor synthesized from
      * the entry (name/version/size), plus the image's declared linear-memory
      * profile when it can be read from the image header. */
-    int n = snprintf((char *)buf, bufLen,
-                     "{\"name\":\"%s\",\"version\":\"%s\",\"size\":%zu",
-                     entry->name, entry->version, entry->size);
+    registry_meta_t meta;
+    bool signd = PlatformRegistryMetaRead(entry, &meta) == 0 &&
+                 (meta.flags & (REGISTRY_META_SIGNED | REGISTRY_META_SEEDED));
+
+    int n = snprintf(
+        (char *)buf, bufLen,
+        "{\"name\":\"%s\",\"version\":\"%s\",\"size\":%zu,\"signed\":%s",
+        entry->name, entry->version, entry->size, signd ? "true" : "false");
     if (n < 0)
         return -EIO;
     if (n >= (int)bufLen)

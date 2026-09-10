@@ -588,6 +588,31 @@ TEST(vfs_registry_driver, MetaRead_SeededEntry_CarriesStoredSize) {
     TEST_ASSERT_EQUAL_UINT32(84, meta.size);
 }
 
+TEST(vfs_registry_driver, Descriptor_ReportsWhetherTheEntryIsSigned) {
+    uint8_t payload[REGISTRY_SIG_PAYLOAD_LEN];
+    char buf[256];
+
+    SeedTwo();
+    int fd = OpenEntry("app1:1.0.0");
+    int n = drv->Read(drv->ctx, fd, buf, sizeof(buf) - 1);
+    TEST_ASSERT_TRUE(n > 0);
+    buf[n] = '\0';
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"signed\":false"));
+    drv->Close(drv->ctx, fd);
+
+    MakeSigPayload(payload, 1, 0xc3);
+    fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    drv->Write(drv->ctx, fd, payload, sizeof(payload));
+    TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
+
+    fd = OpenEntry("app1:1.0.0");
+    n = drv->Read(drv->ctx, fd, buf, sizeof(buf) - 1);
+    TEST_ASSERT_TRUE(n > 0);
+    buf[n] = '\0';
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"signed\":true"));
+}
+
 TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, ReadDir_ShortBuffer_ReportsWhatItWrote);
     RUN_TEST_CASE(vfs_registry_driver, ReadDir_ShortBuffer_WalksEveryEntryOnce);
@@ -641,4 +666,6 @@ TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, Sig_NoBytesWritten_IsNoOp);
     RUN_TEST_CASE(vfs_registry_driver, Sig_InvalidRef_ReturnsEinvalAtOpen);
     RUN_TEST_CASE(vfs_registry_driver, MetaRead_SeededEntry_CarriesStoredSize);
+    RUN_TEST_CASE(vfs_registry_driver,
+                  Descriptor_ReportsWhetherTheEntryIsSigned);
 }
