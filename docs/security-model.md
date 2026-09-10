@@ -153,6 +153,16 @@ A streaming write that begins and never commits holds the slot, and every later 
 
 What this layer guarantees: a failed or compromised firmware update does not brick the device — the previous slot is retained. What it does not: it does not sign the OTA image (that is the secure-boot layer's job on targets that have it).
 
+### 9. Registry metadata and image signatures
+
+Every registry backend stores one metadata record per installed image: the stored length, the SHA-256 of the bytes as they were written, a layer count, a signature with its key id, and a flag marking a firmware-seeded image. The digest is computed on the install stream, so it covers exactly what the backend stored and costs no extra read.
+
+The record lives beside the image — a `.meta` sidecar on the posix backings, the LittleFS index record on ESP-IDF, and RAM on the in-memory backing. Removing an image removes its record.
+
+A signature arrives through the `reg/<name>:<version>.sig` route on the registry mount, under the same grant as an install, so signature delivery adds no platform seam. The payload is a big-endian key id and the 64-byte Ed25519 signature, which keeps every wire encoding out of the engine.
+
+What this layer guarantees today: the stored bytes are covered by a digest the install computed, and a signature can be recorded against the image it belongs to. What it does not: nothing yet refuses to load an image whose digest or signature does not check out. A digest the registry computes and stores beside the image is corruption coverage, since an attacker who can rewrite the image can rewrite the record with it.
+
 ## Trust chain
 
 ```mermaid

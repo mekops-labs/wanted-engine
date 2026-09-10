@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <registry-meta.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
 #include <wanted-api.h>
@@ -163,6 +164,14 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w);
  * its layers — a cheap header peek. Returns the count or a negative errno. */
 int PlatformRegistryReadImage(const reg_entry_t *entry, uint8_t *buf,
                               size_t maxLen);
+/* Read an entry's metadata record: the digest the install computed over the
+ * stored bytes, and any signature since attached. -ENOENT where the backing
+ * holds no record for the entry. */
+int PlatformRegistryMetaRead(const reg_entry_t *entry, registry_meta_t *out);
+/* Attach a signature and its key id to an entry, replacing any it holds. The
+ * image is written first; a record with no valid signature is unverified. */
+int PlatformRegistryMetaSetSignature(const reg_entry_t *entry, uint32_t keyId,
+                                     const uint8_t sig[REGISTRY_META_SIG_LEN]);
 
 /* Open a host directory to be exposed as a WASI preopen; returns a native
  * openat(2)-class fd owned by the VFS layer. A read-write mount creates it, a

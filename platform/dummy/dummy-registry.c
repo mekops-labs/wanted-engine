@@ -18,6 +18,7 @@ typedef struct {
     char name[WAPP_MAX_NAME_LEN];
     char version[WAPP_MAX_VERSION_LEN];
     size_t size;
+    registry_meta_t meta;
 } dummy_reg_entry_t;
 
 static dummy_reg_entry_t g_registry[DUMMY_REG_MAX_ENTRIES];
@@ -83,6 +84,10 @@ int DummyRegistrySeed(const reg_entry_t *entries, size_t count) {
                 WAPP_MAX_VERSION_LEN - 1);
         g_registry[idx].version[WAPP_MAX_VERSION_LEN - 1] = '\0';
         g_registry[idx].size = entries[i].size;
+        g_registry[idx].meta = (registry_meta_t){
+            .magic = REGISTRY_META_MAGIC,
+            .size = (uint32_t)entries[i].size,
+        };
         stored++;
     }
     return stored;
@@ -115,6 +120,31 @@ int PlatformRegistryRemove(const reg_entry_t *entry) {
     if (idx < 0)
         return -ENOENT;
     memset(&g_registry[idx], 0, sizeof(g_registry[idx]));
+    return 0;
+}
+
+/* Held in RAM beside the entry, so the record survives exactly as long as the
+ * image it describes. */
+int PlatformRegistryMetaRead(const reg_entry_t *entry, registry_meta_t *out) {
+    if (entry == NULL || out == NULL)
+        return -EINVAL;
+    int idx = reg_find(entry->name);
+    if (idx < 0)
+        return -ENOENT;
+    *out = g_registry[idx].meta;
+    return 0;
+}
+
+int PlatformRegistryMetaSetSignature(const reg_entry_t *entry, uint32_t keyId,
+                                     const uint8_t sig[REGISTRY_META_SIG_LEN]) {
+    if (entry == NULL || sig == NULL)
+        return -EINVAL;
+    int idx = reg_find(entry->name);
+    if (idx < 0)
+        return -ENOENT;
+    g_registry[idx].meta.keyId = keyId;
+    memcpy(g_registry[idx].meta.signature, sig, REGISTRY_META_SIG_LEN);
+    g_registry[idx].meta.flags |= REGISTRY_META_SIGNED;
     return 0;
 }
 

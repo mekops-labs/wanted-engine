@@ -136,6 +136,19 @@ static int metaLoad(const char *path, wapp_image_meta_t *out) {
     return 0;
 }
 
+static int metaStore(const char *path, const wapp_image_meta_t *meta) {
+    FILE *f = fopen(path, "wb");
+    if (f == NULL)
+        return -errno;
+    size_t w = fwrite(meta, 1, sizeof(*meta), f);
+    fclose(f);
+    if (w != sizeof(*meta)) {
+        remove(path);
+        return -EIO;
+    }
+    return 0;
+}
+
 /* The install ref (vfs-wanted-registry.c's wapp-visible grammar) is
  * "<name>" or "<name>:<version>" — a plain ':', distinct from the on-disk
  * REGISTRY_VERSION_SEPARATOR ('@') metaPath uses for the metadata filename. */
@@ -157,6 +170,7 @@ static bool splitRef(const char *ref, char *name, size_t nameLen, char *version,
 }
 
 static bool slotIsMapped(int slot);
+static bool isSeededRef(const char *name, const char *version);
 
 /* Mark used every slot a valid registry index references, plus every slot
  * a loaded wapp still runs from — an index entry can outlive the image's
@@ -227,6 +241,9 @@ static struct {
     size_t
         partitionOffset; /* running write cursor, absolute in the partition */
     size_t written;
+    /* Hashing rides the install stream, so covering every stored byte costs
+     * no extra flash read. */
+    void *sha;
     char name[WAPP_MAX_NAME_LEN];
     char version[WAPP_MAX_VERSION_LEN];
 } g_write;
@@ -273,6 +290,9 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
         g_write.slot = slot;
         g_write.partitionOffset = (size_t)slot * WAPP_IMAGE_SLOT_SIZE;
         g_write.written = 0;
+        if (g_write.sha != NULL)
+            PlatformSha256Free(g_write.sha);
+        g_write.sha = PlatformSha256New();
         strncpy(g_write.name, name, sizeof(g_write.name) - 1);
         g_write.name[sizeof(g_write.name) - 1] = '\0';
         strncpy(g_write.version, version, sizeof(g_write.version) - 1);
@@ -287,6 +307,8 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
             g_write.active = false;
             return -EIO;
         }
+        if (g_write.sha != NULL)
+            PlatformSha256Update(g_write.sha, buf, nbytes);
         g_write.partitionOffset += nbytes;
         g_write.written += nbytes;
         return (int)nbytes;
@@ -303,6 +325,8 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
             esp_partition_write(part, g_write.partitionOffset, buf, nbytes);
         if (err != ESP_OK)
             return -EIO;
+        if (g_write.sha != NULL)
+            PlatformSha256Update(g_write.sha, buf, nbytes);
         g_write.partitionOffset += nbytes;
         g_write.written += nbytes;
         return (int)nbytes;
@@ -312,26 +336,35 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
             return -EBADF;
 
         wapp_image_meta_t meta = {
-            .magic = WAPP_IMAGE_META_MAGIC,
+            .meta =
+                {
+                    .magic = REGISTRY_META_MAGIC,
+                    .size = (uint32_t)g_write.written,
+                    .layerCount = 1,
+                },
             .slot = (uint32_t)g_write.slot,
-            .size = (uint32_t)g_write.written,
             .slotSize = WAPP_IMAGE_SLOT_SIZE,
         };
+        if (g_write.sha != NULL) {
+            PlatformSha256Final(g_write.sha, meta.meta.layerDigest[0]);
+            PlatformSha256Free(g_write.sha);
+            g_write.sha = NULL;
+        }
+        if (isSeededRef(g_write.name, g_write.version))
+            meta.meta.flags |= REGISTRY_META_SEEDED;
+
         char path[WAPP_REG_PATH_MAX];
         metaPath(path, sizeof(path), g_write.name, g_write.version);
         g_write.active = false;
 
-        FILE *f = fopen(path, "wb");
-        if (f == NULL)
-            return -errno;
-        size_t w = fwrite(&meta, 1, sizeof(meta), f);
-        fclose(f);
-        if (w != sizeof(meta))
-            return -EIO;
-        return 0;
+        return metaStore(path, &meta);
     }
     case ABORT_WRITE:
         g_write.active = false;
+        if (g_write.sha != NULL) {
+            PlatformSha256Free(g_write.sha);
+            g_write.sha = NULL;
+        }
         return 0;
     default:
         return -EINVAL;
@@ -364,6 +397,54 @@ void PlatformRegistryMarkSeeded(const char *ref) {
     strncpy(g_seeded[g_seededCount].name, name, WAPP_MAX_NAME_LEN - 1);
     strncpy(g_seeded[g_seededCount].version, version, WAPP_MAX_VERSION_LEN - 1);
     g_seededCount++;
+
+    char path[WAPP_REG_PATH_MAX];
+    wapp_image_meta_t meta;
+    metaPath(path, sizeof(path), name, version);
+    if (metaLoad(path, &meta) == 0 &&
+        !(meta.meta.flags & REGISTRY_META_SEEDED)) {
+        meta.meta.flags |= REGISTRY_META_SEEDED;
+        metaStore(path, &meta);
+    }
+}
+
+int PlatformRegistryMetaRead(const reg_entry_t *entry, registry_meta_t *out) {
+    char path[WAPP_REG_PATH_MAX];
+    wapp_image_meta_t meta;
+
+    if (entry == NULL || out == NULL)
+        return -EINVAL;
+    metaPath(path, sizeof(path), entry->name, entry->version);
+    if (metaLoad(path, &meta) != 0)
+        return -ENOENT;
+    *out = meta.meta;
+    return 0;
+}
+
+int PlatformRegistryMetaSetSignature(const reg_entry_t *entry, uint32_t keyId,
+                                     const uint8_t sig[REGISTRY_META_SIG_LEN]) {
+    char path[WAPP_REG_PATH_MAX];
+    wapp_image_meta_t meta;
+
+    if (entry == NULL || sig == NULL)
+        return -EINVAL;
+    metaPath(path, sizeof(path), entry->name, entry->version);
+    if (metaLoad(path, &meta) != 0)
+        return -ENOENT;
+
+    meta.meta.keyId = keyId;
+    memcpy(meta.meta.signature, sig, REGISTRY_META_SIG_LEN);
+    meta.meta.flags |= REGISTRY_META_SIGNED;
+    return metaStore(path, &meta);
+}
+
+static bool isSeededRef(const char *name, const char *version) {
+    for (size_t i = 0; i < g_seededCount; i++) {
+        if (strncmp(g_seeded[i].name, name, WAPP_MAX_NAME_LEN) == 0 &&
+            strncmp(g_seeded[i].version, version, WAPP_MAX_VERSION_LEN) == 0)
+            return true;
+    }
+    return false;
 }
 
 static bool isSeeded(const reg_entry_t *entry) {
@@ -469,7 +550,7 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     metaPath(path, sizeof(path), resolved.name, resolved.version);
     wapp_image_meta_t meta;
     if (metaLoad(path, &meta) != 0 || meta.slot >= WAPP_IMAGE_MAX_SLOTS ||
-        meta.size == 0)
+        meta.meta.size == 0)
         return -ENOENT;
 
     const esp_partition_t *part = wappPartition();
@@ -480,7 +561,7 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     esp_partition_mmap_handle_t handle;
     esp_err_t err =
         flashHelperMmap(part, (size_t)meta.slot * WAPP_IMAGE_SLOT_SIZE,
-                        meta.size, &ptr, &handle);
+                        meta.meta.size, &ptr, &handle);
     if (err != ESP_OK)
         return -EIO;
 
@@ -490,7 +571,7 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     }
 
     w->layers[0] = (uint8_t *)ptr;
-    w->layer_lens[0] = meta.size;
+    w->layer_lens[0] = meta.meta.size;
     w->layer_cnt = 1;
 
     strncpy(w->image, resolved.name, WAPP_MAX_NAME_LEN - 1);
@@ -528,7 +609,7 @@ int PlatformRegistryReadImage(const reg_entry_t *entry, uint8_t *buf,
     if (part == NULL)
         return -ENODEV;
 
-    size_t want = min(maxLen, (size_t)meta.size);
+    size_t want = min(maxLen, (size_t)meta.meta.size);
     esp_err_t err = esp_partition_read(
         part, (size_t)meta.slot * WAPP_IMAGE_SLOT_SIZE, buf, want);
     if (err != ESP_OK)

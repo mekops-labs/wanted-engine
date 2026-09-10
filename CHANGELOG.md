@@ -1,6 +1,21 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- Every registry backend stores a metadata record per image: stored size, the
+  SHA-256 the install computed, layer count, signature, key id and a seeded flag.
+- `reg/<name>:<version>.sig` on the registry mount takes a 68-byte payload — a
+  big-endian key id then the 64-byte signature — into that record.
+
+### Changed
+
+- The ESP-IDF registry index record carries the shared metadata and a new
+  magic; a record written by an earlier firmware does not list.
+
 0.17.0 (2026-09-10)
 -------------------
 

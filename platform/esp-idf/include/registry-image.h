@@ -6,26 +6,24 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* On-disk record for one registry entry's flash-partition placement. The
- * LittleFS index file holds exactly this struct; the TAR bytes live in the raw
- * partition slot it names. registry_flash.c is the only user of `slot`. */
+#include <registry-meta.h>
+
+/* On-disk record for one registry entry: the metadata every backend stores,
+ * followed by this backing's flash-partition placement. The LittleFS index
+ * file holds exactly this struct; the TAR bytes live in the slot it names. */
 typedef struct {
-    uint32_t magic;
+    registry_meta_t meta;
     uint32_t slot;
-    uint32_t size;     /* actual stored image length, <= slotSize */
     uint32_t slotSize; /* stride the slot offset was computed under */
 } wapp_image_meta_t;
 
-/* The index outlives a firmware whose slot geometry differs, so a record
- * naming another stride points at bytes that moved; the magic keeps a record
- * without the field from reading as one that has it. */
-#define WAPP_IMAGE_META_MAGIC 0x57415032u /* "WAP2" */
-
 /* True where `bytes` of record parse and name `slotSize`. Enumeration and
- * image reads share it, or the registry lists an entry no read can resolve. */
+ * image reads share it, or the registry lists an entry no read can resolve.
+ * The index outlives a firmware whose slot geometry differs, and a record
+ * naming another stride points at bytes that moved. */
 static inline bool WappImageMetaValid(const wapp_image_meta_t *meta,
                                       size_t bytes, uint32_t slotSize) {
-    return bytes == sizeof(*meta) && meta->magic == WAPP_IMAGE_META_MAGIC &&
+    return bytes == sizeof(*meta) && RegistryMetaValid(&meta->meta, bytes) &&
            meta->slotSize == slotSize;
 }
 

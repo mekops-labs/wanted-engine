@@ -25,6 +25,11 @@ int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
                         size_t bufLen);
 int WantedCloseRegistry(void);
 int WantedRegistryRemove(const reg_entry_t *entry);
+/* Attach a signature to the installed image `ref` ("<name>[:<version>]")
+ * names. `payload` is REGISTRY_SIG_PAYLOAD_LEN bytes: a big-endian key id
+ * then the raw signature. -ENOENT when no such image is installed. */
+int WantedRegistrySetSignature(const char *ref, const uint8_t *payload,
+                               size_t payloadLen);
 /* Synthesize a small JSON descriptor (name/version/size) for a registry entry
  * into buf — the entry alone is the source, with no image load. */
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,

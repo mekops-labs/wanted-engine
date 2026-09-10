@@ -172,6 +172,37 @@ int WantedCloseRegistry(void) {
     return PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
 }
 
+int WantedRegistrySetSignature(const char *ref, const uint8_t *payload,
+                               size_t payloadLen) {
+    reg_entry_t entry = {0};
+    const char *colon;
+    uint32_t keyId;
+    size_t nameLen;
+
+    if (ref == NULL || payload == NULL)
+        return -EINVAL;
+    if (payloadLen != REGISTRY_SIG_PAYLOAD_LEN)
+        return -EINVAL;
+
+    /* The signed message names the version, so a versionless ref cannot say
+     * which image the signature belongs to. */
+    colon = strchr(ref, ':');
+    if (colon == NULL || colon[1] == '\0')
+        return -EINVAL;
+    nameLen = (size_t)(colon - ref);
+    if (nameLen == 0 || nameLen >= WAPP_MAX_NAME_LEN ||
+        strlen(colon + 1) >= WAPP_MAX_VERSION_LEN)
+        return -EINVAL;
+
+    memcpy(entry.name, ref, nameLen);
+    strncpy(entry.version, colon + 1, WAPP_MAX_VERSION_LEN - 1);
+
+    keyId = ((uint32_t)payload[0] << 24) | ((uint32_t)payload[1] << 16) |
+            ((uint32_t)payload[2] << 8) | (uint32_t)payload[3];
+
+    return PlatformRegistryMetaSetSignature(&entry, keyId, payload + 4);
+}
+
 /* Read a uLEB128-encoded u32 at *p (bounded by end), advancing *p. Returns 0,
  * or -EINVAL on truncation / a >5-byte encoding. */
 static int ulebU32(const uint8_t **p, const uint8_t *end, uint32_t *out) {

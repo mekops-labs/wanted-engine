@@ -455,6 +455,139 @@ TEST(vfs_registry_driver, ReadDir_ShortBuffer_WalksEveryEntryOnce) {
     TEST_ASSERT_EQUAL_INT(1, seen2);
 }
 
+/* Build a signature payload: a big-endian key id then a filled signature. */
+static void MakeSigPayload(uint8_t *out, uint32_t keyId, uint8_t fill) {
+    out[0] = (uint8_t)(keyId >> 24);
+    out[1] = (uint8_t)(keyId >> 16);
+    out[2] = (uint8_t)(keyId >> 8);
+    out[3] = (uint8_t)keyId;
+    memset(out + 4, fill, REGISTRY_META_SIG_LEN);
+}
+
+TEST(vfs_registry_driver, Sig_Write_RecordsSignatureOnEntry) {
+    uint8_t payload[REGISTRY_SIG_PAYLOAD_LEN];
+    registry_meta_t meta;
+    reg_entry_t entry = MakeEntry("app1", "1.0.0", 42);
+
+    SeedTwo();
+    MakeSigPayload(payload, 3, 0xab);
+
+    int fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(sizeof(payload),
+                          drv->Write(drv->ctx, fd, payload, sizeof(payload)));
+    TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
+
+    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryMetaRead(&entry, &meta));
+    TEST_ASSERT_EQUAL_UINT32(3, meta.keyId);
+    TEST_ASSERT_TRUE((meta.flags & REGISTRY_META_SIGNED) != 0);
+    TEST_ASSERT_EQUAL_UINT8(0xab, meta.signature[0]);
+    TEST_ASSERT_EQUAL_UINT8(0xab, meta.signature[REGISTRY_META_SIG_LEN - 1]);
+}
+
+TEST(vfs_registry_driver, Sig_ArrivesInChunks_AppliedWhole) {
+    uint8_t payload[REGISTRY_SIG_PAYLOAD_LEN];
+    registry_meta_t meta;
+    reg_entry_t entry = MakeEntry("app1", "1.0.0", 42);
+
+    SeedTwo();
+    MakeSigPayload(payload, 1, 0x5a);
+
+    int fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(10, drv->Write(drv->ctx, fd, payload, 10));
+    TEST_ASSERT_EQUAL_INT(
+        sizeof(payload) - 10,
+        drv->Write(drv->ctx, fd, payload + 10, sizeof(payload) - 10));
+    TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
+
+    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryMetaRead(&entry, &meta));
+    TEST_ASSERT_TRUE((meta.flags & REGISTRY_META_SIGNED) != 0);
+}
+
+TEST(vfs_registry_driver, Sig_ShortPayload_RefusedAtClose) {
+    uint8_t payload[REGISTRY_SIG_PAYLOAD_LEN];
+    registry_meta_t meta;
+    reg_entry_t entry = MakeEntry("app1", "1.0.0", 42);
+
+    SeedTwo();
+    MakeSigPayload(payload, 1, 0x11);
+
+    int fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(20, drv->Write(drv->ctx, fd, payload, 20));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Close(drv->ctx, fd));
+
+    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryMetaRead(&entry, &meta));
+    TEST_ASSERT_EQUAL_INT(0, meta.flags & REGISTRY_META_SIGNED);
+}
+
+TEST(vfs_registry_driver, Sig_OversizePayload_ReturnsEmsgsize) {
+    uint8_t payload[REGISTRY_SIG_PAYLOAD_LEN + 1];
+
+    SeedTwo();
+    memset(payload, 0, sizeof(payload));
+
+    int fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(-EMSGSIZE,
+                          drv->Write(drv->ctx, fd, payload, sizeof(payload)));
+}
+
+TEST(vfs_registry_driver, Sig_VersionlessRef_ReturnsEinval) {
+    uint8_t payload[REGISTRY_SIG_PAYLOAD_LEN];
+
+    SeedTwo();
+    MakeSigPayload(payload, 1, 0x22);
+
+    int fd = drv->Open(drv->ctx, "app1.sig", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(sizeof(payload),
+                          drv->Write(drv->ctx, fd, payload, sizeof(payload)));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Close(drv->ctx, fd));
+}
+
+TEST(vfs_registry_driver, Sig_UnknownImage_ReturnsEnoent) {
+    uint8_t payload[REGISTRY_SIG_PAYLOAD_LEN];
+
+    SeedTwo();
+    MakeSigPayload(payload, 1, 0x33);
+
+    int fd = drv->Open(drv->ctx, "ghost:9.9.9.sig", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(sizeof(payload),
+                          drv->Write(drv->ctx, fd, payload, sizeof(payload)));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Close(drv->ctx, fd));
+}
+
+TEST(vfs_registry_driver, Sig_NoBytesWritten_IsNoOp) {
+    registry_meta_t meta;
+    reg_entry_t entry = MakeEntry("app1", "1.0.0", 42);
+
+    SeedTwo();
+    int fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
+
+    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryMetaRead(&entry, &meta));
+    TEST_ASSERT_EQUAL_INT(0, meta.flags & REGISTRY_META_SIGNED);
+}
+
+TEST(vfs_registry_driver, Sig_InvalidRef_ReturnsEinvalAtOpen) {
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "app 1:1.0.0.sig", VFS_O_WRONLY));
+}
+
+TEST(vfs_registry_driver, MetaRead_SeededEntry_CarriesStoredSize) {
+    registry_meta_t meta;
+    reg_entry_t entry = MakeEntry("app2", "2.3.4", 84);
+
+    SeedTwo();
+    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryMetaRead(&entry, &meta));
+    TEST_ASSERT_EQUAL_UINT32(REGISTRY_META_MAGIC, meta.magic);
+    TEST_ASSERT_EQUAL_UINT32(84, meta.size);
+}
+
 TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, ReadDir_ShortBuffer_ReportsWhatItWrote);
     RUN_TEST_CASE(vfs_registry_driver, ReadDir_ShortBuffer_WalksEveryEntryOnce);
@@ -499,4 +632,13 @@ TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, OpenEntry_WrongVersion_ReturnsEnoent);
     RUN_TEST_CASE(vfs_registry_driver, Unlink_WithoutOpeningRoot_RemovesEntry);
     RUN_TEST_CASE(vfs_registry_driver, Unlink_NamePrefix_ReturnsEnoent);
+    RUN_TEST_CASE(vfs_registry_driver, Sig_Write_RecordsSignatureOnEntry);
+    RUN_TEST_CASE(vfs_registry_driver, Sig_ArrivesInChunks_AppliedWhole);
+    RUN_TEST_CASE(vfs_registry_driver, Sig_ShortPayload_RefusedAtClose);
+    RUN_TEST_CASE(vfs_registry_driver, Sig_OversizePayload_ReturnsEmsgsize);
+    RUN_TEST_CASE(vfs_registry_driver, Sig_VersionlessRef_ReturnsEinval);
+    RUN_TEST_CASE(vfs_registry_driver, Sig_UnknownImage_ReturnsEnoent);
+    RUN_TEST_CASE(vfs_registry_driver, Sig_NoBytesWritten_IsNoOp);
+    RUN_TEST_CASE(vfs_registry_driver, Sig_InvalidRef_ReturnsEinvalAtOpen);
+    RUN_TEST_CASE(vfs_registry_driver, MetaRead_SeededEntry_CarriesStoredSize);
 }

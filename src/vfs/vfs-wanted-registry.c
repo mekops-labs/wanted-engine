@@ -36,7 +36,11 @@ typedef enum {
     REG_FD_ROOT,  /* the mount root, enumerated with ReadDir */
     REG_FD_ENTRY, /* one image, read as a synthesized descriptor */
     REG_FD_WRITE, /* an install, named by the ref the open carried */
+    REG_FD_SIG,   /* a signature for the ref the open carried */
 } reg_fd_kind_t;
+
+/* Sibling route carrying an installed image's signature: "<ref>.sig". */
+#define REG_SIG_SUFFIX ".sig"
 
 typedef struct {
     reg_fd_kind_t kind;
@@ -48,6 +52,9 @@ typedef struct {
      * and whether its first chunk has reached the platform writer. */
     bool startedWriting;
     char writeRef[REG_REF_MAX];
+    /* SIG: the payload buffered until close, which applies it whole. */
+    uint8_t sig[REGISTRY_SIG_PAYLOAD_LEN];
+    size_t sigLen;
 } reg_fd_t;
 
 static struct vfs_driver_ctx_t {
@@ -188,7 +195,29 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
         /* Install by ref: opening a "<name>:<ver>" path for write names the
          * image. The ref travels to the platform writer, which names the
          * stored file by it. Image bytes go to this descriptor. */
-        if (path[0] == '\0' || strlen(path) >= REG_REF_MAX)
+        size_t len = strlen(path);
+        size_t suffixLen = sizeof(REG_SIG_SUFFIX) - 1;
+        if (path[0] == '\0')
+            return -ENAMETOOLONG;
+
+        if (len > suffixLen &&
+            strcmp(path + len - suffixLen, REG_SIG_SUFFIX) == 0) {
+            char ref[REG_REF_MAX];
+            size_t refLen = len - suffixLen;
+            if (refLen >= REG_REF_MAX)
+                return -ENAMETOOLONG;
+            memcpy(ref, path, refLen);
+            ref[refLen] = '\0';
+            if (!validInstallRef(ref))
+                return -EINVAL;
+            ret = allocFd(d, REG_FD_SIG);
+            if (ret < 0)
+                return ret;
+            memcpy(d->fds[ret].writeRef, ref, refLen + 1);
+            return ret;
+        }
+
+        if (len >= REG_REF_MAX)
             return -ENAMETOOLONG;
         if (!validInstallRef(path))
             return -EINVAL;
@@ -222,6 +251,21 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
 
     if (f == NULL)
         return -EBADF;
+
+    if (f->kind == REG_FD_SIG) {
+        char ref[REG_REF_MAX];
+        uint8_t payload[REGISTRY_SIG_PAYLOAD_LEN];
+        size_t len = f->sigLen;
+
+        memcpy(ref, f->writeRef, sizeof(ref));
+        memcpy(payload, f->sig, sizeof(payload));
+        memset(f, 0, sizeof(*f));
+        /* A short payload names no signature, and applying part of one would
+         * record bytes no verifier can use. */
+        if (len == 0)
+            return 0;
+        return WantedRegistrySetSignature(ref, payload, len);
+    }
 
     finalize = f->kind == REG_FD_WRITE && f->startedWriting;
     memset(f, 0, sizeof(*f)); /* frees the slot: kind becomes REG_FD_FREE */
@@ -284,6 +328,13 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
         return -EINVAL;
     if (f == NULL)
         return -EBADF;
+    if (f->kind == REG_FD_SIG) {
+        if (f->sigLen + nbyte > sizeof(f->sig))
+            return -EMSGSIZE;
+        memcpy(f->sig + f->sigLen, buf, nbyte);
+        f->sigLen += nbyte;
+        return (int)nbyte;
+    }
     /* Only an install accepts bytes; the root and a stored image do not. */
     if (f->kind != REG_FD_WRITE)
         return -EROFS;

@@ -77,7 +77,7 @@ static long readMetaSize(const char *path) {
     fclose(f);
     if (!WappImageMetaValid(&meta, r, WAPP_IMAGE_SLOT_SIZE))
         return -1;
-    return (long)meta.size;
+    return (long)meta.meta.size;
 }
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
