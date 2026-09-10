@@ -45,8 +45,8 @@ WAPP_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh
 # make reads every word as its own goal, so `make defconfig openwrt` reaches just
 # as two recipes. Forward trailing goals as arguments and neutralise them as
 # targets. setconfig is absent: its `=` is read as a variable assignment first.
-ARG_RECIPES := analyze defconfig savedefconfig selftest-qemu sizes \
-               supervisor-variant target
+ARG_RECIPES := analyze defconfig savedefconfig selftest-openwrt-qemu \
+               selftest-qemu sizes supervisor-variant target
 ifneq ($(filter $(ARG_RECIPES),$(firstword $(MAKECMDGOALS))),)
 JUST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 ifneq ($(JUST_ARGS),)
