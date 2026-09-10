@@ -93,6 +93,19 @@ int DummyRegistrySeed(const reg_entry_t *entries, size_t count) {
     return stored;
 }
 
+/* Replace an entry's record, so a test can pose an image as signed, seeded, or
+ * hashing to something other than its bytes. */
+int DummyRegistrySetMeta(const reg_entry_t *entry,
+                         const registry_meta_t *meta) {
+    if (!entry || !meta)
+        return -EINVAL;
+    int idx = reg_find(entry->name);
+    if (idx < 0)
+        return -ENOENT;
+    g_registry[idx].meta = *meta;
+    return 0;
+}
+
 /* ── Platform registry API ──────────────────────────────────────────────── */
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {

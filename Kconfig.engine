@@ -363,6 +363,26 @@ config WANTED_MAX_LAYERS
 	  A supervisor reads the value from /proc/wanted and refuses a deployment
 	  naming more, so raising it here is what lets one arrive.
 
+config WANTED_WAPP_IMAGE_VERIFY_ENFORCE
+	bool "Refuse a wapp image that fails verification"
+	default n
+	help
+	  Verification of a registry image runs on every load whatever this is
+	  set to, and its result is reported at /proc/wanted and in the log.
+	  This decides whether a failure refuses the load. It is a floor: the
+	  engine configuration may turn enforcement on and can never turn it
+	  off. Leave it off until every image a fleet runs carries a signature,
+	  or those wapps stop starting.
+
+config WANTED_IMAGE_SIGNING_KEYS
+	string "Image signing keyring"
+	default ""
+	help
+	  Up to four comma-separated "<id>:<64 hex>" Ed25519 public keys, which
+	  a signature names by id. Compiled into the firmware, so secure boot
+	  covers them and rotating one takes a firmware update. A malformed
+	  entry is dropped.
+
 config WANTED_MAX_OPTIONS_SIZE
 	int "Launch-config options string (bytes)"
 	default 128

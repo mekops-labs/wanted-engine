@@ -11,6 +11,15 @@ Unreleased
 - `reg/<name>:<version>.sig` on the registry mount takes a 68-byte payload — a
   big-endian key id then the 64-byte signature — into that record.
 
+- A registry image is verified on every load: its layers are hashed against the
+  entry's record and the record's signature checked against a firmware keyring.
+- `CONFIG_WANTED_IMAGE_SIGNING_KEYS` carries up to four `<id>:<64 hex>`
+  Ed25519 public keys, selected by the key id a signature names.
+- `CONFIG_WANTED_WAPP_IMAGE_VERIFY_ENFORCE` (default `n`) refuses an image that
+  fails verification. `system.enforceImageVerify` raises it, and no source
+  lowers it.
+- `/proc/wanted` reports `image_verify` and `image_verify_floor`.
+
 ### Changed
 
 - The ESP-IDF registry index record carries the shared metadata and a new

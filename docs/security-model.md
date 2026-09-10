@@ -161,7 +161,41 @@ The record lives beside the image — a `.meta` sidecar on the posix backings, t
 
 A signature arrives through the `reg/<name>:<version>.sig` route on the registry mount, under the same grant as an install, so signature delivery adds no platform seam. The payload is a big-endian key id and the 64-byte Ed25519 signature, which keeps every wire encoding out of the engine.
 
-What this layer guarantees today: the stored bytes are covered by a digest the install computed, and a signature can be recorded against the image it belongs to. What it does not: nothing yet refuses to load an image whose digest or signature does not check out. A digest the registry computes and stores beside the image is corruption coverage, since an attacker who can rewrite the image can rewrite the record with it.
+What this layer guarantees: the stored bytes are covered by a digest the install computed, and a signature is recorded against the image it belongs to. A digest the registry computes and stores beside the image is corruption coverage on its own — an attacker who can rewrite the image can rewrite the record with it. The signature is what makes it a security boundary, and the next layer is where it is checked.
+
+### 10. Image verification at load
+
+Every load of a registry image hashes the layers that were mapped and checks them against the entry's record, then verifies the record's signature. The signed message binds identity to content:
+
+```
+u8 len(name) - name - u8 len(version) - version - u8 layer_count - digest0 ... digestN-1
+```
+
+Digests run base-first. `wapp_t.layers[]` runs topmost-first, so the check reverses them. The length prefixes are what stop `foo` with `1.0` and `foo1` with `.0` assembling the same bytes.
+
+Binding the name and version closes interposition: validly signed bytes installed under another image's reference verify against a real key, and a payload naming only the bytes would accept them.
+
+The signature is verified against a keyring compiled into the firmware — up to four Ed25519 public keys in `CONFIG_WANTED_IMAGE_SIGNING_KEYS`, selected by the key id the signature names. Secure boot covers the firmware, so it covers the keyring. Rotating a key takes a firmware update, and four slots give a rotation window without one.
+
+A check reports one of these states, in the log and at `/proc/wanted`:
+
+| State | Meaning | errno when enforced |
+|---|---|---|
+| `ok` | the digests and the signature check out | — |
+| `seeded` | firmware-carried, covered by the firmware signature | — |
+| `no_record` | the backing holds no record for this entry | `ENOENT` |
+| `digest_mismatch` | the mapped bytes are not the bytes that were installed | `EBADMSG` |
+| `no_signature` | the record carries no signature | `ENOMSG` |
+| `unknown_key` | the signature names a key id the keyring does not hold | `EACCES` |
+| `bad_signature` | the signature does not verify over the message | `EILSEQ` |
+
+`PlatformEd25519Verify` returning `-ENOSYS` reads as `bad_signature`. Every error path is "not valid", never "trust it".
+
+**Enforcement ships off.** `CONFIG_WANTED_WAPP_IMAGE_VERIFY_ENFORCE` defaults to `n`, and it gates only the refusal — the check runs and reports either way, so a fleet can be watched converging before anything blocks. Enforcement cannot precede signing: the first firmware carrying an unconditional check would strand every image already installed on every device.
+
+`system.enforceImageVerify` in the engine configuration raises enforcement without a reflash. The effective value is the logical OR of the compiled-in floor and every runtime source, so a source may turn it on and none may turn it off. That rule exists because the configuration is flash-resident and merged from an overlay and UCI, both writable by the attacker this model names — a runtime disable would be a complete bypass. `/proc/wanted` reports the effective value and the floor separately.
+
+What this layer guarantees: the artifact handed to the runtime is the artifact a signature covers, checked on every load, without the supervisor's participation. What it does not: it is inert until enforcement is on, and the keyring is only as good as the firmware signature covering it.
 
 ## Trust chain
 

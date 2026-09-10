@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <registry-meta.h>
 #include <wanted-api.h>
 
 /* Reset all in-memory file/directory/fd state. Call in TEST_SETUP. */
@@ -32,6 +33,7 @@ void DummyRegistryReset(void);
  * stored, or -ENOSPC when the table is full. The test write path, since the
  * dummy platform cannot stream an image to a host file. */
 int DummyRegistrySeed(const reg_entry_t *entries, size_t count);
+int DummyRegistrySetMeta(const reg_entry_t *entry, const registry_meta_t *meta);
 
 /* ── GPIO fake control (dummy-gpio.c) ───────────────────────────────────── */
 

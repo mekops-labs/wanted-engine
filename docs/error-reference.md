@@ -63,7 +63,10 @@ the same code can mean different things than it would on a native filesystem.
 |-------|----------------|
 | `EINVAL` | Catch-all for a malformed argument to a VFS or API call (a NULL buffer, a bad flag, an out-of-range value). |
 | `ENODEV` | A requested driver is not available on this build/platform. |
-| `EBADMSG` | A framed/encoded message failed to parse. |
+| `EBADMSG` | A framed/encoded message failed to parse, or a registry image's bytes do not match the digest its record holds. |
+| `ENOMSG` | A registry image carries no signature and the build enforces verification. |
+| `EILSEQ` | A registry image's signature does not verify. |
+| `EACCES` | A registry image's signature names a key id the firmware keyring does not hold. |
 
 ## See also
 

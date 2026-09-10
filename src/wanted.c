@@ -11,6 +11,7 @@
 
 #include <debug_trace.h>
 #include <wanted-autoconf.h>
+#include <wanted-image-verify.h>
 #include <wanted_log.h>
 #include <wanted_malloc.h>
 
@@ -405,6 +406,8 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
         "max_envs:\t%d\n"
         "log_slots:\t%d\n"
         "reg_slots:\t%zu\n"
+        "image_verify:\t%s\n"
+        "image_verify_floor:\t%s\n"
         "reset_reason:\t%s\n",
         PlatformName(), WANTED_VERSION, (unsigned long long)LogStoreUptimeMs(),
         WANTED_SUPERVISOR_ABI, CONFIG_WANTED_MAX_WAPPS, WAPP_MAX_NAME_LEN,
@@ -413,7 +416,8 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
         CONFIG_WANTED_WASM_MAX_MEMORY_PAGES, CONFIG_WANTED_MAX_DRIVERS_CNT,
         CONFIG_WANTED_MAX_OPTIONS_SIZE, TARFS_MAX_LAYERS, WAPP_MAX_ARGS,
         WAPP_MAX_ENVS, CONFIG_WANTED_LOG_SLOTS, PlatformRegistrySlots(),
-        resetReason());
+        WantedImageVerifyEnforced() ? "enforcing" : "reporting",
+        WantedImageVerifyFloor() ? "enforcing" : "reporting", resetReason());
 
     if (w < 0)
         return -EIO;
@@ -1021,7 +1025,19 @@ static int loadSupervisorFromRegistry(const char *path, wapp_t *w) {
         e.name[WAPP_MAX_NAME_LEN - 1] = '\0';
     }
 
-    return PlatformRegistryWappLoad(&e, w);
+    int ret = PlatformRegistryWappLoad(&e, w);
+    if (ret < 0)
+        return ret;
+
+    int gate = WantedImageVerifyGate(&e, w);
+    if (gate < 0) {
+        PlatformWappUnload(w);
+        memset((void *)w->layers, 0, sizeof(w->layers));
+        memset(w->layer_lens, 0, sizeof(w->layer_lens));
+        w->layer_cnt = 0;
+        return gate;
+    }
+    return ret;
 }
 
 /* Version the firmware's own supervisor image was built from. Empty where the

@@ -12,6 +12,7 @@
 #include <vfs-netfs.h>
 #include <wanted-api.h>
 #include <wanted-autoconf.h>
+#include <wanted-image-verify.h>
 #include <wanted-vfs-api.h>
 #include <wanted_log.h>
 #include <wanted_malloc.h>
@@ -95,6 +96,13 @@ static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
     json_t const *priv = json_getProperty(system, "privileged");
     if (priv && JSON_BOOLEAN == json_getType(priv))
         out->privileged = json_getBoolean(priv);
+
+    /* Enforcement is monotonic: a configuration may raise it and never lower
+     * it, because this file sits on flash any attacker with write access to
+     * the image can also rewrite. */
+    json_t const *enforce = json_getProperty(system, "enforceImageVerify");
+    if (enforce && JSON_BOOLEAN == json_getType(enforce))
+        WantedImageVerifyRaise(json_getBoolean(enforce));
 
     json_t const *supervisor = json_getProperty(json, "supervisor");
     if (supervisor && JSON_OBJ == json_getType(supervisor)) {

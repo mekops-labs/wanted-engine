@@ -3,6 +3,7 @@ set(sources
     "wanted.c"
     "wanted_wasm_api.c"
     "wanted-vfs-api.c"
+    "wanted-image-verify.c"
     "log-store.c"
     "version.c"
     "default_supervisor_cfg.json.h"

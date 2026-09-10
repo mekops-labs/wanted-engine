@@ -45,6 +45,7 @@ A minimal `{"system": {}}` is a valid config.
 | Field | Type | Default | Effect |
 |-------|------|---------|--------|
 | `system.privileged` | boolean | `false` | Enables the privileged `/proc` entries (`wapps`, `memory`). When false they are hidden from reads and enumeration. |
+| `system.enforceImageVerify` | boolean | `false` | Refuses a registry image that fails verification. Monotonic: it raises enforcement and can never clear it, and the compiled-in `CONFIG_WANTED_WAPP_IMAGE_VERIFY_ENFORCE` is a floor this cannot go below. Verification runs and reports whatever this is set to. |
 | `supervisor.imagePath` | string | (build option) | Where the supervisor TAR image comes from: a path, or `registry:<name>[:<version>]` for one the wapp registry holds. Overrides the compiled-in default. |
 | `supervisor.keepInstalled` | boolean | `false` | Keeps the installed supervisor even when the firmware carries a newer one. See below. |
 | `supervisor.params` | object | (compiled-in) | The supervisor's own launch config — same schema as a wapp `config` node. |

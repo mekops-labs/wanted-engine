@@ -12,6 +12,7 @@
 
 #include <platform.h>
 #include <wanted-api.h>
+#include <wanted-image-verify.h>
 #include <wanted-vfs-api.h>
 #include <wanted_malloc.h>
 
@@ -255,6 +256,10 @@ static int startWapp(struct vfs_driver_ctx_t *d, const char *name,
     ret = PlatformRegistryWappLoad(&e, wapp);
     if (ret < 0)
         goto FREE; /* nothing mapped yet */
+
+    ret = WantedImageVerifyGate(&e, wapp);
+    if (ret < 0)
+        goto UNLOAD;
 
     ret = PlatformWappStart(wapp);
     if (ret < 0)
