@@ -1056,8 +1056,7 @@ static bool installedSupervisorVersion(const char *ref, char *out, size_t len) {
 
 /* True when the firmware carries a newer supervisor than the installed one a
  * versionless reference would load. A firmware update replaces only the image
- * the app partition holds, so without this an older installed supervisor keeps
- * running for as long as it stays installed. */
+ * the app partition holds. */
 static bool bundledSupervisorIsNewer(const char *path,
                                      const wantedConfig_t *cfg) {
     char installed[WAPP_MAX_VERSION_LEN];

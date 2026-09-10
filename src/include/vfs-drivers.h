@@ -22,7 +22,7 @@ enum vfs_socket_type_t {
                      * port. Assumes a reliable, ordered stream. */
     VFS_SKT_UNIX,   /* AF_UNIX stream socket over the filesystem, e.g.
                      * "unix:///run/some.sock", no port. Opt-in
-                     * (CONFIG_WANTED_VFS_SOCKET_UNIX), hosted platforms only. */
+                     * (CONFIG_WANTED_VFS_SOCKET_UNIX), hosted only. */
 };
 
 typedef vfs_driver_t *(*VfsInitFunction_t)(const wapp_t *wapp,

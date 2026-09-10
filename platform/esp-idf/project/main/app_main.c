@@ -167,11 +167,9 @@ static int jsonStringField(const char *json, const char *field, char *out,
     return (int)len;
 }
 
-/* Take the enrolment blob `deputy device enrol` prints — pretty-printed JSON
- * with device_id, join_token, state_key and an optional manager — pasted
- * verbatim over the console, and place it where the supervisor looks for it
- * so a bench board can enrol without a filesystem it cannot otherwise write
- * to. Skips a board that already holds a redeemed secret. */
+/* Place the enrolment blob pasted over the console — JSON with device_id,
+ * join_token, state_key and an optional manager — where the supervisor looks
+ * for it. Skips a board that already holds a redeemed secret. */
 static void provisionSupervisorBlob(void) {
     /* The redeemed secret, not the blob, is what says a board is enrolled: a
      * blob that was mistyped or has expired must be replaceable. */

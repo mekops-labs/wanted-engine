@@ -22,10 +22,8 @@
  * never-arriving peer becomes -EAGAIN rather than a hang. */
 #define PIPE_POLL_INTERVAL_NS 1000000ULL /* 1 ms */
 
-/* The cap is a deadline and not a count of passes: a platform whose sleep
- * rounds up to a scheduler tick would otherwise wait ten times as long as
- * this says.
- */
+/* The cap is a deadline: a platform whose sleep rounds up to a scheduler tick
+ * would otherwise wait ten times as long as this says. */
 
 #define PIPE_POLL_MAX_NS 5000000000ULL /* 5 s safety cap */
 
@@ -491,9 +489,8 @@ static int _bDestroy(vfs_driver_t *drv) {
 }
 
 /* Pipe console driver — backs a console slot with a named pipe in the shared
- * store, so a peer wapp reads the stream live. A full ring short-writes and
- * then blocks to the poll cap, so a slow reader throttles the writer, never
- * silently losing its bytes. */
+ * store, so a peer wapp reads the stream live. A full ring short-writes, then
+ * blocks to the poll cap: a slow reader throttles the writer. */
 
 typedef struct {
     pipe_store_t *store;
