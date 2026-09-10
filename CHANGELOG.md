@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.17.0 (2026-09-10)
+-------------------
 
 ### Added
 
@@ -28,6 +28,7 @@ Unreleased
   the `.bin`.
 - A launch-config grant that fails to install is named in the logged error.
 - `distclean` removes `build-*` directories.
+- `make selftest-openwrt-qemu <sdk> <report>` forwards both arguments.
 - Bumped `wapps/sheriff` to v0.8.0.
 
 ### Fixed
