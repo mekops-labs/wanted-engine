@@ -597,7 +597,7 @@ TEST(vfs_registry_driver, Descriptor_ReportsWhetherTheEntryIsSigned) {
     int n = drv->Read(drv->ctx, fd, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
     buf[n] = '\0';
-    TEST_ASSERT_NOT_NULL(strstr(buf, "\"signed\":false"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"verify\":\"unsigned\""));
     drv->Close(drv->ctx, fd);
 
     MakeSigPayload(payload, 1, 0xc3);
@@ -610,7 +610,23 @@ TEST(vfs_registry_driver, Descriptor_ReportsWhetherTheEntryIsSigned) {
     n = drv->Read(drv->ctx, fd, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
     buf[n] = '\0';
-    TEST_ASSERT_NOT_NULL(strstr(buf, "\"signed\":true"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"verify\":\"signed\""));
+}
+
+/* An install interrupted before its record landed: the image is there and the
+ * record is not, and the descriptor has to say so or nothing repairs it. */
+TEST(vfs_registry_driver, Descriptor_ReportsAMissingRecord) {
+    char buf[256];
+    reg_entry_t e = MakeEntry("app1", "1.0.0", 42);
+
+    SeedTwo();
+    TEST_ASSERT_EQUAL_INT(0, DummyRegistryDropMeta(&e));
+
+    int fd = OpenEntry("app1:1.0.0");
+    int n = drv->Read(drv->ctx, fd, buf, sizeof(buf) - 1);
+    TEST_ASSERT_TRUE(n > 0);
+    buf[n] = '\0';
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"verify\":\"none\""));
 }
 
 TEST_GROUP_RUNNER(vfs_registry_driver) {
@@ -666,6 +682,7 @@ TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, Sig_NoBytesWritten_IsNoOp);
     RUN_TEST_CASE(vfs_registry_driver, Sig_InvalidRef_ReturnsEinvalAtOpen);
     RUN_TEST_CASE(vfs_registry_driver, MetaRead_SeededEntry_CarriesStoredSize);
+    RUN_TEST_CASE(vfs_registry_driver, Descriptor_ReportsAMissingRecord);
     RUN_TEST_CASE(vfs_registry_driver,
                   Descriptor_ReportsWhetherTheEntryIsSigned);
 }

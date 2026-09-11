@@ -34,6 +34,7 @@ void DummyRegistryReset(void);
  * dummy platform cannot stream an image to a host file. */
 int DummyRegistrySeed(const reg_entry_t *entries, size_t count);
 int DummyRegistrySetMeta(const reg_entry_t *entry, const registry_meta_t *meta);
+int DummyRegistryDropMeta(const reg_entry_t *entry);
 
 /* ── GPIO fake control (dummy-gpio.c) ───────────────────────────────────── */
 

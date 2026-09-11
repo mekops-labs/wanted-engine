@@ -106,6 +106,18 @@ int DummyRegistrySetMeta(const reg_entry_t *entry,
     return 0;
 }
 
+/* Drop an entry's record, standing in for an install interrupted before its
+ * record landed. */
+int DummyRegistryDropMeta(const reg_entry_t *entry) {
+    if (!entry)
+        return -EINVAL;
+    int idx = reg_find(entry->name);
+    if (idx < 0)
+        return -ENOENT;
+    memset(&g_registry[idx].meta, 0, sizeof(g_registry[idx].meta));
+    return 0;
+}
+
 /* ── Platform registry API ──────────────────────────────────────────────── */
 
 int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
@@ -143,6 +155,10 @@ int PlatformRegistryMetaRead(const reg_entry_t *entry, registry_meta_t *out) {
         return -EINVAL;
     int idx = reg_find(entry->name);
     if (idx < 0)
+        return -ENOENT;
+    /* A record that does not parse is no record, the same answer the stored
+     * backings give for one an interrupted install left behind. */
+    if (!RegistryMetaValid(&g_registry[idx].meta, sizeof(g_registry[idx].meta)))
         return -ENOENT;
     *out = g_registry[idx].meta;
     return 0;

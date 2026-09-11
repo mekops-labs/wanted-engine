@@ -19,11 +19,14 @@ Unreleased
   fails verification. `system.enforceImageVerify` raises it, and no source
   lowers it.
 - `/proc/wanted` reports `image_verify` and `image_verify_floor`.
-- A registry entry's descriptor carries `signed`, true for a signed or
-  firmware-seeded image.
+- A registry entry's descriptor carries `verify`: `signed`, `unsigned`, or
+  `none` where the entry holds no metadata record.
 
 ### Changed
 
+- A metadata record is staged and renamed into place, and an install writes it
+  before the image. An interrupted install leaves no record rather than an
+  empty one, and no image a load cannot verify.
 - The NuttX board watchdog is kicked by a thread one priority step above the
   supervisor, for as long as the wapp loop reports itself alive. A reconcile
   that preempts that loop for seconds no longer resets the board.

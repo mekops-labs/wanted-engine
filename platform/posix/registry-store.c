@@ -42,15 +42,26 @@ static int metaLoad(const char *path, registry_meta_t *out) {
     return 0;
 }
 
+/* A record lands whole or not at all. It is staged and renamed because a
+ * write interrupted by a reset leaves the file created and empty, and an entry
+ * whose record is empty never loads again — nothing rewrites it. The close is
+ * part of the write: a buffered filesystem flushes there. */
 static int metaStore(const char *path, const registry_meta_t *meta) {
-    FILE *f = fopen(path, "wb");
+    static const char metaTemp[] = REGISTRY_ROOT "/_meta";
+
+    FILE *f = fopen(metaTemp, "wb");
     if (f == NULL)
         return -errno;
     size_t w = fwrite(meta, 1, sizeof(*meta), f);
-    fclose(f);
-    if (w != sizeof(*meta)) {
-        remove(path);
+    int closed = fclose(f);
+    if (w != sizeof(*meta) || closed != 0) {
+        remove(metaTemp);
         return -EIO;
+    }
+    if (rename(metaTemp, path) < 0) {
+        int err = -errno;
+        remove(metaTemp);
+        return err;
     }
     return 0;
 }
@@ -151,15 +162,18 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
             remove(tempName);
             return -ENAMETOOLONG;
         }
-        if (rename(tempName, targetName) < 0) {
-            remove(tempName);
-            return -errno;
-        }
-        /* An image whose record did not land is unverifiable, so it does not
-         * stay installed. */
+        /* The record is written first, so an install interrupted between the
+         * two leaves a record with no image — invisible to enumeration, which
+         * lists images — rather than an image no load can verify. */
         rc = metaStore(metaName, &meta);
         if (rc < 0) {
-            remove(targetName);
+            remove(tempName);
+            return rc;
+        }
+        if (rename(tempName, targetName) < 0) {
+            rc = -errno;
+            remove(tempName);
+            remove(metaName);
             return rc;
         }
         break;

@@ -136,15 +136,25 @@ static int metaLoad(const char *path, wapp_image_meta_t *out) {
     return 0;
 }
 
+/* Staged and renamed: a write interrupted by a reset leaves the file created
+ * and empty, and an index record that is empty names no slot, so the image it
+ * describes can never be read again. */
 static int metaStore(const char *path, const wapp_image_meta_t *meta) {
-    FILE *f = fopen(path, "wb");
+    static const char metaTemp[] = REGISTRY_ROOT "/_meta";
+
+    FILE *f = fopen(metaTemp, "wb");
     if (f == NULL)
         return -errno;
     size_t w = fwrite(meta, 1, sizeof(*meta), f);
-    fclose(f);
-    if (w != sizeof(*meta)) {
-        remove(path);
+    int closed = fclose(f);
+    if (w != sizeof(*meta) || closed != 0) {
+        remove(metaTemp);
         return -EIO;
+    }
+    if (rename(metaTemp, path) < 0) {
+        int err = -errno;
+        remove(metaTemp);
+        return err;
     }
     return 0;
 }
