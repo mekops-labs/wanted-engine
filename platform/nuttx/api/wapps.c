@@ -40,6 +40,8 @@ pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
  * second, so this is the margin for a loop that is late rather than wedged.
  * The rp23xx counter is 24 bits of microseconds, capping it near 16.7 s. */
 #define BOARD_WDT_TIMEOUT_MS 8000
+/* Kick cadence, comfortably inside the timeout. */
+#define BOARD_WDT_KICK_MS 1000
 
 /* How long a provisional boot has to bring the supervisor up before it is
  * reverted. Sized from a measured boot-to-supervisor of ~13 s with headroom
@@ -161,6 +163,20 @@ void *WA_thread(void *ptr) {
  * in that task). Wapps run at this base; the supervisor one step above it. */
 static int basePriority = -1;
 
+/* Steps above the base a wapp can reach: the supervisor's one. */
+#define WAPP_PRIORITY_STEPS 1
+
+/* The init task's priority, captured from whichever call gets there first. */
+static int captureBasePriority(void) {
+    if (basePriority < 0) {
+        struct sched_param sp;
+        int policy;
+        pthread_getschedparam(pthread_self(), &policy, &sp);
+        basePriority = sp.sched_priority;
+    }
+    return basePriority;
+}
+
 /* Worker thread's native C stack, set explicitly from
  * CONFIG_WANTED_WASM_WORKER_STACK_SIZE and floored at PTHREAD_STACK_MIN. The
  * NuttX per-thread default overflows the moment real wasm runs. */
@@ -183,13 +199,9 @@ static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
     struct sched_param sp;
     int policy, hi, rc;
 
-    if (basePriority < 0) {
-        pthread_getschedparam(pthread_self(), &policy, &sp);
-        basePriority = sp.sched_priority;
-    }
-
+    (void)policy;
     hi = sched_get_priority_max(SCHED_RR);
-    sp.sched_priority = basePriority + (isSupervisor ? 1 : 0);
+    sp.sched_priority = captureBasePriority() + (isSupervisor ? 1 : 0);
     if (hi > 0 && sp.sched_priority > hi)
         sp.sched_priority = hi;
 
@@ -382,10 +394,21 @@ void PlatformWappLoop(void) {
     /* Armed here rather than before the engine starts: nothing kicks it until
      * this loop runs, and a boot that never reaches the loop is what the OTA
      * revert path exists to catch. */
-    BoardWdtArm(BOARD_WDT_TIMEOUT_MS);
+    if (BoardWdtArm(BOARD_WDT_TIMEOUT_MS)) {
+        /* Kicked from a thread above every wapp. This loop runs at the base
+         * priority, which the supervisor preempts for as long as it computes —
+         * measured in seconds per reconcile — so kicking from here alone
+         * resets a board that is working. The loop kicks too, for a build
+         * where the thread could not start. */
+        BoardWdtStartKicker(BOARD_WDT_KICK_MS,
+                            captureBasePriority() + WAPP_PRIORITY_STEPS + 1);
+    }
 
     for (;;) {
         sleep(1);
+        /* Liveness for the kicker thread, and the kick itself for a build
+         * where that thread could not start. */
+        BoardWdtHeartbeat();
         BoardWdtKick();
 
         if (otaProvisional && !otaConfirmed &&

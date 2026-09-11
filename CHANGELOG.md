@@ -24,6 +24,9 @@ Unreleased
 
 ### Changed
 
+- The NuttX board watchdog is kicked by a thread one priority step above the
+  supervisor, for as long as the wapp loop reports itself alive. A reconcile
+  that preempts that loop for seconds no longer resets the board.
 - The ESP-IDF registry index record carries the shared metadata and a new
   magic; a record written by an earlier firmware does not list.
 
