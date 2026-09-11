@@ -16,6 +16,7 @@ The engine has three test tiers, each catching a different class of failure. All
 | Smoke | `just smoke-engine` | The production sheriff supervisor instantiates cleanly |
 | Live update | `just live-update` | The supervisor image is swapped under a running engine |
 | Image verification | `just image-verify` | Every state the registry load check reports, refusing and reporting |
+| Image verification (keyed) | `just image-verify-keyed` | An accepted image, and one signed under another identity, against a compiled-in test key |
 | Integration (all of the above) | `just integration` | Runs smoke + selftest + syscontrol + image-verify + live-update as one suite; emits a JUnit report |
 
 ## Unit suite (ctest)
@@ -86,6 +87,8 @@ just smoke-engine
 ```
 
 `test/image-verify.sh` writes registry entries and their metadata records directly, then loads each as the supervisor through a `registry:<ref>` image path — which puts the load check on the path with no control plane involved. It asserts that a tampered image, an unsigned one, one signed under a key the firmware does not hold, and an entry with no record are each **refused** with enforcement on, each naming its own state, and that the same states are **reported without refusing** when enforcement is off. It needs no keys: those four states are decided before any signature is verified.
+
+`just image-verify-keyed` builds a second engine from `configs/imageverify_defconfig`, which compiles in the public half of the signer's published test vector, and adds the three states that need a key the firmware holds: a correctly signed image **loads**, and the same bytes signed as another wapp or another version are **refused** as `bad_signature`. Those two are the interposition case — validly signed bytes presented under an identity they do not belong to — which is the defect the signed message binds identity to prevent. The private half is a fixed seed published in the signer's vectors and secures nothing.
 
 `test/smoke-engine.sh` boots the real production sheriff supervisor and asserts it instantiates cleanly — the regression guard for the out-of-repo supervisor blob. It can fail on a corrupt or missing supervisor image, or a WAMR opcode mismatch between the blob and the bundled runtime.
 

@@ -1,0 +1,14 @@
+# Image-verification regression profile.
+#
+# Carries the public half of the signer's published test vector, so the load
+# check can reach the states that need a key it holds: an accepted image, and
+# a valid signature presented under another identity. The private half is a
+# fixed test seed in the signer's vectors and secures nothing.
+#
+
+CONFIG_WANTED_MAX_WAPPS=16
+CONFIG_WANTED_WASM_STACK_SIZE=65536
+CONFIG_WANTED_WASM_HEAP_SIZE=262144
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=16
+CONFIG_WANTED_MAX_DRIVERS_CNT=8
+CONFIG_WANTED_IMAGE_SIGNING_KEYS="1:8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"

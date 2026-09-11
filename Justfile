@@ -227,6 +227,13 @@ selftest-openwrt-qemu sdk report="build-openwrt-qemu-junit.xml":
 image-verify:
     ./test/image-verify.sh ./{{build_dir}}/cmd/wanted-cli
 
+# The two states that need a key the firmware holds: an accepted image, and a
+# valid signature presented under another identity. Builds its own engine,
+# since the keyring is compiled in.
+image-verify-keyed:
+    BUILD_DIR=build-verify DEFCONFIG=imageverify just build
+    ./test/image-verify.sh ./build-verify/cmd/wanted-cli --keyed
+
 # Run the system-control (poweroff/reboot/exit) checks on Linux.
 syscontrol:
     ./test/syscontrol.sh ./{{build_dir}}/cmd/wanted-cli

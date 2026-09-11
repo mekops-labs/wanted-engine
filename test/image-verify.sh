@@ -14,6 +14,9 @@ PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 cd "$PROJECT_ROOT" || exit 1
 
 WANTED=${1:-./build/cmd/wanted-cli}
+# --keyed adds the states that need a key the firmware holds. The engine must
+# then be built from configs/imageverify_defconfig.
+KEYED=${2:-}
 if [ ! -x "$WANTED" ]; then
     echo "FAIL: wanted-cli binary not found at $WANTED"
     exit 1
@@ -28,6 +31,9 @@ PASS=0
 FAIL=0
 NAME=probe
 VER=1.0.0
+# The signer's published test vector: a fixed seed whose public half the
+# imageverify profile compiles in. It secures nothing.
+KEY_SEED=0101010101010101010101010101010101010101010101010101010101010101
 
 # write_entry <state> — one registry entry plus the metadata record that puts
 # the engine's check into <state>.
@@ -67,6 +73,40 @@ assert len(record) == 208, len(record)
 if state != "no_record":
     (root / f"{name}@{ver}.meta").write_bytes(record)
 PY
+}
+
+# sign_for <name> <version> — sign the message that identity and this entry's
+# bytes build, and put it in the entry's record.
+sign_for() {
+    python3 - "$REG" "$NAME" "$VER" "$1" "$2" "$KEY_SEED" "$WORK" <<'SIGN'
+import hashlib, pathlib, struct, subprocess, sys
+
+reg, name, ver, as_name, as_ver, seed, work = sys.argv[1:8]
+root = pathlib.Path(reg)
+body = (root / f"{name}@{ver}.wapp").read_bytes()
+digest = hashlib.sha256(body).digest()
+
+msg = bytes([len(as_name)]) + as_name.encode()
+msg += bytes([len(as_ver)]) + as_ver.encode()
+msg += bytes([1]) + digest
+
+# An Ed25519 key from the fixed seed, in the PKCS#8 shape openssl reads.
+der = bytes.fromhex("302e020100300506032b657004220420" + seed)
+key = pathlib.Path(work) / "key.pem"
+subprocess.run(["openssl", "pkey", "-inform", "DER", "-out", str(key)],
+               input=der, check=True, capture_output=True)
+msg_file = pathlib.Path(work) / "msg.bin"
+msg_file.write_bytes(msg)
+sig = subprocess.run(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(key),
+                      "-in", str(msg_file)], check=True, capture_output=True).stdout
+
+rec = root / f"{name}@{ver}.meta"
+record = bytearray(rec.read_bytes())
+struct.pack_into("<I", record, 8, 1)   # key id 1, which the profile holds
+record[13] = 0x02                       # signed
+record[16 + 128:16 + 128 + 64] = sig
+rec.write_bytes(bytes(record))
+SIGN
 }
 
 run_engine() { # <enforce true|false> -> engine output
@@ -117,6 +157,36 @@ check "an entry with no record is refused" no_record      true  yes
 echo "reporting: the same states are reported and the load proceeds"
 check "tampered bytes are reported only"  digest_mismatch false no
 check "an unsigned image is reported only" no_signature   false no
+
+if [ "$KEYED" = "--keyed" ]; then
+    echo "keyed: the states that need a key the firmware holds"
+
+    keyed_case() { # <title> <sign-as-name> <sign-as-version> <expect ok|refused>
+        local title=$1 as_name=$2 as_ver=$3 want=$4 out
+        write_entry ok
+        sign_for "$as_name" "$as_ver"
+        out=$(run_engine true)
+        if echo "$out" | grep -q "refused: image verification bad_signature"; then
+            got=refused
+        elif echo "$out" | grep -q "refused: image verification"; then
+            got=other
+        else
+            got=ok
+        fi
+        if [ "$got" = "$want" ]; then
+            PASS=$((PASS + 1))
+            printf '  ok    %s\n' "$title"
+        else
+            FAIL=$((FAIL + 1))
+            printf '  FAIL  %s — wanted %s, got %s\n' "$title" "$want" "$got"
+            echo "$out" | grep "image verification" | tail -2
+        fi
+    }
+
+    keyed_case "a correctly signed image loads"          "$NAME"  "$VER" ok
+    keyed_case "bytes signed as another wapp are refused" imposter "$VER" refused
+    keyed_case "bytes signed as another version are refused" "$NAME" 9.9.9 refused
+fi
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
