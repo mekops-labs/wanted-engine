@@ -9,6 +9,7 @@ set(core_srcs
     ${ENGINE}/src/wanted.c
     ${ENGINE}/src/wanted_wasm_api.c
     ${ENGINE}/src/wanted-vfs-api.c
+    ${ENGINE}/src/wanted-image-verify.c
     ${ENGINE}/src/log-store.c
     ${ENGINE}/src/version.c
     ${ENGINE}/src/extra-drivers-none.c
