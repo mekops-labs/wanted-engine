@@ -15,7 +15,8 @@ The engine has three test tiers, each catching a different class of failure. All
 | Cross-arch selftest | `just selftest-openwrt-qemu aarch64` / `mipsel` | The same suite against an OpenWRT cross-built engine under qemu |
 | Smoke | `just smoke-engine` | The production sheriff supervisor instantiates cleanly |
 | Live update | `just live-update` | The supervisor image is swapped under a running engine |
-| Integration (all of the above) | `just integration` | Runs smoke + selftest + syscontrol + live-update as one suite; emits a JUnit report |
+| Image verification | `just image-verify` | Every state the registry load check reports, refusing and reporting |
+| Integration (all of the above) | `just integration` | Runs smoke + selftest + syscontrol + image-verify + live-update as one suite; emits a JUnit report |
 
 ## Unit suite (ctest)
 
@@ -83,6 +84,8 @@ A faulting guest leaves a `qemu_*.core` dump in the repo root (git-ignored).
 ```bash
 just smoke-engine
 ```
+
+`test/image-verify.sh` writes registry entries and their metadata records directly, then loads each as the supervisor through a `registry:<ref>` image path — which puts the load check on the path with no control plane involved. It asserts that a tampered image, an unsigned one, one signed under a key the firmware does not hold, and an entry with no record are each **refused** with enforcement on, each naming its own state, and that the same states are **reported without refusing** when enforcement is off. It needs no keys: those four states are decided before any signature is verified.
 
 `test/smoke-engine.sh` boots the real production sheriff supervisor and asserts it instantiates cleanly — the regression guard for the out-of-repo supervisor blob. It can fail on a corrupt or missing supervisor image, or a WAMR opcode mismatch between the blob and the bundled runtime.
 

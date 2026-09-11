@@ -223,6 +223,10 @@ selftest:
 selftest-openwrt-qemu sdk report="build-openwrt-qemu-junit.xml":
     ./test/run-one-junit.sh {{report}} selftest-openwrt-qemu {{sdk}} -- ./test/selftest-qemu.sh "{{sdk}}"
 
+# Registry image verification: every refusal state, enforcing and reporting.
+image-verify:
+    ./test/image-verify.sh ./{{build_dir}}/cmd/wanted-cli
+
 # Run the system-control (poweroff/reboot/exit) checks on Linux.
 syscontrol:
     ./test/syscontrol.sh ./{{build_dir}}/cmd/wanted-cli

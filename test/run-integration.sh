@@ -15,6 +15,7 @@ REPORT="$BUILD_DIR/integration-junit.xml"
 junit_run smoke-engine -- just smoke-engine
 junit_run selftest -- just selftest
 junit_run syscontrol -- just syscontrol
+junit_run image-verify -- just image-verify
 junit_run live-update -- just live-update
 
 junit_write "$REPORT" integration

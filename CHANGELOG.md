@@ -24,6 +24,8 @@ Unreleased
 
 ### Changed
 
+- `just image-verify` asserts every state the registry load check reports,
+  refusing with enforcement on and reporting without it.
 - A metadata record is staged and renamed into place, and an install writes it
   before the image. An interrupted install leaves no record rather than an
   empty one, and no image a load cannot verify.
