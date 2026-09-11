@@ -201,23 +201,61 @@ What this layer guarantees: the artifact handed to the runtime is the artifact a
 
 ```mermaid
 graph LR
-  KEY["Offline signing key"] -->|signs| FW["Firmware UF2"]
+  KEY["Offline firmware key"] -->|signs| FW["Firmware image"]
   FW -->|verified by| ROM["RP2350 ROM secure boot"]
   ROM -->|boots| ENG["WANTED engine"]
-  DEP["Deputy signing key"] -->|signs| DS["Desired State"]
-  DS -->|verified by| SUP["Sheriff /dev/ed25519"]
+  FW -->|carries| KR["Image-signing keyring"]
+
+  DEP["Control-plane key"] -->|signs| DS["Desired State"]
+  DS -->|verified by| SUP["Supervisor, /dev/ed25519"]
   SUP -->|commands| ENG
+
+  CI["Image-signing key"] -->|signs| ISIG["Image signature<br/>name, version, layer digests"]
+  ISIG -->|recorded on the entry| REG["Registry entry + record"]
+  REG -->|checked at every load| ENG
+  KR -->|selects the key by id| REG
+
   ENG -->|isolates| WAPP["wapp linear memory"]
 ```
 
-Two signing keys matter: the **offline firmware key** (root of trust for the binary) and the **Deputy's Ed25519 key** (root of trust for the running workload set). The first is verified by silicon; the second is verified by the engine's crypto offload, driven by Sheriff. A wapp sits at the bottom of both chains — it is bound by the linear-memory wall and can only reach what the supervisor granted it.
+**Three signing keys matter**, and they answer different questions:
+
+| Key | Claim | Verified by |
+|---|---|---|
+| Offline firmware key | these are the bytes that boot | silicon, where the fuse is burned |
+| Control-plane key | this device should run this set of wapps | the supervisor, through `/dev/ed25519` |
+| Image-signing key | this image is what it says it is | the registry, at every load, against the keyring |
+
+The third is the one the firmware anchors: the keyring lives inside the firmware image, so whatever covers the firmware covers the keys. A wapp sits at the bottom of all three — bound by the linear-memory wall, reaching only what the supervisor granted.
+
+### What a load checks
+
+```mermaid
+flowchart TD
+    L["Load a registry image"] --> R{"entry has a record?"}
+    R -->|no| NR["no_record"]
+    R -->|yes| S{"firmware-seeded?"}
+    S -->|yes| SE["seeded — the firmware signature covers it"]
+    S -->|no| D{"layers hash to the record?"}
+    D -->|no| DM["digest_mismatch"]
+    D -->|yes| G{"record carries a signature?"}
+    G -->|no| NS["no_signature"]
+    G -->|yes| K{"keyring holds the key id?"}
+    K -->|no| UK["unknown_key"]
+    K -->|yes| V{"signature verifies over the message?"}
+    V -->|no| BS["bad_signature"]
+    V -->|yes| OK["ok — the runtime gets the bytes"]
+```
+
+Every state is reported. Whether a failing state also refuses is the enforcement setting, which ships off: verification runs and reports either way, so a fleet can be watched converging before anything blocks. `-ENOSYS` from the verify seam reads as `bad_signature`, never as "trust it".
 
 ## What is explicitly not defended
 
 - **Transport confidentiality on NuttX.** No TLS backend; the control-plane wire is plaintext TCP or serial. The signature protects integrity, not confidentiality.
 - **At-rest encryption.** Registry images and volumes are stored unencrypted. A physical attacker who reads the flash gets the wapp binaries and volume contents.
 - **Side channels.** No constant-time guarantees are claimed for the vendored `orlp/ed25519` verify, and a co-tenant wapp can observe timing and memory pressure.
-- **Compromised build pipeline or signing key.** Out of scope; assumed trusted.
+- **Compromised build pipeline or signing key.** Out of scope; assumed trusted. An attacker holding the image-signing key signs whatever they like, and every check in this document accepts it.
+- **A chain nobody has switched on.** Enforcement defaults off, so an unverified image still runs on a device that has not been configured to refuse it. Until that default flips, the honest claim is that the chain is available and reported, not enforced.
 - **A buggy or malicious supervisor.** The engine trusts the config the supervisor hands it. Sheriff's signature check is the safeguard against a tampered Desired State, not against a Sheriff that has itself gone rogue.
 
 ## See also
