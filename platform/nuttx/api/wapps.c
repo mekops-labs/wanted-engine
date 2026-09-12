@@ -44,13 +44,8 @@ pthread_mutex_t state_mtx = PTHREAD_MUTEX_INITIALIZER;
 #define BOARD_WDT_KICK_MS 1000
 
 /* How long a provisional boot has to bring the supervisor up before it is
- * reverted. Sized from a measured boot-to-supervisor of ~13 s with headroom
- * to spare, and matching the ESP-IDF backing's own deadline.
- *
- * This covers what the watchdog cannot: an image that runs this loop, and so
- * keeps kicking the watchdog, but never gets its supervisor healthy. A wedged
- * image is already handled, since the watchdog resets it and the loader will
- * not choose an unconfirmed image again. */
+ * reverted — the case the watchdog alone cannot catch. See
+ * docs/platform-guide.md's Board watchdog entry. */
 #define OTA_REVERT_DEADLINE_S 45
 
 #define FATAL(err, msg, ...)                                                   \
@@ -197,9 +192,8 @@ size_t PlatformWorkerStackSize(void) { return worker_stacksize(); }
 static int startWorker(pthread_t *t, wapp_data_t *data, int isSupervisor) {
     pthread_attr_t attr;
     struct sched_param sp;
-    int policy, hi, rc;
+    int hi, rc;
 
-    (void)policy;
     hi = sched_get_priority_max(SCHED_RR);
     sp.sched_priority = captureBasePriority() + (isSupervisor ? 1 : 0);
     if (hi > 0 && sp.sched_priority > hi)
@@ -395,11 +389,9 @@ void PlatformWappLoop(void) {
      * this loop runs, and a boot that never reaches the loop is what the OTA
      * revert path exists to catch. */
     if (BoardWdtArm(BOARD_WDT_TIMEOUT_MS)) {
-        /* Kicked from a thread above every wapp. This loop runs at the base
-         * priority, which the supervisor preempts for as long as it computes —
-         * measured in seconds per reconcile — so kicking from here alone
-         * resets a board that is working. The loop kicks too, for a build
-         * where the thread could not start. */
+        /* Kicked from a thread above every wapp — see docs/platform-guide.md's
+         * Board watchdog entry. The loop kicks too, for a build where the
+         * thread could not start. */
         BoardWdtStartKicker(BOARD_WDT_KICK_MS,
                             captureBasePriority() + WAPP_PRIORITY_STEPS + 1);
     }

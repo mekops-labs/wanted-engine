@@ -344,10 +344,8 @@ int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
     /* Inspecting a registry entry returns a small descriptor synthesized from
      * the entry (name/version/size), plus the image's declared linear-memory
      * profile when it can be read from the image header. */
-    /* The entry's verification state: "none" where it holds no metadata
-     * record at all, which an install interrupted before its record landed
-     * leaves behind and a supervisor repairs by installing the image again;
-     * "unsigned" where the record carries no signature; "signed" otherwise. */
+    /* The entry's verification state — see docs/control-plane-reference.md's
+     * reg descriptor entry for what "none"/"unsigned"/"signed" each mean. */
     registry_meta_t meta;
     const char *verify = "none";
     if (PlatformRegistryMetaRead(entry, &meta) == 0) {

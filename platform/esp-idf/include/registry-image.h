@@ -17,10 +17,9 @@ typedef struct {
     uint32_t slotSize; /* stride the slot offset was computed under */
 } wapp_image_meta_t;
 
-/* True where `bytes` of record parse and name `slotSize`. Enumeration and
- * image reads share it, or the registry lists an entry no read can resolve.
- * The index outlives a firmware whose slot geometry differs, and a record
- * naming another stride points at bytes that moved. */
+/* True where `bytes` of record parse and name `slotSize` — a mismatch means
+ * a record from a firmware whose slot geometry differs, naming bytes that
+ * moved. Shared by enumeration and image reads. */
 static inline bool WappImageMetaValid(const wapp_image_meta_t *meta,
                                       size_t bytes, uint32_t slotSize) {
     return bytes == sizeof(*meta) && RegistryMetaValid(&meta->meta, bytes) &&

@@ -3,11 +3,8 @@
 #pragma once
 
 /* Board-level hardware watchdog: resets the whole board when it is not kicked
- * within the timeout. Complements the per-slot revert path — this catches an
- * image that runs but wedges, where nothing else is left to notice.
- *
- * Every call is safe on a board with no watchdog device: arming fails once,
- * quietly, and the rest become no-ops. */
+ * within the timeout. Safe on a board with no watchdog device: arming fails
+ * once, quietly, and the rest become no-ops. See docs/platform-guide.md. */
 
 #include <stdbool.h>
 
@@ -18,11 +15,9 @@ bool BoardWdtArm(unsigned timeoutMs);
 /* Defer the reset by another full timeout. */
 void BoardWdtKick(void);
 
-/* Kick every `intervalMs` from a thread running at `priority`, for as long as
- * the engine keeps calling BoardWdtHeartbeat. The kicker must outrank every
- * wapp: a wapp that computes for longer than the timeout would otherwise
- * starve it and reset a board that is working. False where the thread could
- * not be started, leaving the caller to kick as it did before. */
+/* Kick every `intervalMs` from a thread at `priority`, which must outrank
+ * every wapp — see docs/platform-guide.md. False where the thread could not
+ * be started, leaving the caller to kick as it did before. */
 bool BoardWdtStartKicker(unsigned intervalMs, int priority);
 
 /* Report the engine's main loop alive. The kicker stops kicking when these

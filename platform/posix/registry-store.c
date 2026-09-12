@@ -9,10 +9,9 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The target's own config header, not the generic one: a platform that puts
- * the registry on a dedicated filesystem redefines REGISTRY_ROOT there, and
- * including only the base would silently write to the relative default. A
- * board has no working directory for that default to resolve against. */
+/* The target's own config header: a platform on a dedicated filesystem
+ * redefines REGISTRY_ROOT there, and a board has no working directory for
+ * the generic header's relative default to resolve against. */
 #ifdef __NuttX__
 #include <config-nuttx.h>
 #else
@@ -42,10 +41,9 @@ static int metaLoad(const char *path, registry_meta_t *out) {
     return 0;
 }
 
-/* A record lands whole or not at all. It is staged and renamed because a
- * write interrupted by a reset leaves the file created and empty, and an entry
- * whose record is empty never loads again — nothing rewrites it. The close is
- * part of the write: a buffered filesystem flushes there. */
+/* A record lands whole or not at all: staged and renamed, since a write
+ * interrupted by a reset would otherwise leave an empty file nothing ever
+ * rewrites. The close is part of the write — a buffered filesystem flushes. */
 static int metaStore(const char *path, const registry_meta_t *meta) {
     static const char metaTemp[] = REGISTRY_ROOT "/_meta";
 
@@ -71,7 +69,6 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
     static FILE *f;
     static const char tempName[] = REGISTRY_ROOT "/_temp";
     static char targetRef[PATH_MAX];
-    static char targetName[PATH_MAX];
     /* Hashing rides the install stream, so covering every stored byte costs
      * no extra read. */
     static void *sha;
@@ -134,6 +131,7 @@ int PlatformRegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
         if (sep != NULL)
             *sep = REGISTRY_VERSION_SEPARATOR;
 
+        char targetName[PATH_MAX];
         int n = snprintf(targetName, sizeof(targetName), "%s/%s%s",
                          REGISTRY_ROOT, targetRef, REGISTRY_EXT);
         if (n < 0 || (size_t)n >= sizeof(targetName)) {

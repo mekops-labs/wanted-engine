@@ -276,11 +276,9 @@ int PlatformNetListen(struct netCtx *ctx, const char *bindAddr, uint16_t port,
  * its own that the caller closes and frees. */
 int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out);
 
-/* Wait until `ctx` is readable — a pending connection on a listener, or
- * data on a connection — or until `wakeFd` is raised. Answers 0 once the
- * call below would not block, -EINTR on a raised wake, -EAGAIN when the
- * deadline passed first. A negative `timeout_ns` waits without one, and 0
- * only tests. */
+/* Wait until `ctx` is readable or `wakeFd` is raised. Answers 0 once the
+ * call below would not block, -EINTR on a raised wake, -EAGAIN past the
+ * deadline. A negative `timeout_ns` waits without one; 0 only tests. */
 int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd, int64_t timeout_ns);
 
 /* A/B firmware OTA: dual-slot update plus rollback, backed by whatever the

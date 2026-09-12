@@ -7,17 +7,15 @@ Unreleased
 ### Added
 
 - Every registry backend stores a metadata record per image: stored size, the
-  SHA-256 the install computed, layer count, signature, key id and a seeded flag.
+  SHA-256 the install computed, layer count, signature, key id and seeded flag.
 - `reg/<name>:<version>.sig` on the registry mount takes a 68-byte payload — a
   big-endian key id then the 64-byte signature — into that record.
-
 - A registry image is verified on every load: its layers are hashed against the
   entry's record and the record's signature checked against a firmware keyring.
 - `CONFIG_WANTED_IMAGE_SIGNING_KEYS` carries up to four `<id>:<64 hex>`
   Ed25519 public keys, selected by the key id a signature names.
 - `CONFIG_WANTED_WAPP_IMAGE_VERIFY_ENFORCE` (default `n`) refuses an image that
-  fails verification. `system.enforceImageVerify` raises it, and no source
-  lowers it.
+  fails verification; `system.enforceImageVerify` raises it, none lowers it.
 - `/proc/wanted` reports `image_verify` and `image_verify_floor`.
 - A registry entry's descriptor carries `verify`: `signed`, `unsigned`, or
   `none` where the entry holds no metadata record.
@@ -29,11 +27,9 @@ Unreleased
 - `just image-verify-keyed` asserts that a correctly signed image loads and
   that bytes signed under another identity are refused.
 - A metadata record is staged and renamed into place, and an install writes it
-  before the image. An interrupted install leaves no record rather than an
-  empty one, and no image a load cannot verify.
+  before the image, so an interrupted install leaves no record rather than one.
 - The NuttX board watchdog is kicked by a thread one priority step above the
-  supervisor, for as long as the wapp loop reports itself alive. A reconcile
-  that preempts that loop for seconds no longer resets the board.
+  supervisor, so a reconcile that preempts the loop no longer resets the board.
 - The ESP-IDF registry index record carries the shared metadata and a new
   magic; a record written by an earlier firmware does not list.
 
