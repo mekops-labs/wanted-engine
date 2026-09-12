@@ -61,12 +61,12 @@ static bool parseKey(const char *entry, size_t len, image_key_t *out) {
     if (i == 0 || i >= len)
         return false;
     i++; /* the separator */
-    if (len - i != PLATFORM_ED25519_KEY_LEN * 2)
+    if (len - i != (size_t)(PLATFORM_ED25519_KEY_LEN * 2))
         return false;
 
     for (size_t b = 0; b < PLATFORM_ED25519_KEY_LEN; b++) {
-        int hi = hexNibble(entry[i + b * 2]);
-        int lo = hexNibble(entry[i + b * 2 + 1]);
+        int hi = hexNibble(entry[i + (b * 2)]);
+        int lo = hexNibble(entry[i + (b * 2) + 1]);
         if (hi < 0 || lo < 0)
             return false;
         out->key[b] = (uint8_t)((hi << 4) | lo);
@@ -113,7 +113,7 @@ size_t WantedImageSignedMessage(const reg_entry_t *entry,
     size_t nameLen = strnlen(entry->name, WAPP_MAX_NAME_LEN);
     size_t verLen = strnlen(entry->version, WAPP_MAX_VERSION_LEN);
     size_t need = 1 + nameLen + 1 + verLen + 1 +
-                  (size_t)meta->layerCount * REGISTRY_META_DIGEST_LEN;
+                  ((size_t)meta->layerCount * REGISTRY_META_DIGEST_LEN);
     size_t n = 0;
 
     if (nameLen == 0 || verLen == 0 || meta->layerCount == 0 || need > outLen)
