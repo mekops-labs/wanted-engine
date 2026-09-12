@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.18.0 (2026-09-12)
+-------------------
 
 ### Added
 
@@ -32,6 +32,10 @@ Unreleased
   supervisor, so a reconcile that preempts the loop no longer resets the board.
 - The ESP-IDF registry index record carries the shared metadata and a new
   magic; a record written by an earlier firmware does not list.
+
+### Build
+
+- Bumped `wapps/sheriff` to v0.9.0.
 
 0.17.0 (2026-09-10)
 -------------------
