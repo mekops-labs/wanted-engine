@@ -24,10 +24,6 @@
             ],
             "sockets": [
                 {"name": "manager", "address": "serial:///dev/ttyACM0"}
-            ],
-            "envs": [
-                "SHERIFF_DEVICE_ID=",
-                "SHERIFF_STATE_KEY_1=REPLACE_WITH_64_HEX_CHARS"
             ]
         }
     }

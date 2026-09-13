@@ -25,10 +25,6 @@
             ],
             "sockets": [
                 {"name": "manager", "address": "tcp://192.168.1.1:8080"}
-            ],
-            "envs": [
-                "SHERIFF_DEVICE_ID=",
-                "SHERIFF_STATE_KEY_1=REPLACE_WITH_64_HEX_CHARS"
             ]
         }
     }
