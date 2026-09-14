@@ -302,7 +302,7 @@ distclean: clean
 # --- lint / static analysis / security ------------------------------------
 
 # All blocking lint checks.
-lint: lint-format lint-shell
+lint: lint-format lint-shell lint-configs
 
 # Prunes ESP-IDF's own build/vendored dirs under platform/esp-idf/project/
 # (build/, managed_components/, .cache/ — gitignored, not our source; idf.py
@@ -325,6 +325,12 @@ format-fix:
         | xargs -0 clang-format -i
 
 # Lint shell scripts. error severity only for now; ratchet down over time.
+# A launch config must carry no device identity and no control-plane address:
+# both come from a provisioning blob, and a config naming one is a template
+# someone copies into a deployment.
+lint-configs:
+    python3 utils/lint-configs.py .
+
 # The packaged init script carries no .sh suffix, so the find below cannot
 # reach it by extension; it is named explicitly rather than left uncovered.
 lint-shell:
