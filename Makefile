@@ -40,7 +40,7 @@ WAPP_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: image-verify help shell menuconfig setconfig build wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32-flash rp2350-flash rp2350-flash-swd rp2350-reset rp2350-sign rp2350-partition-table rp2350-seal rp2350-flash-partition-table rp2350-flash-slot docs-sync FORCE
+.PHONY: image-verify help shell menuconfig setconfig build wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32-flash rp2350-flash rp2350-flash-swd rp2350-reset rp2350-otp rp2350-sign rp2350-partition-table rp2350-seal rp2350-flash-partition-table rp2350-flash-slot docs-sync FORCE
 
 # make reads every word as its own goal, so `make defconfig openwrt` reaches just
 # as two recipes. Forward trailing goals as arguments and neutralise them as
@@ -216,6 +216,16 @@ rp2350-flash-swd: ## flash $(RP2350_ELF) over SWD via a Raspberry Pi Debug Probe
 
 rp2350-reset: ## reset the running board over SWD via a Raspberry Pi Debug Probe
 	$(RP2350_OPENOCD) -c 'init; reset run; exit'
+
+# The OTP rows PlatformSerialNumber reads, through the ECC-corrected window:
+# one row per word, the row's 16 bits in the low half. Reads the running board
+# without resetting it, so it can be compared against what /proc/wanted reports.
+RP2350_OTP_BASE ?= 0x40130000
+RP2350_OTP_ROWS ?= 4
+
+rp2350-otp: ## dump the CHIPID rows over SWD, to check against /proc/wanted's serial
+	$(RP2350_OPENOCD) -c init -c 'reset halt' \
+	    -c 'mdw $(RP2350_OTP_BASE) $(RP2350_OTP_ROWS)' -c 'reset run' -c exit
 
 rp2350-sign: ## sign $(RP2350_BIN) and validate the signature offline (no OTP, no device) [RP2350_BIN=...]
 	$(RP2350_RUN) './test/rp2350-sign-verify.sh $(RP2350_BIN)'
