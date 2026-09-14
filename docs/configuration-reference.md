@@ -221,7 +221,9 @@ A relative/empty `src` or an unrecognised token is rejected at install.
 }
 ```
 
-`configs/example_config_wsh.json` is the same with `imagePath` pointing at the `wsh` debug supervisor. `configs/sheriff.json` is the production Sheriff config: it adds the `sha256`/`ed25519`/`inflate` offload devices, a `/var/lib/sheriff` platform mount for Sheriff's state, and two TLS sockets — `manager` (`tcps://localhost:8443`, the control-plane uplink) and `registry` (`tcps://localhost:5000`, OCI image pulls). `configs/sheriff-deputy.json` is the same wiring over plain TCP (`manager` at `tcp://localhost:8080`) for the local Deputy demo.
+`configs/example_config_wsh.json` is the same with `imagePath` pointing at the `wsh` debug supervisor. `configs/sheriff.json` is the production Sheriff config: it adds the `sha256`/`ed25519`/`inflate` offload devices and a `/var/lib/sheriff` platform mount for Sheriff's state. `configs/sheriff-deputy.json` is the same wiring for the local Deputy demo.
+
+**Neither names a `manager` or `registry` socket, and no shipped config does.** A supervisor receives those addresses from its provisioning blob: it writes them to an overlay beside the blob, in the storage root the `platform` mount already binds, and the engine merges that overlay into the supervisor's grants on the next `reload-supervisor`. An address the launch config *does* name is kept, so pinning one by hand still works and outranks the blob's — which is how an OpenWrt install lets UCI win. A config that carries no socket at all boots straight into the supervisor's maintenance mode with nothing to fail on, which is the intended state for a device that has not been provisioned yet.
 
 ## See also
 

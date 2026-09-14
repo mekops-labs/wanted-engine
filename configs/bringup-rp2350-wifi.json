@@ -22,9 +22,6 @@
                     "path": "/var/lib/sheriff",
                     "options": "src=/mnt/flash/sheriff"
                 }
-            ],
-            "sockets": [
-                {"name": "manager", "address": "tcp://192.168.1.1:8080"}
             ]
         }
     }
