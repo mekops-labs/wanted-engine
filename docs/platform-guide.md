@@ -343,30 +343,17 @@ The cost of configuring rather than naming the target is that a stale `.config` 
 
 ### Selecting the compiled-in launch config
 
-`WANTED_DEFAULT_CONFIG` names the launch config the build embeds — see [Configuration Reference → the compiled-in default](configuration-reference.md). A board defconfig may point this at a **bring-up config**: fixed placeholder identity for early board bring-up, not a specific deployment. `xiao_esp32s3-telegraph-sheriff_defconfig` does this — its own default is `configs/bringup-esp32s3-telegraph-sheriff.json`.
+`WANTED_DEFAULT_CONFIG` names the launch config the build embeds — see [Configuration Reference → the compiled-in default](configuration-reference.md). A board defconfig may point this at a **bring-up config**, which carries a board's structure — its console, drivers, mounts and storage root — and nothing about where the device is deployed. `xiao_esp32s3-telegraph-sheriff_defconfig` does this; its own default is `configs/bringup-esp32s3-telegraph-sheriff.json`.
 
-A bring-up config's fields are structurally valid and pass every parser check. A placeholder device ID is a valid string. A placeholder trusted key is 64 valid hex characters. Nothing rejects it at build time.
+**No config in this repository carries a device identity or a control-plane address**, and none should. A device receives its device id, trusted key, manager address and registry address from a provisioning blob placed under the supervisor's storage root. The supervisor writes the addresses to an overlay beside that blob, and the engine merges the overlay into the supervisor's grants on the next `reload-supervisor` — so an image carries no site configuration and one image enrols against any site.
 
-Before you publish an image for a specific deployed device, override `WANTED_DEFAULT_CONFIG` to that device's own launch config:
+That is why the same image is publishable for every deployment: there is no per-device build, and no override step before publishing one.
 
-```bash
-just setconfig 'WANTED_DEFAULT_CONFIG="configs/<device>.json"'
-just build
-```
+Two exceptions exist and are deliberate. `configs/bringup-rp2350-serial.json` names a `serial://` manager, because a UART port is a hardware binding rather than an address a blob can supply. `configs/bringup-esp32s3.json` names sockets `s` and `st`, which are socket-driver test fixtures rather than a control plane.
 
-Confirm the override took, before you publish the image:
+An address *may* still be pinned by hand, and a pinned one wins: the engine merges the blob's overlay only into sockets the launch config leaves unset. On OpenWRT that is what a UCI `manager`/`registry` does — see [the packaging README](../packaging/openwrt/README.md). Pin one only when a device must reach a specific endpoint regardless of what it is enrolled against.
 
-```bash
-just _cfg CONFIG_WANTED_DEFAULT_CONFIG
-```
-
-Check the built binary for the deployed identity, not the bring-up one:
-
-```bash
-strings dist/<target>/wanted-*.bin | grep -E '<device ID>|<manager address>'
-```
-
-A device that boots a bring-up config trusts a placeholder key. See [Security Model → device identity and key custody](security-model.md#2-device-identity-and-key-custody) for why a low-order key (the all-zero placeholder is one) does not fail closed: the engine's verifier accepts it, so the device does not refuse a signed Desired State — it trusts one no one else can produce a legitimate signature for.
+**Historical note.** Bring-up configs once carried a placeholder device id and trusted key, and a rebuild that picked up the stock config could silently ship a placeholder identity to a deployed device — which happened, and took a board's control-plane uplink dark until it was recovered over SWD. Two changes closed it: the identity fields are gone from every config, and a low-order or all-zero trusted key is now refused at both the supervisor's provisioning layer and the engine's verifier, so such a key can no longer be silently trusted. See [Security Model → device identity and key custody](security-model.md#2-device-identity-and-key-custody).
 
 ### How the tree is split
 

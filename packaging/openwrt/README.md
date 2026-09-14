@@ -24,15 +24,23 @@ differs per deployment comes from UCI and is merged into `/var/run/wanted/config
 at every start, so a stale render cannot outlive a config change or a reboot.
 
 ```sh
-uci set wanted.main.manager='tcps://marshal.example:8443'
-uci set wanted.main.registry='tcps://registry.example:5000'   # optional
+uci set wanted.main.manager='tcps://marshal.example:8443'     # optional; pins the control plane
+uci set wanted.main.registry='tcps://registry.example:5000'   # optional; pins the registry
 uci set wanted.main.sync_interval='60'                        # optional; reconcile seconds
 uci commit wanted && /etc/init.d/wanted restart
 ```
 
-`manager` is empty by default and the service **refuses to start** without
-it, logging that it's unset — a node that cannot reach its control plane is
-not worth running.
+**Every option is optional.** With none set the service starts, renders a config
+carrying no sockets, and the supervisor waits in maintenance mode until a
+provisioning blob is placed at `/srv/wanted/sheriff/provision` — which is where
+the control-plane and registry addresses come from, along with the device's
+identity.
+
+Setting `manager` or `registry` here pins that address by hand and **overrides
+whatever the blob carries**: the engine merges the blob's addresses only into
+sockets the launch config leaves unset, and this file is rendered into that
+config before the engine starts. Pin one only when a device must reach a
+specific endpoint regardless of what it is enrolled against.
 
 Identity (device id, trusted key) has **no** UCI path, in either direction.
 It comes only from Sheriff's provisioning blob — `device_id`, `state_key`,

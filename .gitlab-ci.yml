@@ -252,6 +252,17 @@ shell-check:
   script:
     - just lint-shell
 
+# Blocking: a launch config must carry no device identity and no control-plane
+# address — both come from a provisioning blob, and a config naming one is a
+# template that gets copied into a deployment.
+config-check:
+  stage: lint
+  needs: []
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - just lint-configs
+
 # clang-tidy reads compile_commands.json from the clang build artifact.
 # Blocking: zero non-suppressed findings in first-party code
 clang-tidy:
