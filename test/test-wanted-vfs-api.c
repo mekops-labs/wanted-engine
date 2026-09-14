@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <dummy-fs.h>
 #include <vfs.h>
 #include <wanted-vfs-api.h>
 #include <wanted_malloc.h>
@@ -142,6 +143,104 @@ TEST(wanted_vfs_api, ListDriversReportsCoreDrivers) {
     TEST_ASSERT_NULL(strstr(buf, "wifi"));
 }
 
+/* ── launch-config overlay ──────────────────────────────────────────────── */
+
+#define OVERLAY_DIR "/var/lib/sheriff"
+#define OVERLAY_PATH OVERLAY_DIR "/config-overlay.json"
+
+/* A config granting the storage-root mount and no sockets: what an
+ * unprovisioned device boots with. */
+static void _OverlayBaseCfg(wapp_config_t *cfg) {
+    memset(cfg, 0, sizeof(*cfg));
+    strcpy(cfg->mounts[0].name, "platform");
+    strcpy(cfg->mounts[0].path, OVERLAY_DIR);
+    cfg->mountsCnt = 1;
+}
+
+TEST(wanted_vfs_api, OverlaySuppliesAddressesTheConfigLacks) {
+    wapp_config_t cfg;
+    _OverlayBaseCfg(&cfg);
+    DummySmallFileSet(OVERLAY_PATH,
+                      "{\"manager\":\"tcps://mgr.example:8443\","
+                      "\"registry\":\"tcps://reg.example:5000\"}");
+
+    TEST_ASSERT_EQUAL_INT(0, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
+    TEST_ASSERT_EQUAL_size_t(2, cfg.socketsCnt);
+    TEST_ASSERT_EQUAL_STRING("manager", cfg.sockets[0].name);
+    TEST_ASSERT_EQUAL_STRING("tcps://mgr.example:8443", cfg.sockets[0].options);
+    TEST_ASSERT_EQUAL_STRING("registry", cfg.sockets[1].name);
+}
+
+/* An absent overlay is the ordinary case, not a failure: an unprovisioned
+ * device, and every device provisioned before the mechanism existed. */
+TEST(wanted_vfs_api, AbsentOverlayIsNotAnError) {
+    wapp_config_t cfg;
+    _OverlayBaseCfg(&cfg);
+    DummySmallFileSet(NULL, NULL);
+
+    TEST_ASSERT_EQUAL_INT(0, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
+    TEST_ASSERT_EQUAL_size_t(0, cfg.socketsCnt);
+}
+
+/* An address already in the launch config was pinned by hand — on OpenWRT, by
+ * UCI rendered into it before the engine started — and outranks the blob's. */
+TEST(wanted_vfs_api, ConfiguredAddressOutranksTheOverlay) {
+    wapp_config_t cfg;
+    _OverlayBaseCfg(&cfg);
+    strcpy(cfg.sockets[0].name, "manager");
+    strcpy(cfg.sockets[0].options, "tcp://pinned.example:9000");
+    cfg.socketsCnt = 1;
+    DummySmallFileSet(OVERLAY_PATH,
+                      "{\"manager\":\"tcps://mgr.example:8443\","
+                      "\"registry\":\"tcps://reg.example:5000\"}");
+
+    TEST_ASSERT_EQUAL_INT(0, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
+    TEST_ASSERT_EQUAL_STRING("tcp://pinned.example:9000",
+                             cfg.sockets[0].options);
+    /* The address it does not pin still arrives. */
+    TEST_ASSERT_EQUAL_size_t(2, cfg.socketsCnt);
+    TEST_ASSERT_EQUAL_STRING("registry", cfg.sockets[1].name);
+}
+
+/* Applying twice must converge: a reload re-merges the same overlay onto
+ * grants that already carry it. */
+TEST(wanted_vfs_api, MergingTwiceAddsNothingTheSecondTime) {
+    wapp_config_t cfg;
+    _OverlayBaseCfg(&cfg);
+    DummySmallFileSet(OVERLAY_PATH,
+                      "{\"manager\":\"tcps://mgr.example:8443\"}");
+
+    TEST_ASSERT_EQUAL_INT(0, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
+    TEST_ASSERT_EQUAL_INT(0, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
+    TEST_ASSERT_EQUAL_size_t(1, cfg.socketsCnt);
+}
+
+/* The overlay is addresses and nothing else. A silently ignored field would be
+ * a grant the operator believes was applied. */
+TEST(wanted_vfs_api, OverlayRefusesAFieldThatIsNotAnAddress) {
+    wapp_config_t cfg;
+    _OverlayBaseCfg(&cfg);
+    DummySmallFileSet(OVERLAY_PATH, "{\"manager\":\"tcps://mgr.example:8443\","
+                                    "\"device_id\":\"pico-01\"}");
+
+    TEST_ASSERT_EQUAL_INT(-EINVAL, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
+    /* Refused whole: the address beside it is not applied either. */
+    TEST_ASSERT_EQUAL_size_t(0, cfg.socketsCnt);
+}
+
+TEST(wanted_vfs_api, OverlayRefusesMalformedDocuments) {
+    wapp_config_t cfg;
+
+    _OverlayBaseCfg(&cfg);
+    DummySmallFileSet(OVERLAY_PATH, "not json at all");
+    TEST_ASSERT_EQUAL_INT(-EINVAL, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
+
+    _OverlayBaseCfg(&cfg);
+    DummySmallFileSet(OVERLAY_PATH, "{\"manager\":\"\"}");
+    TEST_ASSERT_EQUAL_INT(-EINVAL, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
+    TEST_ASSERT_EQUAL_size_t(0, cfg.socketsCnt);
+}
+
 TEST_GROUP_RUNNER(wanted_vfs_api) {
     RUN_TEST_CASE(wanted_vfs_api, WantedParseCtrlActionTest);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigArgsEnvs);
@@ -149,4 +248,10 @@ TEST_GROUP_RUNNER(wanted_vfs_api) {
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigImagePinnedTag);
     RUN_TEST_CASE(wanted_vfs_api, InstallUnavailableDriverReturnsEnodev);
     RUN_TEST_CASE(wanted_vfs_api, ListDriversReportsCoreDrivers);
+    RUN_TEST_CASE(wanted_vfs_api, OverlaySuppliesAddressesTheConfigLacks);
+    RUN_TEST_CASE(wanted_vfs_api, AbsentOverlayIsNotAnError);
+    RUN_TEST_CASE(wanted_vfs_api, ConfiguredAddressOutranksTheOverlay);
+    RUN_TEST_CASE(wanted_vfs_api, MergingTwiceAddsNothingTheSecondTime);
+    RUN_TEST_CASE(wanted_vfs_api, OverlayRefusesAFieldThatIsNotAnAddress);
+    RUN_TEST_CASE(wanted_vfs_api, OverlayRefusesMalformedDocuments);
 }

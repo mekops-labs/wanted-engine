@@ -11,6 +11,12 @@ Unreleased
   platform with a source for one; the line is absent where none has.
 - `PlatformSerialNumber()` sources it per platform: the SPI flash chip id on
   ESP-IDF, the OTP device id on RP2350, a device-tree or DMI serial on Linux.
+- A supervisor reload merges a launch-config overlay — the socket addresses a
+  provisioning blob carries — over the grants in effect, before any teardown.
+- An address the launch config already names is kept, so a hand-pinned one
+  outranks the overlay's; an overlay naming a field that is not an address is
+  refused whole, leaving the running supervisor untouched.
+- `PlatformReadSmallFile()` reads a whole small host file.
 
 ### Changed
 

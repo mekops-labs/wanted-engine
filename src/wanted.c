@@ -1148,6 +1148,47 @@ static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
     return ret;
 }
 
+/* The host directory a `platform` mount binds — where a supervisor keeps its
+ * state, and so where it writes the launch-config overlay. False when the
+ * config grants no such mount, which is a supervisor with nowhere to write. */
+static bool supervisorStateRoot(const wapp_config_t *cfg, char *out,
+                                size_t outLen) {
+    for (size_t i = 0; i < cfg->mountsCnt; i++) {
+        const wapp_driver_t *m = &cfg->mounts[i];
+        char hostPath[CONFIG_WANTED_MAX_PATH_LEN];
+        bool readonly;
+
+        if (strcmp(m->name, "platform") != 0)
+            continue;
+        if (parsePlatformMountOptions(m->options, hostPath, sizeof(hostPath),
+                                      &readonly) < 0)
+            continue;
+
+        const char *src = (hostPath[0] != '\0') ? hostPath : m->path;
+        strncpy(out, src, outLen - 1);
+        out[outLen - 1] = '\0';
+        return true;
+    }
+    return false;
+}
+
+/* The grants a reloaded supervisor should run under: the ones in effect now,
+ * plus any address the overlay supplies for a socket they leave unset. False
+ * leaves the caller on the current grants.
+ *
+ * Merging from the grants in effect rather than re-reading the launch config
+ * makes this idempotent — an address the overlay already supplied is present,
+ * so a later reload adds nothing — and the launch config is read once per
+ * process, so re-reading it could not differ. */
+static bool supervisorGrantsWithOverlay(const wapp_t *w, wapp_config_t *out) {
+    char root[CONFIG_WANTED_MAX_PATH_LEN];
+
+    *out = w->cfg;
+    if (!supervisorStateRoot(out, root, sizeof(root)))
+        return false;
+    return WantedMergeConfigOverlay(out, root) == 0;
+}
+
 int WantedSupervisorReload(void) {
     supervisorReloadArmed = 1;
     return 0;
@@ -1221,7 +1262,15 @@ wapp_t *WantedGetCurrentSupervisor(void) {
          * dropped only here, while no supervisor is running. */
         if (supervisorReloadArmed) {
             supervisorReloadArmed = 0;
+            /* Re-derive the grants before anything is torn down, so a refused
+             * overlay costs the running instance nothing: it keeps serving on
+             * the grants it has, and a corrected overlay is picked up by the
+             * next reload. */
+            wapp_config_t merged;
+            bool remerged = supervisorGrantsWithOverlay(w, &merged);
             PlatformWappUnload(w);
+            if (remerged)
+                w->cfg = merged;
             loadSupervisorImage(w, WantedGetConfig());
         }
         return w;
