@@ -105,10 +105,16 @@ opkg install wanted-engine_<version>_<arch>.ipk
 ```
 
 `opkg` places the files, registers both config files as conffiles (edits survive
-upgrades), and enables the `procd` service — which then stays down until UCI
-carries a `manager` endpoint. Set that, drop the provisioning blob at
-`/srv/wanted/sheriff/provision`, `/etc/init.d/wanted restart`, and check
-`logread -e wanted` if it does not come up.
+upgrades), and enables the `procd` service, which starts with no configuration
+at all. Drop the provisioning blob at `/srv/wanted/sheriff/provision`,
+`/etc/init.d/wanted restart`, and the device enrols and takes its control-plane
+and registry addresses from that blob. Check `logread -e wanted` if it does not
+come up.
+
+Setting `manager` (or `registry`) in UCI pins that address by hand and overrides
+whatever the blob carries — the engine merges the blob's addresses only into
+sockets the launch config leaves unset. Leave them empty unless a device must
+reach a specific endpoint regardless of what it is enrolled against.
 
 ## Notes
 

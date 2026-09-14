@@ -325,9 +325,12 @@ format-fix:
         | xargs -0 clang-format -i
 
 # Lint shell scripts. error severity only for now; ratchet down over time.
+# The packaged init script carries no .sh suffix, so the find below cannot
+# reach it by extension; it is named explicitly rather than left uncovered.
 lint-shell:
     find . -name '*.sh' -not -path './vendor/*' -not -path './third_party/*' -not -path './build*/*' -not -path './.openwrt-sdk/*' -print0 \
         | xargs -0 shellcheck --severity=error
+    shellcheck --severity=error --shell=ash packaging/openwrt/files/etc/init.d/wanted
 
 # clang-tidy the compiled first-party sources
 tidy:

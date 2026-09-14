@@ -1,12 +1,15 @@
-# WANTED engine — deployment settings. The service stays down until manager is
-# set. Identity (device id, trusted key) comes from Sheriff's provisioning
-# blob at /srv/wanted/sheriff/provision, not from here — see the Deputy
-# enrolment flow.
+# WANTED engine — deployment settings. Every option here is optional: with none
+# set the service starts, stays in maintenance mode, and takes its addresses
+# and identity from Sheriff's provisioning blob at /srv/wanted/sheriff/provision
+# — see the Deputy enrolment flow.
+#
+# An address set here is pinned by hand and wins over the blob's, which is the
+# reason to set one at all:
 #
 #   uci set wanted.main.manager='tcps://marshal.example:8443'
 #   uci commit wanted && /etc/init.d/wanted restart
 
 config wanted 'main'
-	option manager ''
-	option registry ''            # optional
-	option sync_interval ''       # optional; reconcile cadence in seconds
+	option manager ''            # optional; pins the control plane, overriding the blob
+	option registry ''           # optional; pins the OCI registry, overriding the blob
+	option sync_interval ''      # optional; reconcile cadence in seconds

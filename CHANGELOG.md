@@ -20,6 +20,10 @@ Unreleased
 
 ### Changed
 
+- The OpenWRT service starts with no `manager` in UCI, rendering a config with
+  no sockets, so an unenrolled router waits in maintenance mode for a blob
+  instead of refusing to start. An address set in UCI still wins over the
+  blob's.
 - No shipped launch config names a `manager` or `registry` socket. A device
   receives both from its provisioning blob, through the overlay a supervisor
   writes and a reload merges. A config may still pin one by hand, and a pinned
