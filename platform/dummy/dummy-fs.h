@@ -26,6 +26,10 @@ void DummyResetReasonSet(const char *token);
 /* Advance the monotonic clock by `ns` nanoseconds without sleeping. */
 void DummyClockAdvance(uint64_t ns);
 
+/* Serve `body` from PlatformReadSmallFile for `path`; a NULL body answers
+ * -ENOENT. One entry, replaced on each call and cleared by DummyFsReset. */
+void DummySmallFileSet(const char *path, const char *body);
+
 /* Empty the in-memory registry. Call in TEST_SETUP. */
 void DummyRegistryReset(void);
 

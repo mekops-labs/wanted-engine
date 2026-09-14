@@ -519,7 +519,41 @@ int PlatformFsMkdir(int fd, const char *path) {
 
 /* ── Reset ──────────────────────────────────────────────────────────────── */
 
-void DummyFsReset(void) { memset(&g_dummy_fs, 0, sizeof(g_dummy_fs)); }
+/* The one small file PlatformReadSmallFile serves, set by a test. */
+static char g_small_path[CONFIG_WANTED_MAX_PATH_LEN];
+static char g_small_body[1024];
+static bool g_small_present;
+
+void DummySmallFileSet(const char *path, const char *body) {
+    g_small_present = (path != NULL && body != NULL);
+    if (!g_small_present) {
+        g_small_path[0] = '\0';
+        g_small_body[0] = '\0';
+        return;
+    }
+    strncpy(g_small_path, path, sizeof(g_small_path) - 1);
+    g_small_path[sizeof(g_small_path) - 1] = '\0';
+    strncpy(g_small_body, body, sizeof(g_small_body) - 1);
+    g_small_body[sizeof(g_small_body) - 1] = '\0';
+}
+
+int PlatformReadSmallFile(const char *path, char *buf, size_t bufLen) {
+    if (path == NULL || buf == NULL || bufLen < 2)
+        return -EINVAL;
+    if (!g_small_present || strcmp(path, g_small_path) != 0)
+        return -ENOENT;
+
+    size_t n = strlen(g_small_body);
+    if (n >= bufLen)
+        return -ENOSPC;
+    memcpy(buf, g_small_body, n + 1);
+    return (int)n;
+}
+
+void DummyFsReset(void) {
+    memset(&g_dummy_fs, 0, sizeof(g_dummy_fs));
+    DummySmallFileSet(NULL, NULL);
+}
 
 /* ── Clock / PRNG ───────────────────────────────────────────────────────── */
 

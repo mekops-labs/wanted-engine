@@ -779,3 +779,130 @@ int WantedParseWappConfigJson(const char *buf, size_t bufLen,
 
     return 0;
 }
+
+/* Launch-config overlay: the addresses a provisioning blob carries, written by
+ * the supervisor beside the blob and merged here on a supervisor reload. It
+ * carries the blob's own `key=value` grammar, so the supervisor reuses the key
+ * names it already parses rather than paying for a second encoding. */
+#define CONFIG_OVERLAY_NAME "overlay"
+#define CONFIG_OVERLAY_MAX 512
+
+/* The only keys an overlay may carry. It is addresses and nothing else — a
+ * document naming anything further is refused whole, since a silently ignored
+ * key would be a grant the operator believes was applied. */
+static const char *const kOverlayKeys[] = {"manager", "registry"};
+
+static bool overlayKeyKnown(const char *key, size_t len) {
+    for (size_t i = 0; i < sizeof(kOverlayKeys) / sizeof(kOverlayKeys[0]);
+         i++) {
+        if (strlen(kOverlayKeys[i]) == len &&
+            strncmp(key, kOverlayKeys[i], len) == 0)
+            return true;
+    }
+    return false;
+}
+
+/* Index of the sockets[] entry named `name` (length-bounded), or -1. */
+static int socketIndex(const wapp_config_t *cfg, const char *name, size_t len) {
+    for (size_t i = 0; i < cfg->socketsCnt; i++) {
+        if (strlen(cfg->sockets[i].name) == len &&
+            strncmp(cfg->sockets[i].name, name, len) == 0)
+            return (int)i;
+    }
+    return -1;
+}
+
+/* One `key=value` line, trimmed of trailing spaces. Returns -EINVAL on a line
+ * that is not a known key with a non-empty value. */
+static int overlayLine(const char *line, size_t len, const char **key,
+                       size_t *keyLen, const char **val, size_t *valLen) {
+    const char *eq = memchr(line, '=', len);
+    if (eq == NULL)
+        return -EINVAL;
+
+    *key = line;
+    *keyLen = (size_t)(eq - line);
+    *val = eq + 1;
+    *valLen = len - *keyLen - 1;
+
+    while (*valLen > 0 &&
+           ((*val)[*valLen - 1] == ' ' || (*val)[*valLen - 1] == '\t'))
+        (*valLen)--;
+
+    if (*keyLen == 0 || *valLen == 0)
+        return -EINVAL;
+    if (!overlayKeyKnown(*key, *keyLen))
+        return -EINVAL;
+    return 0;
+}
+
+int WantedMergeConfigOverlay(wapp_config_t *cfg, const char *dir) {
+    char path[CONFIG_WANTED_MAX_PATH_LEN];
+    char body[CONFIG_OVERLAY_MAX];
+
+    if (cfg == NULL || dir == NULL || *dir == '\0')
+        return -EINVAL;
+
+    int w = snprintf(path, sizeof(path), "%s/%s", dir, CONFIG_OVERLAY_NAME);
+    if (w < 0 || w >= (int)sizeof(path))
+        return -ENAMETOOLONG;
+
+    int n = PlatformReadSmallFile(path, body, sizeof(body));
+    /* No overlay is the ordinary case: an unprovisioned device, and every
+     * device provisioned before the mechanism existed. */
+    if (n == -ENOENT)
+        return 0;
+    if (n < 0)
+        return n;
+
+    /* Validate every line before applying any, so a refused document leaves
+     * the caller's copy exactly as it found it. */
+    for (int pass = 0; pass < 2; pass++) {
+        const char *p = body;
+        while (*p != '\0') {
+            const char *nl = strchr(p, '\n');
+            size_t len = (nl != NULL) ? (size_t)(nl - p) : strlen(p);
+            const char *key, *val;
+            size_t keyLen, valLen;
+
+            if (len == 0)
+                goto next;
+
+            if (overlayLine(p, len, &key, &keyLen, &val, &valLen) < 0) {
+                if (pass == 0)
+                    LOG_ERROR("config overlay: refusing line '%.*s'", (int)len,
+                              p);
+                return -EINVAL;
+            }
+            if (pass == 0)
+                goto next;
+
+            /* Apply only what the launch config leaves unset. That is what
+             * gives an explicitly-set address precedence over the blob's: on
+             * OpenWRT the init script renders UCI into the launch config
+             * before the engine starts, so an entry already present is one an
+             * operator pinned by hand. */
+            if (socketIndex(cfg, key, keyLen) >= 0)
+                goto next;
+            if (cfg->socketsCnt >= CONFIG_WANTED_MAX_DRIVERS_CNT) {
+                LOG_ERROR("config overlay: no socket slot left");
+                return -ENOSPC;
+            }
+
+            wapp_driver_t *s = &cfg->sockets[cfg->socketsCnt];
+            memset(s, 0, sizeof(*s));
+            if (keyLen >= sizeof(s->name) || valLen >= sizeof(s->options))
+                return -EINVAL;
+            memcpy(s->name, key, keyLen);
+            memcpy(s->options, val, valLen);
+            cfg->socketsCnt++;
+
+        next:
+            if (nl == NULL)
+                break;
+            p = nl + 1;
+        }
+    }
+
+    return 0;
+}

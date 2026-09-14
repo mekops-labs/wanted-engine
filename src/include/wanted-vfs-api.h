@@ -62,6 +62,14 @@ int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
 int WantedParseWappConfigJson(const char *buf, size_t bufLen,
                               wapp_config_t *cfg);
 
+/* Merge the launch-config overlay in `dir` — the socket addresses a supervisor
+ * wrote from a provisioning blob — into `cfg`. An address the launch config
+ * already names is kept, so a hand-pinned one outranks the blob's. An absent
+ * overlay succeeds and changes nothing. A malformed one returns negative, and
+ * `cfg` must then be discarded rather than instantiated from — which is why
+ * the caller merges into a copy before tearing the running instance down. */
+int WantedMergeConfigOverlay(wapp_config_t *cfg, const char *dir);
+
 /* Engine clock-quality state, exposed as one byte at /proc/clock_quality and
  * read as authoritative by a wapp deciding whether to trust the wall clock. An
  * updater calls WantedSetClockQuality whenever the calibration changes. */

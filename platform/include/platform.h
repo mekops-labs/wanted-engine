@@ -193,6 +193,12 @@ int PlatformOpenStateDir(const char *path, bool readonly);
  * Returns a stable, non-NULL absolute path. */
 const char *PlatformVolumeRoot(void);
 
+/* Read a whole host file into `buf`, NUL-terminated. For small documents the
+ * engine reads outside any wapp's namespace — the launch-config overlay is the
+ * only one today. Returns the length written, -ENOENT when absent, -ENOSPC
+ * when the file does not fit, or another negative errno. */
+int PlatformReadSmallFile(const char *path, char *buf, size_t bufLen);
+
 /* Thin wrappers over native fs primitives, used by VFS path_rename,
  * path_create_directory and path_remove_directory to operate on preopen-rooted
  * directories. Both fds are native (openat-class) directory descriptors. */
