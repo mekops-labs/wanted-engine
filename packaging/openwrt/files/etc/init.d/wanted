@@ -38,12 +38,6 @@ render_config() {
 			"no provisioning blob at $DATADIR/sheriff/provision — the supervisor stays in maintenance mode until the device is enrolled"
 	fi
 
-	if [ -z "$manager" ]; then
-		logger -t wanted -p daemon.err \
-			"not starting — unset in /etc/config/wanted: manager"
-		return 1
-	fi
-
 	if [ ! -f "$BASE_CONFIG" ]; then
 		logger -t wanted -p daemon.err "not starting — missing $BASE_CONFIG"
 		return 1
@@ -57,18 +51,29 @@ render_config() {
 
 	json_select supervisor
 	json_select params
-	json_add_array sockets
-	json_add_object ""
-	json_add_string name manager
-	json_add_string address "$manager"
-	json_close_object
-	if [ -n "$registry" ]; then
-		json_add_object ""
-		json_add_string name registry
-		json_add_string address "$registry"
-		json_close_object
+	# An address set here wins over the one a provisioning blob carries: the
+	# engine merges the blob's overlay only into sockets the launch config
+	# leaves unset. With none set, the device boots into maintenance mode and
+	# takes both from the blob.
+	if [ -n "$manager" ] || [ -n "$registry" ]; then
+		json_add_array sockets
+		if [ -n "$manager" ]; then
+			json_add_object ""
+			json_add_string name manager
+			json_add_string address "$manager"
+			json_close_object
+		fi
+		if [ -n "$registry" ]; then
+			json_add_object ""
+			json_add_string name registry
+			json_add_string address "$registry"
+			json_close_object
+		fi
+		json_close_array
+	else
+		logger -t wanted -p daemon.info \
+			"no manager in /etc/config/wanted — enrolling from $DATADIR/sheriff/provision"
 	fi
-	json_close_array
 	json_add_array envs
 	# Identity is never carried here: it reaches Sheriff only through the
 	# provisioning blob at $DATADIR/sheriff/provision.
