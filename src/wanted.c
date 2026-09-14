@@ -384,13 +384,23 @@ static const char *resetReason(void) {
     return reason;
 }
 
+/* /proc/uptime — milliseconds since the engine started, the origin captured log
+ * lines are stamped from. */
+int WantedProcReadUptime(vfs_ctx_t c, void *buf, size_t bufLen) {
+    (void)c;
+    int w = snprintf((char *)buf, bufLen, "uptime_ms:\t%llu\n",
+                     (unsigned long long)LogStoreUptimeMs());
+    if (w < 0)
+        return -EIO;
+    return w < (int)bufLen ? w : (int)bufLen;
+}
+
 int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
     int w = snprintf(
         (char *)buf, bufLen,
         "platform:\t%s\n"
         "version:\t%s\n"
-        "uptime_ms:\t%llu\n"
         "supervisor_abi:\t%d\n"
         "max_wapps:\t%d\n"
         "max_wapp_name:\t%d B\n"
@@ -409,13 +419,13 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
         "image_verify:\t%s\n"
         "image_verify_floor:\t%s\n"
         "reset_reason:\t%s\n",
-        PlatformName(), WANTED_VERSION, (unsigned long long)LogStoreUptimeMs(),
-        WANTED_SUPERVISOR_ABI, CONFIG_WANTED_MAX_WAPPS, WAPP_MAX_NAME_LEN,
-        CONFIG_WANTED_MAX_PATH_LEN, CONFIG_WANTED_WASM_STACK_SIZE,
-        CONFIG_WANTED_WASM_HEAP_SIZE, PlatformWorkerStackSize(),
-        CONFIG_WANTED_WASM_MAX_MEMORY_PAGES, CONFIG_WANTED_MAX_DRIVERS_CNT,
-        CONFIG_WANTED_MAX_OPTIONS_SIZE, TARFS_MAX_LAYERS, WAPP_MAX_ARGS,
-        WAPP_MAX_ENVS, CONFIG_WANTED_LOG_SLOTS, PlatformRegistrySlots(),
+        PlatformName(), WANTED_VERSION, WANTED_SUPERVISOR_ABI,
+        CONFIG_WANTED_MAX_WAPPS, WAPP_MAX_NAME_LEN, CONFIG_WANTED_MAX_PATH_LEN,
+        CONFIG_WANTED_WASM_STACK_SIZE, CONFIG_WANTED_WASM_HEAP_SIZE,
+        PlatformWorkerStackSize(), CONFIG_WANTED_WASM_MAX_MEMORY_PAGES,
+        CONFIG_WANTED_MAX_DRIVERS_CNT, CONFIG_WANTED_MAX_OPTIONS_SIZE,
+        TARFS_MAX_LAYERS, WAPP_MAX_ARGS, WAPP_MAX_ENVS, CONFIG_WANTED_LOG_SLOTS,
+        PlatformRegistrySlots(),
         WantedImageVerifyEnforced() ? "enforcing" : "reporting",
         WantedImageVerifyFloor() ? "enforcing" : "reporting", resetReason());
 
@@ -429,6 +439,17 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
     if (w < (int)bufLen && PlatformFirmwareDigest(digest, sizeof(digest)) > 0) {
         int n = snprintf((char *)buf + w, (size_t)((int)bufLen - w),
                          "digest:\t%s\n", digest);
+        if (n > 0 && w + n < (int)bufLen)
+            w += n;
+    }
+
+    /* The unit's own hardware identity, where the platform has a source for
+     * one. Absent rather than empty, so a reader never takes a blank for an
+     * identity the device does not have. */
+    char serial[PLATFORM_SERIAL_MAX_LEN + 1];
+    if (w < (int)bufLen && PlatformSerialNumber(serial, sizeof(serial)) > 0) {
+        int n = snprintf((char *)buf + w, (size_t)((int)bufLen - w),
+                         "serial:\t%s\n", serial);
         if (n > 0 && w + n < (int)bufLen)
             w += n;
     }
@@ -679,6 +700,9 @@ int WantedWappRun(wapp_data_t *ctx) {
     /* wanted exposes engine identity and resource ceilings; unprivileged so any
      * wapp can introspect the host it runs on. */
     ProcFs_Register(ctx->vfs, "wanted", WantedProcReadInfo, false);
+    /* uptime is runtime state rather than identity, so it gets its own node;
+     * unprivileged for the same reason /proc/wanted is. */
+    ProcFs_Register(ctx->vfs, "uptime", WantedProcReadUptime, false);
 
     wasiCtx->vfsCtx = ctx->vfs;
 

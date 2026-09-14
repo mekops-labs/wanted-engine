@@ -65,6 +65,8 @@ graph LR
 - **`/proc/`** — read-only system state; privileged entries are hidden unless `system.privileged` is set.
 - **`/`** — TarFS, the merged read-only OCI layer stack — the wapp's root filesystem.
 
+**`/proc/wanted` carries static, informational values only** — what this engine *is*: its platform, version, ABI, the hardware's serial number, and the compile-time ceilings a supervisor checks a launch config against. Each is fixed for the life of the process, so a reader may render it once and cache it. A value that moves while the engine runs — an uptime, a counter, a link state — gets its own node instead (`/proc/uptime`, `/proc/memory`, `/proc/clock_quality`). Every ProcFS entry renders in one shot, so a moving value here would force a reader that wants only that number to re-render the whole report, and would make every cached copy of the report wrong.
+
 A WASI call carries a path; the router normalises it (`cwk_path_normalize` via `cwalk` — collapsing `.`, `..`, double slashes, trailing slashes, and denying parent-traversal past root), consults the mount table to pick the namespace, and dispatches to the driver. Open files live in a per-wapp **typed FD table**: each entry records its driver type and the absolute path it was opened at, which is what makes relative resolution (`VfsOpenAt`) work. The four namespaces are routed independently, so a driver in one cannot shadow another.
 
 The path a syscall takes from the wapp to a driver — `open` then `read`:

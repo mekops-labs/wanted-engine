@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 
+#include <platform.h>
 #include <vfs-procfs.h>
 #include <vfs-tarfs.h>
 #include <vfs.h>
@@ -655,6 +656,34 @@ TEST(procfs_wanted_info, ReportsIdentityAndAbi) {
     TEST_ASSERT_NOT_NULL(strstr(info_buf, "supervisor_abi:\t"));
 }
 
+/* The unit's hardware identity, reported verbatim: a caller may derive a
+ * secret from it, so a value that drifts from the platform's is not usable. */
+TEST(procfs_wanted_info, ReportsThePlatformSerial) {
+    char serial[PLATFORM_SERIAL_MAX_LEN + 1];
+    char expect[PLATFORM_SERIAL_MAX_LEN + 16];
+
+    TEST_ASSERT_GREATER_THAN_INT(0,
+                                 PlatformSerialNumber(serial, sizeof(serial)));
+    _ReadWantedInfo();
+    snprintf(expect, sizeof(expect), "serial:\t%s\n", serial);
+    TEST_ASSERT_NOT_NULL(strstr(info_buf, expect));
+}
+
+/* Runtime state is not identity, and this node reports identity and the
+ * compile-time ceilings only. */
+TEST(procfs_wanted_info, CarriesNoUptime) {
+    _ReadWantedInfo();
+    TEST_ASSERT_NULL(strstr(info_buf, "uptime"));
+}
+
+/* A platform with no source reports absence, never a fabricated value, and
+ * never a blank a reader could mistake for one. */
+TEST(procfs_wanted_info, SerialRejectsABufferItCannotFill) {
+    char one[1];
+    TEST_ASSERT_EQUAL_INT(-ENOSPC, PlatformSerialNumber(one, sizeof(one)));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PlatformSerialNumber(NULL, 64));
+}
+
 /* A short buffer truncates; it must not run past the caller's end. */
 TEST(procfs_wanted_info, ShortReadDoesNotOverrun) {
     char small[32];
@@ -670,5 +699,58 @@ TEST_GROUP_RUNNER(procfs_wanted_info) {
     RUN_TEST_CASE(procfs_wanted_info, CeilingValuesAreTheConfiguredOnes);
     RUN_TEST_CASE(procfs_wanted_info, LayerCeilingFollowsTheBuildKnob);
     RUN_TEST_CASE(procfs_wanted_info, ReportsIdentityAndAbi);
+    RUN_TEST_CASE(procfs_wanted_info, ReportsThePlatformSerial);
+    RUN_TEST_CASE(procfs_wanted_info, CarriesNoUptime);
+    RUN_TEST_CASE(procfs_wanted_info, SerialRejectsABufferItCannotFill);
     RUN_TEST_CASE(procfs_wanted_info, ShortReadDoesNotOverrun);
+}
+
+/***************************************/
+TEST_GROUP(procfs_uptime);
+/***************************************/
+
+static vfs_ctx_t uptime_vfs;
+
+TEST_SETUP(procfs_uptime) {
+    uptime_vfs = VfsInit();
+    ProcFs_Register(uptime_vfs, "uptime", WantedProcReadUptime, false);
+}
+
+TEST_TEAR_DOWN(procfs_uptime) { VfsDestroy(&uptime_vfs); }
+
+/* The counter captured log lines are stamped from, on its own node so a reader
+ * polling it does not re-render the whole identity report to get one number. */
+TEST(procfs_uptime, ReportsTheCounter) {
+    char buf[64];
+    int fd = VfsOpen(uptime_vfs, "/proc/uptime", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    memset(buf, 0, sizeof(buf));
+    int n = VfsRead(uptime_vfs, fd, buf, sizeof(buf) - 1);
+    VfsClose(uptime_vfs, fd);
+    TEST_ASSERT_GREATER_THAN_INT(0, n);
+    TEST_ASSERT_NOT_NULL(strstr(buf, "uptime_ms:\t"));
+}
+
+/* Any wapp may read it, the same way it may read /proc/wanted. */
+TEST(procfs_uptime, IsUnprivileged) {
+    VfsSetPrivileged(uptime_vfs, false);
+    int fd = VfsOpen(uptime_vfs, "/proc/uptime", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    VfsClose(uptime_vfs, fd);
+}
+
+/* A short buffer truncates; it must not run past the caller's end. */
+TEST(procfs_uptime, ShortReadDoesNotOverrun) {
+    char small[32];
+    memset(small, 0x7f, sizeof(small));
+    int n = WantedProcReadUptime(uptime_vfs, small, 8);
+    TEST_ASSERT_GREATER_OR_EQUAL_INT(0, n);
+    TEST_ASSERT_LESS_OR_EQUAL_INT(8, n);
+    TEST_ASSERT_EQUAL_HEX8(0x7f, (unsigned char)small[8]);
+}
+
+TEST_GROUP_RUNNER(procfs_uptime) {
+    RUN_TEST_CASE(procfs_uptime, ReportsTheCounter);
+    RUN_TEST_CASE(procfs_uptime, IsUnprivileged);
+    RUN_TEST_CASE(procfs_uptime, ShortReadDoesNotOverrun);
 }

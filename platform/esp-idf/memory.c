@@ -5,10 +5,13 @@
  * allocations land. */
 
 #include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
 
 #include <platform.h>
 
 #include "esp_app_desc.h"
+#include "esp_flash.h"
 #include "esp_heap_caps.h"
 #include "esp_littlefs.h"
 
@@ -63,4 +66,24 @@ int PlatformFirmwareDigest(char *buf, size_t bufLen) {
     }
     buf[len] = '\0';
     return (int)len;
+}
+
+/* The SPI flash chip's factory-burned 64-bit id. It is a separate part from the
+ * radio, so this value is never broadcast in a beacon frame the way the MAC is.
+ * Not every flash chip implements the command; those report absent. */
+int PlatformSerialNumber(char *buf, size_t bufLen) {
+    uint64_t id = 0;
+
+    if (buf == NULL)
+        return -EINVAL;
+    if (bufLen < 17)
+        return -ENOSPC;
+    if (esp_flash_read_unique_chip_id(NULL, &id) != ESP_OK)
+        return -ENOSYS;
+
+    int w = snprintf(buf, bufLen, "%08lx%08lx", (unsigned long)(id >> 32),
+                     (unsigned long)(id & 0xffffffffu));
+    if (w < 0)
+        return -EIO;
+    return w < (int)bufLen ? w : -ENOSPC;
 }

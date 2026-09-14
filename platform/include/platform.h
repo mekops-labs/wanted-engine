@@ -135,6 +135,16 @@ const char *PlatformName(void);
  * Returns the length written, -ENOSYS where unstamped, -ENOSPC if too small. */
 int PlatformFirmwareDigest(char *buf, size_t bufLen);
 
+/* Longest serial number a platform may report, excluding the terminator. */
+#define PLATFORM_SERIAL_MAX_LEN 64
+
+/* The hardware's own serial number, NUL-terminated, into `buf`. Stable across
+ * reflashes and reboots, so it identifies the unit rather than the image.
+ * Returns the length written, -ENOSYS where the platform has no such source,
+ * -ENOSPC if too small. A source that is broadcast over the air is not one:
+ * a caller may derive a secret from this value. */
+int PlatformSerialNumber(char *buf, size_t bufLen);
+
 /* System control: the only paths that end the engine, since PlatformWappLoop
  * otherwise respawns a vanished supervisor forever. The request sets a flag the
  * loop acts on after the current iteration, so the worker unwinds first. */

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <errno.h>
+#include <string.h>
 
 #include <platform.h>
 
@@ -56,6 +57,20 @@ const char *PlatformName(void) { return "dummy"; }
 
 /* PlatformFirmwareDigest lives with the A/B fake in dummy-ota.c: the running
  * image's identity is a property of which slot booted. */
+
+/* A fixed serial, so a test can assert the value reaches a reader unchanged. */
+#define DUMMY_SERIAL "dummyserial00001"
+
+int PlatformSerialNumber(char *buf, size_t bufLen) {
+    size_t len = sizeof(DUMMY_SERIAL) - 1;
+
+    if (buf == NULL)
+        return -EINVAL;
+    if (bufLen < len + 1)
+        return -ENOSPC;
+    memcpy(buf, DUMMY_SERIAL, len + 1);
+    return (int)len;
+}
 
 /* The dummy platform is single-threaded (unit tests), so the mutex is a no-op.
  * A non-NULL sentinel is returned so callers can still distinguish allocation

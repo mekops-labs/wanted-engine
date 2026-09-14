@@ -77,3 +77,6 @@ int WantedProcReadClockQuality(vfs_ctx_t c, void *buf, size_t bufLen);
 /* Renders /proc/wanted: engine identity and the compile-time ceilings a
  * supervisor checks a launch config against. */
 int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen);
+
+/* Renders /proc/uptime: milliseconds since the engine started. */
+int WantedProcReadUptime(vfs_ctx_t c, void *buf, size_t bufLen);
