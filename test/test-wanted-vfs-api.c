@@ -146,7 +146,7 @@ TEST(wanted_vfs_api, ListDriversReportsCoreDrivers) {
 /* ── launch-config overlay ──────────────────────────────────────────────── */
 
 #define OVERLAY_DIR "/var/lib/sheriff"
-#define OVERLAY_PATH OVERLAY_DIR "/config-overlay.json"
+#define OVERLAY_PATH OVERLAY_DIR "/overlay"
 
 /* A config granting the storage-root mount and no sockets: what an
  * unprovisioned device boots with. */
@@ -160,9 +160,8 @@ static void _OverlayBaseCfg(wapp_config_t *cfg) {
 TEST(wanted_vfs_api, OverlaySuppliesAddressesTheConfigLacks) {
     wapp_config_t cfg;
     _OverlayBaseCfg(&cfg);
-    DummySmallFileSet(OVERLAY_PATH,
-                      "{\"manager\":\"tcps://mgr.example:8443\","
-                      "\"registry\":\"tcps://reg.example:5000\"}");
+    DummySmallFileSet(OVERLAY_PATH, "manager=tcps://mgr.example:8443\n"
+                                    "registry=tcps://reg.example:5000\n");
 
     TEST_ASSERT_EQUAL_INT(0, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
     TEST_ASSERT_EQUAL_size_t(2, cfg.socketsCnt);
@@ -190,9 +189,8 @@ TEST(wanted_vfs_api, ConfiguredAddressOutranksTheOverlay) {
     strcpy(cfg.sockets[0].name, "manager");
     strcpy(cfg.sockets[0].options, "tcp://pinned.example:9000");
     cfg.socketsCnt = 1;
-    DummySmallFileSet(OVERLAY_PATH,
-                      "{\"manager\":\"tcps://mgr.example:8443\","
-                      "\"registry\":\"tcps://reg.example:5000\"}");
+    DummySmallFileSet(OVERLAY_PATH, "manager=tcps://mgr.example:8443\n"
+                                    "registry=tcps://reg.example:5000\n");
 
     TEST_ASSERT_EQUAL_INT(0, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
     TEST_ASSERT_EQUAL_STRING("tcp://pinned.example:9000",
@@ -207,8 +205,7 @@ TEST(wanted_vfs_api, ConfiguredAddressOutranksTheOverlay) {
 TEST(wanted_vfs_api, MergingTwiceAddsNothingTheSecondTime) {
     wapp_config_t cfg;
     _OverlayBaseCfg(&cfg);
-    DummySmallFileSet(OVERLAY_PATH,
-                      "{\"manager\":\"tcps://mgr.example:8443\"}");
+    DummySmallFileSet(OVERLAY_PATH, "manager=tcps://mgr.example:8443\n");
 
     TEST_ASSERT_EQUAL_INT(0, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
     TEST_ASSERT_EQUAL_INT(0, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
@@ -232,11 +229,11 @@ TEST(wanted_vfs_api, OverlayRefusesMalformedDocuments) {
     wapp_config_t cfg;
 
     _OverlayBaseCfg(&cfg);
-    DummySmallFileSet(OVERLAY_PATH, "not json at all");
+    DummySmallFileSet(OVERLAY_PATH, "no equals sign here\n");
     TEST_ASSERT_EQUAL_INT(-EINVAL, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
 
     _OverlayBaseCfg(&cfg);
-    DummySmallFileSet(OVERLAY_PATH, "{\"manager\":\"\"}");
+    DummySmallFileSet(OVERLAY_PATH, "manager=\n");
     TEST_ASSERT_EQUAL_INT(-EINVAL, WantedMergeConfigOverlay(&cfg, OVERLAY_DIR));
     TEST_ASSERT_EQUAL_size_t(0, cfg.socketsCnt);
 }
