@@ -20,6 +20,10 @@ Unreleased
 
 ### Changed
 
+- No shipped launch config names a `manager` or `registry` socket. A device
+  receives both from its provisioning blob, through the overlay a supervisor
+  writes and a reload merges. A config may still pin one by hand, and a pinned
+  address outranks the blob's.
 - `uptime_ms` is served by `/proc/uptime`. A reader of it on `/proc/wanted`
   finds no such line and must open the new node.
 

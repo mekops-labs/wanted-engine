@@ -19,10 +19,6 @@
             "mounts": [
                 {"name": "platform", "path": "/var/lib/sheriff"},
                 {"name": "log", "path": "/logs"}
-            ],
-            "sockets": [
-                {"name": "manager", "address": "tcp://localhost:8080"},
-                {"name": "registry", "address": "tcp://localhost:5000"}
             ]
         }
     }

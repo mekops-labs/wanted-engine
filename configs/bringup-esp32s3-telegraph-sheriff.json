@@ -19,10 +19,6 @@
                 {"name": "platform", "path": "/var/lib/sheriff", "options": "src=/data/sheriff"},
                 {"name": "log", "path": "/logs"}
             ],
-            "sockets": [
-                {"name": "manager", "address": "tcp://deputy.lan:8081"},
-                {"name": "registry", "address": "tcp://registry.lan:5000"}
-            ],
             "envs": [
                 "SHERIFF_SYNC_INTERVAL_S=5"
             ]
