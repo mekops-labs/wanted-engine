@@ -54,16 +54,16 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/wapps/<name>/memory` | r | yes | Per-wapp WASM linear-memory accounting: `linear_cur` / `linear_max` (bytes) and `pages_cur` / `pages_max`. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`; `store_free` / `store_total`; `wasm_pages_free` — WASM linear-memory pages the engine can still commit: every loaded wapp's headroom to its own ceiling, plus the full per-wapp ceiling for each free wapp slot. An image that declares its max equal to its initial memory reaches its ceiling as it instantiates and contributes no headroom, so the free slots are usually the whole figure. An uncapped build (`wasm_max_pages: 0`) counts no slot capacity — there is no page count to count. |
 | `/proc/clock_quality` | r | no | Platform clock-quality metric. |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `uptime_ms` (milliseconds since the engine started, the origin log line stamps count from), `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `max_layers`, `max_args`, `max_envs`, `reg_slots` (images the registry can hold; `0` where it is bounded only by the filesystem), `image_verify` and `image_verify_floor` (`enforcing` or `reporting` — the effective posture and the compiled-in floor a configuration cannot lower), `drivers` (the drivers available on this build), and `digest` (present where the platform stamps a build-time image digest). |
+| `/proc/uptime` | r | no | `uptime_ms` — milliseconds since the engine started, the origin captured log lines are stamped from. |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `max_layers`, `max_args`, `max_envs`, `reg_slots` (images the registry can hold; `0` where it is bounded only by the filesystem), `image_verify` and `image_verify_floor` (`enforcing` or `reporting` — the effective posture and the compiled-in floor a configuration cannot lower), `drivers` (the drivers available on this build), `digest` (present where the platform stamps a build-time image digest), and `serial` (present where the platform has a hardware serial to report). |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
-`/proc/wanted` reports the engine itself as `key:\tvalue` lines, one per field — human-readable, split on the tab:
+`/proc/wanted` reports the engine itself as `key:\tvalue` lines, one per field — human-readable, split on the tab. Every field on it is **static for the life of the process**, so a reader may render it once and cache the result; a value that moves while the engine runs gets its own node (`/proc/uptime`, `/proc/memory`, `/proc/clock_quality`) rather than a line here.
 
 ```text
 platform:	linux
 version:	0.8.0+gf0d012c.20260713121818
-uptime_ms:	38401250
 supervisor_abi:	3
 max_wapps:	3
 max_wapp_name:	15 B
@@ -80,7 +80,16 @@ max_envs:	8
 log_slots:	3
 reg_slots:	0
 drivers:	null log 9p config platform socket sha256 ed25519 inflate wanted
+serial:	0123456789abcdef
 ```
+
+`serial` is the unit's own hardware identity, stable across reflashes: the SPI
+flash chip's factory id on ESP-IDF, the OTP device id on RP2350, and a
+device-tree or DMI serial on Linux. It is never the Wi-Fi MAC — a caller may
+derive a secret from this value, and the MAC is broadcast in every beacon
+frame. The line is absent, rather than empty, on a platform with no source for
+one: a container, a virtual machine with no DMI data, or a board whose
+firmware reports nothing.
 
 `wasm_worker_stack` is the effective per-wapp worker thread native C stack (the
 configured `WASM_WORKER_STACK_SIZE` after the platform's `PTHREAD_STACK_MIN`
@@ -154,7 +163,7 @@ the engine fixed its uptime origin at start:
 The stamp is boot-relative because a device need not have a trustworthy wall
 clock — `/proc/clock_quality` reads `3` (uncalibrated) until something sets the
 time, and an absolute stamp written before then would be wrong rather than
-merely coarse. `/proc/wanted` reports the same counter as `uptime_ms`, so a
+merely coarse. `/proc/uptime` reports the same counter as `uptime_ms`, so a
 reader that pairs one read of it with its own clock resolves every stamp in a
 ring to absolute time.
 

@@ -1,6 +1,22 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- `/proc/uptime` serves `uptime_ms`, milliseconds since the engine started.
+- `/proc/wanted` reports `serial`, the unit's hardware serial number, on a
+  platform with a source for one; the line is absent where none has.
+- `PlatformSerialNumber()` sources it per platform: the SPI flash chip id on
+  ESP-IDF, the OTP device id on RP2350, a device-tree or DMI serial on Linux.
+
+### Changed
+
+- `uptime_ms` is served by `/proc/uptime`. A reader of it on `/proc/wanted`
+  finds no such line and must open the new node.
+
 0.18.0 (2026-09-12)
 -------------------
 
