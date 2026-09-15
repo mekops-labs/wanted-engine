@@ -10,9 +10,11 @@
 #include <string.h>
 #include <unistd.h>
 
-#define WIFI_PATH    "/dev/wifi"
-#define CONFIG_PATH  "/cfg/wifi.conf"
-#define CONNECT_TRIES 10
+#define WIFI_STATUS_PATH "/dev/wifi/status"
+#define WIFI_SCAN_PATH   "/dev/wifi/scan"
+#define WIFI_CTL_PATH    "/dev/wifi/ctl"
+#define CONFIG_PATH      "/cfg/wifi.conf"
+#define CONNECT_TRIES    10
 
 /* Read the SSID and passphrase from the mounted two-line config file, or from
  * the WIFI_SSID/WIFI_PASS env vars when that mount is absent. The env path
@@ -55,22 +57,35 @@ static int read_config(char *ssid, size_t ssid_sz, char *pass, size_t pass_sz) {
 }
 
 int main(void) {
-    int fd = open(WIFI_PATH, O_RDWR);
-    if (fd < 0) {
-        printf("wifi-connect: cannot open %s\n", WIFI_PATH);
+    int ctlFd = open(WIFI_CTL_PATH, O_WRONLY);
+    if (ctlFd < 0) {
+        printf("wifi-connect: cannot open %s\n", WIFI_CTL_PATH);
+        return 1;
+    }
+    int scanFd = open(WIFI_SCAN_PATH, O_RDONLY);
+    int statusFd = open(WIFI_STATUS_PATH, O_RDONLY);
+    if (scanFd < 0 || statusFd < 0) {
+        printf("wifi-connect: cannot open status/scan nodes\n");
+        close(ctlFd);
+        if (scanFd >= 0)
+            close(scanFd);
+        if (statusFd >= 0)
+            close(statusFd);
         return 1;
     }
 
     /* Scan and log the visible networks. */
-    if (write(fd, "scan", 4) < 0) {
+    if (write(ctlFd, "scan", 4) < 0) {
         printf("wifi-connect: scan failed\n");
-        close(fd);
+        close(ctlFd);
+        close(scanFd);
+        close(statusFd);
         return 1;
     }
     printf("wifi-connect: scan results:\n");
     char line[128];
     ssize_t r;
-    while ((r = read(fd, line, sizeof(line) - 1)) > 0) {
+    while ((r = read(scanFd, line, sizeof(line) - 1)) > 0) {
         line[r] = '\0';
         printf("%s", line);
     }
@@ -80,27 +95,35 @@ int main(void) {
     char pass[65] = {0};
     if (read_config(ssid, sizeof(ssid), pass, sizeof(pass)) < 0) {
         printf("wifi-connect: no %s, scan only\n", CONFIG_PATH);
-        close(fd);
+        close(ctlFd);
+        close(scanFd);
+        close(statusFd);
         return 0;
     }
 
     /* Associate. */
     char cmd[160];
     int n = snprintf(cmd, sizeof(cmd), "connect %s %s", ssid, pass);
-    if (n < 0 || write(fd, cmd, (size_t)n) < 0) {
+    if (n < 0 || write(ctlFd, cmd, (size_t)n) < 0) {
         printf("wifi-connect: connect command failed\n");
-        close(fd);
+        close(ctlFd);
+        close(scanFd);
+        close(statusFd);
         return 1;
     }
 
-    /* Poll status until connected. */
+    /* Poll status until connected. One descriptor throughout: a status read
+     * latches per descriptor and re-arms on the next state change, so a
+     * fresh open here would miss whatever transition already happened. */
     for (int i = 0; i < CONNECT_TRIES; i++) {
-        r = read(fd, line, sizeof(line) - 1);
+        r = read(statusFd, line, sizeof(line) - 1);
         if (r > 0) {
             line[r] = '\0';
             if (strncmp(line, "connected", 9) == 0) {
                 printf("wifi-connect: %s", line);
-                close(fd);
+                close(ctlFd);
+                close(scanFd);
+                close(statusFd);
                 return 0;
             }
         }
@@ -108,6 +131,8 @@ int main(void) {
     }
 
     printf("wifi-connect: not connected after %d tries\n", CONNECT_TRIES);
-    close(fd);
+    close(ctlFd);
+    close(scanFd);
+    close(statusFd);
     return 1;
 }
