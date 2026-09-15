@@ -139,7 +139,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `inflate` | `drivers[]` | `/dev/inflate` | Streaming gzip decompression device; see below. |
 | `gpio` | `drivers[]` | `/dev/gpio/<name>/` | Digital I/O, one subtree per granted pin; see below. Backed by ESP-IDF and NuttX. On Linux the grant fails the launch with `-ENOSYS` until the libgpiod backing lands. |
 | `uart` | `drivers[]` | `/dev/uart/<port>/` | A serial port: a `data` byte stream plus writable `baud` and `format`; see below. Backed by ESP-IDF and Linux. On NuttX the grant fails the launch with `-ENOSYS`. |
-| `wifi` | `drivers[]` | `/dev/wifi` | Wi-Fi station control as a text node. `write "scan"` starts a scan (following reads stream one `<ssid> <bssid> <rssi>` line per AP, then EOF); `write "connect <ssid> <pass>"` associates (WPA2-PSK) and runs DHCP; `write "disconnect"` drops the association; a plain `read` returns one status line — `connected <ssid> <ip>` or `disconnected`. The engine drives the radio (WAPI on NuttX, `esp_wifi` on ESP-IDF); the wapp stays pure WASI. NuttX and ESP-IDF only — `-ENODEV` elsewhere. |
+| `wifi` | `drivers[]` | `/dev/wifi/` | Wi-Fi station and access-point control; see below. Backed by ESP-IDF and NuttX; `-ENODEV` elsewhere. |
 | `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `abort` / `confirm` / `rollback`), `read` drains a status snapshot (`active_slot`, `status`, `pending_slot`, `last_failed_slot`, `boot_attempts`, and `pending_digest` — the staged image's own build-time digest, the value `/proc/wanted`'s `digest` reports once it boots, so confirming an update compares like with like; the line is absent when nothing is staged or the platform stamps none); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. End every `begin`: `commit` makes the staged image bootable, `abort` discards it. A session left open holds the slot, and every later `begin` answers `-EBUSY` until the board reboots. `rollback` reverts a booted image and reboots the board; it does not end a streaming write. Backed by ESP-IDF (`esp_ota_ops`) and Linux (slot directories under a boot root); `-ENOSYS` on NuttX. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
 | `volume` | `mounts[]` | chosen `path` | An engine-managed persistent store bound as a native WASI preopen. The wapp names only a volume (`name=`, default `default`); the engine owns the host location and creates it on first use. Private per wapp by default; `shared` makes it a cross-wapp store (one store every wapp naming it sees). `ro`/`rw` set access mode. Persists across restarts and reboots. |
@@ -348,6 +348,66 @@ running platform is rejected at launch, not ignored.
 - One wapp holds a port, exclusively; a second grant on a held port fails the
   launch. Routing several logical users onto one physical link is a broker
   wapp's job — it holds the grant and its peers reach it over `/dev/pipe`.
+
+### `wifi` — Wi-Fi station and access point
+
+A `wifi` grant reaches the board's one radio:
+
+```
+/dev/wifi/
+  status  (r)  link state, one line
+  scan    (r)  results of the last scan, then EOF
+  ctl     (w)  scan | connect <ssid> [pass] | disconnect | ap_start | ap_stop
+```
+
+There is no per-resource identity in the path — a device has one radio — so
+`readdir /dev/wifi` always lists the same three entries.
+
+- **`status`** reports one line, re-arming on a fresh `read` whenever the state
+  changes (the same per-descriptor latch `gpio`'s `value` uses):
+  - `disconnected` — no intent stored.
+  - `connecting` — an association attempt is in flight, whether the first one
+    or a driver-initiated retry; the two are not distinguished.
+  - `connected <ssid> <ip>` — associated and addressed.
+  - `ap <ssid>` — hosting an access point (ESP-IDF only; see below).
+- **`scan`**, after `write "scan"` on `ctl`, streams the result as one
+  `<ssid> <bssid> <rssi>` line per visible AP, then EOF. A `read` before any
+  scan has run on that descriptor also returns EOF.
+- **`ctl`** takes one command per write:
+  - `scan` — runs a blocking scan; the result appears on `scan`.
+  - `connect <ssid> [pass]` — stores the credentials as the live intent and
+    associates. An empty `pass` configures an open network.
+  - `disconnect` — clears the stored intent and drops the association.
+  - `ap_start` — hosts an access point with driver-derived credentials (below).
+    Replaces whatever intent — station or AP — was previously stored.
+  - `ap_stop` — stops a running AP and returns to station mode. Idempotent.
+
+**The driver owns reconnection, and never gives up.** A successful `connect`
+persists; an unsolicited disconnect re-associates automatically, with a capped
+backoff, for as long as that intent stands — no wapp involvement, no relaunch.
+`disconnected` therefore means "no intent stored," never "gave up." There is
+exactly one live intent at a time: `connect`, `ap_start` and `ap_stop` each
+replace whatever was stored. A successful station association does not
+implicitly stop a running AP; only `ap_stop` or a fresh `connect` does.
+
+**AP credentials never cross the wapp boundary.** `ap_start` takes no
+arguments — the driver derives both fields from the board's hardware serial
+(`/proc/wanted`'s `serial:` line): the SSID is a compiled-in prefix plus the
+low 24 bits of the serial in hex, carrying no secret; the passphrase is
+HMAC-SHA256 of the serial, rendered as its first 16 hex digits. A board
+reporting no serial cannot host an AP — `ap_start` answers `-ENODEV` rather
+than falling back to a fixed passphrase.
+
+**Only ESP-IDF hosts an access point.** NuttX's `bcm43xxx` driver has no AP
+write path, so `ap_start` and `ap_stop` both answer `-ENODEV` there
+unconditionally — never silently ad-hoc mode. A board with no `/dev/wifi`
+grant at all gets the same `-ENODEV` shape from the missing driver.
+
+Link state is module-level, not per-descriptor: it outlives the wapp that
+raised it, which is what lets a fire-and-forget wapp bring up a link or an AP
+and exit. Wi-Fi credentials themselves are not persisted by the driver across
+a reboot — a caller that wants a connection to survive power-cycling writes
+them somewhere durable and re-issues `connect` on the next boot.
 
 ### `socket` — the `/net/` network namespace
 

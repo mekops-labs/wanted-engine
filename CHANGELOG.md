@@ -17,8 +17,15 @@ Unreleased
   outranks the overlay's; an overlay naming a field that is not an address is
   refused whole, leaving the running supervisor untouched.
 - `PlatformReadSmallFile()` reads a whole small host file.
+- `/dev/wifi/ctl` takes `ap_start`/`ap_stop`. ESP-IDF hosts an access point
+  with credentials derived from the hardware serial; NuttX answers `-ENODEV`.
+- The Wi-Fi driver retries a stored `connect` intent automatically, with a
+  capped backoff, after an unsolicited disconnect.
 
 ### Changed
+
+- `/dev/wifi` is now a directory: `status` (read) and `scan` (read) replace
+  the single read/write node, and commands move to the write-only `ctl`.
 
 - The OpenWRT service starts with no `manager` in UCI, rendering a config with
   no sockets, so an unenrolled router waits in maintenance mode for a blob

@@ -136,16 +136,5 @@ struct vfs_ctx_t {
     int wake_fd;
 };
 
-/* Flat-directory readdir helper — shared by DevFS root, NetFS root, ProcFS.
- * Iterates `entries[0..count)`, packing vfs_dirent_t structs into buf using
- * *cookie as the resume index. Sets *bufUsed on return. */
-typedef struct vfs_dir_entry_t {
-    const char *name;
-    vfs_filetype_t type;
-} vfs_dir_entry_t;
-
-int VfsFlatDirReadDir(const vfs_dir_entry_t *entries, size_t count, void *buf,
-                      size_t bufLen, uint64_t *cookie, size_t *bufUsed);
-
 int VfsFindEntry(const char *path, const vfs_entry_t *files,
                  const char **pathLeft);

@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF WiFi station driver. */
+/* ESP-IDF WiFi driver: /dev/wifi/{status,scan,ctl}. Station and access-point
+ * control for a single radio; the driver owns reconnection and derives AP
+ * credentials from the hardware serial, so nothing credential-shaped crosses
+ * the wapp boundary. */
 
 #include <errno.h>
 #include <stdbool.h>
@@ -13,31 +16,53 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 
 #define TAG "vfs-wifi"
 
 #include <debug_trace.h>
+#include <platform.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
 #include <wanted-api.h>
+#include <wanted-hmac.h>
 #include <wanted_malloc.h>
 #include <wifi-bringup.h>
 
 static const char id[] = {'W', 'i', 'f', 'i'};
 
-#define WIFI_MAX_FDS 2   /* concurrent opens of the node */
+#define WIFI_MAX_FDS 4   /* concurrent opens across status/scan/ctl */
 #define WIFI_SSID_MAX 33 /* 32 + NUL */
+#define WIFI_PASS_MAX 64 /* 63 + NUL */
 #define WIFI_CMD_MAX 128 /* longest accepted command line */
+
+#define WIFI_NODE_ROOT 0
+#define WIFI_NODE_STATUS 1
+#define WIFI_NODE_SCAN 2
+#define WIFI_NODE_CTL 3
+
+/* AP credentials never come from a wapp. SSID carries no secret (a compiled-in
+ * prefix plus the low 24 bits of the serial, in hex); the passphrase is
+ * HMAC-SHA256(serial, label), rendered as its first 16 hex digits. */
+#define WIFI_AP_SSID_PREFIX "wanted-"
+#define WIFI_AP_SSID_SUFFIX_LEN 6 /* hex digits: low 24 bits of the serial */
+#define WIFI_AP_PASS_LABEL "wanted-ap-passphrase-v1"
+#define WIFI_AP_PASS_HEX_LEN 16 /* first 8 HMAC bytes, rendered as hex */
+#define WIFI_AP_CHANNEL 1
+#define WIFI_AP_MAX_CONN 4
+
+#define WIFI_RECONNECT_MIN_DELAY_MS 1000
+#define WIFI_RECONNECT_MAX_DELAY_MS 30000
 
 struct wifi_fd_t {
     bool used;
-    /* A status read latches per connection state, re-arming whenever that
-     * state changes. A poll loop holding this fd across an async connect must
-     * still see the disconnected->connected transition; see the docs. */
-    bool status_done;
-    bool last_connected;
+    uint8_t node;
+    /* A status read latches per descriptor, re-arming whenever the radio's
+     * state changes — g_wifiGen bumps on every such change, so comparing
+     * against the last-seen value is the whole check. */
+    uint32_t seenGen;
     char *scan; /* heap scan-result text, drained by reads */
     size_t scan_len;
     size_t scan_off;
@@ -47,10 +72,36 @@ struct vfs_driver_ctx_t {
     struct wifi_fd_t fds[WIFI_MAX_FDS];
 };
 
+/* Module-level, not per-descriptor: a fire-and-forget wapp raises a link or an
+ * AP and exits, and the link must survive it. */
 static bool g_wifiStarted;
 static bool g_wifiConnected;
-static char g_wifiSsid[WIFI_SSID_MAX];
+static bool g_hasIntent; /* a station "connect" intent is stored */
+static bool g_apMode;
+static char g_staSsid[WIFI_SSID_MAX];
+static char g_apSsid[WIFI_SSID_MAX];
 static char g_wifiIp[16] = "0.0.0.0";
+static uint32_t g_wifiGen = 1; /* never 0, so a fresh fd's seenGen=0 misses */
+static uint32_t g_reconnectDelayMs = WIFI_RECONNECT_MIN_DELAY_MS;
+static esp_timer_handle_t g_reconnectTimer;
+
+static void reconnectTimerCb(void *arg) {
+    (void)arg;
+    if (g_hasIntent && !g_apMode && !g_wifiConnected)
+        esp_wifi_connect();
+}
+
+/* Unbounded retry with a capped backoff: `disconnected` means no intent
+ * stored, never "gave up". Resets to the floor on a fresh connect or a
+ * successful association. */
+static void scheduleReconnect(void) {
+    esp_timer_stop(g_reconnectTimer); /* no-op if not running */
+    esp_timer_start_once(g_reconnectTimer, (uint64_t)g_reconnectDelayMs * 1000);
+    uint32_t next = g_reconnectDelayMs * 2;
+    g_reconnectDelayMs = (next > WIFI_RECONNECT_MAX_DELAY_MS)
+                             ? WIFI_RECONNECT_MAX_DELAY_MS
+                             : next;
+}
 
 static void wifiEventHandler(void *arg, esp_event_base_t base, int32_t evId,
                              void *data) {
@@ -62,6 +113,9 @@ static void wifiEventHandler(void *arg, esp_event_base_t base, int32_t evId,
         g_wifiConnected = false;
         strncpy(g_wifiIp, "0.0.0.0", sizeof(g_wifiIp) - 1);
         g_wifiIp[sizeof(g_wifiIp) - 1] = '\0';
+        g_wifiGen++;
+        if (g_hasIntent && !g_apMode)
+            scheduleReconnect();
     } else if (base == WIFI_EVENT) {
         ESP_LOGI(TAG, "WIFI_EVENT id=%d", (int)evId);
     }
@@ -78,12 +132,15 @@ static void ipEventHandler(void *arg, esp_event_base_t base, int32_t evId,
         const ip_event_got_ip_t *evt = (const ip_event_got_ip_t *)data;
         esp_ip4addr_ntoa(&evt->ip_info.ip, g_wifiIp, sizeof(g_wifiIp));
         g_wifiConnected = true;
+        g_reconnectDelayMs = WIFI_RECONNECT_MIN_DELAY_MS;
+        g_wifiGen++;
     }
 }
 
-/* One-time WiFi station bring-up: NVS (needed for calibration data), the
- * default event loop, the STA netif, the driver and the event handlers.
- * Idempotent, so every wapp granted the driver finds the radio ready. */
+/* One-time WiFi bring-up: NVS (needed for calibration data), the default
+ * event loop, both the STA and AP netifs, the driver, the event handlers and
+ * the reconnect timer. Idempotent, so every wapp granted the driver finds the
+ * radio ready. */
 static bool wifiEnsureStarted(void) {
     if (g_wifiStarted)
         return true;
@@ -102,6 +159,8 @@ static bool wifiEnsureStarted(void) {
         return false;
     if (esp_netif_create_default_wifi_sta() == NULL)
         return false;
+    if (esp_netif_create_default_wifi_ap() == NULL)
+        return false;
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     if (esp_wifi_init(&cfg) != ESP_OK)
@@ -115,6 +174,13 @@ static bool wifiEnsureStarted(void) {
     if (esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                             ipEventHandler, NULL,
                                             &ipHandle) != ESP_OK)
+        return false;
+
+    const esp_timer_create_args_t timerArgs = {
+        .callback = &reconnectTimerCb,
+        .name = "wifi-reconnect",
+    };
+    if (esp_timer_create(&timerArgs, &g_reconnectTimer) != ESP_OK)
         return false;
 
     /* Credentials stay in RAM: a board's flash outlives the session that
@@ -195,8 +261,9 @@ static char *scanCollect(void) {
 
 /* Configure the target AP and start an asynchronous association; the event
  * handlers above update the connection state as the radio associates and
- * leases an address. An empty pass configures an open network. */
-static int wifiConnect(const char *ssid, const char *pass) {
+ * leases an address, and re-associate it on an unsolicited drop. Replaces
+ * whatever intent — station or AP — was previously stored. */
+static int setStationIntent(const char *ssid, const char *pass) {
     wifi_config_t conf;
     memset(&conf, 0, sizeof(conf));
     strncpy((char *)conf.sta.ssid, ssid, sizeof(conf.sta.ssid) - 1);
@@ -209,13 +276,33 @@ static int wifiConnect(const char *ssid, const char *pass) {
     conf.sta.pmf_cfg.capable = true;
     conf.sta.pmf_cfg.required = false;
 
+    if (g_apMode) {
+        esp_wifi_disconnect(); /* harmless if the AP interface is idle */
+        esp_wifi_set_mode(WIFI_MODE_STA);
+        g_apMode = false;
+    }
+    esp_timer_stop(g_reconnectTimer);
+
     if (esp_wifi_set_config(WIFI_IF_STA, &conf) != ESP_OK)
-        return -1;
+        return -EIO;
 
-    strncpy(g_wifiSsid, ssid, sizeof(g_wifiSsid) - 1);
-    g_wifiSsid[sizeof(g_wifiSsid) - 1] = '\0';
+    strncpy(g_staSsid, ssid, sizeof(g_staSsid) - 1);
+    g_staSsid[sizeof(g_staSsid) - 1] = '\0';
+    g_hasIntent = true;
+    g_reconnectDelayMs = WIFI_RECONNECT_MIN_DELAY_MS;
+    g_wifiGen++;
 
-    return (esp_wifi_connect() == ESP_OK) ? 0 : -1;
+    return (esp_wifi_connect() == ESP_OK) ? 0 : -EIO;
+}
+
+/* Clears the stored station intent: no further auto-reconnect, and the radio
+ * drops whatever association it holds. Idempotent. */
+static void stopStation(void) {
+    g_hasIntent = false;
+    esp_timer_stop(g_reconnectTimer);
+    esp_wifi_disconnect();
+    g_wifiConnected = false;
+    g_wifiGen++;
 }
 
 /* Count the visible APs and say whether `ssid` is among them, without logging
@@ -264,25 +351,121 @@ int EspWifiBringup(const char *ssid, const char *pass, int timeoutSec) {
 
     reportVisibility(ssid);
 
-    /* Waits for the IP event: association and the DHCP lease are both
-     * asynchronous, and only it means the link is usable. The driver
-     * does not retry a failed association, so an unattended boot repeats it. */
-    int rc = -ETIMEDOUT;
+    if (setStationIntent(ssid, pass != NULL ? pass : "") < 0)
+        return -EIO;
+
+    /* The driver retries on its own now; this loop only waits for the first
+     * association within the caller's budget. */
     for (int tenths = 0; tenths < timeoutSec * 10; tenths++) {
-        if (tenths % 50 == 0 && !g_wifiConnected) {
-            rc = (wifiConnect(ssid, pass != NULL ? pass : "") != 0)
-                     ? -EIO
-                     : -ETIMEDOUT;
-        }
         if (g_wifiConnected)
             return 0;
         usleep(100 * 1000);
     }
-    return rc;
+    return -ETIMEDOUT;
 }
 
-static int wifiDisconnectNow(void) {
-    return (esp_wifi_disconnect() == ESP_OK) ? 0 : -1;
+/* Fills `ssidOut`/`passOut` from the hardware serial: SSID carries a
+ * compiled-in prefix plus the low 24 bits of the serial (already hex text, so
+ * its last WIFI_AP_SSID_SUFFIX_LEN characters are exactly that); the
+ * passphrase is HMAC-SHA256(serial, label), truncated to its first
+ * WIFI_AP_PASS_HEX_LEN hex digits. -ENODEV where the platform has no serial to
+ * derive from — no fallback to a fixed passphrase. */
+static int deriveApCredentials(char ssidOut[WIFI_SSID_MAX],
+                               char passOut[WIFI_AP_PASS_HEX_LEN + 1]) {
+    char serial[PLATFORM_SERIAL_MAX_LEN + 1];
+    int n = PlatformSerialNumber(serial, sizeof(serial));
+    if (n <= 0)
+        return -ENODEV;
+
+    const char *suffix = (n >= WIFI_AP_SSID_SUFFIX_LEN)
+                             ? serial + (n - WIFI_AP_SSID_SUFFIX_LEN)
+                             : serial;
+    /* Explicit precision, not a bare %s: the suffix pointer's static bound is
+     * PLATFORM_SERIAL_MAX_LEN as far as the compiler can tell, which is wider
+     * than ssidOut — bound the read to what actually follows the prefix. */
+    snprintf(ssidOut, WIFI_SSID_MAX, "%s%.*s", WIFI_AP_SSID_PREFIX,
+             WIFI_AP_SSID_SUFFIX_LEN, suffix);
+
+    static const char hexDigits[] = "0123456789abcdef";
+    uint8_t digest[PLATFORM_SHA256_DIGEST_LEN];
+    int rc = WantedHmacSha256((const uint8_t *)serial, (size_t)n,
+                              (const uint8_t *)WIFI_AP_PASS_LABEL,
+                              strlen(WIFI_AP_PASS_LABEL), digest);
+    if (rc < 0)
+        return rc;
+
+    for (int i = 0; i < WIFI_AP_PASS_HEX_LEN / 2; i++) {
+        passOut[i * 2] = hexDigits[digest[i] >> 4];
+        passOut[i * 2 + 1] = hexDigits[digest[i] & 0x0f];
+    }
+    passOut[WIFI_AP_PASS_HEX_LEN] = '\0';
+    return 0;
+}
+
+/* Hosts an AP with driver-derived credentials, replacing whatever intent —
+ * station or AP — was previously stored. -ENODEV where the platform reports
+ * no serial to derive a passphrase from. */
+static int setApIntent(void) {
+    char ssid[WIFI_SSID_MAX];
+    char pass[WIFI_AP_PASS_HEX_LEN + 1];
+    int rc = deriveApCredentials(ssid, pass);
+    if (rc < 0)
+        return rc;
+
+    g_hasIntent = false;
+    esp_timer_stop(g_reconnectTimer);
+    if (g_wifiConnected)
+        esp_wifi_disconnect();
+
+    if (esp_wifi_set_mode(WIFI_MODE_AP) != ESP_OK)
+        return -EIO;
+
+    wifi_config_t conf;
+    memset(&conf, 0, sizeof(conf));
+    strncpy((char *)conf.ap.ssid, ssid, sizeof(conf.ap.ssid) - 1);
+    conf.ap.ssid_len = (uint8_t)strlen(ssid);
+    strncpy((char *)conf.ap.password, pass, sizeof(conf.ap.password) - 1);
+    conf.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    conf.ap.channel = WIFI_AP_CHANNEL;
+    conf.ap.max_connection = WIFI_AP_MAX_CONN;
+
+    if (esp_wifi_set_config(WIFI_IF_AP, &conf) != ESP_OK)
+        return -EIO;
+
+    strncpy(g_apSsid, ssid, sizeof(g_apSsid) - 1);
+    g_apSsid[sizeof(g_apSsid) - 1] = '\0';
+    g_apMode = true;
+    g_wifiConnected = false;
+    g_wifiGen++;
+    return 0;
+}
+
+/* Idempotent: stops a running AP and returns the radio to station mode. A
+ * successful station association does not implicitly call this — only
+ * ap_stop, or a fresh connect, brings the AP down. */
+static void stopAp(void) {
+    if (!g_apMode)
+        return;
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    g_apMode = false;
+    g_wifiGen++;
+}
+
+static int resolve(const char *path, uint8_t *node) {
+    const char *p = path;
+    while (*p == '/')
+        p++;
+    if (*p == '\0')
+        *node = WIFI_NODE_ROOT;
+    else if (strcmp(p, "status") == 0)
+        *node = WIFI_NODE_STATUS;
+    else if (strcmp(p, "scan") == 0)
+        *node = WIFI_NODE_SCAN;
+    else if (strcmp(p, "ctl") == 0)
+        *node = WIFI_NODE_CTL;
+    else
+        return -ENOENT;
+    return 0;
 }
 
 static int _Destroy(struct vfs_driver_t *d);
@@ -291,6 +474,8 @@ static int _Close(vfs_driver_ctx_t d, int fd);
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat);
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
+static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
+                    uint64_t *cookie, size_t *bufUsed);
 
 vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options) {
     (void)wapp;
@@ -315,7 +500,7 @@ vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options) {
     wifiEnsureStarted();
 
     driver->bytesId = *(const uint32_t *)(id);
-    driver->filetype = VFS_FILETYPE_CHARACTER_DEVICE;
+    driver->filetype = VFS_FILETYPE_DIRECTORY;
     driver->ctx = ctx;
     driver->Destroy = _Destroy;
     driver->Open = _Open;
@@ -323,6 +508,7 @@ vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options) {
     driver->Stat = _Stat;
     driver->Read = _Read;
     driver->Write = _Write;
+    driver->ReadDir = _ReadDir;
 
     return driver;
 }
@@ -337,12 +523,17 @@ static int _Destroy(struct vfs_driver_t *d) {
 }
 
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
-    (void)path;
     (void)flags;
+    uint8_t node;
+    int rc = resolve(path != NULL ? path : "", &node);
+    if (rc < 0)
+        return rc;
+
     for (int i = 0; i < WIFI_MAX_FDS; i++) {
         if (!d->fds[i].used) {
             memset(&d->fds[i], 0, sizeof(d->fds[i]));
             d->fds[i].used = true;
+            d->fds[i].node = node;
             return i;
         }
     }
@@ -358,22 +549,46 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
 }
 
 static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
-    (void)d;
-    (void)fd;
+    if (fd < 0 || fd >= WIFI_MAX_FDS || !d->fds[fd].used)
+        return -EBADF;
     memset(s, 0, sizeof(*s));
     s->dev = *(const uint32_t *)(id);
-    s->filetype = VFS_FILETYPE_CHARACTER_DEVICE;
+    s->filetype = (d->fds[fd].node == WIFI_NODE_ROOT)
+                      ? VFS_FILETYPE_DIRECTORY
+                      : VFS_FILETYPE_CHARACTER_DEVICE;
     return 0;
 }
 
-/* read: drain a pending scan result, else return one status line then EOF. */
+/* One line, no trailing detail beyond what MDR-0047 lists: disconnected,
+ * connecting (covers an initial association and a driver-initiated retry
+ * alike), connected <ssid> <ip>, or ap <ssid>. */
+static size_t renderStatus(char *line, size_t lineLen) {
+    int n;
+    if (g_apMode)
+        n = snprintf(line, lineLen, "ap %s\n", g_apSsid);
+    else if (g_wifiConnected)
+        n = snprintf(line, lineLen, "connected %s %s\n", g_staSsid, g_wifiIp);
+    else if (g_hasIntent)
+        n = snprintf(line, lineLen, "connecting\n");
+    else
+        n = snprintf(line, lineLen, "disconnected\n");
+    return (n < 0) ? 0 : (size_t)n;
+}
+
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     if (fd < 0 || fd >= WIFI_MAX_FDS || !d->fds[fd].used)
         return -EBADF;
 
     struct wifi_fd_t *f = &d->fds[fd];
 
-    if (f->scan != NULL) {
+    if (f->node == WIFI_NODE_ROOT)
+        return -EISDIR;
+    if (f->node == WIFI_NODE_CTL)
+        return -EPERM; /* write-only */
+
+    if (f->node == WIFI_NODE_SCAN) {
+        if (f->scan == NULL)
+            return 0; /* no scan run yet on this descriptor */
         size_t left = f->scan_len - f->scan_off;
         if (left == 0) {
             WantedFree(f->scan);
@@ -387,35 +602,37 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
         return (int)n;
     }
 
-    if (f->status_done && g_wifiConnected == f->last_connected)
+    /* WIFI_NODE_STATUS */
+    if (f->seenGen == g_wifiGen)
         return 0;
-
     char line[WIFI_SSID_MAX + 32];
-    int n;
-    if (g_wifiConnected)
-        n = snprintf(line, sizeof(line), "connected %s %s\n", g_wifiSsid,
-                     g_wifiIp);
-    else
-        n = snprintf(line, sizeof(line), "disconnected\n");
-    if (n < 0)
-        return -EIO;
-
-    size_t len = (size_t)n;
-    size_t out = (nbyte < len) ? nbyte : len;
-    memcpy(buf, line, out);
-    f->status_done = true;
-    f->last_connected = g_wifiConnected;
-    return (int)out;
+    size_t len = renderStatus(line, sizeof(line));
+    size_t n = (nbyte < len) ? nbyte : len;
+    memcpy(buf, line, n);
+    f->seenGen = g_wifiGen;
+    return (int)n;
 }
 
-/* write: a text command — "scan", "connect <ssid> <pass>", or "disconnect". */
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     if (fd < 0 || fd >= WIFI_MAX_FDS || !d->fds[fd].used)
         return -EBADF;
+
+    struct wifi_fd_t *f = &d->fds[fd];
+    if (f->node == WIFI_NODE_ROOT)
+        return -EISDIR;
+    if (f->node == WIFI_NODE_STATUS)
+        return -EPERM; /* read-only */
     if (nbyte == 0)
         return 0;
     if (!wifiEnsureStarted())
         return -EIO;
+
+    if (f->node == WIFI_NODE_SCAN) {
+        /* A scan result reads like a command reply: writing to the node that
+         * carries it would collapse state and action onto the same file, the
+         * shape MDR-0047 replaces. Scan is triggered from ctl. */
+        return -EPERM;
+    }
 
     char cmd[WIFI_CMD_MAX];
     size_t len = (nbyte < sizeof(cmd) - 1) ? nbyte : sizeof(cmd) - 1;
@@ -425,10 +642,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     if (len > 0 && cmd[len - 1] == '\n')
         cmd[len - 1] = '\0';
 
-    struct wifi_fd_t *f = &d->fds[fd];
-
-    if (strncmp(cmd, "scan", 4) == 0) {
-        f->status_done = false;
+    if (strcmp(cmd, "scan") == 0) {
         WantedFree(f->scan);
         f->scan = scanCollect();
         if (f->scan == NULL)
@@ -450,14 +664,40 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
             pass++;
         if (*pass == ' ')
             *pass++ = '\0';
-        f->status_done = false;
-        return (wifiConnect(ssid, pass) < 0) ? -EIO : (int)nbyte;
+        return (setStationIntent(ssid, pass) < 0) ? -EIO : (int)nbyte;
     }
 
-    if (strncmp(cmd, "disconnect", 10) == 0) {
-        f->status_done = false;
-        return (wifiDisconnectNow() < 0) ? -EIO : (int)nbyte;
+    if (strcmp(cmd, "disconnect") == 0) {
+        stopStation();
+        return (int)nbyte;
+    }
+
+    if (strcmp(cmd, "ap_start") == 0) {
+        int rc = setApIntent();
+        if (rc == -ENODEV)
+            return -ENODEV;
+        return (rc < 0) ? -EIO : (int)nbyte;
+    }
+
+    if (strcmp(cmd, "ap_stop") == 0) {
+        stopAp();
+        return (int)nbyte;
     }
 
     return -EINVAL;
+}
+
+static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
+                    uint64_t *cookie, size_t *bufUsed) {
+    if (fd < 0 || fd >= WIFI_MAX_FDS || !d->fds[fd].used)
+        return -EBADF;
+    if (d->fds[fd].node != WIFI_NODE_ROOT)
+        return -ENOTDIR;
+
+    static const vfs_dir_entry_t entries[] = {
+        {"status", VFS_FILETYPE_CHARACTER_DEVICE},
+        {"scan", VFS_FILETYPE_CHARACTER_DEVICE},
+        {"ctl", VFS_FILETYPE_CHARACTER_DEVICE},
+    };
+    return VfsFlatDirReadDir(entries, 3, buf, bufLen, cookie, bufUsed);
 }
