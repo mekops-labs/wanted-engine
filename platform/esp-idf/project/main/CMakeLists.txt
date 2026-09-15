@@ -10,9 +10,8 @@
 # the script leaves up-to-date images alone, so this skips relinking.
 get_filename_component(_repo "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 set(_seed_dir "${_repo}/wasm/registry-seed")
-# What a board cannot recover without: the firmware installer, and the
-# way back onto a network.
-set(_seeds wifi-connect flasher)
+# What a board cannot recover without: the firmware installer.
+set(_seeds flasher)
 foreach(_seed IN LISTS _seeds)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${_repo}/wapps/${_seed}/${_seed}.wasm")
@@ -128,7 +127,6 @@ idf_component_register(SRCS "app_main.c"
                        REQUIRES wanted_engine
                        PRIV_REQUIRES ${_priv_requires}
                        EMBED_FILES
-                           "${CMAKE_CURRENT_LIST_DIR}/../../../../wasm/registry-seed/wifi-connect.wapp"
                            "${_flasher_embed}"
                            ${_extra_embed}
                        EMBED_TXTFILES "${_cfg_staged}")

@@ -148,7 +148,7 @@ supervisor: ## build the wsh + selftest supervisor TARs
 wapps: ## build the sample wapp images under wapps/
 	$(WAPP_RUN) 'make -C wapps'
 
-wifi-connect: ## build the wifi-connect boot-time helper TAR
+wifi-connect: ## build the wifi-connect debugging helper TAR, for on-demand deployment
 	$(WAPP_RUN) 'make -C wasm/supervisor wifi-connect'
 
 sheriff: ## build the sheriff (production) supervisor TAR

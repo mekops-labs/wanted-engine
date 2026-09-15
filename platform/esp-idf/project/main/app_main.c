@@ -54,8 +54,6 @@ static bool mountLittleFs(void) {
 }
 
 /* Smoke-test fixtures linked via EMBED_FILES. */
-extern const uint8_t _binary_wifi_connect_wapp_start[];
-extern const uint8_t _binary_wifi_connect_wapp_end[];
 extern const uint8_t _binary_flasher_wapp_start[];
 extern const uint8_t _binary_flasher_wapp_end[];
 
@@ -385,8 +383,6 @@ void app_main(void) {
              (unsigned)total);
 
     if (mountLittleFs()) {
-        seedWapp("wifi-connect", _binary_wifi_connect_wapp_start,
-                 _binary_wifi_connect_wapp_end);
         /* Versioned by the tree it was built from, so a newer flasher
          * installs alongside this one and a launch config selects which
          * runs. */
