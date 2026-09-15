@@ -69,27 +69,67 @@ const char *StatusToString(status_t state) {
     }
 }
 
-static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
-    json_t m[100];
-    char b[len];
+/* Scratch for one JSON parse. tiny-json allocates nothing of its own: it
+ * tokenises the payload in place and fills a caller-supplied node table, and
+ * the nodes point into that copy, so both live until the parse is consumed. */
+typedef struct {
+    char *text;
+    json_t *nodes;
+} json_scratch_t;
 
-    if (NULL == out || NULL == buf) {
+static void jsonScratchRelease(json_scratch_t *s) {
+    WantedFree(s->text);
+    WantedFree(s->nodes);
+    s->text = NULL;
+    s->nodes = NULL;
+}
+
+/* Heap, not stack: the copy and the node table together run to kilobytes, more
+ * than the smallest target's task stack can absorb. */
+static int jsonScratchParse(json_scratch_t *s, const char *buf, size_t bufLen,
+                            json_t const **out) {
+    s->text = WantedMalloc(bufLen + 1);
+    s->nodes = WantedMalloc(WANTED_CTRL_JSON_NODES * sizeof(json_t));
+    if (NULL == s->text || NULL == s->nodes) {
+        jsonScratchRelease(s);
+        return -ENOMEM;
+    }
+
+    memcpy(s->text, buf, bufLen);
+    s->text[bufLen] = '\0';
+
+    *out = json_create(s->text, s->nodes, WANTED_CTRL_JSON_NODES);
+    if (!*out || JSON_OBJ != json_getType(*out)) {
+        DEBUG_TRACE("can't initialize json parser");
+        jsonScratchRelease(s);
         return -EINVAL;
     }
 
-    memcpy(b, buf, len);
+    return 0;
+}
+
+static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
+    if (NULL == out || NULL == buf) {
+        return -EINVAL;
+    }
+    if (len >= WANTED_CTRL_JSON_MAX) {
+        return -EMSGSIZE;
+    }
+
     memset(out, 0, sizeof(wantedConfig_t));
     out->supervisorPreferBundled = true;
 
-    json_t const *json = json_create(b, m, sizeof m / sizeof *m);
-    if (!json || JSON_OBJ != json_getType(json)) {
-        DEBUG_TRACE("can't initialize json parser");
-        return -EINVAL;
+    json_scratch_t scratch;
+    json_t const *json;
+    int pret = jsonScratchParse(&scratch, buf, len, &json);
+    if (pret < 0) {
+        return pret;
     }
 
     json_t const *system = json_getProperty(json, "system");
     if (!system || JSON_OBJ != json_getType(system)) {
         DEBUG_TRACE(".system property not found in json");
+        jsonScratchRelease(&scratch);
         return -EINVAL;
     }
 
@@ -126,6 +166,7 @@ static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
         DEBUG_TRACE(".supervisor property not found in json");
     }
 
+    jsonScratchRelease(&scratch);
     return 0;
 }
 
@@ -737,20 +778,17 @@ int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
     if (bufLen >= WANTED_CTRL_JSON_MAX)
         return -EMSGSIZE;
 
-    json_t m[100];
-    char b[WANTED_CTRL_JSON_MAX];
-
-    memcpy(b, buf, bufLen);
-    b[bufLen] = '\0';
     memset(cfg, 0, sizeof(wapp_config_t));
 
-    json_t const *json = json_create(b, m, sizeof m / sizeof *m);
-    if (!json || JSON_OBJ != json_getType(json)) {
-        DEBUG_TRACE("can't initialize json parser");
-        return -EINVAL;
-    }
+    json_scratch_t scratch;
+    json_t const *json;
+    int ret = jsonScratchParse(&scratch, buf, bufLen, &json);
+    if (ret < 0)
+        return ret;
 
-    return WantedParseCtrlAction(json, wappName, act, cfg);
+    ret = WantedParseCtrlAction(json, wappName, act, cfg);
+    jsonScratchRelease(&scratch);
+    return ret;
 }
 
 int WantedParseWappConfigJson(const char *buf, size_t bufLen,
@@ -760,23 +798,19 @@ int WantedParseWappConfigJson(const char *buf, size_t bufLen,
     if (bufLen >= WANTED_CTRL_JSON_MAX)
         return -EMSGSIZE;
 
-    json_t m[100];
-    char b[WANTED_CTRL_JSON_MAX];
-
-    memcpy(b, buf, bufLen);
-    b[bufLen] = '\0';
     memset(cfg, 0, sizeof(wapp_config_t));
 
-    json_t const *json = json_create(b, m, sizeof m / sizeof *m);
-    if (!json || JSON_OBJ != json_getType(json)) {
-        DEBUG_TRACE("can't initialize json parser");
-        return -EINVAL;
-    }
+    json_scratch_t scratch;
+    json_t const *json;
+    int ret = jsonScratchParse(&scratch, buf, bufLen, &json);
+    if (ret < 0)
+        return ret;
 
-    /* The decomposed config node carries the bare launch-config body — the
-     * object itself plays the role the legacy `params` block did. */
+    /* The decomposed config node carries the bare launch-config body: the
+     * object itself plays the role a wrapping `params` block would. */
     parseWappParams(json, cfg);
 
+    jsonScratchRelease(&scratch);
     return 0;
 }
 

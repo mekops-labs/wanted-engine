@@ -1266,11 +1266,16 @@ wapp_t *WantedGetCurrentSupervisor(void) {
              * overlay costs the running instance nothing: it keeps serving on
              * the grants it has, and a corrected overlay is picked up by the
              * next reload. */
-            wapp_config_t merged;
-            bool remerged = supervisorGrantsWithOverlay(w, &merged);
+            /* Heap: a wapp_config_t is tens of kilobytes, far past what a
+             * task stack can hold. A failed allocation refuses the overlay,
+             * which the running grants already tolerate. */
+            wapp_config_t *merged = WantedMalloc(sizeof(*merged));
+            bool remerged =
+                NULL != merged && supervisorGrantsWithOverlay(w, merged);
             PlatformWappUnload(w);
             if (remerged)
-                w->cfg = merged;
+                w->cfg = *merged;
+            WantedFree(merged);
             loadSupervisorImage(w, WantedGetConfig());
         }
         return w;

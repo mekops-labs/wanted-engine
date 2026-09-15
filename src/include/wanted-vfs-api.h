@@ -49,8 +49,14 @@ const char *StatusToString(status_t state);
 extern const proc_dir_ops_t WappsProcDirOps;
 
 /* Upper bound (including NUL) on a control/config JSON payload the engine
- * copies onto the stack to parse, which sizes the fixed parse buffer. */
+ * copies to parse, which sizes the parse buffer. */
 #define WANTED_CTRL_JSON_MAX 2048
+
+/* Nodes in the parse table. tiny-json allocates nothing itself: every object,
+ * array and member takes one node, and the densest payload WANTED_CTRL_JSON_MAX
+ * admits is array entries of about 20 bytes for two nodes, so this tracks the
+ * cap. A payload under the cap that exhausts the table is rejected. */
+#define WANTED_CTRL_JSON_NODES 100
 
 int WantedParseCtrlAction(json_t const *json, char *wappName,
                           wapp_action_t *act, wapp_config_t *cfg);

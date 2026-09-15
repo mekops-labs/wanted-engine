@@ -149,22 +149,31 @@ static cache_entry_t *cacheFind(const char *ref) {
 /* Read one image file into the cache, taking ownership of the loaded buffer.
  * Returns the new entry, or NULL if the cache is full or the read fails. */
 static cache_entry_t *cacheAdd(const char *ref, const char *targetName) {
-    wapp_t tmp;
+    wapp_t *tmp;
     cache_entry_t *c;
 
     if (imageCacheCount >= REGISTRY_MAX_ENTRIES)
         return NULL;
 
-    memset(&tmp, 0, sizeof(tmp));
-    if (PlatformWappLoad(targetName, &tmp) < 0)
+    /* Heap (not stack): a wapp_t is tens of kilobytes, and this runs on the
+     * init task's stack. */
+    tmp = (wapp_t *)WantedMalloc(sizeof(wapp_t));
+    if (tmp == NULL)
         return NULL;
+
+    memset(tmp, 0, sizeof(wapp_t));
+    if (PlatformWappLoad(targetName, tmp) < 0) {
+        WantedFree(tmp);
+        return NULL;
+    }
 
     c = &imageCache[imageCacheCount];
     strncpy(c->ref, ref, sizeof(c->ref) - 1);
     c->ref[sizeof(c->ref) - 1] = '\0';
-    c->data = tmp.layers[0];
-    c->len = tmp.layer_lens[0];
+    c->data = tmp->layers[0];
+    c->len = tmp->layer_lens[0];
     imageCacheCount++;
+    WantedFree(tmp);
     return c;
 }
 
