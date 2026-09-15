@@ -71,14 +71,18 @@ struct wifi_fd_t {
     /* A status read latches per descriptor, re-arming whenever the radio's
      * state changes — g_wifiGen bumps on every such change. */
     uint32_t seenGen;
-    char *scan; /* heap scan-result text, drained by reads */
-    size_t scan_len;
-    size_t scan_off;
+    size_t scan_off; /* this descriptor's read position in g_scanBuf */
 };
 
 struct vfs_driver_ctx_t {
     struct wifi_fd_t fds[WIFI_MAX_FDS];
 };
+
+/* Scan results are module-level, like every other radio state here: `ctl`
+ * (which triggers a scan) and `scan` (which reads it) are different
+ * descriptors, so the result cannot live on either one's own fd. */
+static char *g_scanBuf;
+static size_t g_scanLen;
 
 /* Module-level, not per-descriptor: a fire-and-forget wapp raises a link and
  * exits, and the link — and the intent to hold it — must survive it. Guarded
@@ -376,10 +380,9 @@ vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options) {
 }
 
 static int _Destroy(struct vfs_driver_t *d) {
-    struct vfs_driver_ctx_t *ctx = d->ctx;
-    for (int i = 0; i < WIFI_MAX_FDS; i++)
-        WantedFree(ctx->fds[i].scan);
-    WantedFree(ctx);
+    /* g_scanBuf is module-level, like the connection state — it outlives this
+     * driver instance and is freed only when a fresh scan replaces it. */
+    WantedFree(d->ctx);
     WantedFree(d);
     return 0;
 }
@@ -422,7 +425,6 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 static int _Close(vfs_driver_ctx_t d, int fd) {
     if (fd < 0 || fd >= WIFI_MAX_FDS || !d->fds[fd].used)
         return -EBADF;
-    WantedFree(d->fds[fd].scan);
     memset(&d->fds[fd], 0, sizeof(d->fds[fd]));
     return 0;
 }
@@ -465,17 +467,11 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
         return -EPERM; /* write-only */
 
     if (f->node == WIFI_NODE_SCAN) {
-        if (f->scan == NULL)
-            return 0; /* no scan run yet on this descriptor */
-        size_t left = f->scan_len - f->scan_off;
-        if (left == 0) {
-            WantedFree(f->scan);
-            f->scan = NULL;
-            f->scan_off = f->scan_len = 0;
-            return 0; /* EOF for the scan stream */
-        }
+        if (g_scanBuf == NULL || f->scan_off >= g_scanLen)
+            return 0; /* no scan run yet, or this descriptor drained it */
+        size_t left = g_scanLen - f->scan_off;
         size_t n = (nbyte < left) ? nbyte : left;
-        memcpy(buf, f->scan + f->scan_off, n);
+        memcpy(buf, g_scanBuf + f->scan_off, n);
         f->scan_off += n;
         return (int)n;
     }
@@ -500,7 +496,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     if (fd < 0 || fd >= WIFI_MAX_FDS || !d->fds[fd].used)
         return -EBADF;
 
-    struct wifi_fd_t *f = &d->fds[fd];
+    const struct wifi_fd_t *f = &d->fds[fd];
     if (f->node == WIFI_NODE_ROOT)
         return -EISDIR;
     if (f->node == WIFI_NODE_STATUS)
@@ -525,21 +521,23 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
     if (strcmp(cmd, "scan") == 0) {
 #if WIFI_HW
-        WantedFree(f->scan);
-        f->scan = scanCollect(g_wifiIfname);
-        if (f->scan == NULL)
+        WantedFree(g_scanBuf);
+        g_scanBuf = scanCollect(g_wifiIfname);
+        if (g_scanBuf == NULL) {
+            g_scanLen = 0;
             return -EIO;
-        f->scan_len = strlen(f->scan);
-        f->scan_off = 0;
+        }
+        g_scanLen = strlen(g_scanBuf);
 #else
         const char stub[] = "stub-ap 00:00:00:00:00:00 -42\n";
-        WantedFree(f->scan);
-        f->scan = (char *)WantedMalloc(sizeof(stub));
-        if (f->scan == NULL)
+        WantedFree(g_scanBuf);
+        g_scanBuf = (char *)WantedMalloc(sizeof(stub));
+        if (g_scanBuf == NULL) {
+            g_scanLen = 0;
             return -ENOMEM;
-        memcpy(f->scan, stub, sizeof(stub));
-        f->scan_len = sizeof(stub) - 1;
-        f->scan_off = 0;
+        }
+        memcpy(g_scanBuf, stub, sizeof(stub));
+        g_scanLen = sizeof(stub) - 1;
 #endif
         return (int)nbyte;
     }
