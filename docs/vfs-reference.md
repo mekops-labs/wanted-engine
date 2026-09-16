@@ -91,6 +91,32 @@ frame. The line is absent, rather than empty, on a platform with no source for
 one: a container, a virtual machine with no DMI data, or a board whose
 firmware reports nothing.
 
+**Reading `serial` without writing a wapp**: boot the `wsh` debug supervisor
+(`just supervisor-variant wsh && just build`, see [Platform
+Guide](platform-guide.md#supervisor-variant)) and run `cat /proc/wanted` at
+its prompt — see [`wapps/wsh/README.md`](../wapps/wsh/README.md) for the full
+command set. Where that prompt reaches you differs by target:
+
+- **AP-capable embedded targets (ESP-IDF, NuttX/RP2350), before a device is
+  provisioned** — the console is UART (the `platform` console backing), so
+  connect a serial terminal to it at the board's configured baud rate. This
+  is the same console the production `:sheriff` supervisor uses for its
+  provisioning prompt; reading `serial` this way means flashing `:wsh`
+  instead, which is a factory-line or bench step, not something a device does
+  once deployed.
+- **Linux and OpenWRT** — the `platform` console backing is the engine
+  process's own stdio, so an ordinary shell reaches it directly: run
+  `wanted-cli` with the `:wsh` supervisor configured and the prompt appears
+  on that same terminal, no serial cable needed.
+
+This is how an operator learns the value the access-point passphrase derives
+from, before a board ever leaves the bench: read `serial` once at
+provisioning time, alongside the SSID a Wi-Fi-managing wapp prints when it
+hosts an access point (`wifi-mgr: hosting "<ssid>"`, in its own wapp log —
+see the `/proc/wapps/<name>` entries above), and record both on the unit's
+label. A field operator never needs `serial` directly; the passphrase
+derivation is a one-time, bench-side computation, not a runtime lookup.
+
 `wasm_worker_stack` is the effective per-wapp worker thread native C stack (the
 configured `WASM_WORKER_STACK_SIZE` after the platform's `PTHREAD_STACK_MIN`
 floor); `max_drivers` / `max_options` size each launch-config drivers/mounts/sockets
