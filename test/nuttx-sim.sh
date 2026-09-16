@@ -141,13 +141,16 @@ default_config_header() {
 }
 
 # Stage the supervisor image + engine config into the sim's hostfs root (/data).
-# Variant-specific (selftest vs wsh) and cheap, so every phase stages its own.
+# Cheap, so every phase stages its own. SIM_CONFIG names the launch config
+# (default: the selftest/wsh shared one); a variant that needs its own grants
+# (e.g. wifimgr's Sheriff storage mount) overrides it before calling build.
+SIM_CONFIG=${SIM_CONFIG:-$ENGINE_DIR/test/nuttx-sim-config.json}
 stage_hostfs() {
     [ -f "$SUPERVISOR_TAR" ] || \
         { echo "missing $SUPERVISOR_TAR (run 'make supervisor')" >&2; exit 1; }
     mkdir -p "$SIMROOT/wanted"
     cp "$SUPERVISOR_TAR" "$SIMROOT/wanted/supervisor.tar"
-    cp "$ENGINE_DIR/test/nuttx-sim-config.json" "$SIMROOT/smoke.json"
+    cp "$SIM_CONFIG" "$SIMROOT/smoke.json"
 }
 
 # Configure and build a NuttX board config, defaulting to the sim:wanted native
@@ -403,6 +406,146 @@ syscontrol() {
     else echo "FAIL: syscontrol on the NuttX sim"; exit 1; fi
 }
 
+# Build the sim with the Sheriff supervisor and exercise wifi-mgr's
+# station-join decision against the sim's in-memory /dev/wifi stub
+# (platform/nuttx/vfs/vfs-wifi.c, WIFI_HW=0 here: `connect` always succeeds,
+# `ap_start`/`ap_stop` always answer -ENODEV — the same contract real
+# hardware has, not a sim shortcut).
+#
+# Drives the real provisioning-then-join journey over the console, rather
+# than pre-seeding credentials directly: wifi-mgr's own storage-view mount
+# carries no `src=` (a deliberate per-board choice — see the
+# wanted-device-provisioning plan's M7 notes), so it only resolves to the
+# same real directory Sheriff's own grant uses when *neither* sets `src=`,
+# which is also why wifimgr-sim-config.json's Sheriff grant carries none
+# either. Pre-seeding from the host would need a `src=` on Sheriff's own
+# grant, silently breaking that agreement — the exact mismatch
+# sheriff/test/smoke-provisioning.sh's own comment already documents. Paste
+# a blob and credentials over the console instead: same real mechanism a
+# device in the field uses, no shortcuts.
+#
+# Covers the wanted-device-provisioning plan's M7 scenarios:
+#   - valid stored credentials join without ever raising an AP
+#   - a device with no /dev/wifi grant never attempts wifi-mgr (not covered
+#     here — proven instead on plain Linux, which compiles no wifi driver
+#     at all; see sheriff's test/smoke-provisioning.sh)
+# Scenarios needing an actual AP broadcast, or a real failed association,
+# are out of reach here: the stub's `connect` has no failure mode, and
+# NuttX (sim or hardware) has no AP path at all.
+#
+# NOT YET PASSING, and not in `all` for that reason. Every step through
+# "blob captured; reloading" is confirmed working (console I/O, registry
+# resolution, storage.writeAtomic, the reload itself). The respawned
+# instance then fails to read back what was just written — readBlob's
+# provision file (and, on the same evidence, wifi-mgr's own credentials
+# file) comes back 0 bytes, not FileNotFound: storage.writeAtomic's
+# create+write+close+rename sequence is not surviving on this board's root
+# filesystem. Root cause not confirmed, but consistent with NuttX's root
+# being a pseudo-filesystem meant for mount points (/dev, /data, …), not
+# real file storage — real, persistent writes exist here only under an
+# explicit hostfs mount like /data, which is exactly what an unconfigured
+# `platform` mount (no `src=`) does not use. If that holds, no `src=`-less
+# `platform` mount is safe for persisted state on NuttX at all, sim or
+# hardware — a materially bigger claim than the per-board `src=` finding
+# already in the plan, and worth confirming (or ruling out) in NuttX's own
+# pseudofs source before this test can be fixed rather than re-scoped.
+wifimgr() {
+    SUPERVISOR_VARIANT=sheriff
+    SUPERVISOR_TAR=$ENGINE_DIR/wasm/supervisor/sheriff/supervisor.tar
+    SIM_CONFIG=$ENGINE_DIR/test/wifimgr-sim-config.json
+    build
+
+    # wifi-mgr and provisioning are sheriff-repo wapps (wapps/sheriff, this
+    # engine's own submodule), not this repo's wapps/<name>/<name>.wasm — so
+    # they need their own registry seed rather than stage_test_wapp.
+    # Sheriff's own eng.start(name, null) resolves a bare (versionless)
+    # name, which PlatformRegistryWappLoad reconstructs as
+    # "<name>@<version>.wapp" even when version is empty — the literal
+    # trailing "@" is required.
+    mkdir -p "$SIMROOT/registry"
+    local name wasm s
+    for name in wifi-mgr provisioning; do
+        wasm="$ENGINE_DIR/wapps/sheriff/zig-out/bin/$name.wasm"
+        [ -f "$wasm" ] || {
+            echo "missing $name.wasm at $wasm (build it: cd wapps/sheriff && zig build)" >&2
+            exit 1
+        }
+        s=$(mktemp -d)
+        cp "$wasm" "$s/app.wasm"
+        tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
+            -C "$s" -cf "$SIMROOT/registry/$name@.wapp" app.wasm
+        rm -rf "$s"
+    done
+
+    # A blob passing enrol.zig's grammar and its state_key point check —
+    # the same fixture shape test/enrol.zig's own unit tests use.
+    local valid_key="bf6665af3484b5e14e4845041ea72bf97755c51639b1e7e91e079e92b70c9028"
+    local blob; blob=$(printf 'device_id=dep-a1b2\njoin_token=tok-1\nstate_key=%s\n' "$valid_key" | base64 -w0)
+
+    local log fifo
+    log=$(mktemp); fifo=$(mktemp -u); mkfifo "$fifo"
+    ( cd "$SIMROOT" && exec "$NUTTX_DIR/nuttx" ) <"$fifo" >"$log" 2>&1 &
+    local pid=$!
+    exec 9>"$fifo"
+    send() { printf '%s\n' "$1" >&9; }
+
+    local ok=1 boot_tenths=600 act_tenths=300 _
+    # 1. Wait for the provisioning prompt, then paste the blob and a blank
+    #    line (readUntilBlank's terminator), and the wifi credentials.
+    for _ in $(seq 1 "$boot_tenths"); do
+        grep -qF 'paste the provisioning blob' "$log" 2>/dev/null && break
+        kill -0 "$pid" 2>/dev/null || { ok=0; break; }
+        sleep 0.1
+    done
+    if [ "$ok" -eq 1 ]; then
+        send "$blob"; send ""; send "TestNet"; send "testpass"
+        # 2. Wait for the reload — the respawn keeps this same process/log.
+        for _ in $(seq 1 "$act_tenths"); do
+            grep -qF 'blob captured; reloading' "$log" 2>/dev/null && break
+            kill -0 "$pid" 2>/dev/null || { ok=0; break; }
+            sleep 0.1
+        done
+    fi
+    # 3. The respawned instance has identity now, so .run mode's own
+    #    runWifiMgr call reads the credentials just written and joins.
+    #    maintenanceLoop already ran wifi-mgr once before provisioning
+    #    launched (no credentials yet, so it correctly raised -ENODEV) —
+    #    wait for a *second* "exited:" line, not the first.
+    if [ "$ok" -eq 1 ]; then
+        for _ in $(seq 1 "$act_tenths"); do
+            n=$(grep -cF 'wifi-mgr exited:' "$log" 2>/dev/null || true)
+            [ "${n:-0}" -ge 2 ] && break
+            kill -0 "$pid" 2>/dev/null || { ok=0; break; }
+            sleep 0.1
+        done
+    fi
+
+    exec 9>&- 2>/dev/null || true
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    rm -f "$fifo"
+
+    # wifi-mgr is granted no console (wapps/sheriff/wapps/wifi-mgr/main.zig's
+    # own doc comment: "talks to nothing but /dev/wifi and that mount") — its
+    # std.debug.print output lands in the per-wapp log store, not this
+    # console, so the exit code Sheriff itself prints is the only outside
+    # signal: 0 is Exit.joined, 1 is Exit.hosting_ap (see that file's Exit
+    # struct) — either means wifi-mgr ran to completion, but only 0 is the
+    # "valid credentials, no AP" outcome this scenario asserts.
+    local rc=0
+    if [ "$ok" -ne 1 ]; then
+        echo "FAIL: the provisioning/join journey did not reach wifi-mgr's exit"; rc=1
+    elif grep -qF 'wifi-mgr exited: 1' "$log"; then
+        echo "FAIL: wifi-mgr raised an AP despite valid stored credentials"; rc=1
+    elif ! grep -qF 'wifi-mgr exited: 0' "$log"; then
+        echo "FAIL: wifi-mgr did not exit 0 (joined)"; rc=1
+    fi
+
+    if [ "$rc" -eq 0 ]; then echo "PASS: wifi-mgr joins from stored credentials on the NuttX sim, no AP raised";
+    else echo "------ console output ------"; cat "$log"; echo "----------------------------"; rm -f "$log"; exit 1; fi
+    rm -f "$log"
+}
+
 for cmd in "${@:-all}"; do
     case "$cmd" in
         deps)       deps ;;
@@ -410,8 +553,9 @@ for cmd in "${@:-all}"; do
         kernel)     kernel ;;
         selftest)   [ "${NUTTX_SKIP_BUILD:-0}" = 1 ] || deps; selftest ;;
         syscontrol) [ "${NUTTX_SKIP_BUILD:-0}" = 1 ] || deps; syscontrol ;;
+        wifimgr)    [ "${NUTTX_SKIP_BUILD:-0}" = 1 ] || deps; wifimgr ;;
         clean)      make -C "$NUTTX_DIR" distclean >/dev/null 2>&1 || true ;;
         all)        deps; selftest; syscontrol ;;
-        *) echo "usage: $0 [deps|build|kernel|selftest|syscontrol|clean|all ...]" >&2; exit 2 ;;
+        *) echo "usage: $0 [deps|build|kernel|selftest|syscontrol|wifimgr|clean|all ...]" >&2; exit 2 ;;
     esac
 done
