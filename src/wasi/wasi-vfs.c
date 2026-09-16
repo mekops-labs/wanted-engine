@@ -229,6 +229,19 @@ static wasi_preopen_t *resolve_preopen(wasi_ctx_t *ctx, int fd) {
     return NULL;
 }
 
+void WasiCtxBindRoot(wasi_ctx_t *ctx) {
+    for (uint8_t i = 0; i < ctx->preopens_cnt; i++) {
+        wasi_preopen_t *p = &ctx->preopens[i];
+        if (p->fd != -1)
+            continue;
+        int host_fd =
+            VfsOpen(ctx->vfsCtx, p->path, VFS_O_RDONLY | VFS_O_DIRECTORY);
+        if (host_fd >= 0)
+            p->fd = host_fd;
+        return;
+    }
+}
+
 const wasi_preopen_t *WasiCtxFindPreopen(const wasi_ctx_t *ctx, int fd) {
     for (uint8_t i = 0; i < ctx->preopens_cnt; i++) {
         if (ctx->preopens[i].fd == fd)

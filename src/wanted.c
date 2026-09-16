@@ -705,6 +705,9 @@ int WantedWappRun(wapp_data_t *ctx) {
     ProcFs_Register(ctx->vfs, "uptime", WantedProcReadUptime, false);
 
     wasiCtx->vfsCtx = ctx->vfs;
+    /* Before any mounts[] grant below can claim a preopen fd: guarantees root
+     * gets the lowest one. See WasiCtxBindRoot's doc comment. */
+    WasiCtxBindRoot(wasiCtx);
 
     /* Pass the launch config's args/envs through as WASI argv/envp. argv[0] is
      * the wapp name; user args occupy argv[1..]. */
