@@ -16,8 +16,8 @@
  * mistake. Unprivileged: a wapp already has fd-level access to everything
  * reported here, this just renders it as text. */
 
-/* Upper bound on a rendered leaf body: "connected=0\ntype=serial\n" or
- * "connected=1\ntype=serial\nlocal=255.255.255.255:65535\n". */
+/* Upper bound on a rendered leaf body: "connected:\t0\ntype:\tserial\n" or
+ * "connected:\t1\ntype:\tserial\nlocal:\t255.255.255.255:65535\n". */
 #define NET_READ_MAX 64
 
 static const vfs_named_drv_t *lookup(vfs_ctx_t c, const char *name) {
@@ -31,7 +31,9 @@ static const vfs_named_drv_t *lookup(vfs_ctx_t c, const char *name) {
 /* Render one socket's status into out. Returns the byte length (excluding
  * NUL); never fails — a socket with nothing to report just says so. `type` is
  * known from config alone (VfsSocketLinkType never depends on connection
- * state), so it is always present; `local` only joins it once connected. */
+ * state), so it is always present; `local` only joins it once connected.
+ * "key:\tvalue" matches every other /proc node (see WantedProcReadInfo's own
+ * "uptime_ms:\t%llu\n"), not a format unique to this one. */
 static int render(const vfs_named_drv_t *e, char *out, size_t cap) {
     const char *type = VfsSocketLinkType(e->drv);
     if (type == NULL)
@@ -40,8 +42,9 @@ static int render(const vfs_named_drv_t *e, char *out, size_t cap) {
     char addr[32];
     int r = VfsSocketLocalAddr(e->drv, addr, sizeof(addr));
     if (r < 0)
-        return snprintf(out, cap, "connected=0\ntype=%s\n", type);
-    return snprintf(out, cap, "connected=1\ntype=%s\nlocal=%s\n", type, addr);
+        return snprintf(out, cap, "connected:\t0\ntype:\t%s\n", type);
+    return snprintf(out, cap, "connected:\t1\ntype:\t%s\nlocal:\t%s\n", type,
+                    addr);
 }
 
 static int netStat(vfs_ctx_t c, const char *sub, vfs_filetype_t *type) {

@@ -93,7 +93,7 @@ TEST(procfs_net, NotConnected_ReportsConnectedZero) {
     char buf[64] = {0};
     int n = VfsRead(vfs, fd, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
-    TEST_ASSERT_EQUAL_STRING("connected=0\ntype=tcp\n", buf);
+    TEST_ASSERT_EQUAL_STRING("connected:\t0\ntype:\ttcp\n", buf);
     VfsClose(vfs, fd);
 }
 
@@ -113,8 +113,8 @@ TEST(procfs_net, Connected_ReportsLocalAddr) {
     char buf[64] = {0};
     int n = VfsRead(vfs, fd, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
-    TEST_ASSERT_EQUAL_STRING("connected=1\ntype=tcp\nlocal=203.0.113.4:51522\n",
-                             buf);
+    TEST_ASSERT_EQUAL_STRING(
+        "connected:\t1\ntype:\ttcp\nlocal:\t203.0.113.4:51522\n", buf);
     VfsClose(vfs, fd);
 }
 
@@ -130,7 +130,7 @@ TEST(procfs_net, SerialLink_ReportsTypeSerial) {
     char buf[64] = {0};
     int n = VfsRead(vfs, fd, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
-    TEST_ASSERT_EQUAL_STRING("connected=0\ntype=serial\n", buf);
+    TEST_ASSERT_EQUAL_STRING("connected:\t0\ntype:\tserial\n", buf);
     VfsClose(vfs, fd);
 }
 
