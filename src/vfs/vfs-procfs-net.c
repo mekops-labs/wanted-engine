@@ -16,9 +16,9 @@
  * mistake. Unprivileged: a wapp already has fd-level access to everything
  * reported here, this just renders it as text. */
 
-/* Upper bound on a rendered leaf body: "connected=0\n" or
- * "connected=1\nlocal=255.255.255.255:65535\n". */
-#define NET_READ_MAX 40
+/* Upper bound on a rendered leaf body: "connected=0\ntype=serial\n" or
+ * "connected=1\ntype=serial\nlocal=255.255.255.255:65535\n". */
+#define NET_READ_MAX 64
 
 static const vfs_named_drv_t *lookup(vfs_ctx_t c, const char *name) {
     for (uint8_t i = 0; i < c->netfs_cnt; i++) {
@@ -29,13 +29,19 @@ static const vfs_named_drv_t *lookup(vfs_ctx_t c, const char *name) {
 }
 
 /* Render one socket's status into out. Returns the byte length (excluding
- * NUL); never fails — a socket with nothing to report just says so. */
+ * NUL); never fails — a socket with nothing to report just says so. `type` is
+ * known from config alone (VfsSocketLinkType never depends on connection
+ * state), so it is always present; `local` only joins it once connected. */
 static int render(const vfs_named_drv_t *e, char *out, size_t cap) {
+    const char *type = VfsSocketLinkType(e->drv);
+    if (type == NULL)
+        type = "unknown";
+
     char addr[32];
     int r = VfsSocketLocalAddr(e->drv, addr, sizeof(addr));
     if (r < 0)
-        return snprintf(out, cap, "connected=0\n");
-    return snprintf(out, cap, "connected=1\nlocal=%s\n", addr);
+        return snprintf(out, cap, "connected=0\ntype=%s\n", type);
+    return snprintf(out, cap, "connected=1\ntype=%s\nlocal=%s\n", type, addr);
 }
 
 static int netStat(vfs_ctx_t c, const char *sub, vfs_filetype_t *type) {

@@ -93,7 +93,7 @@ TEST(procfs_net, NotConnected_ReportsConnectedZero) {
     char buf[64] = {0};
     int n = VfsRead(vfs, fd, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
-    TEST_ASSERT_EQUAL_STRING("connected=0\n", buf);
+    TEST_ASSERT_EQUAL_STRING("connected=0\ntype=tcp\n", buf);
     VfsClose(vfs, fd);
 }
 
@@ -113,7 +113,24 @@ TEST(procfs_net, Connected_ReportsLocalAddr) {
     char buf[64] = {0};
     int n = VfsRead(vfs, fd, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
-    TEST_ASSERT_EQUAL_STRING("connected=1\nlocal=203.0.113.4:51522\n", buf);
+    TEST_ASSERT_EQUAL_STRING("connected=1\ntype=tcp\nlocal=203.0.113.4:51522\n",
+                             buf);
+    VfsClose(vfs, fd);
+}
+
+/* type is known from config alone, so it renders for any socket kind — a
+ * serial link included, which has no getsockname()-style local address at
+ * all (see VfsSocketLocalAddr's -ENOTSUP path in platform/posix/socket.c). */
+TEST(procfs_net, SerialLink_ReportsTypeSerial) {
+    NetFs_Register(vfs, "console",
+                   VfsSocketInit(NULL, "serial:///dev/ttyACM0"));
+
+    int fd = VfsOpen(vfs, "/proc/net/console", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    char buf[64] = {0};
+    int n = VfsRead(vfs, fd, buf, sizeof(buf) - 1);
+    TEST_ASSERT_TRUE(n > 0);
+    TEST_ASSERT_EQUAL_STRING("connected=0\ntype=serial\n", buf);
     VfsClose(vfs, fd);
 }
 
@@ -124,4 +141,5 @@ TEST_GROUP_RUNNER(procfs_net) {
     RUN_TEST_CASE(procfs_net, UnknownSocketName_ReturnsEnoent);
     RUN_TEST_CASE(procfs_net, NotConnected_ReportsConnectedZero);
     RUN_TEST_CASE(procfs_net, Connected_ReportsLocalAddr);
+    RUN_TEST_CASE(procfs_net, SerialLink_ReportsTypeSerial);
 }

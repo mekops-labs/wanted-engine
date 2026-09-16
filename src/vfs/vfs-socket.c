@@ -379,6 +379,23 @@ int VfsSocketLocalAddr(const vfs_driver_t *drv, char *buf, size_t buflen) {
     return PlatformNetLocalAddr(s->netCtx, buf, buflen);
 }
 
+/* Indexed by enum vfs_socket_type_t — the same scheme strings schemeToType
+ * parses. */
+static const char *const LINK_TYPE_NAMES[] = {
+    [VFS_SKT_TCP] = "tcp",       [VFS_SKT_UDP] = "udp",
+    [VFS_SKT_STCP] = "tcps",     [VFS_SKT_SUDP] = "udps",
+    [VFS_SKT_SERIAL] = "serial", [VFS_SKT_UNIX] = "unix",
+};
+
+const char *VfsSocketLinkType(const vfs_driver_t *drv) {
+    if (drv == NULL || drv->bytesId != *(const uint32_t *)id)
+        return NULL;
+    uint8_t type = drv->ctx->type;
+    if (type >= sizeof(LINK_TYPE_NAMES) / sizeof(LINK_TYPE_NAMES[0]))
+        return NULL;
+    return LINK_TYPE_NAMES[type];
+}
+
 static int _Destroy(struct vfs_driver_t *d) {
     for (int i = 0; i < SOCK_MAX_SLOTS; i++) {
         if (d->ctx->conns[i].inUse)

@@ -66,6 +66,13 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options);
  * is not a socket driver, -ENOTCONN with no live connection to report. Used
  * by /proc/net/<name> (vfs-procfs-net.c), never exposed to wasm directly. */
 int VfsSocketLocalAddr(const vfs_driver_t *drv, char *buf, size_t buflen);
+
+/* The scheme a socket driver was configured with — "tcp", "udp", "tcps",
+ * "udps", "serial" or "unix", the same vocabulary VfsSocketInit's own option
+ * string parses. Known from config alone, so unlike VfsSocketLocalAddr it
+ * never depends on connection state. Returns NULL when `drv` is not a socket
+ * driver. Used by /proc/net/<name> (vfs-procfs-net.c). */
+const char *VfsSocketLinkType(const vfs_driver_t *drv);
 #endif
 #ifdef CONFIG_WANTED_VFS_SHA256
 vfs_driver_t *VfsSha256Init(const wapp_t *wapp, const char *options);

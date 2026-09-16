@@ -246,6 +246,42 @@ TEST(vfs_socket_driver, LocalAddr_Connected_PropagatesPlatformError) {
     TEST_ASSERT_EQUAL_INT(-ENOTSUP, VfsSocketLocalAddr(drv, buf, sizeof(buf)));
 }
 
+/* ── VfsSocketLinkType — the other half of /proc/net/<name> ──────────────── */
+
+TEST(vfs_socket_driver, LinkType_NotASocketDriver_ReturnsNull) {
+    vfs_driver_t other = {.id = {'X', 'X', 'X', 'X'}};
+    TEST_ASSERT_NULL(VfsSocketLinkType(&other));
+}
+
+TEST(vfs_socket_driver, LinkType_NullDriver_ReturnsNull) {
+    TEST_ASSERT_NULL(VfsSocketLinkType(NULL));
+}
+
+TEST(vfs_socket_driver, LinkType_Tcp) {
+    drv = VfsSocketInit(NULL, "tcp://addr:80");
+    TEST_ASSERT_EQUAL_STRING("tcp", VfsSocketLinkType(drv));
+}
+
+TEST(vfs_socket_driver, LinkType_Udp) {
+    drv = VfsSocketInit(NULL, "udp://addr:80");
+    TEST_ASSERT_EQUAL_STRING("udp", VfsSocketLinkType(drv));
+}
+
+TEST(vfs_socket_driver, LinkType_Serial) {
+    drv = VfsSocketInit(NULL, "serial:///dev/ttyACM0");
+    TEST_ASSERT_EQUAL_STRING("serial", VfsSocketLinkType(drv));
+}
+
+/* Known from config alone: unlike VfsSocketLocalAddr, still answers the same
+ * once the socket has connected. */
+TEST(vfs_socket_driver, LinkType_UnaffectedByConnecting) {
+    drv = VfsSocketInit(NULL, "tcp://addr:80");
+    drv->Open(drv->ctx, "/", VFS_O_RDWR);
+    uint8_t rd[1];
+    drv->Read(drv->ctx, 0, rd, sizeof(rd));
+    TEST_ASSERT_EQUAL_STRING("tcp", VfsSocketLinkType(drv));
+}
+
 /* ── Socket-specific ops ────────────────────────────────────────────────── */
 
 TEST(vfs_socket_driver, SockAccept_NullNewFd_ReturnsEinval) {
@@ -566,6 +602,12 @@ TEST_GROUP_RUNNER(vfs_socket_driver) {
     RUN_TEST_CASE(vfs_socket_driver, LocalAddr_Connected_ReturnsPlatformAddr);
     RUN_TEST_CASE(vfs_socket_driver,
                   LocalAddr_Connected_PropagatesPlatformError);
+    RUN_TEST_CASE(vfs_socket_driver, LinkType_NotASocketDriver_ReturnsNull);
+    RUN_TEST_CASE(vfs_socket_driver, LinkType_NullDriver_ReturnsNull);
+    RUN_TEST_CASE(vfs_socket_driver, LinkType_Tcp);
+    RUN_TEST_CASE(vfs_socket_driver, LinkType_Udp);
+    RUN_TEST_CASE(vfs_socket_driver, LinkType_Serial);
+    RUN_TEST_CASE(vfs_socket_driver, LinkType_UnaffectedByConnecting);
     RUN_TEST_CASE(vfs_socket_driver, SockAccept_NullNewFd_ReturnsEinval);
     RUN_TEST_CASE(vfs_socket_driver, SockAccept_OnConnectRole_ReturnsEnotsup);
     RUN_TEST_CASE(vfs_socket_driver, SockRecv_ConnectsThenReceives);
