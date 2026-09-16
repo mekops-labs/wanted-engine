@@ -202,6 +202,50 @@ TEST(vfs_socket_driver, Stat_ReportsTypeAndPort) {
     TEST_ASSERT_EQUAL_UINT32(1234, st.ino); /* ino carries the port */
 }
 
+/* ── VfsSocketLocalAddr — backs /proc/net/<name> ───────────────────────── */
+
+TEST(vfs_socket_driver, LocalAddr_NotASocketDriver_ReturnsEinval) {
+    vfs_driver_t other = {.id = {'X', 'X', 'X', 'X'}};
+    char buf[32];
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          VfsSocketLocalAddr(&other, buf, sizeof(buf)));
+}
+
+TEST(vfs_socket_driver, LocalAddr_NullDriver_ReturnsEinval) {
+    char buf[32];
+    TEST_ASSERT_EQUAL_INT(-EINVAL, VfsSocketLocalAddr(NULL, buf, sizeof(buf)));
+}
+
+TEST(vfs_socket_driver, LocalAddr_NotConnected_ReturnsEnotconn) {
+    drv = VfsSocketInit(NULL, "tcp://addr:8080");
+    char buf[32];
+    TEST_ASSERT_EQUAL_INT(-ENOTCONN, VfsSocketLocalAddr(drv, buf, sizeof(buf)));
+}
+
+TEST(vfs_socket_driver, LocalAddr_Connected_ReturnsPlatformAddr) {
+    drv = VfsSocketInit(NULL, "tcp://addr:8080");
+    drv->Open(drv->ctx, "/", VFS_O_RDWR);
+    uint8_t rd[1];
+    drv->Read(drv->ctx, 0, rd, sizeof(rd)); /* lazy-connects on first I/O */
+    DummyNetSetLocalAddr("203.0.113.4:51522");
+
+    char buf[32];
+    int n = VfsSocketLocalAddr(drv, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT((int)strlen("203.0.113.4:51522"), n);
+    TEST_ASSERT_EQUAL_STRING("203.0.113.4:51522", buf);
+}
+
+TEST(vfs_socket_driver, LocalAddr_Connected_PropagatesPlatformError) {
+    drv = VfsSocketInit(NULL, "tcp://addr:8080");
+    drv->Open(drv->ctx, "/", VFS_O_RDWR);
+    uint8_t rd[1];
+    drv->Read(drv->ctx, 0, rd, sizeof(rd));
+    /* No DummyNetSetLocalAddr call: the mock's default is -ENOTSUP, the same
+     * answer a real serial/AF_UNIX transport gives. */
+    char buf[32];
+    TEST_ASSERT_EQUAL_INT(-ENOTSUP, VfsSocketLocalAddr(drv, buf, sizeof(buf)));
+}
+
 /* ── Socket-specific ops ────────────────────────────────────────────────── */
 
 TEST(vfs_socket_driver, SockAccept_NullNewFd_ReturnsEinval) {
@@ -516,6 +560,12 @@ TEST_GROUP_RUNNER(vfs_socket_driver) {
     RUN_TEST_CASE(vfs_socket_driver, Write_ConnectFailure_ReturnsError);
     RUN_TEST_CASE(vfs_socket_driver, Stat_NullStat_ReturnsEinval);
     RUN_TEST_CASE(vfs_socket_driver, Stat_ReportsTypeAndPort);
+    RUN_TEST_CASE(vfs_socket_driver, LocalAddr_NotASocketDriver_ReturnsEinval);
+    RUN_TEST_CASE(vfs_socket_driver, LocalAddr_NullDriver_ReturnsEinval);
+    RUN_TEST_CASE(vfs_socket_driver, LocalAddr_NotConnected_ReturnsEnotconn);
+    RUN_TEST_CASE(vfs_socket_driver, LocalAddr_Connected_ReturnsPlatformAddr);
+    RUN_TEST_CASE(vfs_socket_driver,
+                  LocalAddr_Connected_PropagatesPlatformError);
     RUN_TEST_CASE(vfs_socket_driver, SockAccept_NullNewFd_ReturnsEinval);
     RUN_TEST_CASE(vfs_socket_driver, SockAccept_OnConnectRole_ReturnsEnotsup);
     RUN_TEST_CASE(vfs_socket_driver, SockRecv_ConnectsThenReceives);

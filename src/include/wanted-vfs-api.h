@@ -48,6 +48,11 @@ const char *StatusToString(status_t state);
  * from PlatformWappGetState. */
 extern const proc_dir_ops_t WappsProcDirOps;
 
+/* /proc/net/<name> — read-only per-wapp directory reporting the calling
+ * wapp's own sockets[] grants, unprivileged (see vfs-procfs-net.c). Only
+ * registered when sockets are compiled in. */
+extern const proc_dir_ops_t NetProcDirOps;
+
 /* Upper bound (including NUL) on a control/config JSON payload the engine
  * copies to parse, which sizes the parse buffer. */
 #define WANTED_CTRL_JSON_MAX 2048

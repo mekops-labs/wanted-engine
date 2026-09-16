@@ -282,6 +282,12 @@ int PlatformNetSend(struct netCtx *ctx, const void *buf, size_t nbyte,
 int PlatformNetShutdown(struct netCtx *ctx, int how);
 int PlatformNetFree(struct netCtx *ctx);
 
+/* Local endpoint of an established connection, formatted "<addr>:<port>" into
+ * `buf`. Returns the byte count (excluding NUL) or a negative errno —
+ * -ENOTCONN when `ctx` has no live connection to report, -ENOTSUP for a
+ * transport with no comparable address (serial, AF_UNIX). */
+int PlatformNetLocalAddr(struct netCtx *ctx, char *buf, size_t buflen);
+
 /* Bind `ctx` to <bindAddr>:<port> and, on a stream transport, listen `backlog`
  * deep. A datagram transport is left bound: Recv reads it and Send answers the
  * peer the last datagram came from. */

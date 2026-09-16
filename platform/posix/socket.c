@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -251,6 +252,39 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
 #endif
 
     return 0;
+}
+
+int PlatformNetLocalAddr(struct netCtx *c, char *buf, size_t buflen) {
+    if (c == NULL || buf == NULL) {
+        return -EINVAL;
+    }
+    if (c->isSerial
+#ifdef WANTED_SOCKET_UNIX_TRANSPORT
+        || c->isUnix
+#endif
+    ) {
+        return -ENOTSUP;
+    }
+    if (c->socket < 0) {
+        return -ENOTCONN;
+    }
+
+    struct sockaddr_in addr;
+    socklen_t len = sizeof(addr);
+    if (getsockname(c->socket, (struct sockaddr *)&addr, &len) != 0) {
+        return -errno;
+    }
+
+    char ip[INET_ADDRSTRLEN];
+    if (inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip)) == NULL) {
+        return -errno;
+    }
+
+    int n = snprintf(buf, buflen, "%s:%u", ip, (unsigned)ntohs(addr.sin_port));
+    if (n < 0 || (size_t)n >= buflen) {
+        return -ENOBUFS;
+    }
+    return n;
 }
 
 #ifdef WANTED_SOCKET_UNIX_TRANSPORT

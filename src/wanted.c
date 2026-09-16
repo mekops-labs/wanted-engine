@@ -712,6 +712,13 @@ int WantedWappRun(wapp_data_t *ctx) {
     /* uptime is runtime state rather than identity, so it gets its own node;
      * unprivileged for the same reason /proc/wanted is. */
     ProcFs_Register(ctx->vfs, "uptime", WantedProcReadUptime, false);
+#ifdef CONFIG_WANTED_VFS_SOCKET
+    /* net reports the wapp's own sockets[] grants (vfs-procfs-net.c reads
+     * c->netfs[] directly — no other wapp's table is reachable from here);
+     * unprivileged since a wapp already has fd-level access to everything it
+     * renders. */
+    ProcFs_RegisterDir(ctx->vfs, "net", &NetProcDirOps, false);
+#endif
 
     wasiCtx->vfsCtx = ctx->vfs;
     /* Before any mounts[] grant below can claim a preopen fd: guarantees root

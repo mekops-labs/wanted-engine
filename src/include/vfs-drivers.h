@@ -59,6 +59,13 @@ vfs_driver_t *VfsConfigInit(const wapp_t *wapp, const char *options);
 #endif
 #ifdef CONFIG_WANTED_VFS_SOCKET
 vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options);
+
+/* Local endpoint of a socket driver's connected socket, formatted
+ * "<addr>:<port>" into `buf` — the address a peer would see this connection
+ * come from. Returns the byte count or a negative errno: -EINVAL when `drv`
+ * is not a socket driver, -ENOTCONN with no live connection to report. Used
+ * by /proc/net/<name> (vfs-procfs-net.c), never exposed to wasm directly. */
+int VfsSocketLocalAddr(const vfs_driver_t *drv, char *buf, size_t buflen);
 #endif
 #ifdef CONFIG_WANTED_VFS_SHA256
 vfs_driver_t *VfsSha256Init(const wapp_t *wapp, const char *options);

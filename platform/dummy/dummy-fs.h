@@ -118,3 +118,7 @@ size_t DummyNetGetSentOn(void *ctx, uint8_t *buf, size_t len);
 /* The socket PlatformNetOpen (or an accept) handed out last — the handle the
  * -On helpers take, letting a test address one connection of several. */
 void *DummyNetLastSock(void);
+
+/* Set the value PlatformNetLocalAddr writes on success ("" or NULL restores
+ * the default -ENOTSUP, matching a transport with nothing to report). */
+void DummyNetSetLocalAddr(const char *addr);

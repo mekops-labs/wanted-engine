@@ -370,6 +370,15 @@ static void releaseConn(struct sock_conn_t *s) {
     s->connected = false;
 }
 
+int VfsSocketLocalAddr(const vfs_driver_t *drv, char *buf, size_t buflen) {
+    if (drv == NULL || drv->bytesId != *(const uint32_t *)id)
+        return -EINVAL;
+    const struct sock_conn_t *s = conn(drv->ctx, SOCK_SELF);
+    if (s == NULL || !s->connected)
+        return -ENOTCONN;
+    return PlatformNetLocalAddr(s->netCtx, buf, buflen);
+}
+
 static int _Destroy(struct vfs_driver_t *d) {
     for (int i = 0; i < SOCK_MAX_SLOTS; i++) {
         if (d->ctx->conns[i].inUse)

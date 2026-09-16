@@ -37,6 +37,7 @@ static int g_open_fail;
 static int g_connect_result;
 static int g_listen_result;
 static int g_accept_result;
+static char g_local_addr[64];
 
 /* ── Test control ───────────────────────────────────────────────────────── */
 
@@ -47,12 +48,21 @@ void DummyNetReset(void) {
     g_connect_result = 0;
     g_listen_result = 0;
     g_accept_result = 0;
+    g_local_addr[0] = '\0';
 }
 
 void DummyNetSetOpenFail(int fail) { g_open_fail = fail; }
 void DummyNetSetConnectResult(int result) { g_connect_result = result; }
 void DummyNetSetListenResult(int result) { g_listen_result = result; }
 void DummyNetSetAcceptResult(int result) { g_accept_result = result; }
+
+void DummyNetSetLocalAddr(const char *addr) {
+    if (addr == NULL) {
+        g_local_addr[0] = '\0';
+        return;
+    }
+    snprintf(g_local_addr, sizeof(g_local_addr), "%s", addr);
+}
 
 void DummyNetSeedRecvOn(void *ctx, const uint8_t *buf, size_t len) {
     struct netCtx *s = ctx;
@@ -201,6 +211,16 @@ int PlatformNetShutdown(struct netCtx *ctx, int how) {
     (void)ctx;
     (void)how;
     return 0;
+}
+
+int PlatformNetLocalAddr(struct netCtx *ctx, char *buf, size_t buflen) {
+    (void)ctx;
+    if (g_local_addr[0] == '\0')
+        return -ENOTSUP;
+    int n = snprintf(buf, buflen, "%s", g_local_addr);
+    if (n < 0 || (size_t)n >= buflen)
+        return -ENOBUFS;
+    return n;
 }
 
 int PlatformNetFree(struct netCtx *ctx) {
