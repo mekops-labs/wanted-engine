@@ -328,9 +328,11 @@ static void wifiEnsureStarted(void) {
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-#ifdef PTHREAD_STACK_MIN
-    pthread_attr_setstacksize(&attr, PTHREAD_STACK_MIN);
-#endif
+    /* PTHREAD_STACK_MIN (CONFIG_PTHREAD_STACK_MIN) is sized for a trivial
+     * thread; this one calls into wpa_driver_wext_associate() and the DHCP
+     * client (netlib_obtain_ipv4addr()), both stack-heavy, and overflows the
+     * minimum immediately. */
+    pthread_attr_setstacksize(&attr, 4096);
     if (pthread_create(&g_monitorThread, &attr, wifiMonitorThread, NULL) == 0)
         pthread_detach(g_monitorThread);
     pthread_attr_destroy(&attr);
