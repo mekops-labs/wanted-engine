@@ -16,6 +16,8 @@
 
 #include "wasi_types.h"
 
+#include <debug_trace.h>
+
 typedef struct wasi_iovec_t {
     uint32_t buf; /* wasm linear-memory offset */
     uint32_t buf_len;
@@ -213,12 +215,18 @@ static int32_t wasi_environ_sizes_get(wasm_exec_env_t exec_env,
 static wasi_preopen_t *resolve_preopen(wasi_ctx_t *ctx, int fd) {
     for (uint8_t i = 0; i < ctx->preopens_cnt; i++) {
         wasi_preopen_t *p = &ctx->preopens[i];
-        if (p->fd == fd)
+        if (p->fd == fd) {
+            DEBUG_TRACE("resolve_preopen(%d) -> i=%u path=%s (concrete)", fd, i,
+                        p->path);
             return p;
+        }
         if (p->fd == -1) {
             /* Lazy entry — bind now. */
             int host_fd =
                 VfsOpen(ctx->vfsCtx, p->path, VFS_O_RDONLY | VFS_O_DIRECTORY);
+            DEBUG_TRACE("resolve_preopen(%d): lazy-bind i=%u path=%s -> "
+                        "host_fd=%d",
+                        fd, i, p->path, host_fd);
             if (host_fd < 0)
                 continue;
             p->fd = host_fd;
@@ -226,6 +234,7 @@ static wasi_preopen_t *resolve_preopen(wasi_ctx_t *ctx, int fd) {
                 return p;
         }
     }
+    DEBUG_TRACE("resolve_preopen(%d) -> NULL (cnt=%u)", fd, ctx->preopens_cnt);
     return NULL;
 }
 
@@ -503,13 +512,20 @@ static int32_t wasi_path_open(wasm_exec_env_t exec_env, int32_t dirfd,
     if (path_len < 0 || path_len >= 512)
         return __WASI_ERRNO_INVAL;
 
+    DEBUG_TRACE("path_open: dirfd=%d oflags=%d rights_base=%llx", dirfd, oflags,
+                (unsigned long long)fs_rights_base);
+
     /* Capability gate at the preopen boundary: a request may not exceed the
      * parent preopen's inheriting rights. This denies a wapp hand-crafting a
      * path_open past libc's own capping; the driver backstops writes. */
     const wasi_preopen_t *parent = WasiCtxFindPreopen(ctx, dirfd);
-    if (parent &&
-        !WasiRightsWithin(parent->rights_inheriting, (uint64_t)fs_rights_base))
+    if (parent && !WasiRightsWithin(parent->rights_inheriting,
+                                    (uint64_t)fs_rights_base)) {
+        DEBUG_TRACE("path_open: dirfd=%d NOTCAPABLE (parent=%s inh=%llx)",
+                    dirfd, parent->path,
+                    (unsigned long long)parent->rights_inheriting);
         return __WASI_ERRNO_NOTCAPABLE;
+    }
 
     const char *path = vaddr(exec_env, path_app, (uint32_t)path_len);
     if (!path && path_len > 0)
@@ -544,6 +560,8 @@ static int32_t wasi_path_open(wasm_exec_env_t exec_env, int32_t dirfd,
 
     const char *open_path = (path_len == 0) ? "." : host_path;
     int host_fd = VfsOpenAt(ctx->vfsCtx, dirfd, open_path, flags);
+    DEBUG_TRACE("path_open: dirfd=%d path=%s flags=%d -> %d", dirfd, open_path,
+                flags, host_fd);
     if (host_fd < 0)
         return errno_to_wasi(host_fd);
 

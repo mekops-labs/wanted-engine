@@ -19,6 +19,8 @@
 #include <wanted.h>
 #include <wanted_malloc.h>
 
+#include <debug_trace.h>
+
 static inline size_t min(size_t a, size_t b) { return (a) > (b) ? (b) : (a); }
 
 static bool hasRegistryExt(const char *name) {
@@ -117,6 +119,7 @@ int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
         qsort(registryList, filled, sizeof(reg_entry_t), compareEntries);
     }
 
+    DEBUG_TRACE("root=%s count=%d filled=%zu", REGISTRY_ROOT, count, filled);
     return count;
 }
 
@@ -152,6 +155,8 @@ static cache_entry_t *cacheAdd(const char *ref, const char *targetName) {
     wapp_t *tmp;
     cache_entry_t *c;
 
+    DEBUG_TRACE("ref=%s target=%s", ref, targetName);
+
     if (imageCacheCount >= REGISTRY_MAX_ENTRIES)
         return NULL;
 
@@ -166,6 +171,8 @@ static cache_entry_t *cacheAdd(const char *ref, const char *targetName) {
         WantedFree(tmp);
         return NULL;
     }
+
+    DEBUG_TRACE("loaded ref=%s len=%zu", ref, tmp->layer_lens[0]);
 
     c = &imageCache[imageCacheCount];
     strncpy(c->ref, ref, sizeof(c->ref) - 1);
@@ -195,6 +202,7 @@ static void cachePreload(void) {
         return;
 
     num = PlatformRegistryRead(list, REGISTRY_MAX_ENTRIES);
+    DEBUG_TRACE("PlatformRegistryRead num=%d", num);
     if (num < 0) {
         WantedFree(list);
         return;
@@ -204,14 +212,17 @@ static void cachePreload(void) {
 
     for (int i = 0; i < num; i++) {
         buildRef(ref, sizeof(ref), list[i].name, list[i].version);
+        DEBUG_TRACE("preload[%d/%d] ref=%s", i, num, ref);
         if (cacheFind(ref) != NULL)
             continue;
         snprintf(targetName, sizeof(targetName), "%s/%s%s", REGISTRY_ROOT, ref,
                  REGISTRY_EXT);
         cacheAdd(ref, targetName); /* best-effort; skip unreadable images */
+        DEBUG_TRACE("preload[%d/%d] done ref=%s", i, num, ref);
     }
 
     WantedFree(list);
+    DEBUG_TRACE("cachePreload done, imageCacheCount=%d", imageCacheCount);
 }
 
 /* Preload the image cache from the boot shim, before the supervisor and thus
@@ -257,14 +268,17 @@ int PlatformRegistryWappLoad(const reg_entry_t *entry, wapp_t *w) {
     snprintf(targetName, sizeof(targetName), "%s/%s%s", REGISTRY_ROOT, ref,
              REGISTRY_EXT);
 
+    DEBUG_TRACE("wappLoad ref=%s preloaded=%d", ref, (int)imageCachePreloaded);
     if (!imageCachePreloaded)
         cachePreload();
+    DEBUG_TRACE("wappLoad ref=%s after cachePreload", ref);
 
     c = cacheFind(ref);
     if (c == NULL)
         c = cacheAdd(ref, targetName); /* not preloaded (e.g. just installed) */
     if (c == NULL)
         return -ENOENT;
+    DEBUG_TRACE("wappLoad ref=%s resolved len=%zu", ref, c->len);
 
     /* Hand the launch its own RAM-to-RAM copy of the cached image; the master
      * stays cached for the next one. PSRAM-backed, so the per-launch copy stays
