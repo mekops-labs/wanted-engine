@@ -12,7 +12,7 @@ The engine has three test tiers, each catching a different class of failure. All
 |-------|---------|-------|
 | Unit (ctest) | `just test` | C unit tests: VFS, TarFS, WASI, registry, API parsing |
 | In-WASM selftest | `just selftest` / `just nuttx-selftest` | The functional + robustness scenario suite, run from inside WASM; TAP |
-| Cross-arch selftest | `just selftest-openwrt-qemu aarch64` / `mipsel` | The same suite against an OpenWRT cross-built engine under qemu |
+| Cross-arch selftest | `just selftest-openwrt-qemu aarch64` / `mipsel` | The same suite against an OpenWRT cross-built engine under qemu, plus a packaging/init-script check (below) |
 | Smoke | `just smoke-engine` | The production sheriff supervisor instantiates cleanly |
 | Live update | `just live-update` | The supervisor image is swapped under a running engine |
 | Image verification | `just image-verify` | Every state the registry load check reports, refusing and reporting |
@@ -77,6 +77,8 @@ just selftest-openwrt-qemu <sdk-url-or-dir>   # any OpenWRT target
 `test/selftest-qemu.sh` cross-builds the engine from an OpenWRT SDK — the same toolchain the `.ipk` uses — and runs the selftest suite against it under qemu user-mode emulation. A board SDK stages a target rootfs to use as the loader root; a generic one ships none, so its toolchain sysroot serves instead — it carries the musl loader and libc, which is all the engine needs. The suite itself is unchanged: wapps and the supervisor are WASM loaded by path at runtime, so only the engine binary differs.
 
 This is the lane for faults that are invisible on x86. Engine code that is undefined-behaviour-clean on x86_64 can fault on another architecture's calling convention, alignment rules, or signal handling, and emulation reproduces that faithfully enough to catch it — without a router on the bench. The SDK is downloaded and cached under `.openwrt-sdk/` on first use; TLS is off in this lane, so it skips the SDK's one-time OpenSSL stage.
+
+After the in-WASM suite, `test/selftest-openwrt-init.sh` packages a real `.ipk` and checks it: `data.tar.gz` lays out the files packaging promises, and `/etc/init.d/wanted`'s own `render_config()` — sourced unmodified, not reimplemented — merges UCI into the packaged base config correctly, both with and without an operator-pinned `manager`/`registry`. This exercises `uci` and `jshn` for real: `sdk-env.sh`'s `STAGE_UCI=1` cross-builds them (and `libubox`) from the SDK's feed once per SDK, run here under qemu-user the same way the engine binary is. What it does not reach is `start_service` itself — that needs a real `procd`/`ubus` init system running as PID 1, which a qemu-user rootfs skeleton cannot provide; this lane runs one binary under emulation; it does not boot one.
 
 A faulting guest leaves a `qemu_*.core` dump in the repo root (git-ignored).
 

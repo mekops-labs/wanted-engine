@@ -6,8 +6,10 @@
 #                  an already-extracted SDK directory
 #      REPO      — repository root
 #      STAGE_SSL — "1" to stage libopenssl into the SDK (once per SDK)
-# Out: SDK, SDK_TARGET_ROOT, OPKG_ARCH, QEMU_ARCH, plus the OPENWRT_* and
-#      STAGING_DIR variables cmake/toolchain-openwrt.cmake reads.
+#      STAGE_UCI — "1" to cross-build uci + jshn into the SDK (once per SDK)
+# Out: SDK, SDK_TARGET_ROOT, UCI_ROOT (empty unless STAGE_UCI populated one),
+#      OPKG_ARCH, QEMU_ARCH, plus the OPENWRT_* and STAGING_DIR variables
+#      cmake/toolchain-openwrt.cmake reads.
 
 SDK_CACHE="$REPO/.openwrt-sdk"
 
@@ -84,52 +86,83 @@ if [ -z "$SDK_TARGET_ROOT" ]; then
     log "no staged rootfs; using the toolchain sysroot as the loader root"
 fi
 
+# --- shared helpers for staging a feed package into the SDK ---------------
+# Both STAGE_SSL and STAGE_UCI below need these; defined once regardless of
+# whether either is requested.
+if [ "${STAGE_SSL:-0}" = "1" ] || [ "${STAGE_UCI:-0}" = "1" ]; then
+    if ! awk 'BEGIN { a[1] = 1; asort(a) }' >/dev/null 2>&1; then
+        echo "sdk-env: gawk (asort) missing — build image lacks the" >&2
+        echo "  OpenWRT SDK prerequisites; see docker/Dockerfile." >&2
+        return 1
+    fi
+    # OpenWRT refuses to build as root; drop privileges when we have them.
+    if [ "$(id -u)" -eq 0 ]; then
+        id owrt >/dev/null 2>&1 || useradd -m owrt
+        chown -R owrt "$SDK"
+        run_sdk() { gosu owrt bash -c "$1"; }
+    else
+        run_sdk() { bash -c "$1"; }
+    fi
+    mkdir -p "$SDK_CACHE"
+fi
+
+# $1 = log path, $2 = step label, $3 = command. Thousands of lines from a
+# full package build: output to the log, step trace to the terminal, tail of
+# the log on failure.
+sdk_step() {
+    printf '  --> %s\n' "$2"
+    if ! run_sdk "cd '$SDK' && $3" >>"$1" 2>&1; then
+        echo "sdk-env: $2 — failed. Last 40 lines of $1:" >&2
+        tail -40 "$1" >&2
+        echo "sdk-env: staging into the SDK failed." >&2
+        echo "  A cached SDK extracted by an earlier, root-owned run may be" >&2
+        echo "  unwritable; remove it from .openwrt-sdk/ and retry." >&2
+        return 1
+    fi
+}
+
 # --- stage libopenssl into the SDK (once) ---------------------------------
 if [ "${STAGE_SSL:-0}" = "1" ]; then
     if ls "$SDK"/staging_dir/target-*/usr/lib/libssl.so.* >/dev/null 2>&1; then
         log "OpenSSL already staged in SDK"
     else
         log "staging OpenSSL into SDK (one-time per SDK)"
-        if ! awk 'BEGIN { a[1] = 1; asort(a) }' >/dev/null 2>&1; then
-            echo "sdk-env: gawk (asort) missing — build image lacks the" >&2
-            echo "  OpenWRT SDK prerequisites; see docker/Dockerfile." >&2
-            return 1
-        fi
-        # OpenWRT refuses to build as root; drop privileges when we have them.
-        if [ "$(id -u)" -eq 0 ]; then
-            id owrt >/dev/null 2>&1 || useradd -m owrt
-            chown -R owrt "$SDK"
-            run_sdk() { gosu owrt bash -c "$1"; }
-        else
-            run_sdk() { bash -c "$1"; }
-        fi
-        # Thousands of lines, the last a full OpenSSL build: output to a log,
-        # step trace to the terminal, tail of the log on failure.
-        # The cache dir exists only for a URL SDK; a directory one needs it too.
-        mkdir -p "$SDK_CACHE"
         stage_log="$SDK_CACHE/openssl-stage.log"
         : > "$stage_log"
-        sdk_step() { # $1 = label, $2 = command
-            printf '  --> %s\n' "$1"
-            if ! run_sdk "cd '$SDK' && $2" >>"$stage_log" 2>&1; then
-                echo "sdk-env: $1 — failed. Last 40 lines of $stage_log:" >&2
-                tail -40 "$stage_log" >&2
-                echo "sdk-env: staging OpenSSL into the SDK failed." >&2
-                echo "  A cached SDK extracted by an earlier, root-owned run may be" >&2
-                echo "  unwritable; remove it from .openwrt-sdk/ and retry." >&2
-                return 1
-            fi
-        }
-        sdk_step "updating package feeds"     "./scripts/feeds update base" || return 1
-        sdk_step "installing libopenssl feed" "./scripts/feeds install libopenssl" || return 1
-        sdk_step "generating SDK config"      "make defconfig" || return 1
-        sdk_step "compiling OpenSSL (several minutes)" \
+        sdk_step "$stage_log" "updating package feeds"     "./scripts/feeds update base" || return 1
+        sdk_step "$stage_log" "installing libopenssl feed" "./scripts/feeds install libopenssl" || return 1
+        sdk_step "$stage_log" "generating SDK config"      "make defconfig" || return 1
+        sdk_step "$stage_log" "compiling OpenSSL (several minutes)" \
                  "make package/openssl/compile -j\$(nproc)" || return 1
     fi
 fi
+
+# --- stage uci + jshn into the SDK (once) ---------------------------------
+# Cross-built for the target and run under qemu-user, not host tools: uci's
+# behavior parsing a config file has nothing arch-specific about it, but
+# these are the real binaries a device runs, not stand-ins. Populates a
+# staging_dir/target-*/root-<board>/ skeleton (OpenWRT's own firmware-image
+# staging convention) with sbin/uci, usr/bin/jshn, usr/share/libubox/jshn.sh
+# and lib/config/uci.sh — exported as UCI_ROOT once done.
+if [ "${STAGE_UCI:-0}" = "1" ]; then
+    if ls "$SDK"/staging_dir/target-*/root-*/sbin/uci >/dev/null 2>&1; then
+        log "uci already staged in SDK"
+    else
+        log "staging uci + jshn into SDK (one-time per SDK)"
+        stage_log="$SDK_CACHE/uci-stage.log"
+        : > "$stage_log"
+        sdk_step "$stage_log" "updating package feeds" "./scripts/feeds update base" || return 1
+        sdk_step "$stage_log" "installing libubox/uci feeds" "./scripts/feeds install libubox uci" || return 1
+        sdk_step "$stage_log" "generating SDK config" "make defconfig" || return 1
+        sdk_step "$stage_log" "compiling libubox + uci" \
+                 "make package/libubox/compile package/uci/compile -j\$(nproc)" || return 1
+    fi
+fi
+UCI_ROOT="$(ls -d "$SDK"/staging_dir/target-*/root-* 2>/dev/null | head -1 || true)"
 
 export STAGING_DIR="$SDK/staging_dir"
 export OPENWRT_TOOLCHAIN="$SDK/staging_dir/$tc_dir"
 export OPENWRT_CROSS="$cross"
 export OPENWRT_SYSROOT="$SDK/staging_dir/$tgt_dir"
 export OPENWRT_ARCH="$wamr_arch"
+export UCI_ROOT

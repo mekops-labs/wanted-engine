@@ -10,6 +10,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SDK_ARG="${1:?usage: selftest-qemu.sh <sdk-url-or-dir> [config]}"
 CONFIG="${2:-$REPO/test/selftest-config.json}"
 
+STAGE_UCI=1
 # shellcheck source=packaging/openwrt/sdk-env.sh
 . "$REPO/packaging/openwrt/sdk-env.sh"
 
@@ -55,4 +56,7 @@ EOF
 chmod +x "$runner"
 
 log "selftest under $QEMU ($OPKG_ARCH)"
-exec "$REPO/test/selftest.sh" "$runner" "$CONFIG"
+"$REPO/test/selftest.sh" "$runner" "$CONFIG"
+
+log "packaging + init-script check under $QEMU ($OPKG_ARCH)"
+"$REPO/test/selftest-openwrt-init.sh" "$bdir/cmd/wanted-cli" "$QEMU" "$UCI_ROOT" "$OPKG_ARCH"
