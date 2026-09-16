@@ -429,9 +429,22 @@ syscontrol() {
 #   - a device with no /dev/wifi grant never attempts wifi-mgr (not covered
 #     here — proven instead on plain Linux, which compiles no wifi driver
 #     at all; see sheriff's test/smoke-provisioning.sh)
+#   - an already-enrolled device converges with no operator involvement: the
+#     respawned instance's own wifi-mgr run joins from the credentials just
+#     written with no second provisioning prompt appearing
+#   - a freshly-written blob does not let Join proceed until after that
+#     post-restart wifi-mgr run succeeds — asserted by log line order, since
+#     both land in the same console capture
 # Scenarios needing an actual AP broadcast, or a real failed association,
 # are out of reach here: the stub's `connect` has no failure mode, and
-# NuttX (sim or hardware) has no AP path at all.
+# NuttX (sim or hardware) has no AP path at all. A literal power-cycle
+# (killing and restarting the nuttx process, not just Sheriff's in-process
+# reload) is also out of reach as currently configured: wifimgr-sim-
+# config.json's storage grant deliberately carries no `src=` (matching real
+# unconfigured deployments), so it lands on NuttX's RAM-backed pseudofs and
+# does not survive a process restart — the still-open per-board `src=`
+# question the plan already tracks, not a new gap this test could close by
+# itself.
 #
 # Was NOT YET PASSING for a while: every step through "blob captured;
 # reloading" worked (console I/O, registry resolution, storage.writeAtomic,
@@ -540,7 +553,30 @@ wifimgr() {
         echo "FAIL: wifi-mgr did not exit 0 (joined)"; rc=1
     fi
 
-    if [ "$rc" -eq 0 ]; then echo "PASS: wifi-mgr joins from stored credentials on the NuttX sim, no AP raised";
+    # 4. No operator involvement on the credentialed re-boot: the prompt
+    #    that appeared for the first (uncredentialed) instance must not
+    #    appear again for the respawned one.
+    if [ "$rc" -eq 0 ]; then
+        n=$(grep -cF 'paste the provisioning blob' "$log")
+        if [ "$n" -ne 1 ]; then
+            echo "FAIL: expected exactly one provisioning prompt, saw $n"; rc=1
+        fi
+    fi
+
+    # 5. Join must not be attempted before the post-restart wifi-mgr run
+    #    succeeds: the second "wifi-mgr exited:" line must precede any Join
+    #    redemption attempt, never follow it.
+    if [ "$rc" -eq 0 ]; then
+        join_line=$(grep -nF -e 'cannot redeem join token' -e ': reconciling (' "$log" | head -1 | cut -d: -f1)
+        wifimgr2_line=$(grep -nF 'wifi-mgr exited:' "$log" | sed -n '2p' | cut -d: -f1)
+        if [ -z "${join_line:-}" ] || [ -z "${wifimgr2_line:-}" ]; then
+            echo "FAIL: could not locate both the post-restart wifi-mgr exit and a Join attempt"; rc=1
+        elif [ "$join_line" -lt "$wifimgr2_line" ]; then
+            echo "FAIL: Join was attempted before the post-restart wifi-mgr run succeeded"; rc=1
+        fi
+    fi
+
+    if [ "$rc" -eq 0 ]; then echo "PASS: wifi-mgr joins from stored credentials on the NuttX sim, no AP raised, no operator involvement, no early Join";
     else echo "------ console output ------"; cat "$log"; echo "----------------------------"; rm -f "$log"; exit 1; fi
     rm -f "$log"
 }
