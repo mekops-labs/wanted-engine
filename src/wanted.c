@@ -466,6 +466,15 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
                 WantedListDrivers((char *)buf + w, (size_t)((int)bufLen - w));
             if (d > 0)
                 w += d;
+/* Not a driver — a build-time capability of the socket driver, listed
+ * alongside driver names so a supervisor can gate a sockets[] `role: listen`
+ * grant on it the same way it gates a drivers[] grant on a driver name,
+ * without a launch attempt that fails the whole wapp when it is absent. */
+#ifdef CONFIG_WANTED_VFS_SOCKET_LISTEN
+            if (w < (int)bufLen)
+                w += snprintf((char *)buf + w, (size_t)((int)bufLen - w),
+                              " listen");
+#endif
             if (w < (int)bufLen)
                 w += snprintf((char *)buf + w, (size_t)((int)bufLen - w), "\n");
         }
