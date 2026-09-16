@@ -433,22 +433,21 @@ syscontrol() {
 # are out of reach here: the stub's `connect` has no failure mode, and
 # NuttX (sim or hardware) has no AP path at all.
 #
-# NOT YET PASSING, and not in `all` for that reason. Every step through
-# "blob captured; reloading" is confirmed working (console I/O, registry
-# resolution, storage.writeAtomic, the reload itself). The respawned
-# instance then fails to read back what was just written — readBlob's
-# provision file (and, on the same evidence, wifi-mgr's own credentials
-# file) comes back 0 bytes, not FileNotFound: storage.writeAtomic's
-# create+write+close+rename sequence is not surviving on this board's root
-# filesystem. Root cause not confirmed, but consistent with NuttX's root
-# being a pseudo-filesystem meant for mount points (/dev, /data, …), not
-# real file storage — real, persistent writes exist here only under an
-# explicit hostfs mount like /data, which is exactly what an unconfigured
-# `platform` mount (no `src=`) does not use. If that holds, no `src=`-less
-# `platform` mount is safe for persisted state on NuttX at all, sim or
-# hardware — a materially bigger claim than the per-board `src=` finding
-# already in the plan, and worth confirming (or ruling out) in NuttX's own
-# pseudofs source before this test can be fixed rather than re-scoped.
+# Was NOT YET PASSING for a while: every step through "blob captured;
+# reloading" worked (console I/O, registry resolution, storage.writeAtomic,
+# the reload itself), but the respawned instance failed to read back what
+# was just written — readBlob's provision file came back 0 bytes, not
+# FileNotFound. Root-caused in the pinned NuttX fork's own pseudofs rename:
+# fs/vfs/fs_rename.c's pseudorename() reserves a fresh inode at the new path
+# and copies i_child/i_flags/i_ops/i_private from the old one, but never
+# i_size — a pseudofile's byte content lives in fs_pseudofile_s.content
+# (reachable via the copied i_private, so it does survive), but its valid
+# length is tracked separately on the inode itself, and the freshly
+# reserved inode defaults that to zero. Fixed upstream in the fork
+# (third_party/nuttx, "fix(fs): copy i_size when renaming a pseudofile");
+# this test is the confirmation. Not a `src=`/mount-portability issue after
+# all — an un-srced `platform` mount persists correctly on NuttX now that
+# pseudofs rename carries the size across.
 wifimgr() {
     SUPERVISOR_VARIANT=sheriff
     SUPERVISOR_TAR=$ENGINE_DIR/wasm/supervisor/sheriff/supervisor.tar

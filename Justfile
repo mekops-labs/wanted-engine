@@ -277,6 +277,11 @@ nuttx-selftest:
 nuttx-syscontrol:
     ./test/run-one-junit.sh build-nuttx/syscontrol-junit.xml nuttx-syscontrol syscontrol -- ./test/nuttx-sim.sh syscontrol
 
+# Run the wifi-mgr provisioning/join journey on the NuttX sim, driving Sheriff's
+# own wapps (wapps/sheriff submodule) over the console.
+nuttx-wifimgr:
+    ./test/nuttx-sim.sh wifimgr
+
 # Distclean the NuttX submodule tree.
 nuttx-clean:
     ./test/nuttx-sim.sh clean
