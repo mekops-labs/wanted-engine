@@ -51,6 +51,10 @@ Unreleased
   it overflowed on every board that reaches Wi-Fi bring-up.
 - Oversized stack buffers and launch configs moved off the stack.
 
+### Build
+
+- Bumped `wapps/sheriff` to v0.10.0.
+
 0.18.0 (2026-09-12)
 -------------------
 
