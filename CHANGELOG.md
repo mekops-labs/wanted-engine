@@ -21,6 +21,11 @@ Unreleased
   with credentials derived from the hardware serial; NuttX answers `-ENODEV`.
 - The Wi-Fi driver retries a stored `connect` intent automatically, with a
   capped backoff, after an unsolicited disconnect.
+- `/proc/net/<name>` reports one socket's own status: `connected`, `type`,
+  and `local` once connected. A wapp can only ever see its own sockets.
+- `WantedHmacSha256()`, an HMAC-SHA256 primitive.
+- `pimoroni_pico2_plus_w_wsh`, a debug-shell board profile for the RP2350.
+- Hardware stack checking is enabled on every RP2350 `wanted` profile.
 
 ### Changed
 
@@ -37,6 +42,14 @@ Unreleased
   address outranks the blob's.
 - `uptime_ms` is served by `/proc/uptime`. A reader of it on `/proc/wanted`
   finds no such line and must open the new node.
+
+### Fixed
+
+- A WASI wapp holding both a `mounts[]` and a `sockets[]` grant now sees the
+  engine's own root preopen bound first, not shadowed by the mount.
+- The Wi-Fi reconnect-monitor thread runs on a real stack, not the minimum;
+  it overflowed on every board that reaches Wi-Fi bring-up.
+- Oversized stack buffers and launch configs moved off the stack.
 
 0.18.0 (2026-09-12)
 -------------------
