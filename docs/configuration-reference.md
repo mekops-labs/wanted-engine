@@ -166,14 +166,14 @@ The role is a build option, `CONFIG_WANTED_VFS_SOCKET_LISTEN` (default off, on i
 
 A `platform` mount is a **bind mount** — the Docker `-v /host/path:/wapp/path[:ro]` equivalent. Its `options` string carries two comma-separated knobs:
 
-- `src=<hostpath>` — the absolute host directory backing the mount. Omitted, it defaults to `path`, so the host and wapp paths are identical (the original behaviour). With `src`, the wapp sees the directory under the clean internal `path` (e.g. `/cfg`) while the operator decides which host directory backs it — the same image is repointable per deployment.
+- `src=<hostpath>` — the host directory backing the mount. An absolute `hostpath` is used as given. A relative one resolves against `PlatformVolumeRoot()`, the engine's own per-platform data root (`/data` on ESP-IDF, a board's flash mountpoint on NuttX, `./data` elsewhere) — so a config naming a relative `src` never spells out a platform-specific absolute path. Omitted, `src` defaults to `path`, so the host and wapp paths are identical (the original behaviour).
 - `ro` / `rw` — access mode. Omitted, it defaults to `rw`. A `ro` mount denies the wapp every write: the preopen advertises no write rights (a request beyond the grant fails with `ENOTCAPABLE`) and the backing store rejects any write that reaches it with `-EROFS`. The host directory must already exist (a read-only mount is never created).
 
 Path resolution under the mount is confined to its host directory: an absolute symlink, a `..` escape, or a symlink inside the directory that points outside it cannot resolve through the mount — the wapp sees only what lives beneath `src`. This holds for read-only and read-write mounts alike (it closes a read escape `ro` cannot). On Linux it requires kernel ≥ 5.6; on an older kernel an open through the mount fails rather than resolving unconfined.
 
 ```jsonc
-{ "name": "platform", "path": "/cfg",         "options": "src=/etc/app,ro" }  // map + read-only
-{ "name": "platform", "path": "/host",        "options": "src=/home/user/wapp" }  // map, writable
+{ "name": "platform", "path": "/cfg",         "options": "src=/etc/app,ro" }  // absolute src, read-only
+{ "name": "platform", "path": "/host",        "options": "src=app-data" }     // relative to PlatformVolumeRoot(), writable
 { "name": "platform", "path": "/var/lib/app" }  // src defaults to path, writable
 ```
 

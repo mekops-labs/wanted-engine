@@ -20,7 +20,7 @@
                 {
                     "name": "platform",
                     "path": "/var/lib/sheriff",
-                    "options": "src=/mnt/flash/sheriff"
+                    "options": "src=sheriff"
                 }
             ]
         }

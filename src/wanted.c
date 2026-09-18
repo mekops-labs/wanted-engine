@@ -161,9 +161,12 @@ static bool isReservedNamespace(const char *path, const char *ns) {
     return strncmp(path, ns, n) == 0 && (path[n] == '\0' || path[n] == '/');
 }
 
-/* Parse a `platform` mount's options: `src=<abshostpath>` and `ro`/`rw`.
- * `hostBuf` receives src (empty when unset), `*readonly` the access mode.
- * A relative, empty or oversized src, or an unknown token, gives -EINVAL. */
+/* Parse a `platform` mount's options: `src=<hostpath>` and `ro`/`rw`. An
+ * absolute src is used as-is; a relative one resolves against this
+ * platform's PlatformVolumeRoot(), so a launch config never spells out a
+ * platform-specific absolute path. `hostBuf` receives the resolved src
+ * (empty when unset), `*readonly` the access mode. An empty or oversized
+ * src, or an unknown token, gives -EINVAL. */
 static int parsePlatformMountOptions(const char *options, char *hostBuf,
                                      size_t hostBufLen, bool *readonly) {
     *readonly = false;
@@ -182,12 +185,13 @@ static int parsePlatformMountOptions(const char *options, char *hostBuf,
          tok = strtok_r(NULL, ",", &save)) {
         if (strncmp(tok, "src=", 4) == 0) {
             const char *src = tok + 4;
-            if (src[0] != '/') /* must be an absolute host path */
+            if (src[0] == '\0')
                 return -EINVAL;
-            size_t slen = strlen(src);
-            if (slen >= hostBufLen)
+            int n = (src[0] == '/') ? snprintf(hostBuf, hostBufLen, "%s", src)
+                                    : snprintf(hostBuf, hostBufLen, "%s/%s",
+                                               PlatformVolumeRoot(), src);
+            if (n < 0 || (size_t)n >= hostBufLen)
                 return -EINVAL;
-            memcpy(hostBuf, src, slen + 1);
         } else if (strcmp(tok, "ro") == 0) {
             *readonly = true;
         } else if (strcmp(tok, "rw") == 0) {

@@ -1055,7 +1055,7 @@ static void launch_config_validation_check(void) {
         {"s_addr", "{\"image\":\"looper\",\"sockets\":[{\"name\":\"s\","
                    "\"address\":\"bogus\"}]}"},
         {"m_psrc", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"platform\","
-                   "\"path\":\"/p\",\"options\":\"src=relative\"}]}"},
+                   "\"path\":\"/p\",\"options\":\"src=\"}]}"},
         {"m_popt", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"platform\","
                    "\"path\":\"/p\",\"options\":\"bogus\"}]}"},
         {"m_vnam", "{\"image\":\"looper\",\"mounts\":[{\"name\":\"volume\","
