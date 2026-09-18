@@ -836,6 +836,18 @@ static bool overlayKeyKnown(const char *key, size_t len) {
     return false;
 }
 
+/* True when `val` already opens with a "<scheme>://" (a blob author choosing
+ * TLS, say) — bounded to a realistic scheme length so a bare "host:port" is
+ * never mistaken for one. */
+static bool hasScheme(const char *val, size_t valLen) {
+    size_t max = valLen < 8 ? valLen : 8;
+    for (size_t i = 0; i + 2 < max; i++) {
+        if (val[i] == ':' && val[i + 1] == '/' && val[i + 2] == '/')
+            return true;
+    }
+    return false;
+}
+
 /* Index of the sockets[] entry named `name` (length-bounded), or -1. */
 static int socketIndex(const wapp_config_t *cfg, const char *name, size_t len) {
     for (size_t i = 0; i < cfg->socketsCnt; i++) {
@@ -923,12 +935,21 @@ int WantedMergeConfigOverlay(wapp_config_t *cfg, const char *dir) {
                 return -ENOSPC;
             }
 
+            /* The overlay's address (enrol.zig's `put`) may arrive bare or
+             * already spec'd; the installer's spec parser requires a scheme
+             * either way, so a bare "host:port" defaults to plain TCP. */
+            static const char SCHEME[] = "tcp://";
+            bool needsScheme = !hasScheme(val, valLen);
+            size_t prefixLen = needsScheme ? sizeof(SCHEME) - 1 : 0;
             wapp_driver_t *s = &cfg->sockets[cfg->socketsCnt];
             memset(s, 0, sizeof(*s));
-            if (keyLen >= sizeof(s->name) || valLen >= sizeof(s->options))
+            if (keyLen >= sizeof(s->name) ||
+                prefixLen + valLen >= sizeof(s->options))
                 return -EINVAL;
             memcpy(s->name, key, keyLen);
-            memcpy(s->options, val, valLen);
+            if (needsScheme)
+                memcpy(s->options, SCHEME, prefixLen);
+            memcpy(s->options + prefixLen, val, valLen);
             cfg->socketsCnt++;
 
         next:
