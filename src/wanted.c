@@ -1332,6 +1332,17 @@ wapp_t *WantedGetCurrentSupervisor(void) {
     if (ret < 0)
         return w;
 
+    /* A persisted overlay outlives the boot that wrote it: merge it into the
+     * very first launch too, not only a later armed reload, or a device loses
+     * its control-plane grants on every reset after the one that enrolled it.
+     */
+    wapp_config_t *merged = WantedMalloc(sizeof(*merged));
+    if (merged != NULL) {
+        if (supervisorGrantsWithOverlay(w, merged))
+            w->cfg = *merged;
+        WantedFree(merged);
+    }
+
     loadSupervisorImage(w, cfg);
 
     return w;
