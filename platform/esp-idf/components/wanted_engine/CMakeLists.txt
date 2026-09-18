@@ -19,6 +19,7 @@ set(core_srcs
 set(vfs_srcs
     vfs.c vfs-9p.c vfs-config.c vfs-devfs.c vfs-netfs.c vfs-null.c
     vfs-log.c vfs-logmount.c vfs-pipe.c vfs-procfs.c vfs-procfs-wapps.c
+    vfs-procfs-net.c
     vfs-stdio.c vfs-tarfs.c vfs-socket.c
     vfs-wanted.c vfs-wanted-config.c vfs-wanted-wapps.c
     vfs-wanted-registry.c vfs-virtual.c
