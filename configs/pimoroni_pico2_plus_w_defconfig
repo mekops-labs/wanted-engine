@@ -19,6 +19,7 @@ CONFIG_WANTED_VFS_SOCKET_LISTEN=y
 
 CONFIG_WANTED_SUPERVISOR_SHERIFF=y
 CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-rp2350-wifi.json"
+CONFIG_WANTED_SEED_WAPPS="flasher wifi-mgr provisioning"
 
 # Makes `make defconfig pimoroni_pico2_plus_w && make build` alone reach the
 # right target, board and defconfig.

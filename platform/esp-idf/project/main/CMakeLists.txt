@@ -10,20 +10,39 @@
 # the script leaves up-to-date images alone, so this skips relinking.
 get_filename_component(_repo "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 set(_seed_dir "${_repo}/wasm/registry-seed")
-# What a board cannot recover without: the firmware installer.
-set(_seeds flasher)
-foreach(_seed IN LISTS _seeds)
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-        "${_repo}/wapps/${_seed}/${_seed}.wasm")
-endforeach()
+
 # This board's defconfig also names its extra seeds, and component order does
 # not say whether the engine component has resolved it yet. Reading it here
 # as well costs nothing: board-defconfig.cmake only sets cache variables.
 include("${_repo}/platform/esp-idf/board-defconfig.cmake")
 
+# This board's own factory seeds — a space-separated list of wapps/<name>,
+# each built by this repo. Empty by default: only a board whose defconfig
+# names one seeds anything.
+#
+# A private kconfiglib run: cmake/Kconfig.cmake sets CONFIG_ variables
+# as plain, so they never cross this component boundary, and reusing its
+# CMAKE_CONFIGURE_DEPENDS registration here conflicts under Ninja.
+set(_seed_dotconfig "${CMAKE_CURRENT_BINARY_DIR}/seed-wapps.config")
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E env
+            "PYTHONPATH=${_repo}/tools/kconfiglib" "KCONFIG_CONFIG=${_seed_dotconfig}"
+            python3 tools/kconfiglib/defconfig.py --kconfig Kconfig.engine
+            "configs/${WANTED_DEFCONFIG}"
+    WORKING_DIRECTORY "${_repo}"
+    RESULT_VARIABLE _seed_kconfig_rc
+    OUTPUT_VARIABLE _seed_kconfig_out
+    ERROR_VARIABLE _seed_kconfig_err)
+if(NOT _seed_kconfig_rc EQUAL 0)
+    message(FATAL_ERROR "kconfig: resolving WANTED_SEED_WAPPS failed:\n${_seed_kconfig_out}${_seed_kconfig_err}")
+endif()
+file(STRINGS "${_seed_dotconfig}" _seed_line REGEX "^CONFIG_WANTED_SEED_WAPPS=")
+string(REGEX REPLACE "^CONFIG_WANTED_SEED_WAPPS=\"(.*)\"$" "\\1" _seeds "${_seed_line}")
+separate_arguments(_seeds)
+
 # A board carries wapps this repo does not hold: WANTED_EXTRA_SEEDS is a
-# list of <ref>=<path to .wasm>. Declarations and seed calls are
-# generated, so app_main.c names no board's wapp.
+# list of <ref>=<path to .wasm>. Declarations and seed calls are generated,
+# so app_main.c names no board's wapp.
 set(_extra_args "")
 set(_extra_decl "")
 set(_extra_call "")
@@ -57,32 +76,48 @@ if(NOT _seed_rc EQUAL 0)
     message(FATAL_ERROR "packaging the factory-seed images failed:\n${_seed_out}${_seed_err}")
 endif()
 
-# Written every configure, empty when the board names no extra seed, so
+# Each seed becomes one EMBED_FILES entry, after packaging so a versioned
+# one has registry-seed.sh's <name>@<version>.wapp to embed. A registry
+# version field holds WAPP_MAX_VERSION_LEN - 1 characters.
+foreach(_seed IN LISTS _seeds)
+    string(MAKE_C_IDENTIFIER "${_seed}" _sym)
+    set(_ref "${_seed}")
+    set(_embed "${_seed_dir}/${_seed}.wapp")
+    set(_version_file "${_repo}/wapps/${_seed}/${_seed}.version")
+    if(EXISTS "${_version_file}")
+        file(READ "${_version_file}" _version)
+        string(STRIP "${_version}" _version)
+        string(LENGTH "${_version}" _version_len)
+        if(_version_len GREATER 14)
+            message(FATAL_ERROR
+                "${_seed} version '${_version}' is ${_version_len} characters; "
+                "a registry version field holds 14. Tag the tree it is built "
+                "from, or raise WAPP_MAX_VERSION_LEN (it bounds "
+                "WAPP_MAX_IMAGE_REF_LEN, nothing on the wire).")
+        endif()
+        set(_ref "${_seed}:${_version}")
+
+        # registry-seed.sh names the packaged file by version, for a pinned
+        # resolve; the embedded symbol must stay stable across versions
+        # instead, so this copies to a version-independent name.
+        set(_packaged "${_seed_dir}/${_seed}@${_version}.wapp")
+        set(_embed "${CMAKE_CURRENT_BINARY_DIR}/${_seed}.wapp")
+        file(COPY_FILE "${_packaged}" "${_embed}" ONLY_IF_DIFFERENT)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_packaged}")
+    endif()
+    list(APPEND _extra_embed "${_embed}")
+    string(APPEND _extra_decl
+        "extern const uint8_t _binary_${_sym}_wapp_start[];\n"
+        "extern const uint8_t _binary_${_sym}_wapp_end[];\n")
+    string(APPEND _extra_call
+        "seedWapp(\"${_ref}\", _binary_${_sym}_wapp_start,"
+        " _binary_${_sym}_wapp_end);\n")
+endforeach()
+
+# Written every configure, empty when the board names no seed, so
 # app_main.c includes them unconditionally.
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/extra-seeds-decl.inc" "${_extra_decl}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/extra-seeds-call.inc" "${_extra_call}")
-
-# The flasher is seeded under the version of the tree it was built from.
-# A registry version field holds WAPP_MAX_VERSION_LEN - 1 characters; a
-# longer one truncates into a ref naming a version the image is not.
-file(READ "${_repo}/wapps/flasher/flasher.version" _flasher_version)
-string(STRIP "${_flasher_version}" _flasher_version)
-string(LENGTH "${_flasher_version}" _flasher_version_len)
-if(_flasher_version_len GREATER 14)
-    message(FATAL_ERROR
-        "flasher version '${_flasher_version}' is ${_flasher_version_len} characters; "
-        "a registry version field holds 14. Tag the supervisor tree, or raise "
-        "WAPP_MAX_VERSION_LEN (it bounds WAPP_MAX_IMAGE_REF_LEN, nothing on the wire).")
-endif()
-
-# registry-seed.sh names the seed by version, so a version-pinned resolve can
-# find it; EMBED_FILES needs a name stable across versions instead, since the
-# embedded symbol (_binary_flasher_wapp_start/_end, declared in app_main.c)
-# must not move with every version bump.
-set(_flasher_seed "${_seed_dir}/flasher@${_flasher_version}.wapp")
-set(_flasher_embed "${CMAKE_CURRENT_BINARY_DIR}/flasher.wapp")
-file(COPY_FILE "${_flasher_seed}" "${_flasher_embed}" ONLY_IF_DIFFERENT)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_flasher_seed}")
 
 # Launch config as a blob — no filesystem holds one at first boot.
 # EMBED_TXTFILES appends the NUL app_main.c needs. A cache variable, not
@@ -127,14 +162,8 @@ idf_component_register(SRCS "app_main.c"
                        REQUIRES wanted_engine
                        PRIV_REQUIRES ${_priv_requires}
                        EMBED_FILES
-                           "${_flasher_embed}"
                            ${_extra_embed}
                        EMBED_TXTFILES "${_cfg_staged}")
 
 # The generated seed declarations live in the build directory.
 target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-
-# After registration: a directory-level define runs before the component
-# library exists.
-target_compile_definitions(${COMPONENT_LIB} PRIVATE
-    WANTED_FLASHER_REF=\"flasher:${_flasher_version}\")

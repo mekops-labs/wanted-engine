@@ -22,6 +22,7 @@ CONFIG_WANTED_DEBUG_TRACES=y
 
 CONFIG_WANTED_SUPERVISOR_SHERIFF=y
 CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-esp32s3-telegraph-sheriff.json"
+CONFIG_WANTED_SEED_WAPPS="flasher wifi-mgr provisioning"
 
 # Makes `just defconfig xiao_esp32s3-telegraph-sheriff-trace && just build`
 # alone reach the right target, chip and board (no DEFCONFIG override needed).

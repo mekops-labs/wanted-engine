@@ -42,9 +42,9 @@ WAPP_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src --entrypoint=/bin/sh
 
 .PHONY: image-verify help shell menuconfig setconfig build wsh-shell nuttx-shell wasm supervisor wapps wifi-connect sheriff wapp-shell esp32-flash rp2350-flash rp2350-flash-swd rp2350-reset rp2350-otp rp2350-sign rp2350-partition-table rp2350-seal rp2350-flash-partition-table rp2350-flash-slot docs-sync FORCE
 
-# make reads every word as its own goal, so `make defconfig openwrt` reaches just
-# as two recipes. Forward trailing goals as arguments and neutralise them as
-# targets. setconfig is absent: its `=` is read as a variable assignment first.
+# make reads every word as its own goal, so `make defconfig openwrt` reaches
+# as two recipes. Forward trailing goals as arguments, neutralising them as
+# targets. setconfig is absent: its `=` reads as a variable assignment first.
 ARG_RECIPES := analyze defconfig savedefconfig selftest-openwrt-qemu \
                selftest-qemu sizes supervisor-variant target
 ifneq ($(filter $(ARG_RECIPES),$(firstword $(MAKECMDGOALS))),)
@@ -116,8 +116,8 @@ build: ## build the configured target [DEFCONFIG=... seeds a fresh .config; SDK=
 	            sim:*) $(JUST) build ;; \
 	            *) defcfg=$$(sed -n 's/^CONFIG_WANTED_TARGET_NUTTX_DEFCONFIG="\(.*\)"$$/\1/p' $(BUILD_DIR)/.config); \
 	               if [ "$${board#*:}" = sheriff ]; then sup=sheriff; else sup=supervisor; fi; \
-	               echo "==> nuttx board $$board: building $$sup, then routing through $(RP2350_IMAGE)"; \
-	               $(MAKE) $$sup; \
+	               echo "==> nuttx board $$board: building wapps + $$sup, then routing through $(RP2350_IMAGE)"; \
+	               $(MAKE) wapps $$sup; \
 	               $(RP2350_RUN) "cd /src && NUTTX_BOARD='$$board' DEFCONFIG='$${DEFCONFIG:-$$defcfg}' ./test/nuttx-sim.sh deps build && ./utils/rp2350-package-ota.sh third_party/nuttx/nuttx '$${board%%:*}' dist/nuttx" ;; \
 	        esac ;; \
 	    *) $(JUST) build ;; \
@@ -296,8 +296,8 @@ rp2350-flash-partition-table: ## write the partition table over USB; wipes the p
 rp2350-flash-slot: ## flash $(RP2350_SEALED) into slot $(RP2350_SLOT) over USB (0=A, 1=B) [RP2350_SLOT=...]
 	picotool load -p $(RP2350_SLOT) -x $(RP2350_SEALED)
 
-# docs-sync runs on the host, not in the build container: it only copies Markdown
-# (no toolchain needed) to the destination directory. Pass DOCS_DEST.
+# docs-sync runs on the host, not in the build container: it only copies
+# Markdown (no toolchain needed) to the destination directory. Pass DOCS_DEST.
 docs-sync: ## sync docs/*.md to the MekOps Hugo blog (pass DOCS_DEST=<blog content dir>)
 	@test -n "$(DOCS_DEST)" || { echo "DOCS_DEST is required, e.g. make docs-sync DOCS_DEST=<blog content dir>"; exit 1; }
 	rsync -av --include='*.md' --exclude='*' docs/ $(DOCS_DEST)/

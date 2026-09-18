@@ -273,6 +273,16 @@ config WANTED_SUPERVISOR_IMAGE_PATH
 	  /usr/share/wanted/supervisor.tar). Empty means the choice above decides;
 	  this is for where the image *lives*, not which variant it is.
 
+config WANTED_SEED_WAPPS
+	string "Factory-seeded wapps (space-separated wapps/<name>)"
+	default ""
+	help
+	  Wapp images this repo builds and bakes into the firmware's registry
+	  at boot, read by name from wapps/<name>/<name>.wasm. Only an ESP-IDF
+	  build factory-seeds today; every other platform ignores it. Empty
+	  means a board seeds nothing beyond what its own WANTED_EXTRA_SEEDS
+	  names.
+
 endmenu
 
 menu "Resource limits"

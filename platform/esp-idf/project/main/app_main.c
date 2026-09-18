@@ -44,10 +44,6 @@ static bool mountLittleFs(void) {
     return true;
 }
 
-/* Smoke-test fixtures linked via EMBED_FILES. */
-extern const uint8_t _binary_flasher_wapp_start[];
-extern const uint8_t _binary_flasher_wapp_end[];
-
 /* Generated from the board's WANTED_EXTRA_SEEDS; empty when it names none. */
 #include "extra-seeds-decl.inc"
 
@@ -134,11 +130,6 @@ void app_main(void) {
              (unsigned)total);
 
     if (mountLittleFs()) {
-        /* Versioned by the tree it was built from, so a newer flasher
-         * installs alongside this one and a launch config selects which
-         * runs. */
-        seedWapp(WANTED_FLASHER_REF, _binary_flasher_wapp_start,
-                 _binary_flasher_wapp_end);
 #include "extra-seeds-call.inc"
     }
 
