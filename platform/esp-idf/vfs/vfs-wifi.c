@@ -45,11 +45,12 @@ static const char id[] = {'W', 'i', 'f', 'i'};
 
 /* AP credentials never come from a wapp. SSID carries no secret (a compiled-in
  * prefix plus the low 24 bits of the serial, in hex); the passphrase is
- * HMAC-SHA256(serial, label), rendered as its first 16 hex digits. */
+ * HMAC-SHA256(serial, label), rendered as its first 8 hex digits — WPA2-PSK's
+ * own floor, and short enough for an operator to type or read off a label. */
 #define WIFI_AP_SSID_PREFIX "wanted-"
 #define WIFI_AP_SSID_SUFFIX_LEN 6 /* hex digits: low 24 bits of the serial */
 #define WIFI_AP_PASS_LABEL "wanted-ap-passphrase-v1"
-#define WIFI_AP_PASS_HEX_LEN 16 /* first 8 HMAC bytes, rendered as hex */
+#define WIFI_AP_PASS_HEX_LEN 8 /* first 4 HMAC bytes, rendered as hex */
 #define WIFI_AP_CHANNEL 1
 #define WIFI_AP_MAX_CONN 4
 
@@ -561,9 +562,8 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
     return 0;
 }
 
-/* One line, no trailing detail beyond what MDR-0047 lists: disconnected,
- * connecting (covers an initial association and a driver-initiated retry
- * alike), connected <ssid> <ip>, or ap <ssid>. */
+/* Statuses: disconnected, connecting (covers an initial association 
+ * and a driver-initiated retry alike), connected <ssid> <ip>, or ap <ssid>. */
 static size_t renderStatus(char *line, size_t lineLen) {
     int n;
     if (g_apMode)
@@ -625,8 +625,8 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
     if (f->node == WIFI_NODE_SCAN) {
         /* A scan result reads like a command reply: writing to the node that
-         * carries it would collapse state and action onto the same file, the
-         * shape MDR-0047 replaces. Scan is triggered from ctl. */
+         * carries it would collapse state and action onto the same file.
+         * Scan is triggered from ctl. */
         return -EPERM;
     }
 
