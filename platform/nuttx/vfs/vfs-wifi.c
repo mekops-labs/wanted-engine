@@ -245,7 +245,7 @@ static void wifiDisconnectNow(const char *ifname) {
 }
 
 /* Retries a stored intent on a fixed poll cadence, with a capped backoff
- * between failed attempts, for as long as the intent stands — MDR-0047's
+ * between failed attempts, for as long as the intent stands — 
  * "disconnected means no intent stored, never gave up", applied without an
  * async disconnect event to trigger off. Runs for the life of the process:
  * the wapp that stored the intent may already be gone. */
@@ -508,8 +508,8 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 
     if (f->node == WIFI_NODE_SCAN) {
         /* A scan result reads like a command reply: writing to the node that
-         * carries it would collapse state and action onto the same file, the
-         * shape MDR-0047 replaces. Scan is triggered from ctl. */
+         * carries it would collapse state and action onto the same file.
+         * Scan is triggered from ctl. */
         return -EPERM;
     }
 
