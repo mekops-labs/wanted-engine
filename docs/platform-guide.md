@@ -239,7 +239,7 @@ docker/publish-images.sh -a ~/auth.json -b pimoroni_pico2_plus_w -i dist/nuttx/p
 docker/publish-images.sh -b pimoroni_pico2_plus_w -i dist/nuttx/pimoroni-pico-2-plus-w-ota.bin -c nowifi firmware
 ```
 
-The reference is `registry.gitlab.com/mekops/wanted/wanted-engine/firmware/<board>:<version>`, one repository per board. Runners grant no privileged mode, so this runs on a developer machine, not in CI.
+The reference is `$REGISTRY/wanted-engine:<version>` — `$REGISTRY` defaults to `registry.gitlab.com/mekops/wanted/wanted-engine`, so every board's firmware images share the one `wanted-engine` repository, distinguished by tag. Runners grant no privileged mode, so this runs on a developer machine, not in CI.
 
 `docker/Containerfile.firmware.in` is a template rendered per build, since the version changes every build. Three labels are stamped from the artifact itself:
 
