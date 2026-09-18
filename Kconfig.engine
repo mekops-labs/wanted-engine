@@ -191,14 +191,6 @@ config WANTED_UART_BUF_SIZE
 	  receive ring bounds how far a wapp can fall behind a talking peer before
 	  bytes are lost.
 
-config WANTED_ESP_IDF_WIFI_BOOT_JOIN
-	bool "Join Wi-Fi before starting the supervisor (ESP-IDF)"
-	default n
-	help
-	  Joins Wi-Fi in the boot path, before the supervisor starts — for a
-	  supervisor that cannot bring the radio up itself. Credentials come
-	  from /data/wifi.conf, prompted on first boot; never compiled in.
-
 config WANTED_OTA_SLOT_ROOT
 	string "OTA slot directory (host backings)"
 	depends on WANTED_VFS_OTA
