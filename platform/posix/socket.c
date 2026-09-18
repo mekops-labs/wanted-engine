@@ -144,6 +144,58 @@ static void makeRaw(struct termios *t) {
     t->c_cflag |= (tcflag_t)CS8;
 }
 
+/* A dropped SYN leaves a plain blocking connect() waiting on the TCP stack's
+ * own retransmit schedule, which on some stacks runs well past a minute —
+ * long enough to read as a hang, not a slow connect. Bounded here instead. */
+#define NET_CONNECT_TIMEOUT_S 10
+
+/* Non-blocking connect, then select() bounded by NET_CONNECT_TIMEOUT_S;
+ * SO_ERROR distinguishes success from a failure select() alone cannot see.
+ * Restores blocking mode before returning — PlatformNetRecv/Send assume it. */
+static int connectWithTimeout(int sock, const struct sockaddr *addr,
+                              socklen_t addrlen) {
+    int flags = fcntl(sock, F_GETFL, 0);
+    if (flags < 0)
+        return -errno;
+    if (fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0)
+        return -errno;
+
+    int err = 0;
+    if (connect(sock, addr, addrlen) != 0) {
+        if (errno != EINPROGRESS) {
+            err = errno;
+            goto out;
+        }
+
+        fd_set w;
+        FD_ZERO(&w);
+        FD_SET(sock, &w);
+        struct timeval tv = {.tv_sec = NET_CONNECT_TIMEOUT_S, .tv_usec = 0};
+
+        int ready = select(sock + 1, NULL, &w, NULL, &tv);
+        if (ready < 0) {
+            err = errno;
+            goto out;
+        }
+        if (ready == 0) {
+            err = ETIMEDOUT;
+            goto out;
+        }
+
+        socklen_t errLen = sizeof(err);
+        if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &errLen) != 0) {
+            err = errno;
+            goto out;
+        }
+    }
+
+out:
+    /* Restored even on failure: the caller closes this socket regardless,
+     * and a future reuse of the fd should not inherit O_NONBLOCK. */
+    (void)fcntl(sock, F_SETFL, flags);
+    return -err;
+}
+
 int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
     const struct hostent *host;
     struct sockaddr_in addr;
@@ -193,13 +245,14 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
         uaddr.sun_family = AF_UNIX;
         memcpy(uaddr.sun_path, hostname, pathLen + 1);
 
-        if (connect(c->socket, (struct sockaddr *)&uaddr, sizeof(uaddr)) != 0) {
-            int err = errno;
+        int rc = connectWithTimeout(c->socket, (struct sockaddr *)&uaddr,
+                                    sizeof(uaddr));
+        if (rc != 0) {
             if (c->socket >= 0) {
                 close(c->socket);
                 c->socket = -1;
             }
-            return -err;
+            return rc;
         }
 
         return 0;
@@ -220,13 +273,14 @@ int PlatformNetConnect(struct netCtx *c, const char *hostname, uint16_t port) {
     addr.sin_port = htons(port);
     memcpy(&addr.sin_addr.s_addr, host->h_addr, sizeof(addr.sin_addr.s_addr));
 
-    if (connect(c->socket, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        int err = errno;
+    int rc =
+        connectWithTimeout(c->socket, (struct sockaddr *)&addr, sizeof(addr));
+    if (rc != 0) {
         if (c->socket >= 0) {
             close(c->socket);
             c->socket = -1;
         }
-        return -err;
+        return rc;
     }
 
 #if SECURE_SOCKETS

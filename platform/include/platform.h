@@ -274,6 +274,9 @@ void PlatformUartClose(platform_uart_t *u);
 struct netCtx;
 
 struct netCtx *PlatformNetOpen(int socket_type);
+/* Bounded: a destination that never completes the handshake fails with
+ * -ETIMEDOUT rather than blocking past whatever the TCP stack's own retransmit
+ * schedule happens to be. */
 int PlatformNetConnect(struct netCtx *ctx, const char *hostname, uint16_t port);
 int PlatformNetClose(struct netCtx *ctx);
 int PlatformNetRecv(struct netCtx *ctx, void *buf, size_t nbyte, int flags);
