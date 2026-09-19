@@ -562,7 +562,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *s) {
     return 0;
 }
 
-/* Statuses: disconnected, connecting (covers an initial association 
+/* Statuses: disconnected, connecting (covers an initial association
  * and a driver-initiated retry alike), connected <ssid> <ip>, or ap <ssid>. */
 static size_t renderStatus(char *line, size_t lineLen) {
     int n;

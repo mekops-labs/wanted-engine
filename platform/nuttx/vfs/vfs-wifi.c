@@ -245,7 +245,7 @@ static void wifiDisconnectNow(const char *ifname) {
 }
 
 /* Retries a stored intent on a fixed poll cadence, with a capped backoff
- * between failed attempts, for as long as the intent stands — 
+ * between failed attempts, for as long as the intent stands —
  * "disconnected means no intent stored, never gave up", applied without an
  * async disconnect event to trigger off. Runs for the life of the process:
  * the wapp that stored the intent may already be gone. */
