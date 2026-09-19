@@ -1,6 +1,33 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- `WANTED_SEED_WAPPS` factory-seeds a Kconfig-listed set of wapps at boot.
+
+### Changed
+
+- ESP-IDF drops its pre-supervisor Wi-Fi join and blob prompt.
+- The ESP-IDF AP passphrase meets WPA2-PSK's 8-character minimum.
+
+### Fixed
+
+- A supervisor reload merges the control-plane overlay on every launch.
+- A platform mount's relative `src=` resolves against the volume root.
+- A schemeless overlay socket address is prefixed with `tcp://`.
+- `PlatformNetConnect` is bound by a 10s connect timeout.
+- `/proc/net/<name>` now builds into the ESP-IDF engine component.
+- RP2350 hardware uses its real flash mountpoint as the volume root.
+
+### Build
+
+- Added a script to derive AP credentials from a board's serial.
+- Bumped `wapps/sheriff` and `third_party/nuttx-apps` submodules.
+
+
 0.19.0 (2026-09-17)
 -------------------
 
