@@ -14,7 +14,7 @@
                 {"name": "wanted"}
             ],
             "mounts": [
-                {"name": "platform", "path": "/var/lib/sheriff"}
+                {"name": "platform", "path": "/var/lib/sheriff", "options": "src=sheriff"}
             ]
         }
     }

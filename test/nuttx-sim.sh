@@ -414,17 +414,13 @@ syscontrol() {
 #
 # Drives the real provisioning-then-join journey over the console, rather
 # than pre-seeding credentials directly: wifi-mgr's own storage-view mount
-# carries no `src=` (a deliberate per-board choice — see the
-# wanted-device-provisioning plan's M7 notes), so it only resolves to the
-# same real directory Sheriff's own grant uses when *neither* sets `src=`,
-# which is also why wifimgr-sim-config.json's Sheriff grant carries none
-# either. Pre-seeding from the host would need a `src=` on Sheriff's own
-# grant, silently breaking that agreement — the exact mismatch
-# sheriff/test/smoke-provisioning.sh's own comment already documents. Paste
-# a blob and credentials over the console instead: same real mechanism a
-# device in the field uses, no shortcuts.
+# carries `src=sheriff`, the same relative source Sheriff's own grant uses
+# (wifimgr-sim-config.json mirrors the board bringup configs), so both
+# resolve to the same real host directory. Paste a blob and credentials
+# over the console instead: same real mechanism a device in the field
+# uses, no shortcuts.
 #
-# Covers the wanted-device-provisioning plan's M7 scenarios:
+# Covers:
 #   - valid stored credentials join without ever raising an AP
 #   - a device with no /dev/wifi grant never attempts wifi-mgr (not covered
 #     here — proven instead on plain Linux, which compiles no wifi driver
@@ -439,12 +435,9 @@ syscontrol() {
 # are out of reach here: the stub's `connect` has no failure mode, and
 # NuttX (sim or hardware) has no AP path at all. A literal power-cycle
 # (killing and restarting the nuttx process, not just Sheriff's in-process
-# reload) is also out of reach as currently configured: wifimgr-sim-
-# config.json's storage grant deliberately carries no `src=` (matching real
-# unconfigured deployments), so it lands on NuttX's RAM-backed pseudofs and
-# does not survive a process restart — the still-open per-board `src=`
-# question the plan already tracks, not a new gap this test could close by
-# itself.
+# reload) is untested here — whether the blob and credentials under
+# ./data/sheriff survive a real process restart is a separate question
+# from what this scenario asserts.
 #
 # Was NOT YET PASSING for a while: every step through "blob captured;
 # reloading" worked (console I/O, registry resolution, storage.writeAtomic,
@@ -458,9 +451,7 @@ syscontrol() {
 # length is tracked separately on the inode itself, and the freshly
 # reserved inode defaults that to zero. Fixed upstream in the fork
 # (third_party/nuttx, "fix(fs): copy i_size when renaming a pseudofile");
-# this test is the confirmation. Not a `src=`/mount-portability issue after
-# all — an un-srced `platform` mount persists correctly on NuttX now that
-# pseudofs rename carries the size across.
+# this test is the confirmation.
 wifimgr() {
     SUPERVISOR_VARIANT=sheriff
     SUPERVISOR_TAR=$ENGINE_DIR/wasm/supervisor/sheriff/supervisor.tar
@@ -493,6 +484,11 @@ wifimgr() {
     # the same fixture shape test/enrol.zig's own unit tests use.
     local valid_key="bf6665af3484b5e14e4845041ea72bf97755c51639b1e7e91e079e92b70c9028"
     local blob; blob=$(printf 'device_id=dep-a1b2\njoin_token=tok-1\nstate_key=%s\n' "$valid_key" | base64 -w0)
+
+    # This scenario asserts a fresh, unenrolled boot; the engine roots
+    # volumes at ./data under SIMROOT, so clear any leftover from a prior
+    # local run (CI starts from a clean checkout).
+    rm -rf "$SIMROOT/data"
 
     local log fifo
     log=$(mktemp); fifo=$(mktemp -u); mkfifo "$fifo"
