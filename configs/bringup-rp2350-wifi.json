@@ -21,6 +21,10 @@
                     "name": "platform",
                     "path": "/var/lib/sheriff",
                     "options": "src=sheriff"
+                },
+                {
+                    "name": "log",
+                    "path": "/logs"
                 }
             ]
         }
