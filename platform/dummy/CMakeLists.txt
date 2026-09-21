@@ -12,16 +12,13 @@ set(sources
     dummy-wapps.c
     dummy-net.c
     dummy-ota.c
-    ${CMAKE_SOURCE_DIR}/platform/posix/sha256.c
-)
-add_library(platform_dummy STATIC
-    ${sources}
-)
+    ${CMAKE_SOURCE_DIR}/platform/posix/sha256.c)
+add_library(platform_dummy STATIC ${sources})
 
 target_compile_options(platform_dummy PRIVATE ${WANTED_STRICT_WARNINGS})
 
-target_include_directories(platform_dummy
-    PUBLIC  ${CMAKE_SOURCE_DIR}/include
+target_include_directories(
+    platform_dummy
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include
-    PRIVATE ${CMAKE_SOURCE_DIR}/src/include
-)
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/include)

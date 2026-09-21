@@ -1,6 +1,6 @@
 # Kconfig-driven build configuration: Kconfig plus .config become
-# wanted-autoconf.h (C) and CMake variables. .config lives in the build
-# dir, not the source tree, so build dirs stay independent.
+# wanted-autoconf.h (C) and CMake variables. .config lives in the build dir, not
+# the source tree, so build dirs stay independent.
 
 find_program(WANTED_PYTHON NAMES python3 python REQUIRED)
 
@@ -20,9 +20,9 @@ set(WANTED_KCONFIG_DIR ${WANTED_ENGINE_ROOT}/tools/kconfiglib)
 # .config below, where CMake already parses it.
 set(WANTED_KCONFIG_ENGINE ${WANTED_ENGINE_ROOT}/Kconfig.engine)
 
-# .config's root differs by who is driving. Standalone, it spans the whole
-# tree so menuconfig sees the target; embedded in a host tree, the host has
-# already decided the target by construction.
+# .config's root differs by who is driving. Standalone, it spans the whole tree
+# so menuconfig sees the target; embedded in a host tree, the host has already
+# decided the target by construction.
 if(_wanted_embedded)
     set(WANTED_KCONFIG_ROOT ${WANTED_KCONFIG_ENGINE})
 else()
@@ -35,30 +35,35 @@ set(WANTED_AUTOCONF ${WANTED_AUTOCONF_DIR}/wanted-autoconf.h)
 # The full filename under configs/, suffix included — this is an internal
 # variable, set by the OpenWrt packaging script and the ESP-IDF OTA profiles.
 # The user-facing DEFCONFIG env var omits the suffix; the Justfile appends it.
-set(WANTED_DEFCONFIG "" CACHE STRING
-    "Board defconfig under configs/ to seed .config (empty = Kconfig defaults)")
+set(WANTED_DEFCONFIG
+    ""
+    CACHE
+        STRING
+        "Board defconfig under configs/ to seed .config (empty = Kconfig defaults)"
+)
 
 file(MAKE_DIRECTORY ${WANTED_AUTOCONF_DIR})
 
 # Run a kconfiglib entry point against this build dir's .config.
 function(_wanted_kconfig_run script)
     execute_process(
-        COMMAND ${CMAKE_COMMAND} -E env
-                "PYTHONPATH=${WANTED_KCONFIG_DIR}"
-                "KCONFIG_CONFIG=${WANTED_DOTCONFIG}"
-                ${WANTED_PYTHON} ${WANTED_KCONFIG_DIR}/${script} ${ARGN}
+        COMMAND
+            ${CMAKE_COMMAND} -E env "PYTHONPATH=${WANTED_KCONFIG_DIR}"
+            "KCONFIG_CONFIG=${WANTED_DOTCONFIG}" ${WANTED_PYTHON}
+            ${WANTED_KCONFIG_DIR}/${script} ${ARGN}
         WORKING_DIRECTORY ${WANTED_ENGINE_ROOT}
         RESULT_VARIABLE _rc
         OUTPUT_VARIABLE _out
         ERROR_VARIABLE _err)
     if(NOT _rc EQUAL 0)
-        message(FATAL_ERROR "kconfig: ${script} failed (${_rc})\n${_out}${_err}")
+        message(
+            FATAL_ERROR "kconfig: ${script} failed (${_rc})\n${_out}${_err}")
     endif()
 endfunction()
 
 # Seed a missing .config from a named defconfig, else Kconfig defaults.
-# Preserved across reconfigures, except a differing WANTED_DEFCONFIG
-# re-seeds — ESP-IDF's early pass can seed from the wrong profile first.
+# Preserved across reconfigures, except a differing WANTED_DEFCONFIG re-seeds —
+# ESP-IDF's early pass can seed from the wrong profile first.
 set(_wanted_seeded_marker ${CMAKE_BINARY_DIR}/.wanted-defconfig-seeded)
 set(_wanted_last_seeded "")
 if(EXISTS ${_wanted_seeded_marker})
@@ -66,13 +71,12 @@ if(EXISTS ${_wanted_seeded_marker})
     string(STRIP "${_wanted_last_seeded}" _wanted_last_seeded)
 endif()
 
-if(NOT EXISTS ${WANTED_DOTCONFIG} OR
-   (WANTED_DEFCONFIG AND NOT WANTED_DEFCONFIG STREQUAL _wanted_last_seeded))
+if(NOT EXISTS ${WANTED_DOTCONFIG}
+   OR (WANTED_DEFCONFIG AND NOT WANTED_DEFCONFIG STREQUAL _wanted_last_seeded))
     if(WANTED_DEFCONFIG)
         set(_defconfig ${WANTED_ENGINE_ROOT}/configs/${WANTED_DEFCONFIG})
         if(NOT EXISTS ${_defconfig})
-            message(FATAL_ERROR
-                "kconfig: defconfig not found: ${_defconfig}")
+            message(FATAL_ERROR "kconfig: defconfig not found: ${_defconfig}")
         endif()
         message(STATUS "Kconfig: seeding .config from ${WANTED_DEFCONFIG}")
         _wanted_kconfig_run(defconfig.py --kconfig ${WANTED_KCONFIG_ROOT}
@@ -93,9 +97,11 @@ _wanted_kconfig_run(genconfig.py --header-path ${WANTED_AUTOCONF}
                     ${WANTED_KCONFIG_ENGINE})
 
 # Reconfigure when any of them changes, so the header cannot go stale.
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    ${WANTED_DOTCONFIG} ${WANTED_KCONFIG_ROOT} ${WANTED_KCONFIG_ENGINE}
-    ${WANTED_ENGINE_ROOT}/Kconfig.target)
+set_property(
+    DIRECTORY
+    APPEND
+    PROPERTY CMAKE_CONFIGURE_DEPENDS ${WANTED_DOTCONFIG} ${WANTED_KCONFIG_ROOT}
+             ${WANTED_KCONFIG_ENGINE} ${WANTED_ENGINE_ROOT}/Kconfig.target)
 
 # Mirror into CMake variables. `=y` becomes true; ints and strings carry their
 # value; "is not set" lines are skipped, leaving the variable undefined.

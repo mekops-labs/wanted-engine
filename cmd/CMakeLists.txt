@@ -2,40 +2,41 @@ add_executable(${project}-cli ${CMAKE_CURRENT_SOURCE_DIR}/main.c)
 
 target_compile_options(${project}-cli PRIVATE ${WANTED_STRICT_WARNINGS})
 
-target_include_directories(${project}-cli
+target_include_directories(
+    ${project}-cli
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include)
 
-if (CONFIG_WANTED_BUILD_STATIC_CLI)
-    target_link_libraries(${project}-cli PUBLIC "-static")  #static executable
+if(CONFIG_WANTED_BUILD_STATIC_CLI)
+    target_link_libraries(${project}-cli PUBLIC "-static") # static executable
 endif()
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/platform/${WANTED_PLATFORM}
                  ${CMAKE_BINARY_DIR}/platform/${WANTED_PLATFORM})
 
-target_link_libraries(${project}-cli
+target_link_libraries(
+    ${project}-cli
     PRIVATE ${project}
-    PRIVATE platform_${WANTED_PLATFORM}
-)
+    PRIVATE platform_${WANTED_PLATFORM})
 
-# Only added to ctest when WANTED_DEBUG_TRACES is on: without traces the
-# engine is silent on failures, so a passing run would be a false signal.
-add_custom_target(smoke-engine
-    COMMAND ${CMAKE_SOURCE_DIR}/test/smoke-engine.sh
-            $<TARGET_FILE:${project}-cli>
-            ${CMAKE_SOURCE_DIR}/test/smoke-engine-config.json
+# Only added to ctest when WANTED_DEBUG_TRACES is on: without traces the engine
+# is silent on failures, so a passing run would be a false signal.
+add_custom_target(
+    smoke-engine
+    COMMAND
+        ${CMAKE_SOURCE_DIR}/test/smoke-engine.sh $<TARGET_FILE:${project}-cli>
+        ${CMAKE_SOURCE_DIR}/test/smoke-engine-config.json
     DEPENDS ${project}-cli
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Running supervisor wapp smoke test"
-)
+    COMMENT "Running supervisor wapp smoke test")
 
-if (WANTED_DEBUG_TRACES)
+if(WANTED_DEBUG_TRACES)
     add_test(
         NAME smoke-engine
-        COMMAND ${CMAKE_SOURCE_DIR}/test/smoke-engine.sh
-                $<TARGET_FILE:${project}-cli>
-                ${CMAKE_SOURCE_DIR}/test/smoke-engine-config.json
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    )
+        COMMAND
+            ${CMAKE_SOURCE_DIR}/test/smoke-engine.sh
+            $<TARGET_FILE:${project}-cli>
+            ${CMAKE_SOURCE_DIR}/test/smoke-engine-config.json
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     set_tests_properties(smoke-engine PROPERTIES TIMEOUT 30)
 endif()

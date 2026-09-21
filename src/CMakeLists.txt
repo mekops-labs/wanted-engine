@@ -7,8 +7,7 @@ set(sources
     "wanted_hmac.c"
     "log-store.c"
     "version.c"
-    "default_supervisor_cfg.json.h"
-)
+    "default_supervisor_cfg.json.h")
 
 # Mandatory core — not configurable; see the Kconfig comment for why.
 set(vfs-srcs
@@ -22,8 +21,7 @@ set(vfs-srcs
     "vfs/vfs-procfs-wapps.c"
     "vfs/vfs-stdio.c"
     "vfs/vfs-tarfs.c"
-    "vfs/vfs-virtual.c"
-    )
+    "vfs/vfs-virtual.c")
 
 # Configurable drivers: dropping one drops its source and its table row.
 if(CONFIG_WANTED_VFS_9P)
@@ -57,22 +55,14 @@ if(CONFIG_WANTED_VFS_OTA)
     list(APPEND vfs-srcs "vfs/vfs-ota.c")
 endif()
 if(CONFIG_WANTED_VFS_WANTED)
-    list(APPEND vfs-srcs
-        "vfs/vfs-wanted.c"
-        "vfs/vfs-wanted-config.c"
-        "vfs/vfs-wanted-wapps.c"
-        "vfs/vfs-wanted-registry.c"
-        )
+    list(APPEND vfs-srcs "vfs/vfs-wanted.c" "vfs/vfs-wanted-config.c"
+         "vfs/vfs-wanted-wapps.c" "vfs/vfs-wanted-registry.c")
 endif()
 
-set(wasi-src
-    "wasi/wasi-vfs.c"
-)
+set(wasi-src "wasi/wasi-vfs.c")
 
 # Add tiny-json to the build
-set(tiny-json-src
-    ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c
-)
+set(tiny-json-src ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c)
 
 # c9 serves only 9p, uzlib only inflate; each follows its consumer out.
 set(c9-src "")
@@ -86,8 +76,7 @@ if(CONFIG_WANTED_VFS_INFLATE)
     set(uzlib-src
         ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/tinflate.c
         ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/crc32.c
-        ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/adler32.c
-    )
+        ${CMAKE_SOURCE_DIR}/vendor/uzlib/src/adler32.c)
 endif()
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
@@ -95,57 +84,54 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/cwalk ${CMAKE_BINARY_DIR}/cwalk)
 # Target platform selection. Picks the platform/<name> implementation linked by
 # cmd/ and the WAMR platform layer. Linux is the default; nuttx is the embedded
 # port.
-set(WANTED_PLATFORM "linux" CACHE STRING "Target platform (linux, nuttx)")
+set(WANTED_PLATFORM
+    "linux"
+    CACHE STRING "Target platform (linux, nuttx)")
 set_property(CACHE WANTED_PLATFORM PROPERTY STRINGS linux nuttx)
 
 # WAMR runtime
 set(WAMR_ROOT_DIR ${CMAKE_SOURCE_DIR}/vendor/wamr)
 set(WAMR_BUILD_PLATFORM "${WANTED_PLATFORM}")
 set(WAMR_BUILD_INTERP 1)
-set(WAMR_BUILD_FAST_INTERP 0)  # classic interpreter: smaller per-module footprint than fast-interp, which matters on MCU-class targets
+set(WAMR_BUILD_FAST_INTERP 0) # classic interpreter: smaller per-module
+                              # footprint than fast-interp, which matters on
+                              # MCU-class targets
 set(WAMR_BUILD_AOT 0)
 set(WAMR_BUILD_LIBC_WASI 0)
 set(WAMR_BUILD_LIBC_BUILTIN 1)
 set(WAMR_BUILD_MULTI_MODULE 0)
 set(WAMR_BUILD_SHARED_MEMORY 0)
-# Required by cooperative wapp stop: only the thread manager routes the
-# instance exception to the interpreter's terminate check
-# (WASM_SUSPEND_FLAG_TERMINATE, tested at every branch/loop back-edge).
+# Required by cooperative wapp stop: only the thread manager routes the instance
+# exception to the interpreter's terminate check (WASM_SUSPEND_FLAG_TERMINATE,
+# tested at every branch/loop back-edge).
 set(WAMR_BUILD_THREAD_MGR 1)
 include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 add_library(vmlib STATIC ${WAMR_RUNTIME_LIB_SOURCE})
-target_include_directories(vmlib INTERFACE
-    ${WAMR_ROOT_DIR}/core/iwasm/include
-)
+target_include_directories(vmlib INTERFACE ${WAMR_ROOT_DIR}/core/iwasm/include)
 
-# Out-of-tree driver tree supplying ExtraDriverTable(), searched after
-# the core and platform tables. Must define a library target
-# `wanted_extra_drivers`; unset compiles in a default returning NULL.
-if (CONFIG_WANTED_EXTRA_DRIVERS_DIR)
+# Out-of-tree driver tree supplying ExtraDriverTable(), searched after the core
+# and platform tables. Must define a library target `wanted_extra_drivers`;
+# unset compiles in a default returning NULL.
+if(CONFIG_WANTED_EXTRA_DRIVERS_DIR)
     set(WANTED_EXTRA_DRIVERS_DIR ${CONFIG_WANTED_EXTRA_DRIVERS_DIR})
     message("-- Extra drivers: ${WANTED_EXTRA_DRIVERS_DIR}")
     add_subdirectory(${WANTED_EXTRA_DRIVERS_DIR}
                      ${CMAKE_BINARY_DIR}/extra-drivers)
-    target_include_directories(wanted_extra_drivers
+    target_include_directories(
+        wanted_extra_drivers
         PRIVATE ${CMAKE_SOURCE_DIR}/include
         PRIVATE ${CMAKE_SOURCE_DIR}/src/include
         PRIVATE ${CMAKE_SOURCE_DIR}/platform/include
-        PRIVATE ${WAMR_ROOT_DIR}/core/iwasm/include
-        )
+        PRIVATE ${WAMR_ROOT_DIR}/core/iwasm/include)
 else()
     list(APPEND sources "extra-drivers-none.c")
 endif()
 
-add_library(${project} STATIC
-    ${sources}
-    ${vfs-srcs}
-    ${wasi-src}
-    ${tiny-json-src}
-    ${c9-src}
-    ${uzlib-src}
-)
+add_library(${project} STATIC ${sources} ${vfs-srcs} ${wasi-src}
+                              ${tiny-json-src} ${c9-src} ${uzlib-src})
 
-target_include_directories(${project}
+target_include_directories(
+    ${project}
     PUBLIC ${CMAKE_SOURCE_DIR}/include
     PUBLIC ${WANTED_AUTOCONF_DIR}
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include
@@ -153,18 +139,15 @@ target_include_directories(${project}
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/tiny-json
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/c9
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/uzlib/src
-    PRIVATE ${WAMR_ROOT_DIR}/core/iwasm/include
-    )
+    PRIVATE ${WAMR_ROOT_DIR}/core/iwasm/include)
 
-
-
-target_link_libraries(${project}
+target_link_libraries(
+    ${project}
     PRIVATE cwalk
     PRIVATE vmlib
-    PRIVATE m
-    )
+    PRIVATE m)
 
-if (WANTED_EXTRA_DRIVERS_DIR)
+if(WANTED_EXTRA_DRIVERS_DIR)
     target_link_libraries(${project} PRIVATE wanted_extra_drivers)
 endif()
 
@@ -176,45 +159,50 @@ else()
     set(_supervisor_image ${CONFIG_WANTED_SUPERVISOR_IMAGE})
 endif()
 message("-- Supervisor image: ${_supervisor_image}")
-target_compile_definitions(${project} PRIVATE
-    SUPERVISOR_IMAGE_PATH="${_supervisor_image}")
+target_compile_definitions(${project}
+                           PRIVATE SUPERVISOR_IMAGE_PATH="${_supervisor_image}")
 
 # app.version sits beside the in-tree image, written by the rule that built it.
 # It stamps which supervisor this build carries, so a versionless
 # `supervisor.imagePath` can compare it against the installed one. Empty for a
 # supervisor whose build writes none, which compares as unordered.
-string(REGEX REPLACE "^\\./" "" _supervisor_rel "${CONFIG_WANTED_SUPERVISOR_IMAGE}")
-get_filename_component(_supervisor_dir "${CMAKE_SOURCE_DIR}/${_supervisor_rel}" DIRECTORY)
+string(REGEX REPLACE "^\\./" "" _supervisor_rel
+                     "${CONFIG_WANTED_SUPERVISOR_IMAGE}")
+get_filename_component(_supervisor_dir "${CMAKE_SOURCE_DIR}/${_supervisor_rel}"
+                       DIRECTORY)
 set(_supervisor_version "")
 if(EXISTS "${_supervisor_dir}/app.version")
     file(READ "${_supervisor_dir}/app.version" _supervisor_version)
     string(STRIP "${_supervisor_version}" _supervisor_version)
     # Read at configure time, so a rebuilt supervisor must force a reconfigure.
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-        "${_supervisor_dir}/app.version")
+    set_property(
+        DIRECTORY
+        APPEND
+        PROPERTY CMAKE_CONFIGURE_DEPENDS "${_supervisor_dir}/app.version")
 endif()
 message("-- Supervisor version: ${_supervisor_version}")
-target_compile_definitions(${project} PRIVATE
-    WANTED_SUPERVISOR_BUNDLED_VERSION="${_supervisor_version}")
+target_compile_definitions(
+    ${project}
+    PRIVATE WANTED_SUPERVISOR_BUNDLED_VERSION="${_supervisor_version}")
 
 # Engine version string (git-derived SemVer), surfaced at /proc/wanted.
-target_compile_definitions(${project} PRIVATE
-    WANTED_VERSION="${SEMVER}")
+target_compile_definitions(${project} PRIVATE WANTED_VERSION="${SEMVER}")
 
 # Local (AF_UNIX) transport for the 9P driver, letting an on-box driver server
 # be reached over a filesystem socket. Hosted targets only — the lwIP-based MCU
 # builds have no local socket family.
-if (WANTED_PLATFORM STREQUAL "linux")
+if(WANTED_PLATFORM STREQUAL "linux")
     target_compile_definitions(${project} PRIVATE WANTED_9P_UNIX_TRANSPORT=1)
 endif()
 
 # Local (AF_UNIX) transport for the socket driver's unix:// scheme, opt-in via
 # CONFIG_WANTED_VFS_SOCKET_UNIX. Same hosted-only reasoning as 9p above; the
-# platform half (the AF_UNIX connect/listen in posix/socket.c) gets the
-# matching define in platform/linux/CMakeLists.txt, so the two halves of the
-# driver always agree about whether unix:// exists.
-if (CONFIG_WANTED_VFS_SOCKET_UNIX AND WANTED_PLATFORM STREQUAL "linux")
-    target_compile_definitions(${project} PRIVATE WANTED_SOCKET_UNIX_TRANSPORT=1)
+# platform half (the AF_UNIX connect/listen in posix/socket.c) gets the matching
+# define in platform/linux/CMakeLists.txt, so the two halves of the driver
+# always agree about whether unix:// exists.
+if(CONFIG_WANTED_VFS_SOCKET_UNIX AND WANTED_PLATFORM STREQUAL "linux")
+    target_compile_definitions(${project}
+                               PRIVATE WANTED_SOCKET_UNIX_TRANSPORT=1)
 endif()
 
 # Add debug symbols
@@ -222,15 +210,13 @@ target_compile_options(${project} PUBLIC -g)
 
 # Strict-warning guard on our own sources only — tiny-json / c9 (vendored) are
 # compiled into this library and stay exempt.
-set_source_files_properties(${sources} ${vfs-srcs} ${wasi-src}
-    PROPERTIES COMPILE_OPTIONS "${WANTED_STRICT_WARNINGS}")
+set_source_files_properties(
+    ${sources} ${vfs-srcs} ${wasi-src} PROPERTIES COMPILE_OPTIONS
+                                                  "${WANTED_STRICT_WARNINGS}")
 
 # Debug traces are CONFIG_WANTED_DEBUG_TRACES, read straight from the generated
-# header by debug_trace.h — no define to forward here. Announced because it is
-# a build whose output differs from a normal one.
-if (CONFIG_WANTED_DEBUG_TRACES)
+# header by debug_trace.h — no define to forward here. Announced because it is a
+# build whose output differs from a normal one.
+if(CONFIG_WANTED_DEBUG_TRACES)
     message("-- Debug tracing for Wanted enabled")
 endif()
-
-
-

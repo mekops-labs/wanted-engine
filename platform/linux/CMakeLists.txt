@@ -1,6 +1,6 @@
-# TLS backend for this platform: Linux answers with OpenSSL. REQUIRED on
-# purpose — a configuration that asked for TLS must not quietly produce a
-# binary without it.
+# TLS backend for this platform: Linux answers with OpenSSL. REQUIRED on purpose
+# — a configuration that asked for TLS must not quietly produce a binary without
+# it.
 if(CONFIG_WANTED_VFS_SOCKET_TLS)
     # Static only when the CLI itself links -static (cmd/CMakeLists.txt):
     # forcing it otherwise pulls in a static OpenSSL built for a fully static
@@ -35,49 +35,35 @@ set(sources
     api/crypto.c
     api/random.c
     api/registry.c
-    api/wapps.c
-)
+    api/wapps.c)
 
-if (SECURE_SOCKETS)
-    set (sources
-        ${sources}
-        api/ssocket.c
-    )
-endif ()
+if(SECURE_SOCKETS)
+    set(sources ${sources} api/ssocket.c)
+endif()
 
-if (CONFIG_WANTED_VFS_OTA)
-    set (sources
-        ${sources}
-        api/ota.c
-    )
-endif ()
+if(CONFIG_WANTED_VFS_OTA)
+    set(sources ${sources} api/ota.c)
+endif()
 
-
-add_library(platform_linux STATIC
-    ${sources}
-)
+add_library(platform_linux STATIC ${sources})
 
 target_compile_options(platform_linux PRIVATE ${WANTED_STRICT_WARNINGS})
 
-target_link_libraries(platform_linux
-    PRIVATE pthread
-)
+target_link_libraries(platform_linux PRIVATE pthread)
 
-if (SECURE_SOCKETS)
-    target_link_libraries(platform_linux
-        PRIVATE ${OPENSSL_LIBRARIES}
-    )
-endif ()
+if(SECURE_SOCKETS)
+    target_link_libraries(platform_linux PRIVATE ${OPENSSL_LIBRARIES})
+endif()
 
-target_include_directories(platform_linux
-    PUBLIC  ${CMAKE_SOURCE_DIR}/include
+target_include_directories(
+    platform_linux
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include
     PRIVATE ${CMAKE_SOURCE_DIR}/vendor/cwalk/include
-    PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-if (WANTED_DEBUG_TRACES)
+if(WANTED_DEBUG_TRACES)
     target_compile_definitions(platform_linux PRIVATE DEBUG=1)
 endif()
 
@@ -86,6 +72,7 @@ endif()
 # "linux" (which OpenWRT also uses), so the config symbol is the whole gate
 # here; src/CMakeLists.txt applies the matching platform check for the core
 # half, keeping the two in step.
-if (CONFIG_WANTED_VFS_SOCKET_UNIX)
-    target_compile_definitions(platform_linux PRIVATE WANTED_SOCKET_UNIX_TRANSPORT=1)
+if(CONFIG_WANTED_VFS_SOCKET_UNIX)
+    target_compile_definitions(platform_linux
+                               PRIVATE WANTED_SOCKET_UNIX_TRANSPORT=1)
 endif()

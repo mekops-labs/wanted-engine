@@ -6,15 +6,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(cmake/VersionFromGit.cmake)
 
-version_from_git(
-    TIMESTAMP "%Y%m%d%H%M%S"
-    )
+version_from_git(TIMESTAMP "%Y%m%d%H%M%S")
 
 project(
     wanted
     VERSION ${VERSION}
-    LANGUAGES C
-    )
+    LANGUAGES C)
 
 include(CTest)
 
@@ -25,20 +22,26 @@ include(cmake/Kconfig.cmake)
 
 # The configured launch config, compiled in as the CLI's default. Same generated
 # header the NuttX builds get (test/nuttx-sim.sh), in a directory both include.
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    ${CMAKE_SOURCE_DIR}/${CONFIG_WANTED_DEFAULT_CONFIG})
+set_property(
+    DIRECTORY
+    APPEND
+    PROPERTY CMAKE_CONFIGURE_DEPENDS
+             ${CMAKE_SOURCE_DIR}/${CONFIG_WANTED_DEFAULT_CONFIG})
 execute_process(
-    COMMAND ${CMAKE_SOURCE_DIR}/utils/default-config-header.sh
-            ${CMAKE_SOURCE_DIR} ${CONFIG_WANTED_DEFAULT_CONFIG}
-            ${CMAKE_SOURCE_DIR}/src/include/wanted-config.h
-    RESULT_VARIABLE _cfg_rc OUTPUT_VARIABLE _cfg_out ERROR_VARIABLE _cfg_err)
+    COMMAND
+        ${CMAKE_SOURCE_DIR}/utils/default-config-header.sh ${CMAKE_SOURCE_DIR}
+        ${CONFIG_WANTED_DEFAULT_CONFIG}
+        ${CMAKE_SOURCE_DIR}/src/include/wanted-config.h
+    RESULT_VARIABLE _cfg_rc
+    OUTPUT_VARIABLE _cfg_out
+    ERROR_VARIABLE _cfg_err)
 if(NOT _cfg_rc EQUAL 0)
     message(FATAL_ERROR "default configuration: ${_cfg_out}${_cfg_err}")
 endif()
 message("-- Default configuration: ${CONFIG_WANTED_DEFAULT_CONFIG}")
 
-# Set before any target is defined, so the wanted library itself is
-# covered, not just the test binary. Report target wired in test/.
+# Set before any target is defined, so the wanted library itself is covered, not
+# just the test binary. Report target wired in test/.
 if(CONFIG_WANTED_BUILD_COVERAGE)
     message("-- Code coverage build enabled")
     add_compile_options(--coverage -O0 -g)
@@ -65,38 +68,37 @@ endif()
 # Build Wanted static library
 add_subdirectory(${CMAKE_SOURCE_DIR}/src)
 
-add_custom_target(wasm
+add_custom_target(
+    wasm
     COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm clean
     COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm NAME=test_prog
-    COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm NAME=test_wasi WASI=1
-    )
-#add_dependencies(${CMAKE_PROJECT_NAME} compile_wasm)
+    COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm NAME=test_wasi WASI=1)
+# add_dependencies(${CMAKE_PROJECT_NAME} compile_wasm)
 
 # Rebuilds supervisor.tar from app.wasm. Not a build dependency: the wasm
 # toolchain lives in the wapp-sdk image, not this build environment.
-add_custom_target(supervisor
-    COMMAND make -C ${CMAKE_SOURCE_DIR}/wasm/supervisor
-    )
+add_custom_target(supervisor COMMAND make -C
+                                     ${CMAKE_SOURCE_DIR}/wasm/supervisor)
 
 # The standalone CLI (cmd/main.c) is a host/Linux artifact. On NuttX the entry
 # point is platform/nuttx/wanted_main.c, built as a NuttX built-in app, so the
 # CLI is off by default there.
-if (WANTED_PLATFORM STREQUAL "nuttx")
-    option (BUILD_EXECUTABLE "Build standalone executable. Linux only" OFF)
+if(WANTED_PLATFORM STREQUAL "nuttx")
+    option(BUILD_EXECUTABLE "Build standalone executable. Linux only" OFF)
 else()
-    option (BUILD_EXECUTABLE "Build standalone executable. Linux only" ON)
+    option(BUILD_EXECUTABLE "Build standalone executable. Linux only" ON)
 endif()
 
-if (BUILD_EXECUTABLE)
+if(BUILD_EXECUTABLE)
     # cmd/ also pulls in the selected platform library and links the CLI.
     add_subdirectory(${CMAKE_SOURCE_DIR}/cmd)
-elseif (WANTED_PLATFORM STREQUAL "nuttx")
+elseif(WANTED_PLATFORM STREQUAL "nuttx")
     # Without the CLI, still build the platform layer so the NuttX scaffolding
     # link is exercised; the NuttX app build compiles wanted_main.c separately.
     add_subdirectory(${CMAKE_SOURCE_DIR}/platform/nuttx
                      ${CMAKE_BINARY_DIR}/platform/nuttx)
 endif()
 
-if (BUILD_TESTING)
+if(BUILD_TESTING)
     add_subdirectory(test)
 endif()
