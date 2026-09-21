@@ -110,7 +110,6 @@ deps() {
         done
     fi
     echo "linked engine sources into $appdir"
-    default_config_header
 }
 
 # Compile the configured JSON in as bytes, since NuttX has no filesystem holding
@@ -197,6 +196,7 @@ build_kernel() {
 # host filesystem to stage onto; a hardware board bakes the supervisor into a
 # boot ROMFS instead.
 build() {
+    default_config_header
     case "${NUTTX_BOARD:-sim:wanted}" in
         sim:*) stage_hostfs ;;
     esac
