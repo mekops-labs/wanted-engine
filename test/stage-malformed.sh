@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Stage malformed registry images for the loader-robustness checks: the selftest
 # supervisor tries to `start` each and asserts the engine rejects it without
 # crashing. They are hand-crafted, to reach the loader's rejection paths.

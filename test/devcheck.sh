@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Build the devcheck wapp, run it as the engine supervisor with the offload
 # devices granted, and assert its TAP. Ed25519 is a skip, still "ok", when the
 # build carries no crypto backend.
@@ -8,7 +9,7 @@ set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-cd "$ROOT"
+cd "$ROOT" || exit
 # shellcheck source=test/lib-wapp.sh
 . "$SCRIPT_DIR/lib-wapp.sh"
 

@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Extract the raw, unwrapped app image an RP2350 board's OTA slot expects.
 #
 # `picotool uf2 convert` and the SWD/BOOTSEL flash targets all consume the ELF

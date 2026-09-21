@@ -1,7 +1,8 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 
 [ -z "$2" ] && {
-	echo usage: $0 {wasm file} {output image}
+	echo usage: "$0" {wasm file} {output image}
 	exit 1
 }
 [ -z "$1" ] && {
@@ -10,21 +11,21 @@
 }
 
 file "$1" | grep -q wasm || {
-	echo $1: this is not wasm file!
+	echo "$1": this is not wasm file!
 	exit 1
 }
 
 TEMP=$(mktemp -d)
 
-cp "$1" $TEMP/app.wasm
-name=$(basename $1)
+cp "$1" "$TEMP"/app.wasm
+name=$(basename "$1")
 name="${name%%.*}"
 out=$(readlink -f "$2")
 
-pushd $TEMP
+pushd "$TEMP" || exit
 
 genromfs -v -V "$name" -f "$out"
 
-popd
+popd || exit
 
-rm -rf $TEMP
+rm -rf "$TEMP"

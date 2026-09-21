@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Wraps a single command as a one-testcase JUnit report, for CI jobs (the
 # NuttX sim lanes) that run exactly one check.
 set -u

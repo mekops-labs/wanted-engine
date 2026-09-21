@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Run the in-WASM selftest suite against an engine cross-built from an OpenWRT
 # SDK, under qemu user-mode emulation: the non-x86 lane, without hardware. The
 # suite is arch-independent, so only the engine binary changes.

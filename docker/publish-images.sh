@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Build the toolchain images as multi-arch manifest lists and push them; CI has
 # no Docker-in-Docker and only pulls them. Each version tag comes from the
 # Containerfile's own `LABEL version=`, so it cannot drift. The `firmware`
@@ -221,9 +222,9 @@ verify_firmware() {
     fi
     tagged=$(podman image inspect --format '{{index .Config.Labels "version"}}' "$image")
     if [ -n "$variant" ]; then
-        core=${tagged%-$board-$variant}
+        core=${tagged%-"$board"-"$variant"}
     else
-        core=${tagged%-$board}
+        core=${tagged%-"$board"}
     fi
     if [ "$core" != "$release" ]; then
         echo "FAIL: $image tags release '$core', built from '$release'" >&2

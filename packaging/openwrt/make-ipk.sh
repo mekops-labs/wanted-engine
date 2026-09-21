@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Assemble an OpenWRT .ipk from a cross-built engine. Installed layout and the
 # supervisor model: packaging/openwrt/README.md.
 # Usage: make-ipk.sh <opkg_arch> <wanted-cli> <supervisor.tar> <version>

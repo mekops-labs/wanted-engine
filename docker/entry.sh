@@ -1,19 +1,20 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 
 USER_NAME=builder
 SRC_DIR=/src
 
-USER_ID=`stat -c %u $SRC_DIR`
-GROUP_ID=`stat -c %g $SRC_DIR`
+USER_ID=$(stat -c %u $SRC_DIR)
+GROUP_ID=$(stat -c %g $SRC_DIR)
 
 if ! grep "${USER_ID}:${GROUP_ID}" /etc/passwd >/dev/null 2>&1; then 
     echo "$USER_NAME -> USER ID: $USER_ID, GROUP ID: $GROUP_ID" 
     
-    groupadd -g $GROUP_ID $USER_NAME 
+    groupadd -g "$GROUP_ID" $USER_NAME 
     if [ -d "/home/${USER_NAME}" ]; then 
-        useradd -M -s /bin/bash -u $USER_ID -g $GROUP_ID -G sudo -c "builder account" $USER_NAME 
+        useradd -M -s /bin/bash -u "$USER_ID" -g "$GROUP_ID" -G sudo -c "builder account" $USER_NAME 
     else 
-        useradd -m -s /bin/bash -u $USER_ID -g $GROUP_ID -G sudo -c "builder account" $USER_NAME 
+        useradd -m -s /bin/bash -u "$USER_ID" -g "$GROUP_ID" -G sudo -c "builder account" $USER_NAME 
     fi 
     
     # Always returns 0; some directories may be mounted read-only.

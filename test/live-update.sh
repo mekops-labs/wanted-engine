@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Supervisor live-update functional test: replace the supervisor image without
 # stopping the engine or its child wapps. Asserts child continuity, armed-only
 # adoption, and rollback to the built-in image.
@@ -8,7 +9,7 @@ set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-cd "$ROOT"
+cd "$ROOT" || exit
 
 WANTED=${1:-./build-wsh/cmd/wanted-cli}
 CONFIG=${2:-./test/live-update-config.json}

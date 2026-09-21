@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Engine smoke test for the production supervisor wapp: boot wanted-cli with the
 # supervisor TAR image and assert a non-crash exit code and no fatal-load
 # markers. Output checks are loose, since the stdio teardown closes host fd 1.
@@ -7,7 +8,7 @@ set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-cd "$PROJECT_ROOT"
+cd "$PROJECT_ROOT" || exit
 
 WANTED=${1:-./build/cmd/wanted-cli}
 CONFIG=${2:-./test/smoke-engine-config.json}

@@ -1,11 +1,12 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Runs the Linux integration suite as one JUnit-reported unit. Every check
 # runs regardless of earlier failures, so one bad check doesn't hide the rest.
 set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-cd "$ROOT"
+cd "$ROOT" || exit
 # shellcheck source=test/lib-junit.sh
 . "$SCRIPT_DIR/lib-junit.sh"
 

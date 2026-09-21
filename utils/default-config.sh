@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Resolve and validate CONFIG_WANTED_DEFAULT_CONFIG, which every target ships
 # through here. It is parsed now, because the alternative is a node that will
 # not boot. Prints the resolved path, and copies it to <dest> when given.

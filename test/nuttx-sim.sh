@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Build and test the WANTED engine on the NuttX simulator. nuttx and nuttx-apps
 # are our own forks, pinned as shallow git submodules under third_party/.
 #

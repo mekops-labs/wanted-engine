@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Shared helper for test harnesses that stage wapps/<name>/<name>.wasm. The wasm
 # toolchain lives in the wapp-sdk image, so WAPPS_PREBUILT=1 requires the .wasm
 # to exist already; unset, it compiles on demand.

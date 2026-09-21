@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Compile the configured launch config into a C header: the CLI's no-argument
 # default, and the only config a target with no filesystem has at boot. xxd,
 # because a string literal is a quoting bug waiting to happen.

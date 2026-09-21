@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # System-control functional test: poweroff, reboot and exit through the wsh
 # supervisor, driven over a FIFO-held console so the engine never sees a
 # premature EOF. It also guards that the console survives a supervisor teardown.
@@ -8,7 +9,7 @@ set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-cd "$ROOT"
+cd "$ROOT" || exit
 
 WANTED=${1:-./build/cmd/wanted-cli}
 CONFIG=${2:-./configs/example_config_wsh.json}

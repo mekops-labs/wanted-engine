@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Report the engine's per-wapp and fixed memory footprint for every defconfig in
 # configs/, on both the host (LP64) and 32-bit embedded (ILP32) ABI, from a
 # compile-only build of measure_structs.c. Defined in docs/platform-guide.md.
@@ -114,10 +115,10 @@ measure() { # $1 = abi (linux|nuttx), $2 = profile -> fills M[name]=size
     if [ "$abi" = nuttx ]; then
         res=$(clang -print-resource-dir)
         clang -ffreestanding -target i386-unknown-linux-gnu -nostdinc \
-            -I"$res/include" -I"$STUB" -I"$cfg" $INC -DSECURE_SOCKETS="$tls" \
+            -I"$res/include" -I"$STUB" -I"$cfg" "$INC" -DSECURE_SOCKETS="$tls" \
             -fno-common -c "$SRC" -o "$obj"
     else
-        clang -I"$cfg" $INC -DSECURE_SOCKETS="$tls" -fno-common -c "$SRC" -o "$obj"
+        clang -I"$cfg" "$INC" -DSECURE_SOCKETS="$tls" -fno-common -c "$SRC" -o "$obj"
     fi
     # readelf prints the symbol Size in hex once it grows large; $(( )) folds
     # both hex and decimal to a plain decimal, so downstream math is uniform.
@@ -223,7 +224,7 @@ report_abi() { # $1 = abi label, $2 = abi key
         fi
         printf "%-${NAMEW}s %4s %9s %9s %10s %11s %10s %12s\n" \
             "$p" "${M[MAX_WAPPS]}" "$(human $struct)" "$(human $fixed)" \
-            "$linstr" "$perwstr" "$(human $over)" "$worststr"
+            "$linstr" "$perwstr" "$(human "$over")" "$worststr"
     done
 }
 

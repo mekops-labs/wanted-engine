@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Packaging + init-script check for the OpenWRT `.ipk` — the automated
 # coverage the M5 record's manual GL.iNet run left as a gap ("the QEMU leg
 # still installs no package, so the init script remains untested in CI").

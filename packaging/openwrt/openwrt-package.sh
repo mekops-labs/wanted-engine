@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Build a production OpenWRT .ipk: download/extract the SDK, stage libopenssl,
 # cross-build with TLS, package. Configuration is the build dir's .config, with
 # no defconfig applied implicitly. See packaging/openwrt/README.md.

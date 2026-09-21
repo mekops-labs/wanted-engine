@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Resolve an OpenWRT SDK and export the cross-build environment for it. Sourced
 # rather than executed, by openwrt-package.sh and test/selftest-qemu.sh.
 #

@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Run the in-WASM selftest supervisor and check its TAP output. This runner
 # stages the launched test wapps into the registry, boots the engine, and checks
 # the TAP for a plan line and no `not ok`.
@@ -8,7 +9,7 @@ set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-cd "$ROOT"
+cd "$ROOT" || exit
 # shellcheck source=test/lib-wapp.sh
 . "$SCRIPT_DIR/lib-wapp.sh"
 
@@ -67,7 +68,7 @@ stage() {
 }
 malformed="noappwasm badwasm truncated"
 cleanup() {
-    rm -f $staged
+    rm -f "$staged"
     for m in $malformed; do rm -f "$REGISTRY_ROOT/$m"@*.wapp; done
     rm -rf "$VOLUME_ROOT" "$BIND_HOST_DIR" "$BIND_SECRET"
 }

@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Negative test for WASM_MAX_MEMORY_PAGES, covering both halves of the
 # enforcement. It builds the wsh engine at cap=1 and cap=4 and drives bigmem
 # and biginit over the console; see the platform guide.
@@ -7,7 +8,7 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-cd "$ROOT"
+cd "$ROOT" || exit
 # shellcheck source=test/lib-wapp.sh
 . "$ROOT/test/lib-wapp.sh"
 WSH_TAR=./wasm/supervisor/wsh/supervisor.tar

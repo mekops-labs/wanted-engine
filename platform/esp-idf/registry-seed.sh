@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Package the ESP-IDF factory-seed images: wapps/<name>/<name>.wasm becomes
 # <out>/<name>.wapp, embedded into the firmware at configure time. The .wasm
 # inputs come from `make wapps`; an absent one is reported, not built.

@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Shared helper: wraps a command from the outside, recording a JUnit testcase
 # from its exit code and output, for harnesses that are plain shell scripts
 # rather than CTest tests. Sourced, not executed.

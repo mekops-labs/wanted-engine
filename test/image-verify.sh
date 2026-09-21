@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Registry image verification: an image the engine cannot verify must not run
 # when enforcement is on, and each refusal must name its own state.
 #

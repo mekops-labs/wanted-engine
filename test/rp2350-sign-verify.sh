@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 # Validates the signed-firmware pipeline entirely offline: sign the built image
 # with picotool, confirm it verifies, then confirm a tampered copy does not.
 # It touches no OTP and no device, since RP2350 fuses are physically one-way.
@@ -14,7 +15,7 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-cd "$ROOT"
+cd "$ROOT" || exit
 
 FW=${1:-third_party/nuttx/nuttx.uf2}
 KEYDIR=keys/rp2350-dev
