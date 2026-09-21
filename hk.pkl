@@ -1,0 +1,114 @@
+amends "package://github.com/jdx/hk/releases/download/v2.0.1/hk@2.0.1#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.0.1/hk@2.0.1#/Builtins.pkl"
+
+// Matches CI (`just lint-format`) exactly: same exclusions (generated
+// headers, vendored/build trees), routed through the pinned build
+// container rather than a host clang-format that could drift from CI's.
+local clangFormat = new Step {
+    glob = List("src/**/*.c", "src/**/*.h", "platform/**/*.c", "platform/**/*.h",
+        "cmd/**/*.c", "cmd/**/*.h", "include/**/*.h", "test/**/*.c", "test/**/*.h")
+    check = "make lint-format"
+}
+
+local justFmt = new Step {
+    glob = List("Justfile")
+    check = "just --unstable --fmt --check --justfile Justfile"
+}
+
+local cmakeFormat = new Step {
+    glob = List("**/CMakeLists.txt", "**/*.cmake")
+    check = new CommandSpec {
+        command = new Command { argv = List("cmake-format", "-c", ".cmake-format.py", "--check", "{{files}}") }
+        effect = "read"
+    }
+    fix = new CommandSpec {
+        command = new Command { argv = List("cmake-format", "-c", ".cmake-format.py", "-i", "{{files}}") }
+        effect = "write"
+    }
+}
+
+// See checkmake.ini for why minphony/maxbodylength/phonydeclared/uniquetargets
+// are disabled — this wrapper Makefile does not fit their assumptions.
+local checkMake = new Step {
+    glob = List("Makefile")
+    check = "checkmake --config checkmake.ini Makefile"
+}
+
+local spdxHeader = new Step {
+    glob = List("src/**/*.c", "src/**/*.h", "platform/**/*.c", "platform/**/*.h",
+        "cmd/**/*.c", "cmd/**/*.h", "include/**/*.h", "test/**/*.c", "test/**/*.h", "**/*.sh")
+    check = "tools/check-spdx.sh {{files}}"
+}
+
+// New comment blocks over the line budget, or reading like edit-history
+// notes ("was X, fixed to Y") — checks only what this commit adds.
+local commentLength = new Step {
+    glob = List("src/**/*.c", "src/**/*.h", "platform/**/*.c", "platform/**/*.h",
+        "cmd/**/*.c", "cmd/**/*.h", "include/**/*.h", "test/**/*.c", "test/**/*.h")
+    check = "tools/check-comments.py {{files}}"
+}
+
+// A CONFIG_WANTED_* reference with no Kconfig entry silently reads as `n`
+// instead of failing the build — see CLAUDE.md's Architecture Constraints.
+// Whole-repo, not per-file: a rename can orphan a reference anywhere.
+local kconfigSymbols = new Step {
+    glob = List("Kconfig*", "**/Kconfig", "**/*.c", "**/*.h")
+    check = "tools/check-kconfig-symbols.py ."
+}
+
+// First-party tree: everything git-tracks except the vendored `third_party`/
+// `vendor` submodules and the vendored `tools/kconfiglib` (its own decorative
+// "====="-style dividers false-positive as merge-conflict markers).
+// `tools/*` is one level deep on purpose — it excludes tools/kconfiglib/**
+// without needing glob negation, which this version of hk does not apply.
+// tools/* would still recurse into tools/kconfiglib/** in this glob dialect
+// (a bare `*` matches across `/`, unlike a shell glob) — so tools/ first-party
+// scripts are named explicitly rather than globbed.
+local firstParty = List(
+    "CHANGELOG.md", "checkmake.ini", ".clang-format", ".clang-tidy", "CLAUDE.md",
+    "cmake/**", ".cmake-format.py", "CMakeLists.txt", "cmd/**", "configs/**",
+    "CONTRIBUTING.md", ".devcontainer/**", "docker/**", "docs/**", ".gitignore",
+    ".gitlab-ci.yml", ".gitmodules", "hk.pkl", "include/**", "Justfile",
+    "Kconfig", "Kconfig.engine", "Kconfig.target", "LICENSE", "Makefile",
+    ".mise.toml", "NOTICE", "packaging/**", "platform/**", "README.md",
+    "src/**", "test/**",
+    "tools/check-comments.py", "tools/check-commit-msg.py",
+    "tools/check-kconfig-symbols.py", "tools/check-spdx.sh",
+    "utils/**", "wapps/**", "wasm/**"
+)
+
+steps {
+    ["clang-format"] = clangFormat
+    ["just-fmt"] = justFmt
+    ["cmake-format"] = cmakeFormat
+    ["checkmake"] = checkMake
+    ["spdx-header"] = spdxHeader
+    ["comment-length"] = commentLength
+    ["kconfig-symbols"] = kconfigSymbols
+    // types and glob are OR-combined by hk, so a builtin selecting files by
+    // `types` (not `glob`) needs types cleared or the override below is a
+    // no-op — every "text" file (tools/kconfiglib included) still matches.
+    ["detect-private-key"] = (Builtins.detect_private_key) { types = List(); glob = firstParty }
+    ["check-added-large-files"] = (Builtins.check_added_large_files) { glob = firstParty }
+    ["check-merge-conflict"] = (Builtins.check_merge_conflict) { types = List(); glob = firstParty }
+    ["byte-order-marker"] = (Builtins.byte_order_marker) { types = List(); glob = firstParty }
+    ["check-symlinks"] = (Builtins.check_symlinks) { glob = firstParty }
+    // Matches `just lint-shell`'s severity floor exactly, so hk and CI agree
+    // on what fails a shell script and what is only informational.
+    ["shellcheck"] = (Builtins.shellcheck) {
+        check = new CommandSpec {
+            command = new Command { argv = List("shellcheck", "--severity=error", "{{files}}") }
+            effect = "read"
+        }
+    }
+}
+
+hooks {
+    ["commit-msg"] {
+        steps {
+            ["commit-msg"] {
+                check = "tools/check-commit-msg.py {{commit_msg_file}}"
+            }
+        }
+    }
+}

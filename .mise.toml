@@ -1,0 +1,6 @@
+[tools]
+checkmake = "latest"
+hk = "latest"
+just = "latest"
+"pipx:cmakelang" = "latest"
+shellcheck = "latest"
