@@ -10,18 +10,25 @@
 # nearest tag, short hash, build timestamp, and `dirty` if the tree is — that
 # no real release will ever carry.
 #
-# Usage: docker/publish-images.sh [-a AUTHFILE] [-b BOARD -i BIN] [image ...]
-#   -a AUTHFILE   push (podman --authfile); omitted, only build + verify.
-#   -b BOARD      board name, in the tag and the firmware.board label.
-#   -i BIN        path to the built firmware .bin.
-#   -c VARIANT    configuration name, in the tag and the firmware.variant
-#                 label.
+# Usage: docker/publish-images.sh [-a AUTHFILE] [-p] [-k] [-b BOARD -i BIN] [image ...]
+#   -a, --authfile AUTHFILE   podman --authfile to push with. Implies push.
+#   -p, --push                push even without -a, e.g. a registry that
+#                             takes anonymous pushes. Redundant with -a.
+#   -k, --insecure            push over plain HTTP / with a self-signed cert
+#                             (podman --tls-verify=false), for a local/dev
+#                             registry that isn't in containers-registries.conf.
+#   -b, --board BOARD         board name, in the tag and the firmware.board
+#                             label.
+#   -i, --bin BIN             path to the built firmware .bin.
+#   -c, --variant VARIANT     configuration name, in the tag and the
+#                             firmware.variant label.
 #
 #   docker/publish-images.sh                          # build + verify, no push
 #   docker/publish-images.sh -a ~/auth.json           # ... and push both
 #   docker/publish-images.sh -a ~/auth.json wapp-sdk  # just the wapp SDK image
 #   docker/publish-images.sh -a ~/auth.json -b rp2350 -i wanted.bin firmware
 #   docker/publish-images.sh -b rp2350 -i wanted.bin -c nowifi firmware
+#   docker/publish-images.sh -p -k -b rp2350 -i wanted.bin firmware  # local registry, no auth
 set -euo pipefail
 
 REGISTRY=${REGISTRY:-registry.gitlab.com/mekops/wanted/wanted-engine}
@@ -31,24 +38,32 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CONTEXT=$ROOT/docker
 
 usage() {
-    echo "usage: docker/publish-images.sh [-a AUTHFILE] [-b BOARD -i BIN] [build|wapp-sdk|firmware ...]" >&2
+    echo "usage: docker/publish-images.sh [-a AUTHFILE] [-p] [-k] [-b BOARD -i BIN] [build|wapp-sdk|firmware ...]" >&2
     exit 2
 }
 
 authfile=
+push=false
+insecure=false
 board=
 bin=
 variant=
-while getopts ':a:b:i:c:h' opt; do
-    case $opt in
-        a) authfile=$OPTARG ;;
-        b) board=$OPTARG ;;
-        i) bin=$OPTARG ;;
-        c) variant=$OPTARG ;;
-        *) usage ;;
+args=()
+while [ $# -gt 0 ]; do
+    case $1 in
+        -a|--authfile) authfile=$2; shift 2 ;;
+        -p|--push) push=true; shift ;;
+        -k|--insecure) insecure=true; shift ;;
+        -b|--board) board=$2; shift 2 ;;
+        -i|--bin) bin=$2; shift 2 ;;
+        -c|--variant) variant=$2; shift 2 ;;
+        -h|--help) usage ;;
+        --) shift; args+=("$@"); break ;;
+        -*) usage ;;
+        *) args+=("$1"); shift ;;
     esac
 done
-shift $((OPTIND - 1))
+set -- "${args[@]}"
 
 images=("$@")
 if [ ${#images[@]} -eq 0 ]; then
@@ -59,6 +74,35 @@ if [ -n "$authfile" ] && [ ! -f "$authfile" ]; then
     echo "FAIL: authfile not found: $authfile" >&2
     exit 1
 fi
+
+if [ -n "$authfile" ]; then
+    push=true
+fi
+
+# podman flags for a push/manifest-push to a plain-HTTP or self-signed
+# registry that isn't listed as insecure in containers-registries.conf.
+tls_flag=()
+if $insecure; then
+    tls_flag=(--tls-verify=false)
+fi
+
+# podman push/manifest push, with --authfile only when one was given, so an
+# anonymous-push registry never gets an empty --authfile "".
+push_image() {
+    if [ -n "$authfile" ]; then
+        podman push --authfile "$authfile" "${tls_flag[@]}" "$1"
+    else
+        podman push "${tls_flag[@]}" "$1"
+    fi
+}
+
+push_manifest() {
+    if [ -n "$authfile" ]; then
+        podman manifest push --all --authfile "$authfile" "${tls_flag[@]}" "$1"
+    else
+        podman manifest push --all "${tls_flag[@]}" "$1"
+    fi
+}
 
 # Map an image name to its Containerfile, relative to the repo root.
 containerfile_for() {
@@ -227,12 +271,12 @@ publish_firmware() {
     echo "==> verifying $image"
     verify_firmware "$image" "$bin" "$release" "$board" "$variant"
 
-    if [ -z "$authfile" ]; then
-        echo "==> not pushing $image (no -a AUTHFILE)"
+    if ! $push; then
+        echo "==> not pushing $image (no -a AUTHFILE / -p)"
         return 0
     fi
     echo "==> pushing $image"
-    podman push --authfile "$authfile" "$image"
+    push_image "$image"
 }
 
 # The image's own LABEL is the single source of truth for its version tag.
@@ -282,14 +326,14 @@ for name in "${images[@]}"; do
     echo "==> verifying $image"
     verify "$image"
 
-    if [ -z "$authfile" ]; then
-        echo "==> not pushing $image (no -a AUTHFILE)"
+    if ! $push; then
+        echo "==> not pushing $image (no -a AUTHFILE / -p)"
         continue
     fi
 
     for tag in "$ver" latest; do
         echo "==> pushing $REGISTRY/$name:$tag"
-        podman manifest push --all --authfile "$authfile" "$REGISTRY/$name:$tag"
+        push_manifest "$REGISTRY/$name:$tag"
     done
 done
 
