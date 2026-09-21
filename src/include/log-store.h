@@ -45,9 +45,11 @@ log_store_t *LogStore(void);
 void LogStoreAppend(log_store_t *s, const char *name, const void *buf,
                     size_t n);
 
-/* Copy up to cap bytes of `name`'s buffered output (oldest→newest) into out.
- * Returns the number of bytes copied (0 if absent / empty). */
-size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap);
+/* Copy up to cap bytes of `name`'s buffered output (oldest→newest) into out,
+ * starting `offset` bytes into it. Returns the number of bytes copied (0 at
+ * or past the end, or if absent / empty). */
+size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap,
+                    size_t offset);
 
 /* True if a log slot exists for `name` (the wapp has captured output). */
 bool LogStoreHas(log_store_t *s, const char *name);

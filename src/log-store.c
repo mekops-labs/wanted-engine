@@ -259,7 +259,8 @@ void LogStoreAppend(log_store_t *s, const char *name, const void *buf,
     PlatformMutexUnlock(s->lock);
 }
 
-size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap) {
+size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap,
+                    size_t offset) {
     if (!s || !name || !out || cap == 0)
         return 0;
 
@@ -270,8 +271,11 @@ size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap) {
         if (s->prev_valid && s->phdr != NULL) {
             uint32_t other = s->phdr->live == 0 ? 1 : 0;
             size_t have = s->phdr->len[other];
-            copied = have < cap ? have : cap;
-            memcpy(out, s->pbuf[other], copied);
+            if (offset < have) {
+                size_t avail = have - offset;
+                copied = avail < cap ? avail : cap;
+                memcpy(out, s->pbuf[other] + offset, copied);
+            }
         }
         PlatformMutexUnlock(s->lock);
         return copied;
@@ -282,10 +286,13 @@ size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap) {
             strncmp(s->slots[i].name, name, WAPP_MAX_NAME_LEN) == 0) {
             log_slot_t *sl = &s->slots[i];
             sl->tick = ++s->clock; /* a read counts as recent use */
-            size_t m = sl->len < cap ? sl->len : cap;
-            for (size_t j = 0; j < m; j++)
-                out[j] = sl->buf[(sl->start + j) % CONFIG_WANTED_LOG_CAP];
-            copied = m;
+            if (offset < sl->len) {
+                size_t avail = sl->len - offset;
+                size_t m = avail < cap ? avail : cap;
+                for (size_t j = 0; j < m; j++)
+                    out[j] = sl->buf[(sl->start + offset + j) % CONFIG_WANTED_LOG_CAP];
+                copied = m;
+            }
             break;
         }
     }

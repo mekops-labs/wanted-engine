@@ -48,6 +48,35 @@ TEST(logmount, ReadsAWappLog) {
     drv->Close(drv->ctx, fd);
 }
 
+/* Regression: a reader looping with a buffer smaller than the ring's content
+ * (`wsh cat`'s 1024-byte loop, e.g.) used to see the oldest chunk once, then
+ * a permanent EOF latch — everything past the first read was invisible. */
+TEST(logmount, LoopingReadsPageThroughTheWholeLog) {
+    char long_msg[200];
+    memset(long_msg, 'x', sizeof(long_msg) - 1);
+    long_msg[sizeof(long_msg) - 1] = '\0';
+    seed("lm_long", long_msg);
+
+    drv = VfsLogMountInit(NULL, NULL);
+    TEST_ASSERT_NOT_NULL(drv);
+    int fd = drv->Open(drv->ctx, "/lm_long", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+
+    /* A buffer far smaller than the log, read in a loop until EOF (0). */
+    char small[16];
+    char collected[512] = {0};
+    size_t total = 0;
+    int n;
+    while ((n = drv->Read(drv->ctx, fd, small, sizeof(small))) > 0) {
+        TEST_ASSERT_TRUE(total + (size_t)n < sizeof(collected));
+        memcpy(collected + total, small, (size_t)n);
+        total += (size_t)n;
+    }
+    TEST_ASSERT_EQUAL_INT(0, n);
+    TEST_ASSERT_NOT_NULL(strstr(collected, long_msg));
+    drv->Close(drv->ctx, fd);
+}
+
 TEST(logmount, RootEnumeratesSlots) {
     seed("lm_a", "a");
     seed("lm_b", "b");
@@ -146,6 +175,7 @@ TEST_GROUP_RUNNER(logmount) {
     RUN_TEST_CASE(logmount, ReadsTheEngineLog);
     RUN_TEST_CASE(logmount, ScopeNarrowsToTheEngineLog);
     RUN_TEST_CASE(logmount, ReadsAWappLog);
+    RUN_TEST_CASE(logmount, LoopingReadsPageThroughTheWholeLog);
     RUN_TEST_CASE(logmount, RootEnumeratesSlots);
     RUN_TEST_CASE(logmount, ScopeNarrowsToOneWapp);
     RUN_TEST_CASE(logmount, UnknownWappReturnsEnoent);

@@ -24,7 +24,7 @@ typedef struct {
     bool in_use;
     bool is_root;
     char name[WAPP_MAX_NAME_LEN];
-    bool read_done; /* per-fd EOF latch */
+    size_t read_offset; /* per-fd cursor; advances by each read's own length */
 } logmount_fd_t;
 
 struct vfs_driver_ctx_t {
@@ -149,7 +149,7 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
         return fd;
     d->fds[fd].in_use = true;
     d->fds[fd].is_root = is_root;
-    d->fds[fd].read_done = false;
+    d->fds[fd].read_offset = 0;
     strncpy(d->fds[fd].name, name, WAPP_MAX_NAME_LEN - 1);
     d->fds[fd].name[WAPP_MAX_NAME_LEN - 1] = '\0';
     return fd;
@@ -178,11 +178,10 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
         return -EBADF;
     if (d->fds[fd].is_root)
         return -EISDIR;
-    if (d->fds[fd].read_done)
-        return 0; /* EOF, latched per-fd */
 
-    size_t n = LogStoreRead(LogStore(), d->fds[fd].name, (char *)buf, nbyte);
-    d->fds[fd].read_done = true;
+    size_t n = LogStoreRead(LogStore(), d->fds[fd].name, (char *)buf, nbyte,
+                            d->fds[fd].read_offset);
+    d->fds[fd].read_offset += n;
     return (int)n;
 }
 

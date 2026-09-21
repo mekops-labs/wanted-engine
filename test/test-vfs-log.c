@@ -87,7 +87,7 @@ TEST(vfs_log_driver, WriteAppendsToLogStore) {
     d->Write(d->ctx, 0, msg, sizeof(msg) - 1);
 
     char out[64] = {0};
-    size_t n = LogStoreRead(LogStore(), "log-wt", out, sizeof(out) - 1);
+    size_t n = LogStoreRead(LogStore(), "log-wt", out, sizeof(out) - 1, 0);
     TEST_ASSERT_GREATER_THAN_size_t(sizeof(msg) - 1, n);
     TEST_ASSERT_EQUAL_STRING(msg, afterStamp(out));
 
@@ -124,7 +124,7 @@ TEST(log_store, AppendAndReadRoundtrip) {
     LogStoreAppend(LogStore(), "rtt", data, sizeof(data) - 1);
 
     char out[64] = {0};
-    size_t n = LogStoreRead(LogStore(), "rtt", out, sizeof(out) - 1);
+    size_t n = LogStoreRead(LogStore(), "rtt", out, sizeof(out) - 1, 0);
     TEST_ASSERT_GREATER_THAN_size_t(sizeof(data) - 1, n);
     TEST_ASSERT_EQUAL_STRING(data, afterStamp(out));
 }
@@ -133,7 +133,7 @@ TEST(log_store, EachLineCarriesItsOwnStamp) {
     LogStoreAppend(LogStore(), "stamp2", "one\ntwo\n", 8);
 
     char out[64] = {0};
-    LogStoreRead(LogStore(), "stamp2", out, sizeof(out) - 1);
+    LogStoreRead(LogStore(), "stamp2", out, sizeof(out) - 1, 0);
 
     const char *first = afterStamp(out);
     TEST_ASSERT_EQUAL_STRING_LEN("one\n", first, 4);
@@ -147,7 +147,7 @@ TEST(log_store, AContinuedLineIsNotStampedAgain) {
     LogStoreAppend(LogStore(), "stamp3", "def\n", 4);
 
     char out[64] = {0};
-    LogStoreRead(LogStore(), "stamp3", out, sizeof(out) - 1);
+    LogStoreRead(LogStore(), "stamp3", out, sizeof(out) - 1, 0);
     TEST_ASSERT_EQUAL_STRING("abcdef\n", afterStamp(out));
 }
 
@@ -156,7 +156,7 @@ TEST(log_store, AStampOpensTheLineAfterANewline) {
     LogStoreAppend(LogStore(), "stamp4", "next", 4);
 
     char out[64] = {0};
-    LogStoreRead(LogStore(), "stamp4", out, sizeof(out) - 1);
+    LogStoreRead(LogStore(), "stamp4", out, sizeof(out) - 1, 0);
 
     const char *first = afterStamp(out);
     TEST_ASSERT_EQUAL_STRING_LEN("done\n", first, 5);
@@ -171,7 +171,7 @@ TEST(log_store, UptimeAdvances) {
 
 TEST(log_store, ReadAbsentNameReturnsZero) {
     char out[64] = {0};
-    size_t n = LogStoreRead(LogStore(), "no-such-wapp", out, sizeof(out));
+    size_t n = LogStoreRead(LogStore(), "no-such-wapp", out, sizeof(out), 0);
     TEST_ASSERT_EQUAL_size_t(0, n);
 }
 
@@ -180,8 +180,8 @@ TEST(log_store, AppendIsNonDestructiveRead) {
     LogStoreAppend(LogStore(), "ndr", data, sizeof(data) - 1);
 
     char first[64] = {0}, second[64] = {0};
-    LogStoreRead(LogStore(), "ndr", first, sizeof(first));
-    LogStoreRead(LogStore(), "ndr", second, sizeof(second));
+    LogStoreRead(LogStore(), "ndr", first, sizeof(first), 0);
+    LogStoreRead(LogStore(), "ndr", second, sizeof(second), 0);
     TEST_ASSERT_EQUAL_MEMORY(first, second, sizeof(data) - 1);
 }
 

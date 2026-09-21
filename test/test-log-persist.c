@@ -40,7 +40,7 @@ TEST(log_persist, FirstBoot_ServesNoPreviousLog) {
 
     char out[64] = {0};
     TEST_ASSERT_EQUAL_size_t(
-        0, LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out)));
+        0, LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out), 0));
 }
 
 TEST(log_persist, PreviousBootsLogSurvivesTheReset) {
@@ -52,7 +52,7 @@ TEST(log_persist, PreviousBootsLogSurvivesTheReset) {
     TEST_ASSERT_TRUE(LogStoreHas(LogStore(), WANTED_PREV_LOG_NAME));
 
     char out[64] = {0};
-    size_t n = LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out));
+    size_t n = LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out), 0);
     TEST_ASSERT_GREATER_THAN_size_t(24, n);
     TEST_ASSERT_EQUAL_STRING_LEN("wanted: the boot before\n", out + n - 24, 24);
 }
@@ -64,7 +64,7 @@ TEST(log_persist, ThisBootsLinesDoNotAppearInThePreviousLog) {
     WantedLogCapture("wanted: newer\n", 14);
 
     char out[64] = {0};
-    size_t n = LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out));
+    size_t n = LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out), 0);
     TEST_ASSERT_GREATER_THAN_size_t(14, n);
     TEST_ASSERT_EQUAL_STRING_LEN("wanted: older\n", out + n - 14, 14);
 }
@@ -111,7 +111,7 @@ TEST(log_persist, OnlyTheMostRecentBytesSurviveAFullRing) {
     reboot();
 
     char out[CONFIG_WANTED_LOG_PERSIST_CAP];
-    size_t n = LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out));
+    size_t n = LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out), 0);
     TEST_ASSERT_EQUAL_size_t(CONFIG_WANTED_LOG_PERSIST_CAP, n);
     TEST_ASSERT_EQUAL_STRING_LEN("wanted: the last line\n", out + n - 22, 22);
 }
@@ -122,7 +122,7 @@ TEST(log_persist, TheEngineRingStaysReadableInRam) {
 
     char out[CONFIG_WANTED_LOG_CAP];
     size_t n =
-        LogStoreRead(LogStore(), WANTED_ENGINE_LOG_NAME, out, sizeof(out));
+        LogStoreRead(LogStore(), WANTED_ENGINE_LOG_NAME, out, sizeof(out), 0);
     TEST_ASSERT_TRUE(n >= 21);
     TEST_ASSERT_EQUAL_STRING_LEN("wanted: current boot\n", out + n - 21, 21);
 }
@@ -138,7 +138,7 @@ TEST(log_persist, AWatchdogResetKeepsTheLogAndNamesItself) {
 
     char prev[64] = {0};
     size_t n =
-        LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, prev, sizeof(prev));
+        LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, prev, sizeof(prev), 0);
     TEST_ASSERT_GREATER_THAN_size_t(33, n);
     TEST_ASSERT_EQUAL_STRING_LEN("wanted: the tick before the wedge\n",
                                  prev + n - 33, 33);
@@ -146,7 +146,7 @@ TEST(log_persist, AWatchdogResetKeepsTheLogAndNamesItself) {
     /* This boot opens with why the last one ended. */
     char cur[CONFIG_WANTED_LOG_CAP];
     size_t m =
-        LogStoreRead(LogStore(), WANTED_ENGINE_LOG_NAME, cur, sizeof(cur));
+        LogStoreRead(LogStore(), WANTED_ENGINE_LOG_NAME, cur, sizeof(cur), 0);
     TEST_ASSERT_TRUE(m >= 25);
     TEST_ASSERT_EQUAL_STRING_LEN("wanted: boot after task_wdt\n", cur + m - 28,
                                  28);
@@ -158,7 +158,7 @@ TEST(log_persist, APlatformWithNoResetReasonOpensNoLine) {
 
     char cur[CONFIG_WANTED_LOG_CAP];
     size_t m =
-        LogStoreRead(LogStore(), WANTED_ENGINE_LOG_NAME, cur, sizeof(cur));
+        LogStoreRead(LogStore(), WANTED_ENGINE_LOG_NAME, cur, sizeof(cur), 0);
     if (m >= 19) {
         TEST_ASSERT_NOT_EQUAL_INT(
             0, strncmp(cur + m - 19, "wanted: boot after ", 19));
