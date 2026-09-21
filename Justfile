@@ -38,68 +38,68 @@ kcl := justfile_directory() + "/tools/kconfiglib"
 _config:
     #!/usr/bin/env bash
     set -euo pipefail
-    mkdir -p {{build_dir}}
-    marker={{build_dir}}/.wanted-defconfig-seeded
+    mkdir -p {{ build_dir }}
+    marker={{ build_dir }}/.wanted-defconfig-seeded
     want=""
-    if [ -n "{{defconfig}}" ]; then
-        want="{{defconfig}}_defconfig"
+    if [ -n "{{ defconfig }}" ]; then
+        want="{{ defconfig }}_defconfig"
     fi
     seeded=$(cat "$marker" 2>/dev/null || true)
-    if [ -n "$want" ] && { [ ! -f {{build_dir}}/.config ] || [ "$seeded" != "$want" ]; }; then
+    if [ -n "$want" ] && { [ ! -f {{ build_dir }}/.config ] || [ "$seeded" != "$want" ]; }; then
         if [ ! -f "configs/$want" ]; then
             echo "kconfig: defconfig not found: configs/$want" >&2
             exit 1
         fi
-        echo "==> seeding {{build_dir}}/.config from $want"
-        {{kconfig}} python3 {{kcl}}/defconfig.py --kconfig Kconfig "configs/$want"
+        echo "==> seeding {{ build_dir }}/.config from $want"
+        {{ kconfig }} python3 {{ kcl }}/defconfig.py --kconfig Kconfig "configs/$want"
         printf '%s' "$want" >"$marker"
     else
-        {{kconfig}} python3 {{kcl}}/olddefconfig.py Kconfig
+        {{ kconfig }} python3 {{ kcl }}/olddefconfig.py Kconfig
     fi
 
 # Print one CONFIG_ value from this build dir's .config, or nothing if unset
 _cfg sym:
-    @sed -n 's/^{{sym}}=//p' {{build_dir}}/.config | tr -d '"'
+    @sed -n 's/^{{ sym }}=//p' {{ build_dir }}/.config | tr -d '"'
 
 # Each of these writes a .config, so each reports what it now costs.
 
 # Edit this build dir's configuration in the terminal UI.
 menuconfig:
-    mkdir -p {{build_dir}}
-    {{kconfig}} python3 {{kcl}}/menuconfig.py Kconfig
+    mkdir -p {{ build_dir }}
+    {{ kconfig }} python3 {{ kcl }}/menuconfig.py Kconfig
     @just sizes current
 
 # Write the minimal defconfig for this build dir's .config to configs/<name>.
 savedefconfig name:
-    {{kconfig}} python3 {{kcl}}/savedefconfig.py --kconfig Kconfig \
-        --out configs/{{name}}_defconfig
+    {{ kconfig }} python3 {{ kcl }}/savedefconfig.py --kconfig Kconfig \
+        --out configs/{{ name }}_defconfig
 
 # Seed this build dir's .config from configs/<name>, replacing any existing one.
 defconfig name:
-    mkdir -p {{build_dir}}
-    {{kconfig}} python3 {{kcl}}/defconfig.py --kconfig Kconfig \
-        configs/{{name}}_defconfig
+    mkdir -p {{ build_dir }}
+    {{ kconfig }} python3 {{ kcl }}/defconfig.py --kconfig Kconfig \
+        configs/{{ name }}_defconfig
     @just sizes current
 
 # Bring this build dir's .config forward over Kconfig edits
 olddefconfig:
-    mkdir -p {{build_dir}}
-    {{kconfig}} python3 {{kcl}}/olddefconfig.py Kconfig
+    mkdir -p {{ build_dir }}
+    {{ kconfig }} python3 {{ kcl }}/olddefconfig.py Kconfig
     @just sizes current
 
 # Select the supervisor image for this build dir (sheriff | wsh | selftest)
 supervisor-variant name: _config
-    {{kconfig}} python3 {{kcl}}/setconfig.py --kconfig Kconfig \
-        WANTED_SUPERVISOR_$(echo {{name}} | tr a-z A-Z)=y
+    {{ kconfig }} python3 {{ kcl }}/setconfig.py --kconfig Kconfig \
+        WANTED_SUPERVISOR_$(echo {{ name }} | tr a-z A-Z)=y
 
 # Select this build dir's target (linux | nuttx | esp-idf | openwrt) without opening menuconfig
 target name: _config
-    {{kconfig}} python3 {{kcl}}/setconfig.py --kconfig Kconfig \
-        WANTED_TARGET_$(echo {{name}} | tr 'a-z-' 'A-Z_')=y
+    {{ kconfig }} python3 {{ kcl }}/setconfig.py --kconfig Kconfig \
+        WANTED_TARGET_$(echo {{ name }} | tr 'a-z-' 'A-Z_')=y
 
 # Set one symbol in this build dir's .config, e.g.: setconfig 'WANTED_TARGET_ESP_IDF_CHIP="esp32"'
 setconfig assignment: _config
-    {{kconfig}} python3 {{kcl}}/setconfig.py --kconfig Kconfig {{assignment}}
+    {{ kconfig }} python3 {{ kcl }}/setconfig.py --kconfig Kconfig {{ assignment }}
 
 # Build the configured target [DEFCONFIG=... seeds a fresh .config].
 build:
@@ -108,19 +108,19 @@ build:
     just _config
     target=$(just _cfg CONFIG_WANTED_TARGET)
     cfg=$(just _cfg CONFIG_WANTED_DEFAULT_CONFIG)
-    echo "==> building target: ${target:-linux}  (build dir: {{build_dir}})"
+    echo "==> building target: ${target:-linux}  (build dir: {{ build_dir }})"
     echo "==> default configuration: ${cfg}"
     # Validated before anything compiles: a JSON that does not parse is a node
     # that will not boot.
-    ./utils/default-config.sh "{{justfile_directory()}}" "$cfg" >/dev/null
-    dist="{{justfile_directory()}}/dist/${target:-linux}"
+    ./utils/default-config.sh "{{ justfile_directory() }}" "$cfg" >/dev/null
+    dist="{{ justfile_directory() }}/dist/${target:-linux}"
     case "${target:-linux}" in
     linux)
-        cd {{build_dir}} && cmake -GNinja {{defconfig_arg}} {{cmake_extra}} .. && ninja
-        cd {{justfile_directory()}}
+        cd {{ build_dir }} && cmake -GNinja {{ defconfig_arg }} {{ cmake_extra }} .. && ninja
+        cd {{ justfile_directory() }}
         mkdir -p "$dist"
-        install -m 0755 {{build_dir}}/cmd/wanted-cli "$dist/wanted-cli"
-        ./utils/default-config.sh "{{justfile_directory()}}" "$cfg" "$dist/config.json" >/dev/null
+        install -m 0755 {{ build_dir }}/cmd/wanted-cli "$dist/wanted-cli"
+        ./utils/default-config.sh "{{ justfile_directory() }}" "$cfg" "$dist/config.json" >/dev/null
         # Supervisor image at the relative path the config names, so dist/linux
         # runs without reaching back into the source tree. Absent is not fatal —
         # it is built separately, in the wapp SDK image.
@@ -160,7 +160,7 @@ build:
         fi
         # Board defconfig: DEFCONFIG wins; else this build's own default
         # (WANTED_TARGET_ESP_IDF_DEFCONFIG); else per chip.
-        board_defconfig="{{defconfig}}"
+        board_defconfig="{{ defconfig }}"
         if [ -z "$board_defconfig" ]; then
             board_defconfig=$(just _cfg CONFIG_WANTED_TARGET_ESP_IDF_DEFCONFIG)
         fi
@@ -186,7 +186,7 @@ build:
         fi
         ;;
     openwrt)
-        WANTED_CONFIG="{{build_dir}}/.config" \
+        WANTED_CONFIG="{{ build_dir }}/.config" \
             packaging/openwrt/openwrt-package.sh "$(just _cfg CONFIG_WANTED_TARGET_OPENWRT_SDK)"
         ;;
     *)
@@ -198,34 +198,34 @@ build:
 # first: ctest runs whatever binary is already there, so a stale one silently
 # passes a run it should fail.
 test: build
-    cd {{build_dir}} && ctest -j"$(nproc)" --output-on-failure --output-junit rspec.xml
+    cd {{ build_dir }} && ctest -j"$(nproc)" --output-on-failure --output-junit rspec.xml
 
 # Build and test with an out-of-tree driver tree linked in
 test-extra-drivers:
     BUILD_DIR=build-extra-drivers just setconfig \
-        'WANTED_EXTRA_DRIVERS_DIR="{{justfile_directory()}}/test/extra-drivers"'
+        'WANTED_EXTRA_DRIVERS_DIR="{{ justfile_directory() }}/test/extra-drivers"'
     BUILD_DIR=build-extra-drivers just build
     cd build-extra-drivers && ctest -j"$(nproc)" --output-on-failure -R driver_tables
 
 # Cobertura coverage report (build with WANTED_BUILD_COVERAGE=y set first).
 coverage:
-    cd {{build_dir}} && ninja coverage
+    cd {{ build_dir }} && ninja coverage
 
 # Boot the production supervisor and assert a clean instantiate.
 smoke-engine:
-    ./test/smoke-engine.sh ./{{build_dir}}/cmd/wanted-cli
+    ./test/smoke-engine.sh ./{{ build_dir }}/cmd/wanted-cli
 
 # Run the in-WASM selftest suite on Linux.
 selftest:
-    ./test/selftest.sh ./{{build_dir}}/cmd/wanted-cli
+    ./test/selftest.sh ./{{ build_dir }}/cmd/wanted-cli
 
 # Run the in-WASM selftest suite against an OpenWRT cross-built engine under qemu (JUnit report for CI). sdk = aarch64 | mipsel | SDK URL | local SDK dir; cached under .openwrt-sdk/
 selftest-openwrt-qemu sdk report="build-openwrt-qemu-junit.xml":
-    ./test/run-one-junit.sh {{report}} selftest-openwrt-qemu {{sdk}} -- ./test/selftest-qemu.sh "{{sdk}}"
+    ./test/run-one-junit.sh {{ report }} selftest-openwrt-qemu {{ sdk }} -- ./test/selftest-qemu.sh "{{ sdk }}"
 
 # Registry image verification: every refusal state, enforcing and reporting.
 image-verify:
-    ./test/image-verify.sh ./{{build_dir}}/cmd/wanted-cli
+    ./test/image-verify.sh ./{{ build_dir }}/cmd/wanted-cli
 
 # The two states that need a key the firmware holds: an accepted image, and a
 # valid signature presented under another identity. Builds its own engine,
@@ -236,7 +236,7 @@ image-verify-keyed:
 
 # Run the system-control (poweroff/reboot/exit) checks on Linux.
 syscontrol:
-    ./test/syscontrol.sh ./{{build_dir}}/cmd/wanted-cli
+    ./test/syscontrol.sh ./{{ build_dir }}/cmd/wanted-cli
 
 # Swap the supervisor image under a running engine.
 live-update:
@@ -254,7 +254,7 @@ memcap:
 
 # Memory footprint per defconfig, or `current` for this build dir alone.
 sizes mode="all":
-    ./utils/measure-sizes.sh {{mode}}
+    ./utils/measure-sizes.sh {{ mode }}
 
 # --- NuttX simulator ------------------------------------------------------
 # The build/test recipe lives in test/nuttx-sim.sh (shared with CI); these
@@ -290,7 +290,7 @@ nuttx-clean:
 
 # Remove every build artifact (Linux + NuttX sim + wasm/wapps + submodule objects).
 clean:
-    rm -rf {{build_dir}} build-nuttx registry
+    rm -rf {{ build_dir }} build-nuttx registry
     # The ESP-IDF project keeps its own .config, and a stale tree carries a
     # profile a later DEFCONFIG cannot displace.
     rm -rf platform/esp-idf/project/build
@@ -321,12 +321,12 @@ lint: lint-format lint-shell lint-configs
 
 # Reject any formatting drift (clang-format config in .clang-format).
 lint-format:
-    find {{src_dirs}} \( -name build -o -name 'build.*' -o -name managed_components -o -name .cache -o -name unity \) -prune -o \( -name '*.c' -o -name '*.h' \) ! -name wanted-config.h ! -name test_wasi.tar.c ! -name boot-romfs.h ! -name ctrl-action.json.h -print0 \
+    find {{ src_dirs }} \( -name build -o -name 'build.*' -o -name managed_components -o -name .cache -o -name unity \) -prune -o \( -name '*.c' -o -name '*.h' \) ! -name wanted-config.h ! -name test_wasi.tar.c ! -name boot-romfs.h ! -name ctrl-action.json.h -print0 \
         | xargs -0 clang-format --dry-run --Werror
 
 # Reformat the tree in place (developer helper; not run in CI).
 format-fix:
-    find {{src_dirs}} \( -name build -o -name 'build.*' -o -name managed_components -o -name .cache -o -name unity \) -prune -o \( -name '*.c' -o -name '*.h' \) ! -name wanted-config.h ! -name test_wasi.tar.c ! -name boot-romfs.h ! -name ctrl-action.json.h -print0 \
+    find {{ src_dirs }} \( -name build -o -name 'build.*' -o -name managed_components -o -name .cache -o -name unity \) -prune -o \( -name '*.c' -o -name '*.h' \) ! -name wanted-config.h ! -name test_wasi.tar.c ! -name boot-romfs.h ! -name ctrl-action.json.h -print0 \
         | xargs -0 clang-format -i
 
 # Lint shell scripts. error severity only for now; ratchet down over time.
@@ -345,10 +345,10 @@ lint-shell:
 
 # clang-tidy the compiled first-party sources
 tidy:
-    mkdir -p {{tidy_build_dir}}
-    cd {{tidy_build_dir}} && CC=clang cmake -GNinja .. && ninja
-    clang-tidy -p {{tidy_build_dir}} --config-file=.clang-tidy --warnings-as-errors='*' \
-        $(python3 -c "import json,os; print('\n'.join(sorted({os.path.relpath(e['file']) for e in json.load(open('{{tidy_build_dir}}/compile_commands.json')) if os.path.relpath(e['file']).startswith(('src/','platform/linux/','cmd/'))})))")
+    mkdir -p {{ tidy_build_dir }}
+    cd {{ tidy_build_dir }} && CC=clang cmake -GNinja .. && ninja
+    clang-tidy -p {{ tidy_build_dir }} --config-file=.clang-tidy --warnings-as-errors='*' \
+        $(python3 -c "import json,os; print('\n'.join(sorted({os.path.relpath(e['file']) for e in json.load(open('{{ tidy_build_dir }}/compile_commands.json')) if os.path.relpath(e['file']).startswith(('src/','platform/linux/','cmd/'))})))")
 
 # Excludes ESP-IDF's own downloaded/generated build/managed_components/.cache
 # dirs (idf.py-owned, not our source — same reasoning as lint-format's prune).
@@ -391,12 +391,12 @@ cppcheck:
 
 # gcc -fanalyzer: deep but slow/verbose — run out-of-band, not on every push.
 analyze build_dir="build-analyze":
-    mkdir -p {{build_dir}}
-    cd {{build_dir}} && cmake -GNinja -DCMAKE_C_FLAGS="-fanalyzer" .. && ninja
+    mkdir -p {{ build_dir }}
+    cd {{ build_dir }} && cmake -GNinja -DCMAKE_C_FLAGS="-fanalyzer" .. && ninja
 
 # Pattern-based security scan (C/C++ ruleset).
 semgrep:
-    semgrep --config "p/c" --error --quiet {{src_dirs}}
+    semgrep --config "p/c" --error --quiet {{ src_dirs }}
 
 # Scan the build image definition and the working tree for CVEs and secrets.
 scan-image:
