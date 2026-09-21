@@ -290,7 +290,8 @@ size_t LogStoreRead(log_store_t *s, const char *name, char *out, size_t cap,
                 size_t avail = sl->len - offset;
                 size_t m = avail < cap ? avail : cap;
                 for (size_t j = 0; j < m; j++)
-                    out[j] = sl->buf[(sl->start + offset + j) % CONFIG_WANTED_LOG_CAP];
+                    out[j] = sl->buf[(sl->start + offset + j) %
+                                     CONFIG_WANTED_LOG_CAP];
                 copied = m;
             }
             break;

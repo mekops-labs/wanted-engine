@@ -52,7 +52,8 @@ TEST(log_persist, PreviousBootsLogSurvivesTheReset) {
     TEST_ASSERT_TRUE(LogStoreHas(LogStore(), WANTED_PREV_LOG_NAME));
 
     char out[64] = {0};
-    size_t n = LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out), 0);
+    size_t n =
+        LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out), 0);
     TEST_ASSERT_GREATER_THAN_size_t(24, n);
     TEST_ASSERT_EQUAL_STRING_LEN("wanted: the boot before\n", out + n - 24, 24);
 }
@@ -64,7 +65,8 @@ TEST(log_persist, ThisBootsLinesDoNotAppearInThePreviousLog) {
     WantedLogCapture("wanted: newer\n", 14);
 
     char out[64] = {0};
-    size_t n = LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out), 0);
+    size_t n =
+        LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out), 0);
     TEST_ASSERT_GREATER_THAN_size_t(14, n);
     TEST_ASSERT_EQUAL_STRING_LEN("wanted: older\n", out + n - 14, 14);
 }
@@ -111,7 +113,8 @@ TEST(log_persist, OnlyTheMostRecentBytesSurviveAFullRing) {
     reboot();
 
     char out[CONFIG_WANTED_LOG_PERSIST_CAP];
-    size_t n = LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out), 0);
+    size_t n =
+        LogStoreRead(LogStore(), WANTED_PREV_LOG_NAME, out, sizeof(out), 0);
     TEST_ASSERT_EQUAL_size_t(CONFIG_WANTED_LOG_PERSIST_CAP, n);
     TEST_ASSERT_EQUAL_STRING_LEN("wanted: the last line\n", out + n - 22, 22);
 }
