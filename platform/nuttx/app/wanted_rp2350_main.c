@@ -122,16 +122,9 @@ static void connect_usb_cdcacm(void) {
  * watching still reaches the engine. */
 #define USB_CONSOLE_WAIT_S 30
 
-/* Adopt the USB CDC as the console, but only if a terminal actually answers.
- *
- * The three newlines are a handshake, not decoration: a CDC write with no host
- * reading it blocks, so redirecting stdio to an unattended port would hang the
- * engine on its first printf -- worse than having no console at all. Hence the
- * two outcomes here are "a terminal said hello, use it" and "nobody did, leave
- * stdio alone and boot".
- *
- * Waiting without a deadline is what this used to do, and it made an
- * unattended board on the `:wanted` config wait forever for a person. */
+/* Adopts the USB CDC as the console only once a terminal sends three
+ * newlines. A CDC write nobody reads blocks, so an unattended port would
+ * hang the engine's first printf; times out rather than waiting forever. */
 static void bring_up_usb_console(void) {
     connect_usb_cdcacm();
 
@@ -177,10 +170,9 @@ static void bring_up_usb_console(void) {
 }
 #endif /* !CONFIG_UART0_SERIAL_CONSOLE */
 
-/* Read the boot state and record a slot that failed. An unconfirmed active
- * slot on a repeat attempt means the loader already tried an image and came
- * back, which is the one account of a bad update that outlives the reboot
- * that hid it. Goes to the engine's error channel, which survives a reset. */
+/* Records a slot that failed to confirm after a repeat boot attempt, to
+ * the engine's error channel — the one account of a bad update that
+ * survives the reboot that hid it. */
 static void report_boot_slot(void) {
     if (PlatformOtaInit() != 0) {
         DEBUG_TRACE("ota: boot state unavailable");
@@ -228,11 +220,9 @@ int wanted_rp2350_main(int argc, char *argv[]) {
     bring_up_usb_console();
 #endif
 
-    /* Board bring-up already mounted REGISTRY_VOLUME. Done after the console
-     * is up so failures here are visible instead of silently lost. Identity,
-     * the provisioning blob and Wi-Fi are the seeded `sheriff`/`wifi-mgr`/
-     * `provisioning` wapps' job from here on, the same as ESP-IDF's
-     * app_main.c — this shim no longer duplicates any of it. */
+    /* Done after the console is up so failures here are visible. Identity,
+     * the provisioning blob and Wi-Fi are entirely the seeded
+     * sheriff/wifi-mgr/provisioning wapps' job, as on ESP-IDF. */
     bool supervisorDemo = false;
     if (chdir(REGISTRY_VOLUME) < 0) {
         perror("chdir " REGISTRY_VOLUME);
