@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* ESP-IDF entry point for the WANTED engine. */
 
 #include <string.h>
