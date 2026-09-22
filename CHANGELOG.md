@@ -1,6 +1,29 @@
 Changelog
 =========
 
+0.20.1 (2026-09-22)
+-------------------
+
+### Fixed
+
+- The NuttX board's seed-wapps list no longer loses factory wapps when the
+  Kconfig value has more than one entry.
+- The RP2350 board no longer runs a native, pre-blob-format provisioning
+  prompt; identity and Wi-Fi are entirely the seeded wapps' job.
+- `bringup-rp2350-serial.json`'s platform mount source is relative, matching
+  the wifi config's.
+- The RP2350 and OpenWrt board configs grant a `log` mount, so EngineLog and
+  WappLogs populate in State Reports.
+- `wanted-config.h` regenerates on every build, not only when the NuttX
+  submodule dependency step runs.
+- A wapp's log read past one `read()` call now returns the rest of the
+  buffered content instead of a permanent EOF.
+
+### Build
+
+- Bumped `wapps/sheriff` to v0.11.1.
+- Added hk pre-commit and commit-msg checks.
+
 0.20.0 (2026-09-19)
 -------------------
 
