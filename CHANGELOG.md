@@ -1,6 +1,14 @@
 Changelog
 =========
 
+0.20.2 (2026-09-22)
+-------------------
+
+### Fixed
+
+- measure_sizes.sh script was broken
+- CONFIG_RP23XX_OTA_MTD is set by default - fixes RP2350 ota
+
 0.20.1 (2026-09-22)
 -------------------
 
