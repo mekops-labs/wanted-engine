@@ -11,8 +11,10 @@ readonly WASM_PAGE=65536      # WASM linear-memory page
 
 ENGINE_DIR=${ENGINE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}
 SRC="$ENGINE_DIR/utils/measure_structs.c"
-INC="-I$ENGINE_DIR/include -I$ENGINE_DIR/src/include -I$ENGINE_DIR/src/vfs \
-     -I$ENGINE_DIR/vendor/cwalk/include -I$ENGINE_DIR/vendor/wamr/core/iwasm/include"
+INC=(
+    -I"$ENGINE_DIR/include" -I"$ENGINE_DIR/src/include" -I"$ENGINE_DIR/src/vfs"
+    -I"$ENGINE_DIR/vendor/cwalk/include" -I"$ENGINE_DIR/vendor/wamr/core/iwasm/include"
+)
 KCL="$ENGINE_DIR/tools/kconfiglib"
 
 # Two modes: the full survey, and this build dir alone — the latter is what the
@@ -115,10 +117,10 @@ measure() { # $1 = abi (linux|nuttx), $2 = profile -> fills M[name]=size
     if [ "$abi" = nuttx ]; then
         res=$(clang -print-resource-dir)
         clang -ffreestanding -target i386-unknown-linux-gnu -nostdinc \
-            -I"$res/include" -I"$STUB" -I"$cfg" "$INC" -DSECURE_SOCKETS="$tls" \
+            -I"$res/include" -I"$STUB" -I"$cfg" "${INC[@]}" -DSECURE_SOCKETS="$tls" \
             -fno-common -c "$SRC" -o "$obj"
     else
-        clang -I"$cfg" "$INC" -DSECURE_SOCKETS="$tls" -fno-common -c "$SRC" -o "$obj"
+        clang -I"$cfg" "${INC[@]}" -DSECURE_SOCKETS="$tls" -fno-common -c "$SRC" -o "$obj"
     fi
     # readelf prints the symbol Size in hex once it grows large; $(( )) folds
     # both hex and decimal to a plain decimal, so downstream math is uniform.
