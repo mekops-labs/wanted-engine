@@ -27,7 +27,7 @@
 /* Maximum length (including NUL) of a path stored on a vfs_fd_t.
  * Override in platform/include/config-*.h if needed. */
 #ifndef VFS_FD_PATH_LEN
-#define VFS_FD_PATH_LEN 64
+#define VFS_FD_PATH_LEN 128
 #endif
 
 #define VFS_MAX_MOUNTS 8
