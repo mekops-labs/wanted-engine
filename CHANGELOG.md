@@ -1,6 +1,27 @@
 Changelog
 =========
 
+0.20.3 (2026-09-23)
+-------------------
+
+### Added
+
+- `rp2350_feather_sheriff` defconfig: runs the supervisor on the Adafruit
+  Feather RP2350 over the board's native USB-CDC serial link, with image
+  signature verification enforced.
+- RP2350 boot without a stored provisioning secret waits up to 30 s on the
+  console for a base64 blob and stores it at `sheriff/provision`.
+
+### Fixed
+
+- `VFS_FD_PATH_LEN` increased from 64 to 128 bytes.
+
+### Build
+
+- Bumped the `nuttx` and `nuttx-apps` submodules.
+- `check-commit-msg.py` now requires each commit body line to be a single
+  `- ` bullet, 80 characters max.
+
 0.20.2 (2026-09-22)
 -------------------
 
