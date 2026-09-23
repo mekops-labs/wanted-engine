@@ -1,0 +1,42 @@
+# Adafruit Feather RP2350 under NuttX, running the supervisor against a host
+# control plane reached over the board's native USB-CDC link.
+#
+# The board carries no radio, so the manager socket is `serial://` rather than
+# `tcp://` and no network comes up at all. Its NuttX config
+# (adafruit-feather-rp2350:sheriff) moves the console to UART0, which is what
+# frees the native USB-CDC for this link — read the console over a debug
+# probe's UART bridge.
+#
+# Limits are the same `small` envelope the board's wsh profile uses; what
+# differs is the launch config it ships, the supervisor it runs, and the
+# keyring that image signatures are checked against.
+#
+# Listening sockets stay off: nothing granted here serves a port. Factory
+# seeding is left empty because only the ESP-IDF build seeds at all; a NuttX
+# board carries its images in the boot ROMFS instead.
+
+CONFIG_WANTED_MAX_WAPPS=16
+CONFIG_WANTED_WASM_STACK_SIZE=65536
+CONFIG_WANTED_WASM_HEAP_SIZE=262144
+CONFIG_WANTED_WASM_WORKER_STACK_SIZE=65536
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=16
+CONFIG_WANTED_MAX_PATH_LEN=512
+CONFIG_WANTED_MAX_DRIVERS_CNT=8
+CONFIG_WANTED_MAX_OPTIONS_SIZE=256
+
+CONFIG_WANTED_SUPERVISOR_SHERIFF=y
+CONFIG_WANTED_DEFAULT_CONFIG="configs/bringup-rp2350-serial.json"
+
+# Refuse a load whose image does not verify. Enforcement is a floor: a build
+# that sets it cannot be talked out of it by configuration at runtime.
+CONFIG_WANTED_WAPP_IMAGE_VERIFY_ENFORCE=y
+
+# Public half of the image-signing key this build trusts. The private half is
+# generated locally and never committed.
+CONFIG_WANTED_IMAGE_SIGNING_KEYS="1:18a1bcb266ae7ab53d92e1a34dff4d4fac46b29481febbbd2780813dbcdcd323"
+
+# Makes `make defconfig rp2350_feather_sheriff && make build` alone reach the
+# right target, board and defconfig.
+CONFIG_WANTED_TARGET_NUTTX=y
+CONFIG_WANTED_TARGET_NUTTX_BOARD="adafruit-feather-rp2350:sheriff"
+CONFIG_WANTED_TARGET_NUTTX_DEFCONFIG="rp2350_feather_sheriff"
