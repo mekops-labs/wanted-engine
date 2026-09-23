@@ -386,6 +386,7 @@ cppcheck:
         -DSECURE_SOCKETS=$tls \
         -I include -I src/include -I platform/include -I "$cfg" \
         -DCONFIG_RP23XX_FLASH_MTD_MOUNTPOINT='"/mnt/flash"' \
+        -DCONFIG_SYSTEM_WANTED_PROVISION_PROMPT \
         $excludes \
         src platform cmd
 
