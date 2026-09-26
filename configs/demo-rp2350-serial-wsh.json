@@ -1,0 +1,34 @@
+{
+    "system": {
+        "privileged": true
+    },
+    "supervisor": {
+        "params": {
+            "console": {
+                "in":  {"name": "null"},
+                "out": {"name": "null"},
+                "err": {"name": "log"}
+            },
+            "drivers": [
+                {"name": "wanted"},
+                {"name": "sha256"},
+                {"name": "ed25519"},
+                {"name": "inflate"}
+            ],
+            "mounts": [
+                {
+                    "name": "platform",
+                    "path": "/var/lib/sheriff",
+                    "options": "src=sheriff"
+                },
+                {
+                    "name": "log",
+                    "path": "/logs"
+                }
+            ],
+            "sockets": [
+                {"name": "manager", "address": "serial:///dev/ttyACM0"}
+            ]
+        }
+    }
+}
