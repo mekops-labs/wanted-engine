@@ -178,6 +178,15 @@ tar --format=ustar --owner=0 --group=0 --mtime='1970-01-01 00:00:00 UTC' \
     -C pkg -cf registry/hello@0.0.1-1.wapp app.wasm
 ```
 
+## Common pitfalls
+
+- **An ungranted path does not exist.** A path outside every mount and grant returns `ENOENT`. The engine does not return `EACCES` for it. If an `open` of a `/dev/`, `/net/`, or mounted path fails with `ENOENT`, examine the launch config for the grant first. See [Error Reference](error-reference.md).
+- **The wapp cannot make its own network connection.** The WASI bridge has no call that creates a socket. Open `/net/<name>` for each `sockets[]` entry in the launch config. The entry's `address` sets the peer, so the wapp code names no host or port.
+- **Grants apply at `start`.** The engine reads the launch config when the wapp starts. A config written while the wapp runs has no effect until the next `start`. To change a grant, write the new config, then stop and start the wapp.
+- **Link with `-Wl,--compress-relocations`.** The engine's WAMR build disables reference types. Without this flag, `lld` pads the `call_indirect` table index to 5 bytes, and the engine refuses the module. The `wapps/hello/Makefile` flags include it.
+- **The initial linear memory must fit the engine's cap.** The engine refuses at load an image whose initial pages exceed `wasm_max_pages` in `/proc/wanted`. Before you start an image, read its `reg/<name>:<version>` descriptor. `over_cap` is `true` for an image the engine refuses.
+- **The fd table has 32 entries per wapp.** Descriptors 0 to 2 and the root preopen use the first four. When the table is full, `open` returns `EMFILE`. Close each descriptor when the wapp no longer uses it.
+
 ## See also
 
 - [Quick Start](quickstart.md) — build, package, and launch `hello` end to end.
