@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 
+#include <board.h>
 #include <platform.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
@@ -125,6 +126,10 @@ extern const char _binary_wanted_config_json_start[];
 void app_main(void) {
     ESP_LOGI(TAG, "WANTED engine — ESP-IDF platform bring-up");
     ESP_LOGI(TAG, "platform: %s", PlatformName());
+
+    /* A failed board init leaves its devices absent; the engine starts. */
+    int boardRc = BoardInit();
+    ESP_LOGI(TAG, "board: init -> rc=%d", boardRc);
 
     size_t used = 0, total = 0;
     PlatformMemoryStats(&used, &total);

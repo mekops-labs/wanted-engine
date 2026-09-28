@@ -12,8 +12,7 @@ set(core_srcs
     ${ENGINE}/src/wanted-image-verify.c
     ${ENGINE}/src/wanted_hmac.c
     ${ENGINE}/src/log-store.c
-    ${ENGINE}/src/version.c
-    ${ENGINE}/src/extra-drivers-none.c)
+    ${ENGINE}/src/version.c)
 
 set(vfs_srcs
     vfs.c
@@ -136,20 +135,35 @@ if(CONFIG_WANTED_VFS_OTA)
     list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/ota.c)
 endif()
 
+# A board directory's sources supply BoardInit() and ExtraDriverTable() both.
+if(WANTED_BOARD_SRCS)
+    list(APPEND core_srcs ${WANTED_BOARD_SRCS})
+else()
+    list(APPEND core_srcs ${ENGINE}/src/extra-drivers-none.c
+         ${ENGINE}/platform/esp-idf/board-none.c)
+endif()
+
+# An app slot must be a multiple of 64 KiB, or the next partition pads up to the
+# boundary and the table runs past the end of flash.
+math(EXPR _app_slot_align "${WANTED_APP_SLOT_KB} % 64")
+if(NOT _app_slot_align EQUAL 0)
+    message(
+        FATAL_ERROR
+            "WANTED_APP_SLOT_KB=${WANTED_APP_SLOT_KB} is not a multiple of 64 KiB"
+    )
+endif()
+
 if(WANTED_OTA_LAYOUT STREQUAL "factory")
-    # 4 MB flash (classic ESP32): 64 KiB reserved, one factory app slot, no A/B;
-    # persist+wapps take the remainder. Must stay a multiple of 64 KiB so
-    # persist/wapps auto-align with zero padding waste.
-    set(FACTORY_APP_KB 1536)
-    math(EXPR OTA_POOL_KB "4096 - 64 - ${FACTORY_APP_KB}")
+    # 64 KiB reserved, one factory app slot, no A/B; persist+wapps take the
+    # rest.
+    set(FACTORY_APP_KB ${WANTED_APP_SLOT_KB})
+    math(EXPR OTA_POOL_KB "${WANTED_FLASH_KB} - 64 - ${FACTORY_APP_KB}")
     set(_partition_template
         ${ENGINE}/platform/esp-idf/project/partitions-factory.csv.in)
 else()
-    # 8 MB XIAO ESP32-S3: 64 KiB reserved + otadata 8 KiB + two app slots, and
-    # persist takes what is left. A multiple of 64 KiB, or ota_1 pads up to the
-    # next boundary and the table runs past the end of flash.
-    set(OTA_SLOT_KB 1792)
-    math(EXPR OTA_POOL_KB "8192 - 64 - 8 - (2 * ${OTA_SLOT_KB})")
+    # 64 KiB reserved + otadata 8 KiB + two app slots; persist takes the rest.
+    set(OTA_SLOT_KB ${WANTED_APP_SLOT_KB})
+    math(EXPR OTA_POOL_KB "${WANTED_FLASH_KB} - 64 - 8 - (2 * ${OTA_SLOT_KB})")
     set(_partition_template
         ${ENGINE}/platform/esp-idf/project/partitions.csv.in)
 endif()
@@ -242,7 +256,9 @@ idf_component_register(
     ${ENGINE}/vendor/cwalk/include
     ${ENGINE}/vendor/uzlib/src
     ${ENGINE}/vendor/ed25519/src
+    ${WANTED_BOARD_INCLUDE_DIRS}
     REQUIRES
+    ${WANTED_BOARD_REQUIRES}
     wamr
     esp_hw_support
     pthread

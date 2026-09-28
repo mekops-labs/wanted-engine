@@ -29,7 +29,7 @@ execute_process(
         "${CMAKE_COMMAND}" -E env "PYTHONPATH=${_repo}/tools/kconfiglib"
         "KCONFIG_CONFIG=${_seed_dotconfig}" python3
         tools/kconfiglib/defconfig.py --kconfig Kconfig.engine
-        "configs/${WANTED_DEFCONFIG}"
+        "${WANTED_DEFCONFIG_PATH}"
     WORKING_DIRECTORY "${_repo}"
     RESULT_VARIABLE _seed_kconfig_rc
     OUTPUT_VARIABLE _seed_kconfig_out

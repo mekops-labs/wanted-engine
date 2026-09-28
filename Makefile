@@ -11,12 +11,17 @@
 #   make test RUNNER_CMD=docker run
 #   make build IMAGE=localhost/wanted-build:dev
 #   make build BUILD_DIR=build-dbg DEFCONFIG=tiny
+#   make build BOARD_DIR=../my-board DEFCONFIG=my_board
 
 RUNNER_CMD ?= podman run --userns=keep-id
 IMAGE     ?= registry.gitlab.com/mekops/wanted/wanted-engine/build
 WAPP_SDK_IMG ?= registry.gitlab.com/mekops/wanted/wanted-engine/wapp-sdk
 BUILD_DIR ?= build
 DEFCONFIG ?=
+BOARD_DIR ?=
+
+# An out-of-tree board directory, mounted at /board in every container.
+BOARD_MOUNT = $(if $(BOARD_DIR),-v "$(abspath $(BOARD_DIR)):/board:Z" -e BOARD_DIR=/board)
 
 # Forward an override into the container only when the user actually set it (env
 # or command line) — never make's built-in default (e.g. CC defaults to `cc`).
@@ -32,7 +37,7 @@ ENVS = -e BUILD_DIR=$(BUILD_DIR) -e DEFCONFIG=$(DEFCONFIG) \
 # Run a `just` recipe inside the build container with the repo mounted at /src.
 # --entrypoint=just bypasses the image's user-remapping entrypoint, as the
 # interactive targets below already do — fine under rootless podman.
-JUST = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src $(ENVS) --entrypoint=just $(IMAGE)
+JUST = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" $(BOARD_MOUNT) -w /src $(ENVS) --entrypoint=just $(IMAGE)
 
 # Wasm targets dispatch to the wapp-sdk image, not $(IMAGE); it has no `just`,
 # so they run its plain Makefiles directly.
@@ -79,13 +84,13 @@ Makefile: ;
 # --- host / interactive targets (cannot be a plain in-container `just`) ----
 
 shell: ## open an interactive shell in the build container
-	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src --entrypoint="" $(IMAGE) bash
+	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" $(BOARD_MOUNT) -w /src --entrypoint="" $(IMAGE) bash
 
 # Kconfig's TUI needs a terminal: -it for the tty and TERM so curses can find a
 # terminfo entry. The catch-all below gives neither, so this cannot be left to
 # it. The other configuration recipes are non-interactive and can.
 menuconfig: ## edit the build configuration in the terminal UI [BUILD_DIR=...]
-	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" -w /src $(ENVS) \
+	$(RUNNER_CMD) --rm -it -v "$(CURDIR):/src:Z" $(BOARD_MOUNT) -w /src $(ENVS) \
 	    -e TERM="$${TERM:-xterm}" --entrypoint=just $(IMAGE) menuconfig
 
 # Board/target/image is configuration, not a choice of `make` target: DEFCONFIG
@@ -170,7 +175,7 @@ ESP32_BAUD    ?= 460800
 # BUILD_DIR explicitly (this recipe's `just build` runs in a separate
 # container invocation from the `just target`/`setconfig` steps above, so it
 # does not otherwise inherit this target's BUILD_DIR).
-ESP_IDF_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" -w /src -e BUILD_DIR=$(BUILD_DIR) $(ESP_IDF_IMAGE)
+ESP_IDF_RUN = $(RUNNER_CMD) --rm -v "$(CURDIR):/src:Z" $(BOARD_MOUNT) -w /src -e BUILD_DIR=$(BUILD_DIR) $(ESP_IDF_IMAGE)
 
 esp32-flash: ## flash the classic ESP32 ESP-IDF merged image [ESP32_PORT=/dev/ttyUSB0]
 	esptool.py -c esp32 -p $(ESP32_PORT) -b $(ESP32_BAUD) --before default_reset \
