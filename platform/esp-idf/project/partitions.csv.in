@@ -1,5 +1,5 @@
 # A/B (ota_0/ota_1) partition table template for the WANTED engine on
-# ESP32-S3, 8 MB flash. Generated into partitions.csv by
+# ESP32-S3. Generated into partitions.csv by
 # components/wanted_engine/CMakeLists.txt (configure_file, @ONLY) via
 # platform/esp-idf/board-defconfig.cmake -- do not edit partitions.csv by
 # hand, it is regenerated on every configure.

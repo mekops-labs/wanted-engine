@@ -4,7 +4,7 @@
 
 #include <vfs-drivers.h>
 
-/* Default extra-driver table for builds configured without
- * WANTED_EXTRA_DRIVERS_DIR. Setting the option compiles the out-of-tree tree's
- * definition in place of this one. */
+/* Default extra-driver table for a build with no out-of-tree driver tree
+ * (WANTED_EXTRA_DRIVERS_DIR, or an ESP-IDF board directory's sources), which
+ * compiles its own definition in place of this one. */
 const vfs_driver_table_t *ExtraDriverTable(void) { return NULL; }

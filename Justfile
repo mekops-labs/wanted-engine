@@ -6,10 +6,12 @@
 #
 # Overrides are read from the environment so one recipe serves local + CI:
 #   BUILD_DIR (default build) · DEFCONFIG (a name under configs/, sans suffix)
+#   BOARD_DIR (out-of-tree ESP-IDF board, searched before configs/)
 #   CC · CMAKE_EXTRA_ARGS · NUTTX_SKIP_BUILD · NUTTX_CLEAN
 
 build_dir := env_var_or_default("BUILD_DIR", "build")
 defconfig := env_var_or_default("DEFCONFIG", "")
+board_dir := env_var_or_default("BOARD_DIR", "")
 cmake_extra := env_var_or_default("CMAKE_EXTRA_ARGS", "")
 
 # Optional board defconfig (configs/<name>_defconfig), used only when this build
@@ -32,6 +34,15 @@ all: build test
 kconfig := "PYTHONPATH=" + justfile_directory() + "/tools/kconfiglib KCONFIG_CONFIG=" + build_dir + "/.config"
 kcl := justfile_directory() + "/tools/kconfiglib"
 
+# Path of defconfig <name> (sans suffix): BOARD_DIR/configs/ wins over configs/.
+_defconfig_path name:
+    #!/usr/bin/env bash
+    if [ -n "{{ board_dir }}" ] && [ -f "{{ board_dir }}/configs/{{ name }}_defconfig" ]; then
+        echo "{{ board_dir }}/configs/{{ name }}_defconfig"
+    else
+        echo "configs/{{ name }}_defconfig"
+    fi
+
 # Ensure this build dir has a .config, then carry it forward over Kconfig edits.
 # A DEFCONFIG naming another profile re-seeds, on the marker cmake/Kconfig.cmake
 # keeps and in the form it writes, so the two agree on a dir they share.
@@ -43,15 +54,16 @@ _config:
     want=""
     if [ -n "{{ defconfig }}" ]; then
         want="{{ defconfig }}_defconfig"
+        path=$(just _defconfig_path "{{ defconfig }}")
     fi
     seeded=$(cat "$marker" 2>/dev/null || true)
     if [ -n "$want" ] && { [ ! -f {{ build_dir }}/.config ] || [ "$seeded" != "$want" ]; }; then
-        if [ ! -f "configs/$want" ]; then
-            echo "kconfig: defconfig not found: configs/$want" >&2
+        if [ ! -f "$path" ]; then
+            echo "kconfig: defconfig not found: $path" >&2
             exit 1
         fi
-        echo "==> seeding {{ build_dir }}/.config from $want"
-        {{ kconfig }} python3 {{ kcl }}/defconfig.py --kconfig Kconfig "configs/$want"
+        echo "==> seeding {{ build_dir }}/.config from $path"
+        {{ kconfig }} python3 {{ kcl }}/defconfig.py --kconfig Kconfig "$path"
         printf '%s' "$want" >"$marker"
     else
         {{ kconfig }} python3 {{ kcl }}/olddefconfig.py Kconfig
@@ -78,7 +90,7 @@ savedefconfig name:
 defconfig name:
     mkdir -p {{ build_dir }}
     {{ kconfig }} python3 {{ kcl }}/defconfig.py --kconfig Kconfig \
-        configs/{{ name }}_defconfig
+        "$(just _defconfig_path {{ name }})"
     @just sizes current
 
 # Bring this build dir's .config forward over Kconfig edits
@@ -152,6 +164,20 @@ build:
         # sdkconfig.defaults.<chip>); export so idf.py set-target picks the
         # same files a fresh build would configure with.
         export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.$chip"
+        # A board directory's own fragment applies last, over the chip's.
+        if [ -n "{{ board_dir }}" ]; then
+            export WANTED_BOARD_DIR="{{ board_dir }}"
+            if [ -f "{{ board_dir }}/sdkconfig.defaults" ]; then
+                SDKCONFIG_DEFAULTS="$SDKCONFIG_DEFAULTS;{{ board_dir }}/sdkconfig.defaults"
+            fi
+        fi
+        # sdkconfig is generated from the defaults only when absent, so drop it
+        # when the defaults change — another board, or an edited fragment.
+        stamp=$(IFS=';'; cat $SDKCONFIG_DEFAULTS | cksum)
+        if [ "$(cat sdkconfig.stamp 2>/dev/null)" != "$stamp" ]; then
+            rm -f sdkconfig
+            printf '%s' "$stamp" >sdkconfig.stamp
+        fi
         # set-target regenerates sdkconfig and clears the build dir, so run it
         # only when the chip actually changed — unconditionally would make every
         # build a cold one and discard any local sdkconfig edits.

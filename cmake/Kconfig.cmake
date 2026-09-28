@@ -41,6 +41,7 @@ set(WANTED_DEFCONFIG
         STRING
         "Board defconfig under configs/ to seed .config (empty = Kconfig defaults)"
 )
+include(${CMAKE_CURRENT_LIST_DIR}/DefconfigPath.cmake)
 
 file(MAKE_DIRECTORY ${WANTED_AUTOCONF_DIR})
 
@@ -74,7 +75,7 @@ endif()
 if(NOT EXISTS ${WANTED_DOTCONFIG}
    OR (WANTED_DEFCONFIG AND NOT WANTED_DEFCONFIG STREQUAL _wanted_last_seeded))
     if(WANTED_DEFCONFIG)
-        set(_defconfig ${WANTED_ENGINE_ROOT}/configs/${WANTED_DEFCONFIG})
+        wanted_defconfig_path(_defconfig ${WANTED_DEFCONFIG})
         if(NOT EXISTS ${_defconfig})
             message(FATAL_ERROR "kconfig: defconfig not found: ${_defconfig}")
         endif()
