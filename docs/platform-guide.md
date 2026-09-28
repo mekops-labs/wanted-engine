@@ -214,12 +214,41 @@ Inside the devcontainer or CI (already in a build environment, no host container
 
 - **Threads / stop** — FreeRTOS via the ESP-IDF pthread wrapper; cooperative stop (the WAMR terminate flag aborts the in-flight call).
 - **Registry / PSRAM** — flash-backed LittleFS registry (`registry_flash.c`); PSRAM via `extram.c` (8-byte-aligned allocations — WAMR's GC heap requires it).
-- **Flash layout** — derived from chip by `platform/esp-idf/board-defconfig.cmake`: S3 gets A/B (`ota_0`/`ota_1`), classic ESP32 a single `factory` app slot, no A/B. The board defconfig (`DEFCONFIG=<name>`, e.g. `xiao_esp32s3-sheriff`) fixes `CONFIG_WANTED_MAX_WAPPS`, which sizes the generated partitions.
+- **Flash layout** — derived from chip by `platform/esp-idf/board-defconfig.cmake`: S3 gets A/B (`ota_0`/`ota_1`) on 8 MB, classic ESP32 a single `factory` app slot on 4 MB, no A/B. An out-of-tree board may set its own flash and app-slot sizes (see below). The board defconfig (`DEFCONFIG=<name>`, e.g. `xiao_esp32s3-sheriff`) fixes `CONFIG_WANTED_MAX_WAPPS`, which sizes the generated partitions.
 - **Registry slot geometry is an on-flash format.** Image bytes sit at `slot * WAPP_IMAGE_SLOT_SIZE` in the raw `wapps` partition, while the record naming that slot lives in a LittleFS index on `persist` — a different partition, which a firmware update does not touch. `CONFIG_WANTED_MAX_WAPPS` and `CONFIG_WANTED_MAX_WAPP_IMAGE_KB` therefore cannot be changed freely: their product can hold the partition size constant while the stride moves, leaving every surviving record pointing at the wrong offset with nothing about the partition table to show for it. Each record stamps the stride it was written under and one naming another reads as absent, so a layout change re-seeds rather than resolving to the wrong bytes. The supervisor is not among the firmware's factory seeds, so a board loading it with `registry:supervisor` falls back to the built-in image after the launch failures instead.
 - **Worker stacks** — S3: PSRAM. Classic ESP32: internal DRAM only — a flash op fully disables the classic part's cache, so a PSRAM stack is unreachable during it.
 - **OTA** — A/B firmware update through `esp_ota_ops` (`ota.c`) on the S3, with a pending-verify / rollback seam. The classic part's single-factory layout has no A/B slot to roll back to.
 - **Secure sockets** — raw mbedTLS with ESP32-S3 hardware AES/SHA/ECC acceleration. No CA bundle is provisioned (`MBEDTLS_SSL_VERIFY_NONE`), so `tcps://` here is encrypted but **unauthenticated** — a demo transport, not production TLS.
 - **Crypto** — SHA-256 is hardware-backed; Ed25519 verify uses a vendored portable `orlp/ed25519` backend (`crypto.c`) on both chips.
+
+### Out-of-tree ESP-IDF boards
+
+A board kept in another repository plugs into the ESP-IDF build through a board directory. Set `BOARD_DIR` to that directory:
+
+```bash
+make build BOARD_DIR=../my-board DEFCONFIG=my_board
+```
+
+The host `Makefile` mounts the directory at `/board` in every build container. Inside a build environment, `BOARD_DIR=<path> DEFCONFIG=<name> just build` does the same. The directory holds:
+
+| Path | Purpose | Required |
+|---|---|---|
+| `configs/<name>_defconfig` | Engine defconfig. Searched before this repo's `configs/`. | yes |
+| `sdkconfig.defaults` | ESP-IDF settings, applied after `sdkconfig.defaults.<chip>`. | no |
+| `board.cmake` | CMake variables for the build, listed below. | no |
+
+`board.cmake` may set:
+
+- `WANTED_FLASH_KB` — flash size in KiB. Match `CONFIG_ESPTOOLPY_FLASHSIZE_*` in `sdkconfig.defaults`.
+- `WANTED_APP_SLOT_KB` — size of each app slot in KiB. Must be a multiple of 64.
+- `WANTED_BOARD_SRCS` — C sources compiled into the engine component. When set, they must define both `BoardInit()` (`platform/esp-idf/include/board.h`) and `ExtraDriverTable()` (`vfs-drivers.h`). When unset, the engine compiles defaults that do nothing.
+- `WANTED_BOARD_INCLUDE_DIRS` — include directories for those sources.
+- `WANTED_BOARD_REQUIRES` — extra ESP-IDF components, for example `esp_driver_i2c`.
+- `WANTED_EXTRA_SEEDS` — factory seeds, as described in the next section.
+
+`app_main` calls `BoardInit()` before it mounts storage or starts the engine. Use it for power rails and shared buses that drivers probe later. A non-zero return is logged, and the engine starts anyway.
+
+ESP-IDF resolves component requirements in a script pass that does not read the CMake cache, so the build passes the directory to CMake as the `WANTED_BOARD_DIR` environment variable. The generated `sdkconfig` is regenerated whenever the set of defaults files or their content changes.
 
 ### Factory-seeded registry images
 
