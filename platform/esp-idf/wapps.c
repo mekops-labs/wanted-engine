@@ -14,6 +14,7 @@
 #include "esp_system.h"
 #include "sdkconfig.h"
 
+#include <board.h>
 #include <platform.h>
 #include <vfs.h>
 #include <wanted-api.h>
@@ -267,6 +268,7 @@ void PlatformWappLoop(void) {
 
     for (;;) {
         sleep(1);
+        BoardHeartbeat();
 
         pthread_mutex_lock(&state_mtx);
         int shutdown = shutdown_requested;
@@ -274,6 +276,7 @@ void PlatformWappLoop(void) {
         pthread_mutex_unlock(&state_mtx);
 
         if (shutdown) {
+            BoardPowerOff();
             esp_deep_sleep_start();
             return;
         }
