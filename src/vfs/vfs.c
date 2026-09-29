@@ -788,14 +788,20 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
     }
 }
 
-/* Seek-transfer-restore: safe because a wapp's fds are used by one thread. A
- * missing Seek reads as -EPERM or -ENOTSUP from the router, i.e. a stream. */
+/* A missing Seek reads as -EPERM or -ENOTSUP from the router, i.e. a stream.
+ */
+int VfsTell(vfs_ctx_t c, int fd, long *pos) {
+    int r = VfsSeek(c, fd, 0, VFS_SEEK_CUR, pos);
+    if (r == -EPERM || r == -ENOTSUP || r == -ENOSYS)
+        return -ESPIPE;
+    return r;
+}
+
+/* Seek-transfer-restore: safe because a wapp's fds are used by one thread. */
 static int positionAt(vfs_ctx_t c, int fd, uint64_t off, long *saved) {
     if (off > (uint64_t)LONG_MAX)
         return -EOVERFLOW;
-    int r = VfsSeek(c, fd, 0, VFS_SEEK_CUR, saved);
-    if (r == -EPERM || r == -ENOTSUP || r == -ENOSYS)
-        return -ESPIPE;
+    int r = VfsTell(c, fd, saved);
     if (r < 0)
         return r;
     long pos;
@@ -825,6 +831,107 @@ int VfsPwrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte,
     long pos;
     VfsSeek(c, fd, saved, VFS_SEEK_SET, &pos);
     return n;
+}
+
+/* The driver serving `fd`, and its driver-side fd; NULL for a node with no
+ * driver behind it (TarFS, /proc, a namespace root, a mount directory). */
+static const vfs_driver_t *fdDriver(vfs_ctx_t c, int fd, int *drvFd) {
+    switch (c->fds[fd].type) {
+    case VFS_TYPE_DEV:
+        return DevFs_HandleDriver(c->fds[fd].internal_ctx, drvFd);
+    case VFS_TYPE_NET:
+        return NetFs_HandleDriver(c->fds[fd].internal_ctx, drvFd);
+    case VFS_TYPE_STREAM:
+    case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER:
+        *drvFd = c->fds[fd].drv_fd;
+        return c->fds[fd].driver;
+    default:
+        return NULL;
+    }
+}
+
+int VfsSync(vfs_ctx_t c, int fd) {
+    if (!checkFd(c, fd))
+        return -EBADF;
+    int drvFd = -1;
+    const vfs_driver_t *drv = fdDriver(c, fd, &drvFd);
+    if (drv == NULL || drv->Sync == NULL)
+        return 0;
+    return drv->Sync(drv->ctx, drvFd);
+}
+
+int VfsTruncate(vfs_ctx_t c, int fd, uint64_t size) {
+    if (!checkFd(c, fd))
+        return -EBADF;
+    if (c->fds[fd].type == VFS_TYPE_TARFS)
+        return -EROFS;
+    int drvFd = -1;
+    const vfs_driver_t *drv = fdDriver(c, fd, &drvFd);
+    if (drv == NULL || drv->Truncate == NULL)
+        return -EINVAL; /* POSIX: not a regular file */
+    return drv->Truncate(drv->ctx, drvFd, size);
+}
+
+int VfsFlags(vfs_ctx_t c, int fd) {
+    if (!checkFd(c, fd))
+        return -EBADF;
+    return c->fds[fd].flags;
+}
+
+#define RUNTIME_FLAGS (VFS_O_NONBLOCK | VFS_O_APPEND)
+#define SYNC_FLAGS (VFS_O_SYNC | VFS_O_DSYNC)
+
+int VfsSetFlags(vfs_ctx_t c, int fd, vfs_oflags_t flags) {
+    if (!checkFd(c, fd))
+        return -EBADF;
+    int cur = c->fds[fd].flags;
+    if ((flags & SYNC_FLAGS) != (cur & SYNC_FLAGS))
+        return -ENOTSUP;
+    int next = (cur & ~RUNTIME_FLAGS) | (flags & RUNTIME_FLAGS);
+    if (next == cur)
+        return 0;
+
+    int drvFd = -1;
+    const vfs_driver_t *drv = fdDriver(c, fd, &drvFd);
+    if (drv != NULL && drv->SetFlags != NULL) {
+        int r = drv->SetFlags(drv->ctx, drvFd, next);
+        if (r < 0)
+            return r;
+    }
+    c->fds[fd].flags = next;
+    return 0;
+}
+
+/* A PLATFORM slot owning its driver alone is a preopen; see VfsClose. */
+static bool isPlatformPreopen(vfs_ctx_t c, int fd) {
+    if (c->fds[fd].type != VFS_TYPE_PLATFORM)
+        return false;
+    for (int i = 0; i < VFS_MAX_FDS; i++) {
+        if (i != fd && c->fds[i].type == VFS_TYPE_PLATFORM &&
+            c->fds[i].driver == c->fds[fd].driver)
+            return false;
+    }
+    return true;
+}
+
+int VfsRenumber(vfs_ctx_t c, int from, int to) {
+    if (!checkFd(c, from) || !checkFd(c, to))
+        return -EBADF;
+    if (from == to)
+        return 0;
+    if (c->fds[from].type == VFS_TYPE_STREAM ||
+        c->fds[to].type == VFS_TYPE_STREAM || isPlatformPreopen(c, from) ||
+        isPlatformPreopen(c, to))
+        return -ENOTSUP;
+
+    int r = VfsClose(c, to);
+    if (r < 0)
+        return r;
+    c->fds[to] = c->fds[from];
+    memset(&c->fds[from], 0, sizeof(c->fds[from]));
+    c->fds[from].type = VFS_TYPE_NONE;
+    return 0;
 }
 
 #define POLL_ALWAYS (VFS_POLL_IN | VFS_POLL_OUT)

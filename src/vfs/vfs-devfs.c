@@ -217,6 +217,14 @@ int DevFs_Seek(vfs_ctx_t c, void *handle, long off, vfs_whence_t whence,
     return TRY_DRV(h->drv, Seek, h->drv_fd, off, whence, pos);
 }
 
+const vfs_driver_t *DevFs_HandleDriver(const void *handle, int *drvFd) {
+    const devfs_handle_t *h = handle;
+    if (!h || h->is_root)
+        return NULL;
+    *drvFd = h->drv_fd;
+    return h->drv;
+}
+
 int DevFs_Poll(vfs_ctx_t c, void *handle, uint32_t *avail) {
     (void)c;
     const devfs_handle_t *h = handle;

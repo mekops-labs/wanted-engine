@@ -63,6 +63,13 @@ static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail) {
     return d->target->Poll(d->target->ctx, d->target_fd, avail);
 }
 
+static int _SetFlags(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags) {
+    (void)fd;
+    if (NULL == d || NULL == d->target || NULL == d->target->SetFlags)
+        return 0;
+    return d->target->SetFlags(d->target->ctx, d->target_fd, flags);
+}
+
 static int _Destroy(struct vfs_driver_t *d) {
     if (d) {
         WantedFree(d->ctx);
@@ -96,6 +103,7 @@ vfs_driver_t *VfsStdioAliasInit(const vfs_driver_t *target, int target_fd) {
     driver->Read = _Read;
     driver->Write = _Write;
     driver->Poll = _Poll;
+    driver->SetFlags = _SetFlags;
     driver->Destroy = _Destroy;
     return driver;
 }

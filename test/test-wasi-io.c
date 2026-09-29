@@ -76,6 +76,15 @@ static int memSeek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
     return 0;
 }
 
+static uint64_t memTruncated;
+
+static int memTruncate(vfs_driver_ctx_t d, int fd, uint64_t size) {
+    (void)d;
+    (void)fd;
+    memTruncated = size;
+    return 0;
+}
+
 static vfs_driver_t memDrv;
 
 static void setupVfs(void) {
@@ -91,6 +100,8 @@ static void setupVfs(void) {
     memDrv.Read = memRead;
     memDrv.Write = memWrite;
     memDrv.Seek = memSeek;
+    memDrv.Truncate = memTruncate;
+    memTruncated = 0;
     VfsMountDriver(vfs, "/mem", &memDrv);
     memcpy(mem, "0123456789abcdef", MEM_SIZE);
 }
@@ -364,4 +375,79 @@ TEST_GROUP_RUNNER(wasi_poll) {
     RUN_TEST_CASE(wasi_poll, AnUnknownTypeFiresInvalid);
     RUN_TEST_CASE(wasi_poll, AnUnknownClockFiresInvalid);
     RUN_TEST_CASE(wasi_poll, AStopEndsTheWait);
+}
+
+/***************************************/
+TEST_GROUP(vfs_fdops);
+/***************************************/
+
+TEST_SETUP(vfs_fdops) { setupVfs(); }
+TEST_TEAR_DOWN(vfs_fdops) { teardownVfs(); }
+
+TEST(vfs_fdops, TellReportsTheOffset) {
+    char buf[4];
+    long pos = -1;
+    int fd = VfsOpen(vfs, "/mem", VFS_O_RDONLY);
+    VfsRead(vfs, fd, buf, 3);
+    TEST_ASSERT_EQUAL_INT(0, VfsTell(vfs, fd, &pos));
+    TEST_ASSERT_EQUAL_INT32(3, pos);
+
+    int p = VfsOpen(vfs, "/dev/pipe/p", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-ESPIPE, VfsTell(vfs, p, &pos));
+}
+
+TEST(vfs_fdops, SyncSucceedsWhereNothingIsBuffered) {
+    int fd = VfsOpen(vfs, "/mem", VFS_O_RDWR);
+    TEST_ASSERT_EQUAL_INT(0, VfsSync(vfs, fd));
+    TEST_ASSERT_EQUAL_INT(-EBADF, VfsSync(vfs, 30));
+}
+
+TEST(vfs_fdops, TruncateReachesTheDriverOrIsInvalid) {
+    int fd = VfsOpen(vfs, "/mem", VFS_O_RDWR);
+    TEST_ASSERT_EQUAL_INT(0, VfsTruncate(vfs, fd, 8));
+    TEST_ASSERT_EQUAL_UINT64(8, memTruncated);
+
+    int p = VfsOpen(vfs, "/dev/pipe/p", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(-EINVAL, VfsTruncate(vfs, p, 0));
+}
+
+TEST(vfs_fdops, NonblockChangesAtRuntime) {
+    char buf[4];
+    int fd = VfsOpen(vfs, "/dev/pipe/p", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(0, VfsFlags(vfs, fd) & VFS_O_NONBLOCK);
+
+    TEST_ASSERT_EQUAL_INT(0, VfsSetFlags(vfs, fd, VFS_O_NONBLOCK));
+    TEST_ASSERT_EQUAL_INT(VFS_O_NONBLOCK, VfsFlags(vfs, fd) & VFS_O_NONBLOCK);
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(vfs, fd, buf, sizeof(buf)));
+
+    TEST_ASSERT_EQUAL_INT(0, VfsSetFlags(vfs, fd, 0));
+    TEST_ASSERT_EQUAL_INT(0, VfsFlags(vfs, fd) & VFS_O_NONBLOCK);
+}
+
+TEST(vfs_fdops, SyncFlagsCannotChange) {
+    int fd = VfsOpen(vfs, "/dev/pipe/p", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-ENOTSUP, VfsSetFlags(vfs, fd, VFS_O_SYNC));
+}
+
+TEST(vfs_fdops, RenumberMovesTheDescriptor) {
+    char buf[4] = {0};
+    int a = VfsOpen(vfs, "/dev/pipe/x", VFS_O_RDONLY);
+    int b = VfsOpen(vfs, "/dev/pipe/y", VFS_O_RDONLY);
+    int w = VfsOpen(vfs, "/dev/pipe/x", VFS_O_WRONLY);
+    VfsWrite(vfs, w, "hi", 2);
+
+    TEST_ASSERT_EQUAL_INT(0, VfsRenumber(vfs, a, b));
+    TEST_ASSERT_EQUAL_INT(2, VfsRead(vfs, b, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_MEMORY("hi", buf, 2);
+    TEST_ASSERT_EQUAL_INT(-EBADF, VfsRead(vfs, a, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_INT(-EBADF, VfsRenumber(vfs, a, b));
+}
+
+TEST_GROUP_RUNNER(vfs_fdops) {
+    RUN_TEST_CASE(vfs_fdops, TellReportsTheOffset);
+    RUN_TEST_CASE(vfs_fdops, SyncSucceedsWhereNothingIsBuffered);
+    RUN_TEST_CASE(vfs_fdops, TruncateReachesTheDriverOrIsInvalid);
+    RUN_TEST_CASE(vfs_fdops, NonblockChangesAtRuntime);
+    RUN_TEST_CASE(vfs_fdops, SyncFlagsCannotChange);
+    RUN_TEST_CASE(vfs_fdops, RenumberMovesTheDescriptor);
 }

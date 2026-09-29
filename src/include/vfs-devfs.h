@@ -23,6 +23,8 @@ int DevFs_StatSet(vfs_ctx_t c, void *handle, vfs_stat_t stat);
 int DevFs_Seek(vfs_ctx_t c, void *handle, long off, vfs_whence_t whence,
                long *pos);
 int DevFs_Poll(vfs_ctx_t c, void *handle, uint32_t *avail);
+/* The driver behind a handle and its driver-side fd; NULL for /dev itself. */
+const vfs_driver_t *DevFs_HandleDriver(const void *handle, int *drvFd);
 int DevFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
                   uint64_t *cookie, size_t *bufUsed);
 int DevFs_UnlinkPath(vfs_ctx_t c, const char *suffix);

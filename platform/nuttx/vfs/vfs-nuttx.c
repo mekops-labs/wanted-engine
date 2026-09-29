@@ -74,6 +74,34 @@ static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail) {
     return (readable ? VFS_POLL_IN : 0) | (writable ? VFS_POLL_OUT : 0);
 }
 
+static int _Sync(vfs_driver_ctx_t d, int fd) {
+    (void)d;
+    return fsync(fd) < 0 ? -errno : 0;
+}
+
+static int _Truncate(vfs_driver_ctx_t d, int fd, uint64_t size) {
+    if (d->readonly)
+        return -EROFS;
+    off_t len = (off_t)size;
+    if (len < 0 || (uint64_t)len != size)
+        return -EFBIG;
+    return ftruncate(fd, len) < 0 ? -errno : 0;
+}
+
+/* The host's stdio is shared by the whole engine, so its mode stays fixed. */
+static int _SetFlags(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags) {
+    (void)d;
+    if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO)
+        return -ENOTSUP;
+    int fl = fcntl(fd, F_GETFL);
+    if (fl < 0)
+        return -errno;
+    fl &= ~(O_NONBLOCK | O_APPEND);
+    fl |= ((flags & VFS_O_NONBLOCK) ? O_NONBLOCK : 0) |
+          ((flags & VFS_O_APPEND) ? O_APPEND : 0);
+    return fcntl(fd, F_SETFL, fl) < 0 ? -errno : 0;
+}
+
 vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
                                 bool readonly) {
     const char *root;
@@ -127,6 +155,9 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
     driver->Stat = _Stat;
     driver->Read = _Read;
     driver->Poll = _Poll;
+    driver->Sync = _Sync;
+    driver->Truncate = _Truncate;
+    driver->SetFlags = _SetFlags;
     driver->Write = _Write;
     driver->Seek = _Seek;
     driver->ReadDir = _ReadDir;

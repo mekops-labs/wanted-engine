@@ -339,7 +339,16 @@ TEST(uart_poll, ReconfigurationDropsBytesAlreadyPolled) {
     VfsClose(vfs, fd);
 }
 
+TEST(uart_poll, NonblockChangesAtRuntime) {
+    int fd = VfsOpen(vfs, "/dev/uart/1/data", VFS_O_RDWR);
+    char buf[4];
+    TEST_ASSERT_EQUAL_INT(0, VfsSetFlags(vfs, fd, VFS_O_NONBLOCK));
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(vfs, fd, buf, sizeof(buf)));
+    VfsClose(vfs, fd);
+}
+
 TEST_GROUP_RUNNER(uart_poll) {
     RUN_TEST_CASE(uart_poll, ReceivedBytesMakeDataReadable);
     RUN_TEST_CASE(uart_poll, ReconfigurationDropsBytesAlreadyPolled);
+    RUN_TEST_CASE(uart_poll, NonblockChangesAtRuntime);
 }
