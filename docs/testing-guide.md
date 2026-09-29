@@ -55,6 +55,7 @@ The suite covers four categories:
 |----------|-------------------|
 | VFS / namespace | Path normalisation, read-only TarFS, parent-traversal denial, `/proc` access, control-plane enumeration |
 | Inter-wapp IPC | A two-wapp `/dev/pipe` round-trip: `preader` blocks while `pwriter` writes from a separate namespace |
+| WASI I/O | `pread`/`pwrite` at an offset and on a pipe; `poll()` on pipes (timeout, data, hangup), on a clock alone, and, with the listen role, on a listener, an accepted connection and a closed peer |
 | Concurrency and stop | `looper` running alongside the supervisor, stopped via the control plane; stop of a dead or unknown wapp |
 | Observability | The `observer` reference wapp: granted a `log` mount and `/proc/wapps` but **not** the control plane — it enumerates the fleet and tails logs while every control-plane access is denied (observe-without-control) |
 | Args / env / volumes / memory | `argv`/`environ` delivery (`argenv`), instance-vs-image resolution (`duplex`), private/shared volume semantics (`volcheck`), the per-wapp linear-memory cap (`bigmem`, `biginit`) |
