@@ -1,6 +1,49 @@
 Changelog
 =========
 
+0.21.0 (2026-09-29)
+-------------------
+
+### Added
+
+- WASI `fd_pread` and `fd_pwrite`.
+- `poll_oneoff` accepts `fd_read` and `fd_write` subscriptions with clocks, on
+  pipes, sockets, the UART, the console and host files. A closed peer sets the
+  hangup flag; a bad descriptor fires with its own error.
+- WASI `fd_tell`, `fd_sync`, `fd_renumber`, `fd_filestat_set_size`,
+  `fd_allocate`, `fd_advise`, `path_readlink` and `sched_yield`.
+- `fcntl(F_SETFL)` changes `O_NONBLOCK` and `O_APPEND` on an open descriptor.
+  The host console's stdio refuses the change with `ENOTSUP`.
+- `path_link`, `path_symlink`, `fd_filestat_set_times` and
+  `path_filestat_set_times` answer `EPERM`. `fd_fdstat_set_rights` and
+  `proc_raise` answer `ENOTSUP`. Every WASI preview1 function is registered.
+- Optional driver operations `Poll`, `Sync`, `Truncate` and `SetFlags`.
+- `PlatformYield`, `PlatformNetPoll` and `PlatformFdReady` platform calls.
+- ESP-IDF builds a board from an out-of-tree directory (`BOARD_DIR`): its
+  defconfigs, sdkconfig fragment, flash and slot sizes, `BoardInit()` and
+  `ExtraDriverTable()`.
+- ESP-IDF board hooks `BoardHeartbeat()` and `BoardPowerOff()`.
+- `rp2350_feather_sheriff_demo_defconfig` and `demo-rp2350-serial-wsh.json`.
+
+### Changed
+
+- `fd_datasync` flushes host files instead of returning success unchanged.
+- `fd_fdstat_set_flags` applies its flags instead of ignoring them.
+- `rp2350_feather_sheriff_defconfig` no longer sets
+  `CONFIG_WANTED_IMAGE_SIGNING_KEYS`.
+
+### Fixed
+
+- `fd_fdstat_get` reports WASI fd flags; it reported the VFS's own bits.
+- `ENOTSUP` reaches a wapp as `NOTSUP`; it arrived as `EINVAL`.
+
+### Build
+
+- Bumped `wapps/sheriff` to the commit after v0.11.1 that accepts the
+  `platform` capability for a wapp.
+- Bumped `nuttx-apps` to build `wasi-poll.c` and `ready.c`.
+- Added `uv` to `.mise.toml`.
+
 0.20.3 (2026-09-23)
 -------------------
 
