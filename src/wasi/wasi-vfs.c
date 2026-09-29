@@ -469,6 +469,77 @@ static int32_t wasi_fd_advise(wasm_exec_env_t exec_env, int32_t fd,
     return __WASI_ERRNO_SUCCESS;
 }
 
+/* The VFS has no links and no settable times, so these fail as a filesystem
+ * without them does: EPERM. Rights narrowing and signals are not supported. */
+static int32_t wasi_path_link(wasm_exec_env_t exec_env, int32_t old_fd,
+                              int32_t old_flags, int32_t old_path_app,
+                              int32_t old_path_len, int32_t new_fd,
+                              int32_t new_path_app, int32_t new_path_len) {
+    (void)exec_env;
+    (void)old_fd;
+    (void)old_flags;
+    (void)old_path_app;
+    (void)old_path_len;
+    (void)new_fd;
+    (void)new_path_app;
+    (void)new_path_len;
+    return __WASI_ERRNO_PERM;
+}
+
+static int32_t wasi_path_symlink(wasm_exec_env_t exec_env, int32_t old_path_app,
+                                 int32_t old_path_len, int32_t fd,
+                                 int32_t new_path_app, int32_t new_path_len) {
+    (void)exec_env;
+    (void)old_path_app;
+    (void)old_path_len;
+    (void)fd;
+    (void)new_path_app;
+    (void)new_path_len;
+    return __WASI_ERRNO_PERM;
+}
+
+static int32_t wasi_fd_filestat_set_times(wasm_exec_env_t exec_env, int32_t fd,
+                                          int64_t atim, int64_t mtim,
+                                          int32_t fst_flags) {
+    (void)exec_env;
+    (void)fd;
+    (void)atim;
+    (void)mtim;
+    (void)fst_flags;
+    return __WASI_ERRNO_PERM;
+}
+
+static int32_t wasi_path_filestat_set_times(wasm_exec_env_t exec_env,
+                                            int32_t fd, int32_t flags,
+                                            int32_t path_app, int32_t path_len,
+                                            int64_t atim, int64_t mtim,
+                                            int32_t fst_flags) {
+    (void)exec_env;
+    (void)fd;
+    (void)flags;
+    (void)path_app;
+    (void)path_len;
+    (void)atim;
+    (void)mtim;
+    (void)fst_flags;
+    return __WASI_ERRNO_PERM;
+}
+
+static int32_t wasi_fd_fdstat_set_rights(wasm_exec_env_t exec_env, int32_t fd,
+                                         int64_t base, int64_t inheriting) {
+    (void)exec_env;
+    (void)fd;
+    (void)base;
+    (void)inheriting;
+    return __WASI_ERRNO_NOTSUP;
+}
+
+static int32_t wasi_proc_raise(wasm_exec_env_t exec_env, int32_t sig) {
+    (void)exec_env;
+    (void)sig;
+    return __WASI_ERRNO_NOTSUP;
+}
+
 static int32_t wasi_sched_yield(wasm_exec_env_t exec_env) {
     (void)exec_env;
     int ret = PlatformYield();
@@ -1273,6 +1344,14 @@ static int32_t wasi_sock_shutdown(wasm_exec_env_t exec_env, int32_t fd,
         {"fd_advise", wasi_fd_advise, "(iIIi)i", NULL},                        \
         {"path_readlink", wasi_path_readlink, "(iiiiii)i", NULL},              \
         {"sched_yield", wasi_sched_yield, "()i", NULL},                        \
+        {"path_link", wasi_path_link, "(iiiiiii)i", NULL},                     \
+        {"path_symlink", wasi_path_symlink, "(iiiii)i", NULL},                 \
+        {"fd_filestat_set_times", wasi_fd_filestat_set_times, "(iIIi)i",       \
+         NULL},                                                                \
+        {"path_filestat_set_times", wasi_path_filestat_set_times,              \
+         "(iiiiIIi)i", NULL},                                                  \
+        {"fd_fdstat_set_rights", wasi_fd_fdstat_set_rights, "(iII)i", NULL},   \
+        {"proc_raise", wasi_proc_raise, "(i)i", NULL},                         \
         {"random_get", wasi_random_get, "(ii)i", NULL},                        \
         {"clock_res_get", wasi_clock_res_get, "(ii)i", NULL},                  \
         {"clock_time_get", wasi_clock_time_get, "(iIi)i", NULL},               \
@@ -1373,6 +1452,21 @@ int WasiCtxAddPreopen(wasi_ctx_t *ctx, const char *path, const char *hostPath,
     p->rights_base = readonly ? WASI_RIGHTS_READONLY : WASI_RIGHTS_ALL;
     p->rights_inheriting = p->rights_base;
     return 0;
+}
+
+bool WasiHasNative(const char *ns, const char *name) {
+    const NativeSymbol *tab = wasi_preview1_natives;
+    size_t n = sizeof(wasi_preview1_natives) / sizeof(wasi_preview1_natives[0]);
+
+    if (strcmp(ns, "wasi_unstable") == 0) {
+        tab = wasi_unstable_natives;
+        n = sizeof(wasi_unstable_natives) / sizeof(wasi_unstable_natives[0]);
+    }
+    for (size_t i = 0; i < n; i++) {
+        if (strcmp(tab[i].symbol, name) == 0)
+            return true;
+    }
+    return false;
 }
 
 void RegisterWASINatives(void) {
