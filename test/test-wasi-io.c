@@ -335,6 +335,22 @@ TEST(wasi_poll, AnUnknownClockFiresInvalid) {
     TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_INVAL, ev[0].error);
 }
 
+/* VfsDestroy closes the wake descriptor the fixture hands over. */
+TEST(wasi_poll, AStopEndsTheWait) {
+    int wake = PlatformWakeCreate();
+    TEST_ASSERT_GREATER_OR_EQUAL(0, wake);
+    VfsSetWakeFd(vfs, wake);
+    PlatformWakeRaise(wake);
+    int rd = VfsOpen(vfs, "/dev/pipe/p", VFS_O_RDONLY);
+    __wasi_subscription_t s = fdSub(1, __WASI_EVENTTYPE_FD_READ, rd);
+    __wasi_event_t ev[1];
+    uint32_t n = 0;
+
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_INTR,
+                             WasiPollOneoff(vfs, &s, ev, 1, &n));
+    TEST_ASSERT_EQUAL_UINT32(0, n);
+}
+
 TEST_GROUP_RUNNER(wasi_poll) {
     RUN_TEST_CASE(wasi_poll, TheLayoutMatchesPreview1);
     RUN_TEST_CASE(wasi_poll, NoSubscriptionsIsInvalid);
@@ -347,4 +363,5 @@ TEST_GROUP_RUNNER(wasi_poll) {
     RUN_TEST_CASE(wasi_poll, ABadFdFiresWithItsError);
     RUN_TEST_CASE(wasi_poll, AnUnknownTypeFiresInvalid);
     RUN_TEST_CASE(wasi_poll, AnUnknownClockFiresInvalid);
+    RUN_TEST_CASE(wasi_poll, AStopEndsTheWait);
 }
