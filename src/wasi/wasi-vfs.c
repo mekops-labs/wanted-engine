@@ -77,6 +77,7 @@ __wasi_errno_t WasiErrno(int errnum) {
         CASE_RET(ELOOP, __WASI_ERRNO_LOOP);
         CASE_RET(EOVERFLOW, __WASI_ERRNO_OVERFLOW);
         CASE_RET(ENOLCK, __WASI_ERRNO_NOLCK);
+        CASE_RET(ENOTSUP, __WASI_ERRNO_NOTSUP);
     default:
         break;
     }
@@ -308,6 +309,32 @@ static int32_t wasi_fd_prestat_get(wasm_exec_env_t exec_env, int32_t fd,
     return __WASI_ERRNO_SUCCESS;
 }
 
+#define WASI_FDFLAGS_ALL                                                       \
+    (__WASI_FDFLAGS_APPEND | __WASI_FDFLAGS_DSYNC | __WASI_FDFLAGS_NONBLOCK |  \
+     __WASI_FDFLAGS_RSYNC | __WASI_FDFLAGS_SYNC)
+
+/* The VFS keeps RSYNC as SYNC, and SYNC includes the DSYNC bit. */
+static __wasi_fdflags_t fdflagsFromVfs(int f) {
+    __wasi_fdflags_t w = 0;
+    if (f & VFS_O_APPEND)
+        w |= __WASI_FDFLAGS_APPEND;
+    if (f & VFS_O_NONBLOCK)
+        w |= __WASI_FDFLAGS_NONBLOCK;
+    if ((f & VFS_O_SYNC) == VFS_O_SYNC)
+        w |= __WASI_FDFLAGS_SYNC;
+    else if (f & VFS_O_DSYNC)
+        w |= __WASI_FDFLAGS_DSYNC;
+    return w;
+}
+
+static int vfsFromFdflags(uint32_t w) {
+    return ((w & __WASI_FDFLAGS_APPEND) ? VFS_O_APPEND : 0) |
+           ((w & __WASI_FDFLAGS_NONBLOCK) ? VFS_O_NONBLOCK : 0) |
+           ((w & __WASI_FDFLAGS_DSYNC) ? VFS_O_DSYNC : 0) |
+           ((w & (__WASI_FDFLAGS_RSYNC | __WASI_FDFLAGS_SYNC)) ? VFS_O_SYNC
+                                                               : 0);
+}
+
 static int32_t wasi_fd_fdstat_get(wasm_exec_env_t exec_env, int32_t fd,
                                   int32_t fdstat_app) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
@@ -324,8 +351,11 @@ static int32_t wasi_fd_fdstat_get(wasm_exec_env_t exec_env, int32_t fd,
     if (ret < 0)
         return WasiErrno(ret);
 
+    int flags = VfsFlags(ctx->vfsCtx, fd);
+    if (flags < 0)
+        return WasiErrno(flags);
     fdstat->fs_filetype = stat.filetype;
-    fdstat->fs_flags = stat.oflags;
+    fdstat->fs_flags = fdflagsFromVfs(flags);
 
     /* A preopen advertises its stored capability grant; any other fd (a file or
      * subdir opened beneath a preopen) reverts to the full grant. */
@@ -348,10 +378,101 @@ static int32_t wasi_fd_fdstat_get(wasm_exec_env_t exec_env, int32_t fd,
 
 static int32_t wasi_fd_fdstat_set_flags(wasm_exec_env_t exec_env, int32_t fd,
                                         int32_t flags) {
-    (void)exec_env;
-    (void)fd;
-    (void)flags;
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    if ((uint32_t)flags & ~(uint32_t)WASI_FDFLAGS_ALL)
+        return __WASI_ERRNO_INVAL;
+    int ret = VfsSetFlags(ctx->vfsCtx, fd, vfsFromFdflags((uint32_t)flags));
+    return ret < 0 ? WasiErrno(ret) : __WASI_ERRNO_SUCCESS;
+}
+
+static int32_t wasi_fd_tell(wasm_exec_env_t exec_env, int32_t fd,
+                            int32_t offset_app) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    __wasi_filesize_t *offset =
+        vaddr(exec_env, offset_app, sizeof(__wasi_filesize_t));
+    if (!offset)
+        return __WASI_ERRNO_FAULT;
+
+    long pos;
+    int ret = VfsTell(ctx->vfsCtx, fd, &pos);
+    if (ret < 0)
+        return WasiErrno(ret);
+    *offset = (__wasi_filesize_t)pos;
     return __WASI_ERRNO_SUCCESS;
+}
+
+/* Console slots and preopens stay where the wapp's libc expects them. */
+static int32_t wasi_fd_renumber(wasm_exec_env_t exec_env, int32_t from,
+                                int32_t to) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    if (WasiCtxFindPreopen(ctx, from) || WasiCtxFindPreopen(ctx, to))
+        return __WASI_ERRNO_NOTSUP;
+    int ret = VfsRenumber(ctx->vfsCtx, from, to);
+    return ret < 0 ? WasiErrno(ret) : __WASI_ERRNO_SUCCESS;
+}
+
+static int32_t wasi_fd_filestat_set_size(wasm_exec_env_t exec_env, int32_t fd,
+                                         int64_t size) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    int ret = VfsTruncate(ctx->vfsCtx, fd, (uint64_t)size);
+    return ret < 0 ? WasiErrno(ret) : __WASI_ERRNO_SUCCESS;
+}
+
+/* Grows the file to cover the range; the engine reserves no storage. */
+static int32_t wasi_fd_allocate(wasm_exec_env_t exec_env, int32_t fd,
+                                int64_t offset, int64_t len) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    uint64_t off = (uint64_t)offset;
+    uint64_t n = (uint64_t)len;
+    if (n == 0)
+        return __WASI_ERRNO_INVAL;
+    if (off > UINT64_MAX - n)
+        return __WASI_ERRNO_FBIG;
+
+    vfs_stat_t stat;
+    int ret = VfsStat(ctx->vfsCtx, fd, &stat);
+    if (ret < 0)
+        return WasiErrno(ret);
+    if (stat.filetype != VFS_FILETYPE_REGULAR_FILE)
+        return __WASI_ERRNO_NODEV;
+    if (off + n <= stat.size)
+        return __WASI_ERRNO_SUCCESS;
+    ret = VfsTruncate(ctx->vfsCtx, fd, off + n);
+    return ret < 0 ? WasiErrno(ret) : __WASI_ERRNO_SUCCESS;
+}
+
+#define WASI_ADVICE_MAX 5 /* __WASI_ADVICE_NOREUSE */
+
+/* Advice may be ignored, so a valid call succeeds having done nothing. */
+static int32_t wasi_fd_advise(wasm_exec_env_t exec_env, int32_t fd,
+                              int64_t offset, int64_t len, int32_t advice) {
+    (void)offset;
+    (void)len;
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    int flags = VfsFlags(ctx->vfsCtx, fd);
+    if (flags < 0)
+        return WasiErrno(flags);
+    if (advice < 0 || advice > WASI_ADVICE_MAX)
+        return __WASI_ERRNO_INVAL;
+    return __WASI_ERRNO_SUCCESS;
+}
+
+static int32_t wasi_sched_yield(wasm_exec_env_t exec_env) {
+    (void)exec_env;
+    int ret = PlatformYield();
+    return ret < 0 ? WasiErrno(ret) : __WASI_ERRNO_SUCCESS;
 }
 
 /* WASI unstable maps whence values 0/1/2 to CUR/END/SET (legacy ABI). */
@@ -626,6 +747,33 @@ static int32_t wasi_path_rename(wasm_exec_env_t exec_env, int32_t old_fd,
     return __WASI_ERRNO_SUCCESS;
 }
 
+/* The VFS has no symlinks: a path that exists is not one. */
+static int32_t wasi_path_readlink(wasm_exec_env_t exec_env, int32_t fd,
+                                  int32_t path_app, int32_t path_len,
+                                  int32_t buf_app, int32_t buf_len,
+                                  int32_t bufused_app) {
+    (void)buf_app;
+    (void)buf_len;
+    (void)bufused_app;
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    if (path_len <= 0 || path_len >= 512)
+        return __WASI_ERRNO_INVAL;
+
+    const char *p = vaddr(exec_env, path_app, (uint32_t)path_len);
+    if (!p)
+        return __WASI_ERRNO_FAULT;
+
+    char host_path[513];
+    memcpy(host_path, p, (size_t)path_len);
+    host_path[path_len] = '\0';
+
+    vfs_stat_t stat;
+    int ret = VfsStatAt(ctx->vfsCtx, fd, host_path, &stat);
+    return ret < 0 ? WasiErrno(ret) : __WASI_ERRNO_INVAL;
+}
+
 static int32_t wasi_path_create_directory(wasm_exec_env_t exec_env, int32_t fd,
                                           int32_t path_app, int32_t path_len) {
     wasi_ctx_t *ctx = get_ctx(exec_env);
@@ -876,10 +1024,16 @@ static int32_t wasi_fd_close(wasm_exec_env_t exec_env, int32_t fd) {
     return ret < 0 ? WasiErrno(ret) : __WASI_ERRNO_SUCCESS;
 }
 
+static int32_t wasi_fd_sync(wasm_exec_env_t exec_env, int32_t fd) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    int ret = VfsSync(ctx->vfsCtx, fd);
+    return ret < 0 ? WasiErrno(ret) : __WASI_ERRNO_SUCCESS;
+}
+
 static int32_t wasi_fd_datasync(wasm_exec_env_t exec_env, int32_t fd) {
-    (void)exec_env;
-    (void)fd;
-    return __WASI_ERRNO_SUCCESS;
+    return wasi_fd_sync(exec_env, fd);
 }
 
 static int32_t wasi_random_get(wasm_exec_env_t exec_env, int32_t buf_app,
@@ -1111,6 +1265,14 @@ static int32_t wasi_sock_shutdown(wasm_exec_env_t exec_env, int32_t fd,
         {"fd_readdir", wasi_fd_readdir, "(iiiIi)i", NULL},                     \
         {"fd_close", wasi_fd_close, "(i)i", NULL},                             \
         {"fd_datasync", wasi_fd_datasync, "(i)i", NULL},                       \
+        {"fd_sync", wasi_fd_sync, "(i)i", NULL},                               \
+        {"fd_tell", wasi_fd_tell, "(ii)i", NULL},                              \
+        {"fd_renumber", wasi_fd_renumber, "(ii)i", NULL},                      \
+        {"fd_filestat_set_size", wasi_fd_filestat_set_size, "(iI)i", NULL},    \
+        {"fd_allocate", wasi_fd_allocate, "(iII)i", NULL},                     \
+        {"fd_advise", wasi_fd_advise, "(iIIi)i", NULL},                        \
+        {"path_readlink", wasi_path_readlink, "(iiiiii)i", NULL},              \
+        {"sched_yield", wasi_sched_yield, "()i", NULL},                        \
         {"random_get", wasi_random_get, "(ii)i", NULL},                        \
         {"clock_res_get", wasi_clock_res_get, "(ii)i", NULL},                  \
         {"clock_time_get", wasi_clock_time_get, "(iIi)i", NULL},               \

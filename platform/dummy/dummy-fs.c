@@ -588,6 +588,8 @@ int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t duration,
     return 0;
 }
 
+int PlatformYield(void) { return 0; }
+
 void DummyClockReset(void) {
     g_clock_ns = 0;
     g_prng_state = 0xDEAD1234U;

@@ -37,6 +37,10 @@ int PlatformClockGetRes(plat_clk_id_t clk_id, uint64_t *resolution);
 int PlatformClockGetTime(plat_clk_id_t clk_id, plat_timestamp_t *time);
 int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout,
                            plat_clk_flags_t flags);
+
+/* Hand the CPU to another ready thread; returns 0 or a negative errno. */
+int PlatformYield(void);
+
 int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len);
 
 /* Ed25519 signature verification sizes (RFC 8032). */
