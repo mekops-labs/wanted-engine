@@ -8,10 +8,13 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <sched.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <wasi/libc.h>
 
 #include "tap.h"
 
@@ -352,6 +355,74 @@ static void wasi_io_checks(void) {
     clock_gettime(CLOCK_MONOTONIC, &t0);
     n = poll(NULL, 0, 20);
     tap_ok(n == 0 && elapsed_ms(&t0) >= 15, "WASI: poll with no fds sleeps");
+}
+
+#define FLAGS_PIPE "/dev/pipe/wasiflags"
+#define RENUM_PIPE_A "/dev/pipe/renuma"
+#define RENUM_PIPE_B "/dev/pipe/renumb"
+#define TRUNC_FILE "/host/wasi-trunc"
+
+/* The file-status half of preview1: flags, offsets, sync, sizes, advice,
+ * links, yield, and renumbering. */
+static void wasi_fs_checks(void) {
+    char buf[8];
+
+    int rd = open(FLAGS_PIPE, O_RDONLY);
+    int set = fcntl(rd, F_SETFL, fcntl(rd, F_GETFL) | O_NONBLOCK);
+    errno = 0;
+    ssize_t n = read(rd, buf, 1);
+    tap_ok(set == 0 && (fcntl(rd, F_GETFL) & O_NONBLOCK) && n < 0 &&
+               errno == EAGAIN,
+           "WASI: fcntl sets O_NONBLOCK on an open pipe");
+    close(rd);
+
+    int fd = open("/app.wasm", O_RDONLY);
+    n = read(fd, buf, 8);
+    tap_ok(n == 8 && __wasilibc_tell(fd) == 8, "WASI: tell reports the offset");
+    tap_ok(fsync(fd) == 0, "WASI: fsync succeeds on a read-only file");
+    errno = 0;
+    tap_ok(ftruncate(fd, 0) < 0 && errno == EROFS,
+           "WASI: ftruncate on TarFS fails with EROFS");
+    tap_ok(posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL) == 0 &&
+               posix_fadvise(fd, 0, 0, 99) == EINVAL,
+           "WASI: posix_fadvise accepts valid advice only");
+    close(fd);
+
+    errno = 0;
+    int nolink = readlink("/app.wasm", buf, sizeof(buf)) < 0 && errno == EINVAL;
+    errno = 0;
+    int nofile = readlink("/nope", buf, sizeof(buf)) < 0 && errno == ENOENT;
+    tap_ok(nolink && nofile, "WASI: readlink finds no symlinks");
+    tap_ok(sched_yield() == 0, "WASI: sched_yield succeeds");
+
+    int a = open(RENUM_PIPE_A, O_RDONLY);
+    int b = open(RENUM_PIPE_B, O_RDONLY);
+    int w = open(RENUM_PIPE_A, O_WRONLY);
+    write(w, "rn", 2);
+    int moved = __wasilibc_fd_renumber(a, b) == 0;
+    n = read(b, buf, sizeof(buf));
+    tap_ok(moved && n == 2 && memcmp(buf, "rn", 2) == 0,
+           "WASI: fd_renumber moves a descriptor");
+    errno = 0;
+    tap_ok(__wasilibc_fd_renumber(b, 1) < 0 && errno == ENOTSUP,
+           "WASI: fd_renumber refuses a console slot");
+    close(w);
+    close(b);
+
+    fd = open(TRUNC_FILE, O_CREAT | O_RDWR | O_TRUNC, 0644);
+    if (fd < 0) {
+        tap_diag("WASI: size checks skipped - no writable /host mount");
+        return;
+    }
+    struct stat st;
+    write(fd, "hello", 5);
+    int cut = ftruncate(fd, 2) == 0 && fstat(fd, &st) == 0 && st.st_size == 2;
+    int grew = posix_fallocate(fd, 0, 10) == 0 && fstat(fd, &st) == 0 &&
+               st.st_size == 10;
+    tap_ok(cut && grew && fsync(fd) == 0,
+           "WASI: ftruncate and posix_fallocate set a file's size");
+    close(fd);
+    unlink(TRUNC_FILE);
 }
 
 static void robustness_checks(void) {
@@ -1318,6 +1389,7 @@ int main(void) {
     } phases[] = {
         {"positive_checks", positive_checks},
         {"wasi_io_checks", wasi_io_checks},
+        {"wasi_fs_checks", wasi_fs_checks},
         {"mounts_check", mounts_check},
         {"bind_mount_escape_check", bind_mount_escape_check},
         {"listen_check", listen_check},
