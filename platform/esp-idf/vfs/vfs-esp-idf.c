@@ -214,6 +214,19 @@ struct vfs_driver_ctx_t {
     bool readonly;
 };
 
+/* Console streams and host files: what select reports for the host fd. The
+ * vtable fixes `avail` as writable; a host fd reports no byte count. */
+/* cppcheck-suppress constParameterCallback */
+/* NOLINTNEXTLINE(readability-non-const-parameter) */
+static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail) {
+    (void)d;
+    (void)avail;
+    bool readable;
+    bool writable;
+    PlatformFdReady(fd, &readable, &writable);
+    return (readable ? VFS_POLL_IN : 0) | (writable ? VFS_POLL_OUT : 0);
+}
+
 vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
                                 bool readonly) {
     const char *root;
@@ -267,6 +280,7 @@ vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
     driver->Close = _Close;
     driver->Stat = _Stat;
     driver->Read = _Read;
+    driver->Poll = _Poll;
     driver->Write = _Write;
     driver->Seek = _Seek;
     driver->ReadDir = _ReadDir;

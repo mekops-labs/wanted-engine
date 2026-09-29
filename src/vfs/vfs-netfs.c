@@ -145,6 +145,16 @@ int NetFs_Write(vfs_ctx_t c, void *handle, const void *buf, size_t nbyte) {
     return TRY_DRV(h->drv, Write, h->drv_fd, buf, nbyte);
 }
 
+int NetFs_Poll(vfs_ctx_t c, void *handle, uint32_t *avail) {
+    (void)c;
+    const netfs_handle_t *h = handle;
+    if (!h)
+        return -EBADF;
+    if (h->is_root || h->drv->Poll == NULL)
+        return VFS_POLL_IN | VFS_POLL_OUT;
+    return h->drv->Poll(h->drv->ctx, h->drv_fd, avail);
+}
+
 int NetFs_Stat(vfs_ctx_t c, void *handle, vfs_stat_t *stat) {
     (void)c;
     netfs_handle_t *h = handle;

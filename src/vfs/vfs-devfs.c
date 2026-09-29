@@ -217,6 +217,16 @@ int DevFs_Seek(vfs_ctx_t c, void *handle, long off, vfs_whence_t whence,
     return TRY_DRV(h->drv, Seek, h->drv_fd, off, whence, pos);
 }
 
+int DevFs_Poll(vfs_ctx_t c, void *handle, uint32_t *avail) {
+    (void)c;
+    const devfs_handle_t *h = handle;
+    if (!h)
+        return -EBADF;
+    if (h->is_root || h->drv->Poll == NULL)
+        return VFS_POLL_IN | VFS_POLL_OUT;
+    return h->drv->Poll(h->drv->ctx, h->drv_fd, avail);
+}
+
 int DevFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
                   uint64_t *cookie, size_t *bufUsed) {
     devfs_handle_t *h = handle;

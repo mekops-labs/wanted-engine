@@ -40,7 +40,7 @@ set(vfs_srcs
     vfs-inflate.c)
 list(TRANSFORM vfs_srcs PREPEND ${ENGINE}/src/vfs/)
 
-set(wasi_srcs ${ENGINE}/src/wasi/wasi-vfs.c)
+set(wasi_srcs ${ENGINE}/src/wasi/wasi-vfs.c ${ENGINE}/src/wasi/wasi-poll.c)
 
 set(vendor_srcs
     ${ENGINE}/vendor/tiny-json/tiny-json.c
@@ -80,6 +80,7 @@ set(platform_srcs
     # declares renameat/mkdirat but never links them.
     ${ENGINE}/platform/posix/clock.c
     ${ENGINE}/platform/posix/mutex.c
+    ${ENGINE}/platform/posix/ready.c
     # lwIP exposes the same BSD socket API this file already targets (it is also
     # the NuttX platform's socket.c, unmodified); its TLS branches turn on with
     # SECURE_SOCKETS, set below from the engine's configuration.

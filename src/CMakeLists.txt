@@ -59,7 +59,7 @@ if(CONFIG_WANTED_VFS_WANTED)
          "vfs/vfs-wanted-wapps.c" "vfs/vfs-wanted-registry.c")
 endif()
 
-set(wasi-src "wasi/wasi-vfs.c")
+set(wasi-src "wasi/wasi-vfs.c" "wasi/wasi-poll.c")
 
 # Add tiny-json to the build
 set(tiny-json-src ${CMAKE_SOURCE_DIR}/vendor/tiny-json/tiny-json.c)

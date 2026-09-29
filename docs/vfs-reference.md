@@ -32,6 +32,7 @@ A named pipe over a single process-wide store: a pipe opened by one wapp is visi
 - **Reads block by default.** With no data and a writer attached (or none yet seen), a read sleeps and retries; `O_NONBLOCK` opts out. A bounded safety cap limits the wait.
 - **Writes block by default.** A write short-writes into the space the ring has. On a full ring it sleeps and retries until the reader drains, under the same safety cap, then returns `EAGAIN`. `O_NONBLOCK` returns `EAGAIN` at once.
 - **EOF** is returned only once a writer has attached and all writers have closed.
+- **`poll()`** reports a reader readable when data is buffered, and readable with a hangup at EOF. A writer is writable while the ring has space.
 
 ```c
 int fd = open("/dev/pipe/work", O_WRONLY);   /* writer */
@@ -360,7 +361,11 @@ running platform is rejected at launch, not ignored.
 - **A blocking read has no wall-clock cap.** It returns on a byte or on
   `-EINTR`. An idle line is a UART's normal state and carries no information
   about a fault, so there is no elapsed time a timeout could be inferred from. A
-  wapp that wants a deadline uses `O_NONBLOCK` around its own clock.
+  wapp that wants a deadline uses `poll()` with a timeout.
+- `poll()` reports `data` readable once a byte has arrived. To learn that, it
+  moves up to 32 received bytes into the driver, and the next read returns them
+  first. `data` always reports writable. A line reconfiguration discards the
+  moved bytes along with the receive buffer.
 - A `data` write queues bytes and returns the count accepted, which may be
   short.
 - `baud` and `format` are writable at runtime, because one link can carry two
@@ -453,6 +458,8 @@ them somewhere durable and re-issues `connect` on the next boot.
 A wapp `open`s the `/net/<name>` node, then `read`/`write`s the stream and `close`s it; connection parameters come from the entry's `address`, not from the wapp. On NuttX, TLS is available where the board config enables `CONFIG_SYSTEM_WANTED_TLS` (the sim `wanted` config does); a build without it rejects the secure schemes at wapp launch.
 
 A read blocks until data arrives, as the pipe and serial drivers do; `O_NONBLOCK` answers `-EAGAIN` on an empty receive buffer instead of waiting.
+
+`poll()` reports a connection readable when data is buffered, including decrypted TLS data, and readable with a hangup when the peer has closed. A listener is readable when a connection waits to be accepted. An outbound socket that has not connected yet connects on its first `poll()`, as it would on its first read or write; a failed connect is that fd's poll error.
 
 #### Serving on a socket
 

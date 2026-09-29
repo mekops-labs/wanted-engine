@@ -8,6 +8,8 @@ void TLSFreeCtx(void *ctx);
 void *TLSOpenConnection(void *ctx, int socket);
 int TLSWrite(void *ssl, const void *buf, int n);
 int TLSRead(void *ssl, void *buf, int n);
+/* Decrypted bytes buffered inside the TLS layer, readable without a recv. */
+int TLSPending(void *ssl);
 int TLSAccept(void *ssl);
 int TLSShutdown(void *ssl);
 void TLSFree(void *ssl);
@@ -17,6 +19,7 @@ void TLSFree(void *ssl);
 #define TLSOpenConnection(ctx, socket) (NULL)
 #define TLSWrite(ssl, buf, n) (-1)
 #define TLSRead(ssl, buf, n) (-1)
+#define TLSPending(ssl) (0)
 #define TLSAccept(ssl) (-1)
 #define TLSShutdown(ssl) (-1)
 #define TLSFree(ssl)

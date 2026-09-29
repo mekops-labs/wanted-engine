@@ -150,6 +150,19 @@ static int ringWrite(named_pipe_t *p, const void *buf, size_t nbyte) {
     return (int)n;
 }
 
+/* Readiness of one end, mirroring what Read/Write would do. A reader at end of
+ * stream is readable and hung up. */
+static int ringPoll(const named_pipe_t *p, bool writer, uint32_t *avail) {
+    if (writer)
+        return p->data_len < CONFIG_WANTED_PIPE_BUF_SIZE ? VFS_POLL_OUT : 0;
+    *avail = (uint32_t)p->data_len;
+    if (p->data_len > 0)
+        return VFS_POLL_IN;
+    if (p->writer_seen && p->writers <= 0 && !p->persistent)
+        return VFS_POLL_IN | VFS_POLL_HUP;
+    return 0;
+}
+
 /* Template used by bridge helpers to forward calls into the typed API. */
 static void buildTmpDriver(vfs_driver_t *drv, vfs_driver_ctx_t ctx) {
     memset(drv, 0, sizeof(*drv));
@@ -322,6 +335,22 @@ int PipeDriver_Write(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
     }
 }
 
+static int pipePoll(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
+                    uint32_t *avail) {
+    (void)c;
+    const pipe_handle_t *h = handle;
+    if (!h)
+        return -EBADF;
+    if (h->is_root || !h->pipe)
+        return VFS_POLL_IN | VFS_POLL_OUT;
+
+    pipe_store_t *store = (pipe_store_t *)drv->ctx;
+    PlatformMutexLock(store->lock);
+    int r = ringPoll(h->pipe, (h->flags & 3) == VFS_O_WRONLY, avail);
+    PlatformMutexUnlock(store->lock);
+    return r;
+}
+
 int PipeDriver_Stat(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
                     vfs_stat_t *stat) {
     (void)c;
@@ -455,6 +484,16 @@ static int _bStat(vfs_driver_ctx_t dctx, int fd, vfs_stat_t *stat) {
     return PipeDriver_Stat(NULL, &tmp, h, stat);
 }
 
+static int _bPoll(vfs_driver_ctx_t dctx, int fd, uint32_t *avail) {
+    bridge_state_t *s = (bridge_state_t *)dctx;
+    void *h = getHandle(s, fd);
+    if (!h)
+        return -EBADF;
+    vfs_driver_t tmp;
+    buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
+    return pipePoll(NULL, &tmp, h, avail);
+}
+
 static int _bReadDir(vfs_driver_ctx_t dctx, int fd, void *buf, size_t bufLen,
                      uint64_t *cookie, size_t *bufUsed) {
     bridge_state_t *s = (bridge_state_t *)dctx;
@@ -584,6 +623,19 @@ static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
     }
 }
 
+static int _pcPoll(vfs_driver_ctx_t dctx, int fd, uint32_t *avail) {
+    (void)fd;
+    pipe_console_t *c = (pipe_console_t *)dctx;
+    PlatformMutexLock(c->store->lock);
+    const named_pipe_t *p = findPipe(c->store, c->name);
+    /* A missing pipe is created by the first write, so it reads as writable. */
+    int r = c->forRead ? 0 : VFS_POLL_OUT;
+    if (p)
+        r = ringPoll(p, !c->forRead, avail);
+    PlatformMutexUnlock(c->store->lock);
+    return r;
+}
+
 static int _pcStat(vfs_driver_ctx_t dctx, int fd, vfs_stat_t *stat) {
     (void)dctx;
     (void)fd;
@@ -652,6 +704,7 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
     drv->Read = _pcRead;
     drv->Write = _pcWrite;
     drv->Stat = _pcStat;
+    drv->Poll = _pcPoll;
     return drv;
 }
 
@@ -682,5 +735,6 @@ vfs_driver_t *PipeDriverCreate(pipe_store_t *store) {
     drv->Write = _bWrite;
     drv->Stat = _bStat;
     drv->ReadDir = _bReadDir;
+    drv->Poll = _bPoll;
     return drv;
 }

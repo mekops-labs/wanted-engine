@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -784,6 +785,74 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
                        pos);
     default:
         return -ENOTSUP;
+    }
+}
+
+/* Seek-transfer-restore: safe because a wapp's fds are used by one thread. A
+ * missing Seek reads as -EPERM or -ENOTSUP from the router, i.e. a stream. */
+static int positionAt(vfs_ctx_t c, int fd, uint64_t off, long *saved) {
+    if (off > (uint64_t)LONG_MAX)
+        return -EOVERFLOW;
+    int r = VfsSeek(c, fd, 0, VFS_SEEK_CUR, saved);
+    if (r == -EPERM || r == -ENOTSUP || r == -ENOSYS)
+        return -ESPIPE;
+    if (r < 0)
+        return r;
+    long pos;
+    return VfsSeek(c, fd, (long)off, VFS_SEEK_SET, &pos);
+}
+
+int VfsPread(vfs_ctx_t c, int fd, void *buf, size_t nbyte, uint64_t off) {
+    long saved;
+    int r = positionAt(c, fd, off, &saved);
+    if (r < 0)
+        return r;
+    int n = VfsRead(c, fd, buf, nbyte);
+    long pos;
+    VfsSeek(c, fd, saved, VFS_SEEK_SET, &pos);
+    return n;
+}
+
+int VfsPwrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte,
+              uint64_t off) {
+    if (checkFd(c, fd) && (c->fds[fd].flags & VFS_O_APPEND))
+        return VfsWrite(c, fd, buf, nbyte); /* POSIX: append ignores off */
+    long saved;
+    int r = positionAt(c, fd, off, &saved);
+    if (r < 0)
+        return r;
+    int n = VfsWrite(c, fd, buf, nbyte);
+    long pos;
+    VfsSeek(c, fd, saved, VFS_SEEK_SET, &pos);
+    return n;
+}
+
+#define POLL_ALWAYS (VFS_POLL_IN | VFS_POLL_OUT)
+
+static int pollDriver(const vfs_driver_t *drv, int drvFd, uint32_t *avail) {
+    if (drv == NULL || drv->Poll == NULL)
+        return POLL_ALWAYS;
+    return drv->Poll(drv->ctx, drvFd, avail);
+}
+
+int VfsPoll(vfs_ctx_t c, int fd, uint32_t *avail) {
+    if (!checkFd(c, fd))
+        return -EBADF;
+    if (avail == NULL)
+        return -EINVAL;
+    *avail = 0;
+
+    switch (c->fds[fd].type) {
+    case VFS_TYPE_DEV:
+        return DevFs_Poll(c, c->fds[fd].internal_ctx, avail);
+    case VFS_TYPE_NET:
+        return NetFs_Poll(c, c->fds[fd].internal_ctx, avail);
+    case VFS_TYPE_STREAM:
+    case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER:
+        return pollDriver(c->fds[fd].driver, c->fds[fd].drv_fd, avail);
+    default:
+        return POLL_ALWAYS; /* TarFS, /proc, mount dirs: never block */
     }
 }
 

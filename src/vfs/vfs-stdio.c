@@ -56,6 +56,13 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     return TRY_DRV(d->target, Write, d->target_fd, buf, nbyte);
 }
 
+static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail) {
+    (void)fd;
+    if (NULL == d || NULL == d->target || NULL == d->target->Poll)
+        return VFS_POLL_IN | VFS_POLL_OUT;
+    return d->target->Poll(d->target->ctx, d->target_fd, avail);
+}
+
 static int _Destroy(struct vfs_driver_t *d) {
     if (d) {
         WantedFree(d->ctx);
@@ -88,6 +95,7 @@ vfs_driver_t *VfsStdioAliasInit(const vfs_driver_t *target, int target_fd) {
     driver->Stat = _Stat;
     driver->Read = _Read;
     driver->Write = _Write;
+    driver->Poll = _Poll;
     driver->Destroy = _Destroy;
     return driver;
 }

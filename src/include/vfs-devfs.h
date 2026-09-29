@@ -22,6 +22,7 @@ int DevFs_Stat(vfs_ctx_t c, void *handle, vfs_stat_t *stat);
 int DevFs_StatSet(vfs_ctx_t c, void *handle, vfs_stat_t stat);
 int DevFs_Seek(vfs_ctx_t c, void *handle, long off, vfs_whence_t whence,
                long *pos);
+int DevFs_Poll(vfs_ctx_t c, void *handle, uint32_t *avail);
 int DevFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
                   uint64_t *cookie, size_t *bufUsed);
 int DevFs_UnlinkPath(vfs_ctx_t c, const char *suffix);

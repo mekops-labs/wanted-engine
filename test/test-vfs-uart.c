@@ -302,3 +302,44 @@ TEST_GROUP_RUNNER(uart_reconfigure) {
     RUN_TEST_CASE(uart_reconfigure, UnsupportedValueIsEinval);
     RUN_TEST_CASE(uart_reconfigure, AcceptsTheNewlineItEmits);
 }
+
+/***************************************/
+TEST_GROUP(uart_poll);
+/***************************************/
+
+TEST_SETUP(uart_poll) { TEST_ASSERT_TRUE(setupGrant("port=1")); }
+
+TEST_TEAR_DOWN(uart_poll) { teardown(); }
+
+/* Readiness takes bytes off the port; the next read returns them in order. */
+TEST(uart_poll, ReceivedBytesMakeDataReadable) {
+    int fd = VfsOpen(vfs, "/dev/uart/1/data", VFS_O_RDWR);
+    TEST_ASSERT_GREATER_OR_EQUAL(0, fd);
+    uint32_t avail = 0;
+    TEST_ASSERT_EQUAL_INT(VFS_POLL_OUT, VfsPoll(vfs, fd, &avail));
+
+    TEST_ASSERT_EQUAL_INT(2, VfsWrite(vfs, fd, "hi", 2));
+    TEST_ASSERT_EQUAL_INT(VFS_POLL_IN | VFS_POLL_OUT, VfsPoll(vfs, fd, &avail));
+    TEST_ASSERT_EQUAL_UINT32(2, avail);
+
+    char buf[4] = {0};
+    TEST_ASSERT_EQUAL_INT(2, VfsRead(vfs, fd, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_MEMORY("hi", buf, 2);
+    TEST_ASSERT_EQUAL_INT(VFS_POLL_OUT, VfsPoll(vfs, fd, &avail));
+    VfsClose(vfs, fd);
+}
+
+TEST(uart_poll, ReconfigurationDropsBytesAlreadyPolled) {
+    int fd = VfsOpen(vfs, "/dev/uart/1/data", VFS_O_RDWR);
+    uint32_t avail = 0;
+    VfsWrite(vfs, fd, "x", 1);
+    VfsPoll(vfs, fd, &avail);
+    TEST_ASSERT_GREATER_THAN_INT(0, writeNode("/dev/uart/1/baud", "9600"));
+    TEST_ASSERT_EQUAL_INT(VFS_POLL_OUT, VfsPoll(vfs, fd, &avail));
+    VfsClose(vfs, fd);
+}
+
+TEST_GROUP_RUNNER(uart_poll) {
+    RUN_TEST_CASE(uart_poll, ReceivedBytesMakeDataReadable);
+    RUN_TEST_CASE(uart_poll, ReconfigurationDropsBytesAlreadyPolled);
+}

@@ -7,8 +7,10 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "tap.h"
@@ -301,6 +303,57 @@ static void positive_checks(void) {
 }
 
 /* Launch the misbehaving wapp and assert the engine contains it. */
+#define POLL_PIPE "/dev/pipe/wasipoll"
+
+static long elapsed_ms(const struct timespec *t0) {
+    struct timespec t1;
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    return (long)(t1.tv_sec - t0->tv_sec) * 1000 +
+           (t1.tv_nsec - t0->tv_nsec) / 1000000;
+}
+
+/* Positional I/O and poll(), through wasi-libc into fd_pread, fd_pwrite and
+ * poll_oneoff. */
+static void wasi_io_checks(void) {
+    char buf[8];
+    struct timespec t0;
+
+    int fd = open("/app.wasm", O_RDONLY);
+    ssize_t pn = pread(fd, buf, 4, 4); /* the wasm version, 1 */
+    ssize_t rn = read(fd, buf + 4, 4); /* the magic, still at offset 0 */
+    close(fd);
+    int magic = rn == 4 && memcmp(buf + 4, "\0asm", 4) == 0;
+    tap_ok(pn == 4 && buf[0] == 1 && magic,
+           "WASI: pread reads at an offset and leaves the position");
+
+    int rd = open(POLL_PIPE, O_RDONLY);
+    errno = 0;
+    tap_ok(pwrite(rd, "x", 1, 0) < 0 && errno == ESPIPE,
+           "WASI: pwrite on a pipe fails with ESPIPE");
+
+    struct pollfd p = {.fd = rd, .events = POLLIN};
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    int n = poll(&p, 1, 30);
+    tap_ok(n == 0 && elapsed_ms(&t0) >= 25,
+           "WASI: poll on an empty pipe times out");
+
+    int wr = open(POLL_PIPE, O_WRONLY);
+    write(wr, "hi", 2);
+    n = poll(&p, 1, 1000);
+    tap_ok(n == 1 && (p.revents & POLLIN), "WASI: poll wakes on pipe data");
+    read(rd, buf, sizeof(buf));
+
+    close(wr);
+    n = poll(&p, 1, 1000);
+    tap_ok(n == 1 && (p.revents & POLLHUP),
+           "WASI: poll reports a closed writer as a hangup");
+    close(rd);
+
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    n = poll(NULL, 0, 20);
+    tap_ok(n == 0 && elapsed_ms(&t0) >= 15, "WASI: poll with no fds sleeps");
+}
+
 static void robustness_checks(void) {
     char buf[64];
 
@@ -905,14 +958,24 @@ static void listen_check(void) {
            "listen: reading the listener itself fails — only its connections "
            "carry data");
 
+    struct pollfd lp = {.fd = lfd, .events = POLLIN};
+    tap_ok(poll(&lp, 1, 0) == 0,
+           "listen: poll on an idle listener reports nothing pending");
+
     /* The client's first write connects and queues a request the listener has
      * not accepted yet; accept then hands back the connection that carries it.
      */
     int cfd = open(CLIENT_SOCKET, O_RDWR);
     int wrote = cfd >= 0 && write(cfd, LISTEN_REQ, strlen(LISTEN_REQ)) > 0;
 
+    tap_ok(poll(&lp, 1, 1000) == 1 && (lp.revents & POLLIN),
+           "listen: poll wakes the listener on a pending connection");
     int afd = accept(lfd, NULL, NULL);
     tap_ok(wrote && afd >= 0, "listen: accept yields a connection fd");
+
+    struct pollfd ap = {.fd = afd, .events = POLLIN};
+    tap_ok(poll(&ap, 1, 1000) == 1 && (ap.revents & POLLIN),
+           "listen: poll reports the accepted connection readable");
 
     int n = afd >= 0 ? (int)read(afd, buf, sizeof(buf) - 1) : -1;
     if (n > 0)
@@ -945,6 +1008,9 @@ static void listen_check(void) {
     /* Closing one connection leaves the other serving. */
     if (afd >= 0)
         close(afd);
+    struct pollfd cp = {.fd = cfd, .events = POLLIN};
+    tap_ok(poll(&cp, 1, 1000) == 1 && (cp.revents & POLLHUP),
+           "listen: poll reports a peer's close as a hangup");
     if (cfd >= 0)
         close(cfd);
     int served = a2fd >= 0 && write(a2fd, LISTEN_RES, strlen(LISTEN_RES)) > 0;
@@ -1251,6 +1317,7 @@ int main(void) {
         void (*run)(void);
     } phases[] = {
         {"positive_checks", positive_checks},
+        {"wasi_io_checks", wasi_io_checks},
         {"mounts_check", mounts_check},
         {"bind_mount_escape_check", bind_mount_escape_check},
         {"listen_check", listen_check},

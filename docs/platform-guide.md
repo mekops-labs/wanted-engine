@@ -19,7 +19,8 @@ Every platform implements the contract in `platform/include/platform.h`. A confo
 | Wapp lifecycle | `PlatformWappLoad` / `Unload` / `Start` / `Stop` / `Release` / `Loop` / `GetState`, `PlatformWorkerStackSize` |
 | Registry backend | `PlatformRegistryRead` / `Write` / `Remove` / `WappLoad` / `ReadImage` |
 | Filesystem | `PlatformOpenStateDir`, `PlatformFsRename`, `PlatformFsMkdir`, `PlatformFsRmdir`, `PlatformVolumeRoot` |
-| Network | `PlatformNetOpen` / `Connect` / `Recv` / `Send` / `Accept` / `Shutdown` / `Close` / `Free` |
+| Network | `PlatformNetOpen` / `Connect` / `Recv` / `Send` / `Accept` / `Shutdown` / `Close` / `Free`; `PlatformNetWaitReadable` and `PlatformNetPoll`, the blocking and non-blocking readiness checks behind blocking reads and `poll_oneoff` |
+| Readiness | `PlatformFdReady` — non-blocking readiness of a host descriptor (the platform console, host files); the shared body is `posix/ready.c`, over `select` |
 | Clock | `PlatformClockGetRes` / `GetTime` / `NanoSleep` |
 | Random | `PlatfromGetRandom` |
 | Storage | `PlatformStorageStats` — free/total bytes of the store backing the registry and volumes, reported at `/proc/memory`; zeroes where the platform cannot answer |
