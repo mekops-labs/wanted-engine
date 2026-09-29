@@ -45,7 +45,7 @@ A wapp image has **no embedded metadata** — its identity is the registry filen
 
 ## The WASI ABI
 
-Wapps target **`wasm32-wasi`** and link against WASI `snapshot_preview1`. The engine implements the bridge itself — it does not embed WAMR's libc-wasi — and registers the host functions below. A wapp importing a function outside this set still loads; the call traps with `failed to call unlinked import function`.
+Wapps target **`wasm32-wasi`** and link against WASI `snapshot_preview1`. The engine implements the bridge itself — it does not embed WAMR's libc-wasi — and registers the host functions below. Every `snapshot_preview1` function is registered.
 
 | Host function | Status | Notes |
 |---------------|--------|-------|
@@ -63,6 +63,9 @@ Wapps target **`wasm32-wasi`** and link against WASI `snapshot_preview1`. The en
 | `fd_advise` | no-op | Checks the fd and the advice value, then succeeds. |
 | `path_readlink` | partial | No VFS path is a symlink: `EINVAL` for a path that exists, the lookup error otherwise. |
 | `sched_yield` | full | Hands the CPU to another ready thread. |
+| `path_link`, `path_symlink` | refused | `EPERM`: the VFS has no links, as on a filesystem without them. |
+| `fd_filestat_set_times`, `path_filestat_set_times` | refused | `EPERM`: no VFS node stores times that can be set. |
+| `fd_fdstat_set_rights`, `proc_raise` | refused | `ENOTSUP`: rights are fixed by the preopen grant, and wapps have no signals. |
 | `clock_time_get`, `clock_res_get` | full | Backed by the platform clock. |
 | `random_get` | full | Backed by the platform RNG. |
 | `args_get`, `args_sizes_get` | full | `argv[0]` is the wapp name; `argv[1..]` come from the launch config's `args[]`. |
@@ -76,7 +79,7 @@ Practical consequences for a wapp author:
 
 - **Environment variables and argv come from the launch config.** A wapp's `argv` and `environ` are set from the `args[]` and `envs[]` arrays in its launch config (`getenv`/`argc` work normally). `argv[0]` is always the wapp name. The `hello` sample selects its behaviour from a `ROLE` env var passed this way. See [Control Plane Reference → Launch-config schema](control-plane-reference.md). Larger or writable configuration still belongs in a packaged file or a [preopen](#preopens).
 - **`poll()` waits on several descriptors at once.** wasi-libc's `poll()` becomes `poll_oneoff`, so an event loop can wait on a socket, a pipe and a timeout in one call. Zig's `std.posix.poll` needs libc (`-lc`) on WASI; without it, call `std.os.wasi.poll_oneoff`. A waiting `poll` rechecks its descriptors every 1 ms, which is one scheduler tick (10 ms) on ESP-IDF.
-- **Not implemented:** `fd_fdstat_set_rights`, `fd_filestat_set_times`, `path_filestat_set_times`, `path_link`, `path_symlink`, `proc_raise`.
+- **Every `snapshot_preview1` function is registered.** A function the engine cannot honour answers `EPERM` or `ENOTSUP` (rows marked *refused*); no import is left unlinked.
 - **A sleep shorter than the platform's scheduler tick may not yield.** A poll loop that sleeps 2 ms between passes runs on a 10 ms-tick FreeRTOS target as a busy wait: the sleep returns without ever handing the CPU over, the idle task never runs, and the task watchdog fires. Sleep for at least one tick (10 ms on ESP-IDF) in any loop that polls a descriptor.
 - **`stdout`/`stderr` are not files you open.** Writing to fd 1/2 reaches a console only if the launch config gives the wapp one; see [Filesystem access](#filesystem-access) and [Control Plane Reference](control-plane-reference.md).
 - **Heavy primitives can be offloaded to the engine.** A wapp granted the `sha256`, `ed25519`, or `inflate` driver computes digests, verifies signatures, or gunzips through plain `open`/`write`/`read` on the device node — the algorithm's code, tables, and buffers live in engine memory, not in the wapp's linear memory. See [VFS Reference → Config-mounted drivers](vfs-reference.md#config-mounted-drivers).
