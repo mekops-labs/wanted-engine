@@ -357,6 +357,30 @@ static void wasi_io_checks(void) {
     tap_ok(n == 0 && elapsed_ms(&t0) >= 15, "WASI: poll with no fds sleeps");
 }
 
+/* The functions the engine refuses have no libc caller worth the name, so the
+ * check calls the imports themselves. */
+#define WASI_IMPORT(name)                                                      \
+    __attribute__((import_module("wasi_snapshot_preview1"),                    \
+                   import_name(#name)))
+
+WASI_IMPORT(path_link)
+unsigned short wasi_path_link(int, int, const char *, int, int, const char *,
+                              int);
+WASI_IMPORT(path_symlink)
+unsigned short wasi_path_symlink(const char *, int, int, const char *, int);
+WASI_IMPORT(fd_filestat_set_times)
+unsigned short wasi_fd_filestat_set_times(int, long long, long long, int);
+WASI_IMPORT(path_filestat_set_times)
+unsigned short wasi_path_filestat_set_times(int, int, const char *, int,
+                                            long long, long long, int);
+WASI_IMPORT(fd_fdstat_set_rights)
+unsigned short wasi_fd_fdstat_set_rights(int, long long, long long);
+WASI_IMPORT(proc_raise)
+unsigned short wasi_proc_raise(int);
+
+#define WASI_EPERM 63
+#define WASI_ENOTSUP 58
+
 #define FLAGS_PIPE "/dev/pipe/wasiflags"
 #define RENUM_PIPE_A "/dev/pipe/renuma"
 #define RENUM_PIPE_B "/dev/pipe/renumb"
@@ -408,6 +432,18 @@ static void wasi_fs_checks(void) {
            "WASI: fd_renumber refuses a console slot");
     close(w);
     close(b);
+
+    int fs = open("/app.wasm", O_RDONLY);
+    tap_ok(wasi_path_link(fs, 0, "/app.wasm", 9, fs, "/l", 2) == WASI_EPERM &&
+               wasi_path_symlink("/app.wasm", 9, fs, "/s", 2) == WASI_EPERM &&
+               wasi_fd_filestat_set_times(fs, 0, 0, 0) == WASI_EPERM &&
+               wasi_path_filestat_set_times(fs, 0, "/app.wasm", 9, 0, 0, 0) ==
+                   WASI_EPERM,
+           "WASI: links and file times are refused with EPERM");
+    tap_ok(wasi_fd_fdstat_set_rights(fs, 0, 0) == WASI_ENOTSUP &&
+               wasi_proc_raise(2) == WASI_ENOTSUP,
+           "WASI: rights narrowing and proc_raise are refused with ENOTSUP");
+    close(fs);
 
     fd = open(TRUNC_FILE, O_CREAT | O_RDWR | O_TRUNC, 0644);
     if (fd < 0) {
