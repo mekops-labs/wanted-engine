@@ -448,6 +448,8 @@ The hardware and update drivers are core code behind their own symbols, so a tar
 |---|---|---|
 | `CONFIG_WANTED_VFS_GPIO` | off | the target drives no pins, or nothing granted needs them |
 | `CONFIG_WANTED_VFS_UART` | off | no wapp is granted a serial port |
+| `CONFIG_WANTED_VFS_FB` | off | no wapp is granted a screen |
+| `CONFIG_WANTED_VFS_FB_OBSERVE` | off | nothing needs to watch a screen it does not write; each observer costs one more copy of the screen |
 | `CONFIG_WANTED_VFS_OTA` | on | the host has no A/B mechanism to update into — the OpenWrt defconfig deselects it, since that host updates through its package manager |
 | `CONFIG_WANTED_VFS_SOCKET_LISTEN` | off (on for OpenWrt) | no wapp serves a socket |
 
