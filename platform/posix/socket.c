@@ -517,6 +517,48 @@ int PlatformNetWaitReadable(struct netCtx *c, int wakeFd, int64_t timeout_ns) {
     }
 }
 
+int PlatformNetPoll(struct netCtx *c, bool *readable, bool *writable,
+                    bool *hangup) {
+    fd_set r;
+    fd_set w;
+    struct timeval tv = {0, 0};
+
+    if (NULL == c || NULL == readable || NULL == writable || NULL == hangup) {
+        return -EINVAL;
+    }
+    *readable = false;
+    *writable = false;
+    *hangup = false;
+
+#if SECURE_SOCKETS
+    if (c->secure && TLSPending(c->ssl) > 0) {
+        *readable = true;
+    }
+#endif
+
+    FD_ZERO(&r);
+    FD_ZERO(&w);
+    FD_SET(c->socket, &r);
+    FD_SET(c->socket, &w);
+    if (select(c->socket + 1, &r, &w, NULL, &tv) < 0) {
+        return errno == EINTR ? -EINTR : -errno;
+    }
+    *readable = *readable || FD_ISSET(c->socket, &r);
+    *writable = FD_ISSET(c->socket, &w);
+
+#ifdef MSG_DONTWAIT
+    /* A readable stream with nothing to peek is a closed peer. A listener
+     * fails the peek, which leaves hangup unset. */
+    if (FD_ISSET(c->socket, &r) && !c->dgram && !c->isSerial) {
+        char b;
+        if (recv(c->socket, &b, 1, MSG_PEEK | MSG_DONTWAIT) == 0) {
+            *hangup = true;
+        }
+    }
+#endif
+    return 0;
+}
+
 int PlatformNetAccept(struct netCtx *c, struct netCtx **out) {
     struct netCtx *conn;
     int newFd;

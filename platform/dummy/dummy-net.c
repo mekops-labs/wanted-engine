@@ -158,6 +158,18 @@ int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd,
     return 0;
 }
 
+/* The test platform reports every socket ready; a test drives the rest. */
+/* cppcheck-suppress constParameterPointer */
+int PlatformNetPoll(struct netCtx *ctx, bool *readable, bool *writable,
+                    bool *hangup) {
+    if (!ctx || !readable || !writable || !hangup)
+        return -EINVAL;
+    *readable = true;
+    *writable = true;
+    *hangup = false;
+    return 0;
+}
+
 /* `ctx` is only read here; the signature matches the platform API's fixed
  * prototype. */
 /* cppcheck-suppress constParameterPointer */

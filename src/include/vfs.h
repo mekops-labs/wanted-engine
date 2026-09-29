@@ -58,6 +58,12 @@ typedef uint8_t vfs_sdflags_t;
 #define VFS_SDFLAGS_RD 1
 #define VFS_SDFLAGS_WR 2
 
+/* Readiness reported by Poll: a read or write would not block; HUP means the
+ * peer is gone, and is reported with IN so the read returns end of stream. */
+#define VFS_POLL_IN 0x1
+#define VFS_POLL_OUT 0x2
+#define VFS_POLL_HUP 0x4
+
 typedef struct vfs_stat_t {
     uint32_t dev;            // Device/driver id containing the file.
     uint32_t ino;            // File serial number.
@@ -153,6 +159,11 @@ typedef struct vfs_driver_t {
     int (*SockSend)(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte,
                     vfs_sdflags_t flags);
     int (*SockShutdown)(vfs_driver_ctx_t d, int fd, vfs_sdflags_t flags);
+
+    /* Optional, never blocks. Returns VFS_POLL_* bits or a negative errno, and
+     * sets *avail to the bytes readable, 0 when unknown. NULL = always ready.
+     */
+    int (*Poll)(vfs_driver_ctx_t d, int fd, uint32_t *avail);
 } vfs_driver_t;
 
 #define VFS_STDIN 0
@@ -185,6 +196,10 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos);
  * that cannot seek. */
 int VfsPread(vfs_ctx_t c, int fd, void *buf, size_t nbyte, uint64_t off);
 int VfsPwrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte, uint64_t off);
+
+/* The fd's readiness as VFS_POLL_* bits, or a negative errno; never blocks.
+ * `avail` gets the bytes readable, 0 when unknown. */
+int VfsPoll(vfs_ctx_t c, int fd, uint32_t *avail);
 
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
                size_t *bufUsed);

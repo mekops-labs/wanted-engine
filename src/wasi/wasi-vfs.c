@@ -14,6 +14,7 @@
 #include <wanted_malloc.h>
 #include <wasi.h>
 
+#include "wasi-internal.h"
 #include "wasi_types.h"
 
 #include <debug_trace.h>
@@ -28,7 +29,7 @@ typedef struct wasi_iovec_t {
         return e2;                                                             \
         break
 
-static __wasi_errno_t errno_to_wasi(int errnum) {
+__wasi_errno_t WasiErrno(int errnum) {
     switch (-errnum) {
         CASE_RET(EPERM, __WASI_ERRNO_PERM);
         CASE_RET(ENOENT, __WASI_ERRNO_NOENT);
@@ -321,7 +322,7 @@ static int32_t wasi_fd_fdstat_get(wasm_exec_env_t exec_env, int32_t fd,
     vfs_stat_t stat;
     int ret = VfsStat(ctx->vfsCtx, fd, &stat);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
 
     fdstat->fs_filetype = stat.filetype;
     fdstat->fs_flags = stat.oflags;
@@ -384,7 +385,7 @@ static int32_t wasi_unstable_fd_seek(wasm_exec_env_t exec_env, int32_t fd,
     long pos;
     int ret = VfsSeek(ctx->vfsCtx, fd, offset, whence, &pos);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
     *result = (__wasi_filesize_t)pos;
     return __WASI_ERRNO_SUCCESS;
 }
@@ -420,7 +421,7 @@ static int32_t wasi_preview1_fd_seek(wasm_exec_env_t exec_env, int32_t fd,
     long pos;
     int ret = VfsSeek(ctx->vfsCtx, fd, offset, whence, &pos);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
     *result = (__wasi_filesize_t)pos;
     return __WASI_ERRNO_SUCCESS;
 }
@@ -450,7 +451,7 @@ static int32_t wasi_fd_filestat_get(wasm_exec_env_t exec_env, int32_t fd,
     vfs_stat_t statbuf;
     int ret = VfsStat(ctx->vfsCtx, fd, &statbuf);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
 
     write_filestat(buf, &statbuf);
     return __WASI_ERRNO_SUCCESS;
@@ -485,13 +486,13 @@ static int32_t wasi_path_filestat_get(wasm_exec_env_t exec_env, int32_t fd,
     if (vfd < 0)
         vfd = VfsOpenAt(ctx->vfsCtx, fd, stat_path, VFS_O_RDONLY);
     if (vfd < 0)
-        return errno_to_wasi(vfd);
+        return WasiErrno(vfd);
 
     vfs_stat_t statbuf;
     int ret = VfsStat(ctx->vfsCtx, vfd, &statbuf);
     VfsClose(ctx->vfsCtx, vfd);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
 
     write_filestat(buf, &statbuf);
     return __WASI_ERRNO_SUCCESS;
@@ -563,7 +564,7 @@ static int32_t wasi_path_open(wasm_exec_env_t exec_env, int32_t dirfd,
     DEBUG_TRACE("path_open: dirfd=%d path=%s flags=%d -> %d", dirfd, open_path,
                 flags, host_fd);
     if (host_fd < 0)
-        return errno_to_wasi(host_fd);
+        return WasiErrno(host_fd);
 
     *fd_out = (__wasi_fd_t)host_fd;
     return __WASI_ERRNO_SUCCESS;
@@ -589,7 +590,7 @@ static int32_t wasi_path_unlink_file(wasm_exec_env_t exec_env, int32_t fd,
 
     int ret = VfsUnlink(ctx->vfsCtx, fd, host_path);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
     return __WASI_ERRNO_SUCCESS;
 }
 
@@ -621,7 +622,7 @@ static int32_t wasi_path_rename(wasm_exec_env_t exec_env, int32_t old_fd,
 
     int ret = VfsRename(ctx->vfsCtx, old_fd, old_buf, new_fd, new_buf);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
     return __WASI_ERRNO_SUCCESS;
 }
 
@@ -645,7 +646,7 @@ static int32_t wasi_path_create_directory(wasm_exec_env_t exec_env, int32_t fd,
 
     int ret = VfsMkdir(ctx->vfsCtx, fd, host_path);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
     return __WASI_ERRNO_SUCCESS;
 }
 
@@ -669,7 +670,7 @@ static int32_t wasi_path_remove_directory(wasm_exec_env_t exec_env, int32_t fd,
 
     int ret = VfsRmdir(ctx->vfsCtx, fd, host_path);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
     return __WASI_ERRNO_SUCCESS;
 }
 
@@ -707,7 +708,7 @@ static int32_t wasi_fd_read(wasm_exec_env_t exec_env, int32_t fd,
         if (ret < 0) {
             if (res > 0)
                 break;
-            return errno_to_wasi(ret);
+            return WasiErrno(ret);
         }
         res += ret;
         if ((uint32_t)ret < len)
@@ -752,7 +753,7 @@ static int32_t wasi_fd_write(wasm_exec_env_t exec_env, int32_t fd,
         if (ret < 0) {
             if (res > 0)
                 break;
-            return errno_to_wasi(ret);
+            return WasiErrno(ret);
         }
         res += ret;
         if ((uint32_t)ret < len)
@@ -792,7 +793,7 @@ static int32_t wasi_fd_pread(wasm_exec_env_t exec_env, int32_t fd,
         if (ret < 0) {
             if (res > 0)
                 break;
-            return errno_to_wasi(ret);
+            return WasiErrno(ret);
         }
         res += (uint64_t)ret;
         if ((uint32_t)ret < len)
@@ -833,7 +834,7 @@ static int32_t wasi_fd_pwrite(wasm_exec_env_t exec_env, int32_t fd,
         if (ret < 0) {
             if (res > 0)
                 break;
-            return errno_to_wasi(ret);
+            return WasiErrno(ret);
         }
         res += (uint64_t)ret;
         if ((uint32_t)ret < len)
@@ -860,7 +861,7 @@ static int32_t wasi_fd_readdir(wasm_exec_env_t exec_env, int32_t fd,
     size_t used = 0;
     int ret = VfsReadDir(ctx->vfsCtx, fd, buf, (size_t)buf_len, &last, &used);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
 
     *bufused = (__wasi_size_t)used;
     return __WASI_ERRNO_SUCCESS;
@@ -872,7 +873,7 @@ static int32_t wasi_fd_close(wasm_exec_env_t exec_env, int32_t fd) {
         return __WASI_ERRNO_INVAL;
 
     int ret = VfsClose(ctx->vfsCtx, fd);
-    return ret < 0 ? errno_to_wasi(ret) : __WASI_ERRNO_SUCCESS;
+    return ret < 0 ? WasiErrno(ret) : __WASI_ERRNO_SUCCESS;
 }
 
 static int32_t wasi_fd_datasync(wasm_exec_env_t exec_env, int32_t fd) {
@@ -891,7 +892,7 @@ static int32_t wasi_random_get(wasm_exec_env_t exec_env, int32_t buf_app,
     while (remaining > 0) {
         int64_t got = PlatfromGetRandom(buf, remaining);
         if (got < 0)
-            return errno_to_wasi((int)got);
+            return WasiErrno((int)got);
         buf += got;
         remaining -= (uint32_t)got;
     }
@@ -908,7 +909,7 @@ static int32_t wasi_clock_res_get(wasm_exec_env_t exec_env, int32_t wasi_clk_id,
     uint64_t res;
     int ret = PlatformClockGetRes(wasi_clk_id, &res);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
 
     *resolution = res;
     return __WASI_ERRNO_SUCCESS;
@@ -926,7 +927,7 @@ static int32_t wasi_clock_time_get(wasm_exec_env_t exec_env,
     plat_timestamp_t t;
     int ret = PlatformClockGetTime(wasi_clk_id, &t);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
 
     *time = t;
     return __WASI_ERRNO_SUCCESS;
@@ -935,36 +936,28 @@ static int32_t wasi_clock_time_get(wasm_exec_env_t exec_env,
 static int32_t wasi_poll_oneoff(wasm_exec_env_t exec_env, int32_t in_app,
                                 int32_t out_app, int32_t nsubscriptions,
                                 int32_t nevents_app) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    if (nsubscriptions <= 0)
+        return __WASI_ERRNO_INVAL;
+
     const __wasi_subscription_t *in =
         vaddr(exec_env, in_app,
               (uint32_t)nsubscriptions * sizeof(__wasi_subscription_t));
-    uint8_t *out = vaddr(exec_env, out_app,
-                         (uint32_t)nsubscriptions * sizeof(__wasi_event_t));
+    __wasi_event_t *out = vaddr(
+        exec_env, out_app, (uint32_t)nsubscriptions * sizeof(__wasi_event_t));
     __wasi_size_t *nevents =
         vaddr(exec_env, nevents_app, sizeof(__wasi_size_t));
     if (!in || !out || !nevents)
         return __WASI_ERRNO_FAULT;
 
-    /* Only clock subscriptions are supported. fd_read / fd_write
-     * subscriptions return NOSYS — wapps that need them must poll the fd
-     * directly until full readiness support lands. */
-    if (in->type != __WASI_EVENTTYPE_CLOCK)
-        return __WASI_ERRNO_NOSYS;
-
-    int ret = PlatformClockNanoSleep(in->u.clock.id, in->u.clock.timeout,
-                                     in->u.clock.flags);
-    if (ret < 0)
-        return errno_to_wasi(ret);
-
-    /* Synthesise a single clock event so the caller's tick loop unblocks.
-     * __wasi_event_t is zero-initialised first; `type` at offset 10 must mirror
-     * the subscription type, and fd_readwrite at 16 is unused for a clock. */
-    memset(out, 0, sizeof(__wasi_event_t));
-    *(uint64_t *)(out + 0) = in->userdata;
-    *(uint16_t *)(out + 8) = __WASI_ERRNO_SUCCESS;
-    *(uint8_t *)(out + 10) = __WASI_EVENTTYPE_CLOCK;
-    *nevents = 1;
-    return __WASI_ERRNO_SUCCESS;
+    uint32_t n = 0;
+    __wasi_errno_t err =
+        WasiPollOneoff(ctx->vfsCtx, in, out, (uint32_t)nsubscriptions, &n);
+    if (err == __WASI_ERRNO_SUCCESS)
+        *nevents = n;
+    return err;
 }
 
 static void wasi_proc_exit(wasm_exec_env_t exec_env, int32_t code) {
@@ -988,7 +981,7 @@ static int32_t wasi_sock_accept(wasm_exec_env_t exec_env, int32_t fd,
     int f;
     int ret = VfsSockAccept(ctx->vfsCtx, fd, (vfs_oflags_t)flags, &f);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
 
     *fd_new = (__wasi_fd_t)f;
     return __WASI_ERRNO_SUCCESS;
@@ -1029,7 +1022,7 @@ static int32_t wasi_sock_recv(wasm_exec_env_t exec_env, int32_t fd,
 
         int ret = VfsSockRecv(ctx->vfsCtx, fd, addr, len, i_flags, &o_flags);
         if (ret < 0)
-            return errno_to_wasi(ret);
+            return WasiErrno(ret);
         res += ret;
         if ((uint32_t)ret < len)
             break;
@@ -1070,7 +1063,7 @@ static int32_t wasi_sock_send(wasm_exec_env_t exec_env, int32_t fd,
 
         int ret = VfsSockSend(ctx->vfsCtx, fd, addr, len, i_flags);
         if (ret < 0)
-            return errno_to_wasi(ret);
+            return WasiErrno(ret);
         res += ret;
         if ((uint32_t)ret < len)
             break;
@@ -1087,7 +1080,7 @@ static int32_t wasi_sock_shutdown(wasm_exec_env_t exec_env, int32_t fd,
 
     int ret = VfsSockShutdown(ctx->vfsCtx, fd, (vfs_sdflags_t)how);
     if (ret < 0)
-        return errno_to_wasi(ret);
+        return WasiErrno(ret);
     return __WASI_ERRNO_SUCCESS;
 }
 

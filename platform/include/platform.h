@@ -306,6 +306,15 @@ int PlatformNetAccept(struct netCtx *ctx, struct netCtx **out);
  * deadline. A negative `timeout_ns` waits without one; 0 only tests. */
 int PlatformNetWaitReadable(struct netCtx *ctx, int wakeFd, int64_t timeout_ns);
 
+/* Readiness of `ctx` now, without blocking: readable counts data buffered by
+ * TLS and a pending accept; hangup is a stream peer that closed. */
+int PlatformNetPoll(struct netCtx *ctx, bool *readable, bool *writable,
+                    bool *hangup);
+
+/* Readiness of a host descriptor now, without blocking. A descriptor the host
+ * cannot watch reads as both readable and writable. */
+void PlatformFdReady(int fd, bool *readable, bool *writable);
+
 /* A/B firmware OTA: dual-slot update plus rollback, backed by whatever the
  * target boots through. Slots are always named 'a' and 'b', so the /dev/ota
  * wire text reads the same on every platform. */

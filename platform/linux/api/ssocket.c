@@ -69,6 +69,14 @@ int TLSRead(void *ssl, void *buf, int n) {
     return SSL_read((SSL *)ssl, buf, n);
 }
 
+int TLSPending(void *ssl) {
+    if (NULL == ssl) {
+        return 0;
+    }
+
+    return SSL_pending((SSL *)ssl);
+}
+
 int TLSAccept(void *ssl) {
     if (NULL == ssl) {
         return -EINVAL;

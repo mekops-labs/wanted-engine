@@ -28,6 +28,7 @@ typedef uint16_t __wasi_riflags_t;
 typedef uint16_t __wasi_roflags_t;
 typedef uint16_t __wasi_siflags_t;
 typedef uint16_t __wasi_subclockflags_t;
+typedef uint16_t __wasi_eventrwflags_t;
 typedef uint8_t __wasi_filetype_t;
 typedef uint8_t __wasi_preopentype_t;
 typedef uint8_t __wasi_eventtype_t;
@@ -146,6 +147,10 @@ typedef uint8_t __wasi_sdflags_t;
 
 #define __WASI_PREOPENTYPE_DIR 0
 #define __WASI_EVENTTYPE_CLOCK 0
+#define __WASI_EVENTTYPE_FD_READ 1
+#define __WASI_EVENTTYPE_FD_WRITE 2
+#define __WASI_SUBCLOCKFLAGS_SUBSCRIPTION_CLOCK_ABSTIME 1
+#define __WASI_EVENTRWFLAGS_FD_READWRITE_HANGUP 1
 
 typedef struct __wasi_fdstat_t {
     __wasi_filetype_t fs_filetype;
@@ -175,12 +180,18 @@ typedef struct __wasi_subscription_t {
             __wasi_timestamp_t precision;
             __wasi_subclockflags_t flags;
         } clock;
+        struct {
+            __wasi_fd_t fd;
+        } fd_readwrite;
     } u;
-} __wasi_subscription_t;
+} __wasi_subscription_t; /* 48 bytes, the union at offset 16 */
 
-/* WASI snapshot-preview1 __wasi_event_t is 32 bytes, written at fixed offsets
- * by poll_oneoff for a clock subscription; fd_read/fd_write subscriptions
- * return NOSYS. It stays an opaque byte block here. */
 typedef struct __wasi_event_t {
-    uint8_t _pad[32];
-} __wasi_event_t;
+    __wasi_userdata_t userdata;
+    __wasi_errno_t error;
+    __wasi_eventtype_t type;
+    struct {
+        __wasi_filesize_t nbytes;
+        __wasi_eventrwflags_t flags;
+    } fd_readwrite;
+} __wasi_event_t; /* 32 bytes, fd_readwrite at offset 16 */

@@ -30,6 +30,10 @@ static const char id[] = {'U', 'a', 'r', 't'};
  * the sleep for the wapp to unwind. */
 #define UART_POLL_INTERVAL_NS 1000000ULL /* 1 ms */
 
+/* Bytes Poll takes from the port to learn it is readable; Read returns them
+ * first. */
+#define UART_AHEAD_MAX 32
+
 #define UART_NODE_ROOT 0
 #define UART_NODE_PORT 1
 #define UART_NODE_DATA 2
@@ -52,6 +56,8 @@ struct vfs_driver_ctx_t {
     uint8_t parity;
     uint8_t stopbits;
     struct uart_fd_t fds[UART_MAX_FDS];
+    uint8_t ahead[UART_AHEAD_MAX];
+    size_t aheadLen;
     /* Checked between poll attempts so a stop ends the wait; -1 when the
      * platform interrupts by signal. */
     int wakeFd;
@@ -66,6 +72,7 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte);
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed);
+static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail);
 
 /* ── Value grammars ──────────────────────────────────────────────────────── */
 
@@ -284,6 +291,7 @@ vfs_driver_t *VfsUartInit(const wapp_t *wapp, const char *options) {
     driver->Read = _Read;
     driver->Write = _Write;
     driver->ReadDir = _ReadDir;
+    driver->Poll = _Poll;
 
     if (parseGrant(ctx, options) < 0) {
         _Destroy(driver);
@@ -412,6 +420,14 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     if (nbyte == 0)
         return 0;
 
+    if (d->aheadLen > 0) {
+        size_t n = (nbyte < d->aheadLen) ? nbyte : d->aheadLen;
+        memcpy(buf, d->ahead, n);
+        d->aheadLen -= n;
+        memmove(d->ahead, d->ahead + n, d->aheadLen);
+        return (int)n;
+    }
+
     /* Block until at least one byte arrives, and return short. Never wait to
      * fill the caller's buffer. */
     for (;;) {
@@ -446,6 +462,7 @@ static int applyCfg(struct vfs_driver_ctx_t *ctx, uint32_t baud,
     if (rc < 0)
         return rc;
 
+    ctx->aheadLen = 0; /* bytes framed under the old line settings */
     ctx->baud = baud;
     ctx->databits = databits;
     ctx->parity = parity;
@@ -502,6 +519,24 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
         if (PlatformWakeRaised(d->wakeFd))
             return -EINTR;
     }
+}
+
+/* Writes report ready: the backing cannot tell a full transmit buffer without
+ * writing, and a blocked write drains at the line rate. */
+static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail) {
+    if (fd < 0 || fd >= UART_MAX_FDS || !d->fds[fd].used)
+        return -EBADF;
+    if (d->fds[fd].node != UART_NODE_DATA)
+        return VFS_POLL_IN | VFS_POLL_OUT;
+
+    if (d->aheadLen == 0) {
+        int n = PlatformUartRead(d->uart, d->ahead, sizeof(d->ahead));
+        if (n < 0)
+            return n;
+        d->aheadLen = (size_t)n;
+    }
+    *avail = (uint32_t)d->aheadLen;
+    return (d->aheadLen > 0 ? VFS_POLL_IN : 0) | VFS_POLL_OUT;
 }
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,

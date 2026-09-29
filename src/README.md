@@ -52,7 +52,8 @@ behaviour needs a matching `test/test-*.c` group.
 `wasi-vfs.c` translates WASI syscall numbers into VFS router calls. This is the
 **only** translation layer — do not add platform logic here, and never add a
 direct syscall from a WASM host function (it bypasses the VFS isolation
-boundary).
+boundary). `wasi-poll.c` is `poll_oneoff`'s wait loop, kept apart from WAMR so
+the unit suite drives it directly.
 
 ## Ground rules
 

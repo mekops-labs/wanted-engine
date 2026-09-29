@@ -12,8 +12,11 @@
 #include <vfs-devfs.h>
 #include <vfs-pipe.h>
 #include <vfs.h>
+#include <wasi/wasi-internal.h>
+#include <wasi/wasi_types.h>
 
-/* Positional I/O over a seekable driver. */
+/* Positional I/O over a seekable driver, and poll_oneoff over pipes and the
+ * dummy platform's virtual clock, where a sleep advances time instantly. */
 
 static vfs_ctx_t vfs;
 static pipe_store_t *store;
@@ -162,4 +165,186 @@ TEST_GROUP_RUNNER(wasi_pread) {
     RUN_TEST_CASE(wasi_pread, APipeCannotSeek);
     RUN_TEST_CASE(wasi_pread, AnOffsetPastTheHostRangeOverflows);
     RUN_TEST_CASE(wasi_pread, ABadFdIsRefused);
+}
+
+/***************************************/
+TEST_GROUP(wasi_poll);
+/***************************************/
+
+TEST_SETUP(wasi_poll) { setupVfs(); }
+TEST_TEAR_DOWN(wasi_poll) { teardownVfs(); }
+
+static __wasi_subscription_t clockSub(uint64_t userdata, uint64_t timeout,
+                                      uint16_t flags) {
+    __wasi_subscription_t s;
+    memset(&s, 0, sizeof(s));
+    s.userdata = userdata;
+    s.type = __WASI_EVENTTYPE_CLOCK;
+    s.u.clock.id = 1; /* monotonic */
+    s.u.clock.timeout = timeout;
+    s.u.clock.flags = flags;
+    return s;
+}
+
+static __wasi_subscription_t fdSub(uint64_t userdata, uint8_t type, int fd) {
+    __wasi_subscription_t s;
+    memset(&s, 0, sizeof(s));
+    s.userdata = userdata;
+    s.type = type;
+    s.u.fd_readwrite.fd = (uint32_t)fd;
+    return s;
+}
+
+TEST(wasi_poll, TheLayoutMatchesPreview1) {
+    TEST_ASSERT_EQUAL_UINT(48, sizeof(__wasi_subscription_t));
+    TEST_ASSERT_EQUAL_UINT(16, offsetof(__wasi_subscription_t, u));
+    TEST_ASSERT_EQUAL_UINT(32, sizeof(__wasi_event_t));
+    TEST_ASSERT_EQUAL_UINT(8, offsetof(__wasi_event_t, error));
+    TEST_ASSERT_EQUAL_UINT(10, offsetof(__wasi_event_t, type));
+    TEST_ASSERT_EQUAL_UINT(16, offsetof(__wasi_event_t, fd_readwrite));
+}
+
+TEST(wasi_poll, NoSubscriptionsIsInvalid) {
+    __wasi_event_t ev[1];
+    uint32_t n = 0;
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_INVAL,
+                             WasiPollOneoff(vfs, NULL, ev, 0, &n));
+}
+
+TEST(wasi_poll, ARelativeClockFiresAfterItsTimeout) {
+    __wasi_subscription_t s = clockSub(7, 5000000, 0);
+    __wasi_event_t ev[1];
+    uint32_t n = 0;
+    plat_timestamp_t before = 0;
+    plat_timestamp_t after = 0;
+
+    PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &before);
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(vfs, &s, ev, 1, &n));
+    PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &after);
+    TEST_ASSERT_EQUAL_UINT32(1, n);
+    TEST_ASSERT_EQUAL_UINT64(7, ev[0].userdata);
+    TEST_ASSERT_EQUAL_UINT8(__WASI_EVENTTYPE_CLOCK, ev[0].type);
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS, ev[0].error);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT64(5000000, after - before);
+}
+
+TEST(wasi_poll, AnAbsoluteClockInThePastFiresAtOnce) {
+    __wasi_subscription_t s =
+        clockSub(1, 0, __WASI_SUBCLOCKFLAGS_SUBSCRIPTION_CLOCK_ABSTIME);
+    __wasi_event_t ev[1];
+    uint32_t n = 0;
+    DummyClockAdvance(1000000000ULL);
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(vfs, &s, ev, 1, &n));
+    TEST_ASSERT_EQUAL_UINT32(1, n);
+}
+
+TEST(wasi_poll, AnEmptyPipeWaitsForTheClock) {
+    int rd = VfsOpen(vfs, "/dev/pipe/p", VFS_O_RDONLY);
+    __wasi_subscription_t s[2] = {fdSub(1, __WASI_EVENTTYPE_FD_READ, rd),
+                                  clockSub(2, 3000000, 0)};
+    __wasi_event_t ev[2];
+    uint32_t n = 0;
+
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(vfs, s, ev, 2, &n));
+    TEST_ASSERT_EQUAL_UINT32(1, n);
+    TEST_ASSERT_EQUAL_UINT64(2, ev[0].userdata);
+    TEST_ASSERT_EQUAL_UINT8(__WASI_EVENTTYPE_CLOCK, ev[0].type);
+}
+
+TEST(wasi_poll, BufferedDataIsReadableWithItsCount) {
+    int rd = VfsOpen(vfs, "/dev/pipe/p", VFS_O_RDONLY);
+    int wr = VfsOpen(vfs, "/dev/pipe/p", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(3, VfsWrite(vfs, wr, "abc", 3));
+    __wasi_subscription_t s[2] = {fdSub(1, __WASI_EVENTTYPE_FD_READ, rd),
+                                  clockSub(2, 3000000, 0)};
+    __wasi_event_t ev[2];
+    uint32_t n = 0;
+
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(vfs, s, ev, 2, &n));
+    TEST_ASSERT_EQUAL_UINT32(1, n);
+    TEST_ASSERT_EQUAL_UINT8(__WASI_EVENTTYPE_FD_READ, ev[0].type);
+    TEST_ASSERT_EQUAL_UINT64(3, ev[0].fd_readwrite.nbytes);
+    TEST_ASSERT_EQUAL_UINT16(0, ev[0].fd_readwrite.flags);
+}
+
+TEST(wasi_poll, AClosedWriterIsAHangup) {
+    int rd = VfsOpen(vfs, "/dev/pipe/p", VFS_O_RDONLY);
+    int wr = VfsOpen(vfs, "/dev/pipe/p", VFS_O_WRONLY);
+    VfsClose(vfs, wr);
+    __wasi_subscription_t s = fdSub(1, __WASI_EVENTTYPE_FD_READ, rd);
+    __wasi_event_t ev[1];
+    uint32_t n = 0;
+
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(vfs, &s, ev, 1, &n));
+    TEST_ASSERT_EQUAL_UINT32(1, n);
+    TEST_ASSERT_EQUAL_UINT16(__WASI_EVENTRWFLAGS_FD_READWRITE_HANGUP,
+                             ev[0].fd_readwrite.flags);
+}
+
+TEST(wasi_poll, EveryReadySubscriptionIsReported) {
+    int a = VfsOpen(vfs, "/dev/pipe/a", VFS_O_WRONLY);
+    int b = VfsOpen(vfs, "/dev/pipe/b", VFS_O_WRONLY);
+    __wasi_subscription_t s[3] = {fdSub(1, __WASI_EVENTTYPE_FD_WRITE, a),
+                                  clockSub(2, 3000000, 0),
+                                  fdSub(3, __WASI_EVENTTYPE_FD_WRITE, b)};
+    __wasi_event_t ev[3];
+    uint32_t n = 0;
+
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(vfs, s, ev, 3, &n));
+    TEST_ASSERT_EQUAL_UINT32(2, n);
+    TEST_ASSERT_EQUAL_UINT64(1, ev[0].userdata);
+    TEST_ASSERT_EQUAL_UINT64(3, ev[1].userdata);
+}
+
+TEST(wasi_poll, ABadFdFiresWithItsError) {
+    __wasi_subscription_t s = fdSub(9, __WASI_EVENTTYPE_FD_READ, 30);
+    __wasi_event_t ev[1];
+    uint32_t n = 0;
+
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(vfs, &s, ev, 1, &n));
+    TEST_ASSERT_EQUAL_UINT32(1, n);
+    TEST_ASSERT_EQUAL_UINT64(9, ev[0].userdata);
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_BADF, ev[0].error);
+}
+
+TEST(wasi_poll, AnUnknownTypeFiresInvalid) {
+    __wasi_subscription_t s = fdSub(4, 9, 0);
+    __wasi_event_t ev[1];
+    uint32_t n = 0;
+
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(vfs, &s, ev, 1, &n));
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_INVAL, ev[0].error);
+}
+
+TEST(wasi_poll, AnUnknownClockFiresInvalid) {
+    __wasi_subscription_t s = clockSub(5, 1000, 0);
+    __wasi_event_t ev[1];
+    uint32_t n = 0;
+
+    s.u.clock.id = 42;
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(vfs, &s, ev, 1, &n));
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_INVAL, ev[0].error);
+}
+
+TEST_GROUP_RUNNER(wasi_poll) {
+    RUN_TEST_CASE(wasi_poll, TheLayoutMatchesPreview1);
+    RUN_TEST_CASE(wasi_poll, NoSubscriptionsIsInvalid);
+    RUN_TEST_CASE(wasi_poll, ARelativeClockFiresAfterItsTimeout);
+    RUN_TEST_CASE(wasi_poll, AnAbsoluteClockInThePastFiresAtOnce);
+    RUN_TEST_CASE(wasi_poll, AnEmptyPipeWaitsForTheClock);
+    RUN_TEST_CASE(wasi_poll, BufferedDataIsReadableWithItsCount);
+    RUN_TEST_CASE(wasi_poll, AClosedWriterIsAHangup);
+    RUN_TEST_CASE(wasi_poll, EveryReadySubscriptionIsReported);
+    RUN_TEST_CASE(wasi_poll, ABadFdFiresWithItsError);
+    RUN_TEST_CASE(wasi_poll, AnUnknownTypeFiresInvalid);
+    RUN_TEST_CASE(wasi_poll, AnUnknownClockFiresInvalid);
 }

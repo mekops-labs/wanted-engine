@@ -77,6 +77,7 @@ static int _SockRecv(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte,
 static int _SockSend(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte,
                      vfs_sdflags_t flags);
 static int _SockShutdown(vfs_driver_ctx_t c, int fd, vfs_sdflags_t flags);
+static int _Poll(vfs_driver_ctx_t c, int fd, uint32_t *avail);
 
 static vfs_filetype_t convertSocketType(uint8_t type) {
     switch (type) {
@@ -347,6 +348,7 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     driver->SockRecv = _SockRecv;
     driver->SockSend = _SockSend;
     driver->SockShutdown = _SockShutdown;
+    driver->Poll = _Poll;
 
     return driver;
 }
@@ -488,8 +490,6 @@ static int ioConn(vfs_driver_ctx_t c, int fd, struct sock_conn_t **out) {
     return 0;
 }
 
-/* A wapp cannot subscribe an fd to poll_oneoff, thus a non-blocking read is
- * the only way one waits on a socket and does anything else. */
 static int _Read(vfs_driver_ctx_t c, int fd, void *buf, size_t nbyte) {
     struct sock_conn_t *s;
     int ret = ioConn(c, fd, &s);
@@ -613,6 +613,39 @@ static int _SockSend(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte,
     if (ret < 0)
         return ret;
     return PlatformNetSend(s->netCtx, buf, nbyte, flags);
+}
+
+/* A listener is readable when a connection waits to be accepted. An outbound
+ * socket connects first, as its first read or write would; a failure is the
+ * poll's error for that fd. */
+/* cppcheck-suppress constParameterCallback */
+/* NOLINTNEXTLINE(readability-non-const-parameter) */
+static int _Poll(vfs_driver_ctx_t c, int fd, uint32_t *avail) {
+    (void)avail;
+    struct sock_conn_t *s = conn(c, fd);
+    if (s == NULL)
+        return -EBADF;
+    int ret = ensureConnected(c, s);
+    if (ret < 0)
+        return ret;
+
+    bool readable = false;
+    bool writable = false;
+    bool hangup = false;
+    ret = PlatformNetPoll(s->netCtx, &readable, &writable, &hangup);
+    if (ret < 0)
+        return ret;
+    if (fd == SOCK_SELF && c->listening && isStream(c->type))
+        return readable ? VFS_POLL_IN : 0;
+
+    int mask = 0;
+    if (readable || hangup)
+        mask |= VFS_POLL_IN;
+    if (writable)
+        mask |= VFS_POLL_OUT;
+    if (hangup)
+        mask |= VFS_POLL_HUP;
+    return mask;
 }
 
 static int _SockShutdown(vfs_driver_ctx_t c, int fd, vfs_sdflags_t flags) {

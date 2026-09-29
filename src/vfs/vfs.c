@@ -827,6 +827,35 @@ int VfsPwrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte,
     return n;
 }
 
+#define POLL_ALWAYS (VFS_POLL_IN | VFS_POLL_OUT)
+
+static int pollDriver(const vfs_driver_t *drv, int drvFd, uint32_t *avail) {
+    if (drv == NULL || drv->Poll == NULL)
+        return POLL_ALWAYS;
+    return drv->Poll(drv->ctx, drvFd, avail);
+}
+
+int VfsPoll(vfs_ctx_t c, int fd, uint32_t *avail) {
+    if (!checkFd(c, fd))
+        return -EBADF;
+    if (avail == NULL)
+        return -EINVAL;
+    *avail = 0;
+
+    switch (c->fds[fd].type) {
+    case VFS_TYPE_DEV:
+        return DevFs_Poll(c, c->fds[fd].internal_ctx, avail);
+    case VFS_TYPE_NET:
+        return NetFs_Poll(c, c->fds[fd].internal_ctx, avail);
+    case VFS_TYPE_STREAM:
+    case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER:
+        return pollDriver(c->fds[fd].driver, c->fds[fd].drv_fd, avail);
+    default:
+        return POLL_ALWAYS; /* TarFS, /proc, mount dirs: never block */
+    }
+}
+
 /* Cookie high bit separates TarFS phase (bit=0) from mount-table phase (bit=1)
  * during root directory listing. TarFS never produces cookies with bit 63 set
  * so the spaces don't overlap. */

@@ -120,6 +120,13 @@ int TLSRead(void *connIn, void *buf, int n) {
     return mbedtls_ssl_read(&conn->ssl, (unsigned char *)buf, (size_t)n);
 }
 
+int TLSPending(void *connIn) {
+    tls_conn_t *conn = (tls_conn_t *)connIn;
+    if (conn == NULL)
+        return 0;
+    return (int)mbedtls_ssl_get_bytes_avail(&conn->ssl);
+}
+
 int TLSAccept(void *connIn) {
     (void)connIn;
     return 1;
