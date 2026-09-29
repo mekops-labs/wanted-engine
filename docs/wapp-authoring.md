@@ -45,7 +45,7 @@ A wapp image has **no embedded metadata** — its identity is the registry filen
 
 ## The WASI ABI
 
-Wapps target **`wasm32-wasi`** and link against WASI `snapshot_preview1`. The engine implements the bridge itself — it does not embed WAMR's libc-wasi — and registers the host functions below. A wapp importing a function outside this set still loads; the call traps with `failed to call unlinked import function`.
+Wapps target **`wasm32-wasi`** and link against WASI `snapshot_preview1`. The engine implements the bridge itself — it does not embed WAMR's libc-wasi — and registers the host functions below. Every `snapshot_preview1` function is registered.
 
 | Host function | Status | Notes |
 |---------------|--------|-------|
@@ -56,13 +56,22 @@ Wapps target **`wasm32-wasi`** and link against WASI `snapshot_preview1`. The en
 | `path_create_directory`, `path_rename`, `path_unlink_file` | full on preopens | Mutating paths require a writable [preopen](#preopens); the TARFS root returns `EROFS`. |
 | `fd_prestat_get`, `fd_prestat_dir_name` | full | Preopen discovery (how libc finds your mounted dirs). |
 | `fd_filestat_get`, `path_filestat_get`, `fd_fdstat_get` | partial | Basic type/size/flags; not every POSIX stat field is populated. |
-| `fd_fdstat_set_flags` | stub | Accepts and ignores the flags. Set `O_NONBLOCK` when opening the fd instead. |
+| `fd_fdstat_set_flags` | partial | `fcntl(F_SETFL)` changes `O_NONBLOCK` and `O_APPEND` on an open fd; the sync flags stay as opened (`ENOTSUP`). The host console's stdio is shared by the engine, so its mode is fixed (`ENOTSUP`); wait on it with `poll()`. |
+| `fd_tell` | full | The fd's offset; `ESPIPE` on an fd that cannot seek. |
+| `fd_renumber` | partial | Moves one descriptor onto another, closing the target. A console slot or a preopen answers `ENOTSUP`. |
+| `fd_filestat_set_size`, `fd_allocate` | partial | `ftruncate` and `posix_fallocate` on host files (`platform` and `volume` mounts). TarFS answers `EROFS`; any other node `EINVAL` (`fd_allocate`: `ENODEV`). `fd_allocate` grows the file and reserves no storage. |
+| `fd_advise` | no-op | Checks the fd and the advice value, then succeeds. |
+| `path_readlink` | partial | No VFS path is a symlink: `EINVAL` for a path that exists, the lookup error otherwise. |
+| `sched_yield` | full | Hands the CPU to another ready thread. |
+| `path_link`, `path_symlink` | refused | `EPERM`: the VFS has no links, as on a filesystem without them. |
+| `fd_filestat_set_times`, `path_filestat_set_times` | refused | `EPERM`: no VFS node stores times that can be set. |
+| `fd_fdstat_set_rights`, `proc_raise` | refused | `ENOTSUP`: rights are fixed by the preopen grant, and wapps have no signals. |
 | `clock_time_get`, `clock_res_get` | full | Backed by the platform clock. |
 | `random_get` | full | Backed by the platform RNG. |
 | `args_get`, `args_sizes_get` | full | `argv[0]` is the wapp name; `argv[1..]` come from the launch config's `args[]`. |
 | `environ_get`, `environ_sizes_get` | full | The environment is the launch config's `envs[]` (POSIX `KEY=VALUE` entries). |
 | `poll_oneoff` | full | Any mix of clock, `fd_read` and `fd_write` subscriptions; relative and absolute clocks. A subscription on a bad fd fires with its error. A closed peer fires `fd_read` with the hangup flag. `nbytes` reports the bytes readable where the driver knows them, else 0. |
-| `fd_datasync` | stub | Returns success without doing anything (the root is read-only). |
+| `fd_sync`, `fd_datasync` | full | Flush to storage: host files are `fsync`ed; other nodes have nothing to flush and succeed. |
 | `proc_exit` | full | Terminates the wapp with the given exit code. |
 | `sock_accept`, `sock_recv`, `sock_send`, `sock_shutdown` | full | Sockets are reached through `/net/` and need a `sockets[]` grant; availability follows the platform (the NuttX sim is built without a network stack). See [VFS Reference → /net/](vfs-reference.md#net--network-namespace). |
 
@@ -70,7 +79,7 @@ Practical consequences for a wapp author:
 
 - **Environment variables and argv come from the launch config.** A wapp's `argv` and `environ` are set from the `args[]` and `envs[]` arrays in its launch config (`getenv`/`argc` work normally). `argv[0]` is always the wapp name. The `hello` sample selects its behaviour from a `ROLE` env var passed this way. See [Control Plane Reference → Launch-config schema](control-plane-reference.md). Larger or writable configuration still belongs in a packaged file or a [preopen](#preopens).
 - **`poll()` waits on several descriptors at once.** wasi-libc's `poll()` becomes `poll_oneoff`, so an event loop can wait on a socket, a pipe and a timeout in one call. Zig's `std.posix.poll` needs libc (`-lc`) on WASI; without it, call `std.os.wasi.poll_oneoff`. A waiting `poll` rechecks its descriptors every 1 ms, which is one scheduler tick (10 ms) on ESP-IDF.
-- **Not implemented:** `fd_advise`, `fd_allocate`, `fd_fdstat_set_rights`, `fd_filestat_set_size`, `fd_filestat_set_times`, `fd_renumber`, `fd_sync`, `fd_tell`, `path_filestat_set_times`, `path_link`, `path_readlink`, `path_symlink`, `proc_raise`, `sched_yield`.
+- **Every `snapshot_preview1` function is registered.** A function the engine cannot honour answers `EPERM` or `ENOTSUP` (rows marked *refused*); no import is left unlinked.
 - **A sleep shorter than the platform's scheduler tick may not yield.** A poll loop that sleeps 2 ms between passes runs on a 10 ms-tick FreeRTOS target as a busy wait: the sleep returns without ever handing the CPU over, the idle task never runs, and the task watchdog fires. Sleep for at least one tick (10 ms on ESP-IDF) in any loop that polls a descriptor.
 - **`stdout`/`stderr` are not files you open.** Writing to fd 1/2 reaches a console only if the launch config gives the wapp one; see [Filesystem access](#filesystem-access) and [Control Plane Reference](control-plane-reference.md).
 - **Heavy primitives can be offloaded to the engine.** A wapp granted the `sha256`, `ed25519`, or `inflate` driver computes digests, verifies signatures, or gunzips through plain `open`/`write`/`read` on the device node — the algorithm's code, tables, and buffers live in engine memory, not in the wapp's linear memory. See [VFS Reference → Config-mounted drivers](vfs-reference.md#config-mounted-drivers).

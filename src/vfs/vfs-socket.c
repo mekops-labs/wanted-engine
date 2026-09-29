@@ -78,6 +78,7 @@ static int _SockSend(vfs_driver_ctx_t c, int fd, const void *buf, size_t nbyte,
                      vfs_sdflags_t flags);
 static int _SockShutdown(vfs_driver_ctx_t c, int fd, vfs_sdflags_t flags);
 static int _Poll(vfs_driver_ctx_t c, int fd, uint32_t *avail);
+static int _SetFlags(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags);
 
 static vfs_filetype_t convertSocketType(uint8_t type) {
     switch (type) {
@@ -349,6 +350,7 @@ vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options) {
     driver->SockSend = _SockSend;
     driver->SockShutdown = _SockShutdown;
     driver->Poll = _Poll;
+    driver->SetFlags = _SetFlags;
 
     return driver;
 }
@@ -646,6 +648,14 @@ static int _Poll(vfs_driver_ctx_t c, int fd, uint32_t *avail) {
     if (hangup)
         mask |= VFS_POLL_HUP;
     return mask;
+}
+
+/* The mode is the driver's, so it covers every connection a listener holds. */
+static int _SetFlags(vfs_driver_ctx_t c, int fd, vfs_oflags_t flags) {
+    if (conn(c, fd) == NULL)
+        return -EBADF;
+    c->flags = (c->flags & ~VFS_O_NONBLOCK) | (flags & VFS_O_NONBLOCK);
+    return 0;
 }
 
 static int _SockShutdown(vfs_driver_ctx_t c, int fd, vfs_sdflags_t flags) {

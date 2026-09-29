@@ -33,6 +33,7 @@ A named pipe over a single process-wide store: a pipe opened by one wapp is visi
 - **Writes block by default.** A write short-writes into the space the ring has. On a full ring it sleeps and retries until the reader drains, under the same safety cap, then returns `EAGAIN`. `O_NONBLOCK` returns `EAGAIN` at once.
 - **EOF** is returned only once a writer has attached and all writers have closed.
 - **`poll()`** reports a reader readable when data is buffered, and readable with a hangup at EOF. A writer is writable while the ring has space.
+- **`fcntl(F_SETFL, O_NONBLOCK)`** switches an open end between blocking and non-blocking.
 
 ```c
 int fd = open("/dev/pipe/work", O_WRONLY);   /* writer */
@@ -366,6 +367,8 @@ running platform is rejected at launch, not ignored.
   moves up to 32 received bytes into the driver, and the next read returns them
   first. `data` always reports writable. A line reconfiguration discards the
   moved bytes along with the receive buffer.
+- `fcntl(F_SETFL, O_NONBLOCK)` switches an open `data` fd between blocking and
+  non-blocking.
 - A `data` write queues bytes and returns the count accepted, which may be
   short.
 - `baud` and `format` are writable at runtime, because one link can carry two
@@ -460,6 +463,8 @@ A wapp `open`s the `/net/<name>` node, then `read`/`write`s the stream and `clos
 A read blocks until data arrives, as the pipe and serial drivers do; `O_NONBLOCK` answers `-EAGAIN` on an empty receive buffer instead of waiting.
 
 `poll()` reports a connection readable when data is buffered, including decrypted TLS data, and readable with a hangup when the peer has closed. A listener is readable when a connection waits to be accepted. An outbound socket that has not connected yet connects on its first `poll()`, as it would on its first read or write; a failed connect is that fd's poll error.
+
+`fcntl(F_SETFL, O_NONBLOCK)` changes the blocking mode of the whole socket entry: a listener and every connection accepted from it share one mode.
 
 #### Serving on a socket
 

@@ -164,6 +164,17 @@ typedef struct vfs_driver_t {
      * sets *avail to the bytes readable, 0 when unknown. NULL = always ready.
      */
     int (*Poll)(vfs_driver_ctx_t d, int fd, uint32_t *avail);
+
+    /* Optional. Flush the fd's data to its storage. NULL = nothing to flush. */
+    int (*Sync)(vfs_driver_ctx_t d, int fd);
+
+    /* Optional. Set a regular file's length. NULL = -EINVAL. */
+    int (*Truncate)(vfs_driver_ctx_t d, int fd, uint64_t size);
+
+    /* Optional. Adopt new VFS_O_NONBLOCK / VFS_O_APPEND bits on an open fd.
+     * NULL = the driver never blocks and never appends, so it needs no state.
+     */
+    int (*SetFlags)(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags);
 } vfs_driver_t;
 
 #define VFS_STDIN 0
@@ -196,6 +207,23 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos);
  * that cannot seek. */
 int VfsPread(vfs_ctx_t c, int fd, void *buf, size_t nbyte, uint64_t off);
 int VfsPwrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte, uint64_t off);
+
+/* The fd's offset; -ESPIPE on an fd that cannot seek. */
+int VfsTell(vfs_ctx_t c, int fd, long *pos);
+
+int VfsSync(vfs_ctx_t c, int fd);
+int VfsTruncate(vfs_ctx_t c, int fd, uint64_t size);
+
+/* The fd's open flags, as changed by VfsSetFlags; -EBADF when not open. */
+int VfsFlags(vfs_ctx_t c, int fd);
+
+/* Change VFS_O_NONBLOCK and VFS_O_APPEND on an open fd. Other bits must match
+ * the fd's current flags, else -ENOTSUP. */
+int VfsSetFlags(vfs_ctx_t c, int fd, vfs_oflags_t flags);
+
+/* Move `from` onto `to`, closing whatever `to` held; `from` is closed after.
+ * Console slots are refused with -ENOTSUP. */
+int VfsRenumber(vfs_ctx_t c, int from, int to);
 
 /* The fd's readiness as VFS_POLL_* bits, or a negative errno; never blocks.
  * `avail` gets the bytes readable, 0 when unknown. */

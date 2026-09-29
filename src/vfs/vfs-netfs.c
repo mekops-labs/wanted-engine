@@ -145,6 +145,14 @@ int NetFs_Write(vfs_ctx_t c, void *handle, const void *buf, size_t nbyte) {
     return TRY_DRV(h->drv, Write, h->drv_fd, buf, nbyte);
 }
 
+const vfs_driver_t *NetFs_HandleDriver(const void *handle, int *drvFd) {
+    const netfs_handle_t *h = handle;
+    if (!h || h->is_root)
+        return NULL;
+    *drvFd = h->drv_fd;
+    return h->drv;
+}
+
 int NetFs_Poll(vfs_ctx_t c, void *handle, uint32_t *avail) {
     (void)c;
     const netfs_handle_t *h = handle;

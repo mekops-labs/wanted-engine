@@ -73,6 +73,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed);
 static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail);
+static int _SetFlags(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags);
 
 /* ── Value grammars ──────────────────────────────────────────────────────── */
 
@@ -292,6 +293,7 @@ vfs_driver_t *VfsUartInit(const wapp_t *wapp, const char *options) {
     driver->Write = _Write;
     driver->ReadDir = _ReadDir;
     driver->Poll = _Poll;
+    driver->SetFlags = _SetFlags;
 
     if (parseGrant(ctx, options) < 0) {
         _Destroy(driver);
@@ -537,6 +539,13 @@ static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail) {
     }
     *avail = (uint32_t)d->aheadLen;
     return (d->aheadLen > 0 ? VFS_POLL_IN : 0) | VFS_POLL_OUT;
+}
+
+static int _SetFlags(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags) {
+    if (fd < 0 || fd >= UART_MAX_FDS || !d->fds[fd].used)
+        return -EBADF;
+    d->fds[fd].nonblock = (flags & VFS_O_NONBLOCK) != 0;
+    return 0;
 }
 
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,

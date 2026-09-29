@@ -21,7 +21,7 @@ Every platform implements the contract in `platform/include/platform.h`. A confo
 | Filesystem | `PlatformOpenStateDir`, `PlatformFsRename`, `PlatformFsMkdir`, `PlatformFsRmdir`, `PlatformVolumeRoot` |
 | Network | `PlatformNetOpen` / `Connect` / `Recv` / `Send` / `Accept` / `Shutdown` / `Close` / `Free`; `PlatformNetWaitReadable` and `PlatformNetPoll`, the blocking and non-blocking readiness checks behind blocking reads and `poll_oneoff` |
 | Readiness | `PlatformFdReady` — non-blocking readiness of a host descriptor (the platform console, host files); the shared body is `posix/ready.c`, over `select` |
-| Clock | `PlatformClockGetRes` / `GetTime` / `NanoSleep` |
+| Clock | `PlatformClockGetRes` / `GetTime` / `NanoSleep`; `PlatformYield` behind `sched_yield` (the shared body in `posix/clock.c` calls `sched_yield`) |
 | Random | `PlatfromGetRandom` |
 | Storage | `PlatformStorageStats` — free/total bytes of the store backing the registry and volumes, reported at `/proc/memory`; zeroes where the platform cannot answer |
 | Identity | `PlatformName`, `PlatformFirmwareDigest` — the build-time image digest reported at `/proc/wanted`; `-ENOSYS` where the platform stamps none |

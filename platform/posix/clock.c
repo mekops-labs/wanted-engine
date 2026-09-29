@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Shared POSIX clock queries (resolution + current time), used by every POSIX
- * platform target. PlatformClockNanoSleep is implemented per-platform. */
+/* Shared POSIX clock queries (resolution + current time) and the scheduler
+ * yield, used by every POSIX platform target. PlatformClockNanoSleep is
+ * implemented per-platform. */
 
 #include <errno.h>
+#include <sched.h>
 #include <time.h>
 
 #include <clock-posix.h>
@@ -44,3 +46,5 @@ int PlatformClockGetTime(plat_clk_id_t clk_id, plat_timestamp_t *time) {
 
     return 0;
 }
+
+int PlatformYield(void) { return sched_yield() < 0 ? -errno : 0; }

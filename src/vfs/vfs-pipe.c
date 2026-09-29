@@ -494,6 +494,15 @@ static int _bPoll(vfs_driver_ctx_t dctx, int fd, uint32_t *avail) {
     return pipePoll(NULL, &tmp, h, avail);
 }
 
+static int _bSetFlags(vfs_driver_ctx_t dctx, int fd, vfs_oflags_t flags) {
+    bridge_state_t *s = (bridge_state_t *)dctx;
+    pipe_handle_t *h = getHandle(s, fd);
+    if (!h)
+        return -EBADF;
+    h->flags = (h->flags & ~VFS_O_NONBLOCK) | (flags & VFS_O_NONBLOCK);
+    return 0;
+}
+
 static int _bReadDir(vfs_driver_ctx_t dctx, int fd, void *buf, size_t bufLen,
                      uint64_t *cookie, size_t *bufUsed) {
     bridge_state_t *s = (bridge_state_t *)dctx;
@@ -636,6 +645,13 @@ static int _pcPoll(vfs_driver_ctx_t dctx, int fd, uint32_t *avail) {
     return r;
 }
 
+static int _pcSetFlags(vfs_driver_ctx_t dctx, int fd, vfs_oflags_t flags) {
+    (void)fd;
+    pipe_console_t *c = (pipe_console_t *)dctx;
+    c->flags = (c->flags & ~VFS_O_NONBLOCK) | (flags & VFS_O_NONBLOCK);
+    return 0;
+}
+
 static int _pcStat(vfs_driver_ctx_t dctx, int fd, vfs_stat_t *stat) {
     (void)dctx;
     (void)fd;
@@ -705,6 +721,7 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
     drv->Write = _pcWrite;
     drv->Stat = _pcStat;
     drv->Poll = _pcPoll;
+    drv->SetFlags = _pcSetFlags;
     return drv;
 }
 
@@ -736,5 +753,6 @@ vfs_driver_t *PipeDriverCreate(pipe_store_t *store) {
     drv->Stat = _bStat;
     drv->ReadDir = _bReadDir;
     drv->Poll = _bPoll;
+    drv->SetFlags = _bSetFlags;
     return drv;
 }

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <vfs.h>
 
@@ -9,6 +10,10 @@
 
 /* A negative VFS errno as the WASI errno a guest sees. */
 __wasi_errno_t WasiErrno(int errnum);
+
+/* True when `name` is registered in the WASI namespace `ns`
+ * ("wasi_snapshot_preview1" or "wasi_unstable"). */
+bool WasiHasNative(const char *ns, const char *name);
 
 /* poll_oneoff over native copies of the guest's arrays: waits until at least
  * one subscription fires, then writes one event per fired subscription. */

@@ -68,6 +68,7 @@ typedef uint8_t __wasi_sdflags_t;
 #define __WASI_ERRNO_NOSYS 52
 #define __WASI_ERRNO_NOTDIR 54
 #define __WASI_ERRNO_NOTEMPTY 55
+#define __WASI_ERRNO_NOTSUP 58
 #define __WASI_ERRNO_NOTTY 59
 #define __WASI_ERRNO_NXIO 60
 #define __WASI_ERRNO_OVERFLOW 61

@@ -24,6 +24,8 @@ int NetFs_Stat(vfs_ctx_t c, void *handle, vfs_stat_t *stat);
  * side effect of creating a socket. */
 int NetFs_StatPath(vfs_ctx_t c, const char *suffix, vfs_stat_t *stat);
 int NetFs_Poll(vfs_ctx_t c, void *handle, uint32_t *avail);
+/* The driver behind a handle and its driver-side fd; NULL for /net itself. */
+const vfs_driver_t *NetFs_HandleDriver(const void *handle, int *drvFd);
 int NetFs_ReadDir(vfs_ctx_t c, void *handle, void *buf, size_t bufLen,
                   uint64_t *cookie, size_t *bufUsed);
 /* Accept one connection from a listening handle into *newHandle, a handle on
