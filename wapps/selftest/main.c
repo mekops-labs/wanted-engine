@@ -147,6 +147,24 @@
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"mounts\":[{\"name\":\"log\",\"path\":\"/log\"}]}"
 
+/* fbcheck is one image in two roles: a writer that draws and flushes part of a
+ * screen, and an observer that waits in poll() on the screen's damage node and
+ * a socket. The screen comes from `system.screens`, so a build without the fb
+ * driver skips the check. */
+#define FB_WATCH "fbwatch"
+#define FB_DRAW "fbdraw"
+#define FB_WATCH_LOG LOG_MOUNT "/" FB_WATCH
+#define FB_CONSOLE_BODY                                                        \
+    "\"console\":{\"in\":{\"name\":\"null\"},"                               \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}"
+#define FB_WATCH_CFG_BODY                                                      \
+    "{\"image\":\"fbcheck\"," FB_CONSOLE_BODY ",\"envs\":[\"ROLE=observer\"],"  \
+    "\"drivers\":[{\"name\":\"fb\",\"options\":\"screens=main,observe\"}],"   \
+    "\"sockets\":[{\"name\":\"peer\",\"address\":\"udp://127.0.0.1:8895\"}]}"
+#define FB_DRAW_CFG_BODY                                                       \
+    "{\"image\":\"fbcheck\"," FB_CONSOLE_BODY ",\"envs\":[\"ROLE=writer\"],"    \
+    "\"drivers\":[{\"name\":\"fb\",\"options\":\"screens=main\"}]}"
+
 /* The supervisor's own launch config wires all three resource sections, so they
  * are verified in this namespace: a `config` map mounted outside /dev, a named
  * socket, and the `wanted` device driver. */
@@ -1415,6 +1433,76 @@ static void multi_reader_pipe_check(void) {
     delete_wapp(MREAD_B);
 }
 
+/* True when /proc/wanted lists `name` among the resolvable drivers. */
+static int has_driver(const char *name) {
+    static char buf[1024]; /* off the 4 KiB wapp stack */
+    if (read_path("/proc/wanted", buf, sizeof(buf)) <= 0)
+        return 0;
+
+    /* The newline keeps "max_drivers:" from matching. */
+    char *line = strstr(buf, "\ndrivers:\t");
+    if (line == NULL)
+        return 0;
+    line += strlen("\ndrivers:\t");
+    char *end = strchr(line, '\n');
+    if (end != NULL)
+        *end = '\0';
+
+    size_t len = strlen(name);
+    for (char *t = line; *t != '\0';) {
+        char *sp = strchr(t, ' ');
+        size_t tl = sp != NULL ? (size_t)(sp - t) : strlen(t);
+        if (tl == len && strncmp(t, name, len) == 0)
+            return 1;
+        if (sp == NULL)
+            break;
+        t = sp + 1;
+    }
+    return 0;
+}
+
+/* One wapp draws and flushes; another, launched first and blocked in poll() on
+ * damage and a socket, wakes on the flush and reads the flushed pixels. */
+static void fb_check(void) {
+    static char buf[512]; /* off the 4 KiB wapp stack */
+
+    if (!has_driver("fb")) {
+        tap_diag("fb: skipped — engine built without the fb driver");
+        return;
+    }
+
+    create_wapp(FB_WATCH);
+    create_wapp(FB_DRAW);
+    int cfg = write_path("/dev/wanted/wapps/" FB_WATCH "/config",
+                         FB_WATCH_CFG_BODY) >= 0 &&
+              write_path("/dev/wanted/wapps/" FB_DRAW "/config",
+                         FB_DRAW_CFG_BODY) >= 0;
+    int up = cfg && start_wapp(FB_WATCH) &&
+             wait_state("/dev/wanted/wapps/" FB_WATCH "/state", 1);
+    int drew = up && start_wapp(FB_DRAW);
+    wait_dead(FB_DRAW);
+    wait_dead(FB_WATCH);
+
+    int got = read_path(FB_WATCH_LOG, buf, sizeof(buf)) > 0;
+    tap_ok(drew && got && strstr(buf, "fb-done") != NULL,
+           "fb: the writer and the observer both ran to completion");
+    tap_ok(got && strstr(buf, "fb-poll:woke-on-flush") != NULL,
+           "fb: poll on damage and a socket wakes on a flush, and not before");
+    tap_ok(got && strstr(buf, "fb-damage:rectangle") != NULL &&
+               strstr(buf, "fb-damage:drained") != NULL,
+           "fb: damage reports exactly the flushed rectangle");
+    tap_ok(got && strstr(buf, "fb-data:pattern") != NULL,
+           "fb: the observer reads the flushed pixels from data");
+    tap_ok(got && strstr(buf, "fb-data:unflushed-hidden") != NULL,
+           "fb: pixels the writer never flushed stay hidden from the observer");
+    tap_ok(got && strstr(buf, "fb-ctl:denied") != NULL &&
+               strstr(buf, "fb-write:denied") != NULL,
+           "fb: an observer can neither flush nor draw");
+
+    delete_wapp(FB_WATCH);
+    delete_wapp(FB_DRAW);
+}
+
 int main(void) {
     /* Phases run in order, each announced with a current/total counter before
      * it runs, so a long mostly-sleeping check is visibly progressing. The
@@ -1431,6 +1519,7 @@ int main(void) {
         {"listen_check", listen_check},
         {"dgram_listen_check", dgram_listen_check},
         {"ota_check", ota_check},
+        {"fb_check", fb_check},
         {"pipe_duplex_check", pipe_duplex_check},
         {"multi_reader_pipe_check", multi_reader_pipe_check},
         {"robustness_checks", robustness_checks},
