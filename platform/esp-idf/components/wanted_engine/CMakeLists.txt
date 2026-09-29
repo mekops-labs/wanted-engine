@@ -135,7 +135,7 @@ if(CONFIG_WANTED_VFS_OTA)
     list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/ota.c)
 endif()
 
-# A board directory's sources supply BoardInit() and ExtraDriverTable() both.
+# A board directory's sources supply the board.h hooks and ExtraDriverTable().
 if(WANTED_BOARD_SRCS)
     list(APPEND core_srcs ${WANTED_BOARD_SRCS})
 else()

@@ -241,12 +241,17 @@ The host `Makefile` mounts the directory at `/board` in every build container. I
 
 - `WANTED_FLASH_KB` — flash size in KiB. Match `CONFIG_ESPTOOLPY_FLASHSIZE_*` in `sdkconfig.defaults`.
 - `WANTED_APP_SLOT_KB` — size of each app slot in KiB. Must be a multiple of 64.
-- `WANTED_BOARD_SRCS` — C sources compiled into the engine component. When set, they must define both `BoardInit()` (`platform/esp-idf/include/board.h`) and `ExtraDriverTable()` (`vfs-drivers.h`). When unset, the engine compiles defaults that do nothing.
+- `WANTED_BOARD_SRCS` — C sources compiled into the engine component. When set, they must define `BoardInit()`, `BoardHeartbeat()` and `BoardPowerOff()` (`platform/esp-idf/include/board.h`), and `ExtraDriverTable()` (`vfs-drivers.h`). When unset, the engine compiles defaults that do nothing.
 - `WANTED_BOARD_INCLUDE_DIRS` — include directories for those sources.
 - `WANTED_BOARD_REQUIRES` — extra ESP-IDF components, for example `esp_driver_i2c`.
 - `WANTED_EXTRA_SEEDS` — factory seeds, as described in the next section.
 
 `app_main` calls `BoardInit()` before it mounts storage or starts the engine. Use it for power rails and shared buses that drivers probe later. A non-zero return is logged, and the engine starts anyway.
+
+Board sources also define two hooks from `board.h`:
+
+- `BoardHeartbeat()` — called about once a second from the engine loop. It runs only while the loop runs, so an indicator driven from it stops when the engine wedges.
+- `BoardPowerOff()` — called on `poweroff` before deep sleep. It may cut board power. If it returns, the engine enters deep sleep with whatever wake sources the hook armed.
 
 ESP-IDF resolves component requirements in a script pass that does not read the CMake cache, so the build passes the directory to CMake as the `WANTED_BOARD_DIR` environment variable. The generated `sdkconfig` is regenerated whenever the set of defaults files or their content changes.
 
