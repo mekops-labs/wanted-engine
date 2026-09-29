@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -785,6 +786,45 @@ int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos) {
     default:
         return -ENOTSUP;
     }
+}
+
+/* Seek-transfer-restore: safe because a wapp's fds are used by one thread. A
+ * missing Seek reads as -EPERM or -ENOTSUP from the router, i.e. a stream. */
+static int positionAt(vfs_ctx_t c, int fd, uint64_t off, long *saved) {
+    if (off > (uint64_t)LONG_MAX)
+        return -EOVERFLOW;
+    int r = VfsSeek(c, fd, 0, VFS_SEEK_CUR, saved);
+    if (r == -EPERM || r == -ENOTSUP || r == -ENOSYS)
+        return -ESPIPE;
+    if (r < 0)
+        return r;
+    long pos;
+    return VfsSeek(c, fd, (long)off, VFS_SEEK_SET, &pos);
+}
+
+int VfsPread(vfs_ctx_t c, int fd, void *buf, size_t nbyte, uint64_t off) {
+    long saved;
+    int r = positionAt(c, fd, off, &saved);
+    if (r < 0)
+        return r;
+    int n = VfsRead(c, fd, buf, nbyte);
+    long pos;
+    VfsSeek(c, fd, saved, VFS_SEEK_SET, &pos);
+    return n;
+}
+
+int VfsPwrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte,
+              uint64_t off) {
+    if (checkFd(c, fd) && (c->fds[fd].flags & VFS_O_APPEND))
+        return VfsWrite(c, fd, buf, nbyte); /* POSIX: append ignores off */
+    long saved;
+    int r = positionAt(c, fd, off, &saved);
+    if (r < 0)
+        return r;
+    int n = VfsWrite(c, fd, buf, nbyte);
+    long pos;
+    VfsSeek(c, fd, saved, VFS_SEEK_SET, &pos);
+    return n;
 }
 
 /* Cookie high bit separates TarFS phase (bit=0) from mount-table phase (bit=1)

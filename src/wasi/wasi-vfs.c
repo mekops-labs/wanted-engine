@@ -762,6 +762,87 @@ static int32_t wasi_fd_write(wasm_exec_env_t exec_env, int32_t fd,
     return __WASI_ERRNO_SUCCESS;
 }
 
+static int32_t wasi_fd_pread(wasm_exec_env_t exec_env, int32_t fd,
+                             int32_t iovs_app, int32_t iovs_len, int64_t offset,
+                             int32_t nread_app) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    if (iovs_len < 0 || offset < 0)
+        return __WASI_ERRNO_INVAL;
+
+    wasi_iovec_t *iovs =
+        vaddr(exec_env, iovs_app, (uint32_t)iovs_len * sizeof(wasi_iovec_t));
+    __wasi_size_t *nread = vaddr(exec_env, nread_app, sizeof(__wasi_size_t));
+    if (!nread)
+        return __WASI_ERRNO_FAULT;
+    if (!iovs && iovs_len > 0)
+        return __WASI_ERRNO_FAULT;
+
+    uint64_t res = 0;
+    for (int32_t i = 0; i < iovs_len; i++) {
+        uint32_t len = iovs[i].buf_len;
+        if (len == 0)
+            continue;
+        void *addr = vaddr(exec_env, iovs[i].buf, len);
+        if (!addr)
+            return __WASI_ERRNO_FAULT;
+
+        int ret = VfsPread(ctx->vfsCtx, fd, addr, len, (uint64_t)offset + res);
+        if (ret < 0) {
+            if (res > 0)
+                break;
+            return errno_to_wasi(ret);
+        }
+        res += (uint64_t)ret;
+        if ((uint32_t)ret < len)
+            break;
+    }
+    *nread = (__wasi_size_t)res;
+    return __WASI_ERRNO_SUCCESS;
+}
+
+static int32_t wasi_fd_pwrite(wasm_exec_env_t exec_env, int32_t fd,
+                              int32_t iovs_app, int32_t iovs_len,
+                              int64_t offset, int32_t nwritten_app) {
+    wasi_ctx_t *ctx = get_ctx(exec_env);
+    if (!ctx)
+        return __WASI_ERRNO_INVAL;
+    if (iovs_len < 0 || offset < 0)
+        return __WASI_ERRNO_INVAL;
+
+    wasi_iovec_t *iovs =
+        vaddr(exec_env, iovs_app, (uint32_t)iovs_len * sizeof(wasi_iovec_t));
+    __wasi_size_t *nwritten =
+        vaddr(exec_env, nwritten_app, sizeof(__wasi_size_t));
+    if (!nwritten)
+        return __WASI_ERRNO_FAULT;
+    if (!iovs && iovs_len > 0)
+        return __WASI_ERRNO_FAULT;
+
+    uint64_t res = 0;
+    for (int32_t i = 0; i < iovs_len; i++) {
+        uint32_t len = iovs[i].buf_len;
+        if (len == 0)
+            continue;
+        const void *addr = vaddr(exec_env, iovs[i].buf, len);
+        if (!addr)
+            return __WASI_ERRNO_FAULT;
+
+        int ret = VfsPwrite(ctx->vfsCtx, fd, addr, len, (uint64_t)offset + res);
+        if (ret < 0) {
+            if (res > 0)
+                break;
+            return errno_to_wasi(ret);
+        }
+        res += (uint64_t)ret;
+        if ((uint32_t)ret < len)
+            break;
+    }
+    *nwritten = (__wasi_size_t)res;
+    return __WASI_ERRNO_SUCCESS;
+}
+
 static int32_t wasi_fd_readdir(wasm_exec_env_t exec_env, int32_t fd,
                                int32_t buf_app, int32_t buf_len, int64_t cookie,
                                int32_t bufused_app) {
@@ -1032,6 +1113,8 @@ static int32_t wasi_sock_shutdown(wasm_exec_env_t exec_env, int32_t fd,
         {"path_remove_directory", wasi_path_remove_directory, "(iii)i", NULL}, \
         {"fd_read", wasi_fd_read, "(iiii)i", NULL},                            \
         {"fd_write", wasi_fd_write, "(iiii)i", NULL},                          \
+        {"fd_pread", wasi_fd_pread, "(iiiIi)i", NULL},                         \
+        {"fd_pwrite", wasi_fd_pwrite, "(iiiIi)i", NULL},                       \
         {"fd_readdir", wasi_fd_readdir, "(iiiIi)i", NULL},                     \
         {"fd_close", wasi_fd_close, "(i)i", NULL},                             \
         {"fd_datasync", wasi_fd_datasync, "(i)i", NULL},                       \

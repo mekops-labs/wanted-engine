@@ -180,6 +180,12 @@ int VfsStatSet(vfs_ctx_t c, int fd, vfs_stat_t stat);
 int VfsRead(vfs_ctx_t c, int fd, void *buf, size_t nbyte);
 int VfsWrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte);
 int VfsSeek(vfs_ctx_t c, int fd, long off, vfs_whence_t whence, long *pos);
+
+/* Transfer at `off`, leaving the fd's own offset unchanged. -ESPIPE on an fd
+ * that cannot seek. */
+int VfsPread(vfs_ctx_t c, int fd, void *buf, size_t nbyte, uint64_t off);
+int VfsPwrite(vfs_ctx_t c, int fd, const void *buf, size_t nbyte, uint64_t off);
+
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
                size_t *bufUsed);
 int VfsUnlink(vfs_ctx_t c, int fd, const char *path);
