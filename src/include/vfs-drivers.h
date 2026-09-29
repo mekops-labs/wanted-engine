@@ -89,6 +89,9 @@ vfs_driver_t *VfsGpioInit(const wapp_t *wapp, const char *options);
 #ifdef CONFIG_WANTED_VFS_UART
 vfs_driver_t *VfsUartInit(const wapp_t *wapp, const char *options);
 #endif
+#ifdef CONFIG_WANTED_VFS_FB
+vfs_driver_t *VfsFbInit(const wapp_t *wapp, const char *options);
+#endif
 vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options);
 #ifdef CONFIG_WANTED_VFS_OTA
 vfs_driver_t *VfsOtaInit(const wapp_t *wapp, const char *options);

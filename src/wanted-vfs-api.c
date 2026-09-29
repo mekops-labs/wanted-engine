@@ -9,6 +9,7 @@
 #include <platform.h>
 #include <vfs-devfs.h>
 #include <vfs-drivers.h>
+#include <vfs-fb.h>
 #include <vfs-netfs.h>
 #include <wanted-api.h>
 #include <wanted-autoconf.h>
@@ -108,6 +109,50 @@ static int jsonScratchParse(json_scratch_t *s, const char *buf, size_t bufLen,
     return 0;
 }
 
+/* system.screens: each entry declares one headless in-memory screen. Every
+ * field is required, and an entry the engine cannot honour fails the parse. */
+static int declareScreens(json_t const *list) {
+#ifdef CONFIG_WANTED_VFS_FB
+    if (JSON_ARRAY != json_getType(list))
+        return -EINVAL;
+
+    for (json_t const *e = json_getChild(list); e; e = json_getSibling(e)) {
+        if (JSON_OBJ != json_getType(e))
+            return -EINVAL;
+
+        json_t const *w = json_getProperty(e, "width");
+        json_t const *h = json_getProperty(e, "height");
+        const char *name = json_getPropertyValue(e, "name");
+        const char *format = json_getPropertyValue(e, "format");
+        if (!name || !format || !w || JSON_INTEGER != json_getType(w) || !h ||
+            JSON_INTEGER != json_getType(h))
+            return -EINVAL;
+        if (json_getInteger(w) < 1 || json_getInteger(w) > UINT16_MAX ||
+            json_getInteger(h) < 1 || json_getInteger(h) > UINT16_MAX)
+            return -EINVAL;
+
+        fb_screen_desc_t desc = {0};
+        desc.name = name;
+        desc.width = (uint16_t)json_getInteger(w);
+        desc.height = (uint16_t)json_getInteger(h);
+        if (strcmp(format, "rgb565") == 0)
+            desc.format = FB_FORMAT_RGB565;
+        else if (strcmp(format, "rgb888") == 0)
+            desc.format = FB_FORMAT_RGB888;
+        else
+            return -EINVAL;
+
+        int rc = FbScreenRegister(&desc);
+        if (rc < 0)
+            return rc;
+    }
+    return 0;
+#else
+    (void)list;
+    return -ENODEV;
+#endif
+}
+
 static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
     if (NULL == out || NULL == buf) {
         return -EINVAL;
@@ -143,6 +188,16 @@ static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
     json_t const *enforce = json_getProperty(system, "enforceImageVerify");
     if (enforce && JSON_BOOLEAN == json_getType(enforce))
         WantedImageVerifyRaise(json_getBoolean(enforce));
+
+    json_t const *screens = json_getProperty(system, "screens");
+    if (screens) {
+        int rc = declareScreens(screens);
+        if (rc < 0) {
+            DEBUG_TRACE(".system.screens is not usable (%d)", rc);
+            jsonScratchRelease(&scratch);
+            return rc;
+        }
+    }
 
     json_t const *supervisor = json_getProperty(json, "supervisor");
     if (supervisor && JSON_OBJ == json_getType(supervisor)) {
@@ -449,6 +504,9 @@ static const vfs_driver_table_t core_driver_table[] = {
 #endif
 #ifdef CONFIG_WANTED_VFS_UART
     {"uart", VfsUartInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_FB
+    {"fb", VfsFbInit},
 #endif
 #ifdef CONFIG_WANTED_VFS_OTA
     {"ota", VfsOtaInit},
