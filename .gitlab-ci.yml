@@ -42,6 +42,8 @@ stages:
   script:
     - just setconfig WANTED_VFS_FB=y
     - just setconfig WANTED_VFS_FB_OBSERVE=y
+    - just setconfig WANTED_VFS_INPUT=y
+    - just setconfig WANTED_VFS_INPUT_INJECT=y
     - just build
 
 .unit_test_job_template: &unit_defs
@@ -129,6 +131,8 @@ coverage:
     - just setconfig WANTED_BUILD_COVERAGE=y
     - just setconfig WANTED_VFS_FB=y
     - just setconfig WANTED_VFS_FB_OBSERVE=y
+    - just setconfig WANTED_VFS_INPUT=y
+    - just setconfig WANTED_VFS_INPUT_INJECT=y
     - just build
     - just coverage
   coverage: '/lines: \d+\.\d+/'

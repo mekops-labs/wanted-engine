@@ -156,6 +156,23 @@ config WANTED_VFS_FB_OBSERVE
 	  screen while an observer exists. Without it an `observe` grant fails
 	  the launch.
 
+config WANTED_VFS_INPUT
+	bool "input — keyboard, encoder and text events"
+	default n
+	help
+	  /dev/input/<device>/{events,info}: 8-byte event records read by one
+	  owner per device. Devices are the virtual ones declared in the
+	  system.inputs configuration, fed only through inject.
+
+config WANTED_VFS_INPUT_INJECT
+	bool "input inject — write events into a device"
+	depends on WANTED_VFS_INPUT
+	default n
+	help
+	  An `inject` grant writes event records into a device's queue, where the
+	  owner cannot tell them from real input. For tests and simulators only;
+	  without it an `inject` grant fails the launch.
+
 config WANTED_VFS_OTA
 	bool "ota — A/B firmware update"
 	default y
@@ -233,6 +250,14 @@ config WANTED_FB_DAMAGE_QUEUE
 	help
 	  An observer that falls behind by more than this many flushes has its
 	  queue replaced by one full-screen rectangle.
+
+config WANTED_INPUT_MAX_DEVICES
+	int "Devices the input driver can hold"
+	depends on WANTED_VFS_INPUT
+	default 2
+	range 1 8
+	help
+	  Size of the engine-wide device table. Each device holds a 64-event queue.
 
 config WANTED_OTA_SLOT_ROOT
 	string "OTA slot directory (host backings)"
