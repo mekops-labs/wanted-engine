@@ -1,6 +1,44 @@
 Changelog
 =========
 
+0.22.0 (2026-09-30)
+-------------------
+
+### Added
+
+- `CONFIG_WANTED_VFS_FB` adds `/dev/fb/<screen>/{info,data,ctl}`: a framebuffer
+  in `rgb565` or `rgb888` with positional I/O, `flush` and `blank`.
+- One wapp writes a screen. A grant naming several screens takes all or fails.
+- `system.screens` declares the headless in-memory screens.
+- `CONFIG_WANTED_VFS_FB_OBSERVE` adds the `observe` grant: a read-only `data`
+  copy of the last flushed image and a `damage` node of flushed rectangles.
+- `CONFIG_WANTED_VFS_INPUT` adds `/dev/input/<device>/{events,info}`: 8-byte
+  little-endian records, one owner per device, 64 records queued.
+- A full input queue is cleared and one `SYN_DROPPED` record is queued.
+- `system.inputs` declares the virtual input devices: name, types and keymap.
+- `CONFIG_WANTED_VFS_INPUT_INJECT` adds the `inject` grant, which writes event
+  records into a device for its owner.
+- `CONFIG_WANTED_FB_MAX_SCREENS`, `CONFIG_WANTED_FB_MAX_OBSERVERS`,
+  `CONFIG_WANTED_FB_DAMAGE_QUEUE` and `CONFIG_WANTED_INPUT_MAX_DEVICES`.
+- `random_check`, `fb_check` and `input_check` selftest phases. The last two
+  are skipped on a build without the driver.
+
+### Fixed
+
+- `random_get` returns. It looped forever on every platform.
+- `random_get` fails with an I/O error when the platform fill writes nothing.
+- `PlatformGetRandom` returns the number of bytes written.
+- Linux `random_get` reads `/dev/urandom`. It drew from a time-seeded generator.
+- The ESP-IDF and NuttX random fills return the byte count.
+- An `fb` observer that attaches after a flush reads the live screen. It read
+  black until the next flush.
+
+### Build
+
+- Bumped `wapps/sheriff` to v0.11.2. The previous pin is not on the remote.
+- The unit-test and coverage CI builds enable `fb`, its observers, `input` and
+  `inject`.
+
 0.21.0 (2026-09-29)
 -------------------
 
