@@ -147,10 +147,9 @@
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"mounts\":[{\"name\":\"log\",\"path\":\"/log\"}]}"
 
-/* fbcheck is one image in two roles: a writer that draws and flushes part of a
- * screen, and an observer that waits in poll() on the screen's damage node and
- * a socket. The screen comes from `system.screens`, so a build without the fb
- * driver skips the check. */
+/* fbcheck runs as a writer and as an observer polling the damage node. The
+ * screen comes from `system.screens`, so a build without the fb driver skips
+ * the check. */
 #define FB_WATCH "fbwatch"
 #define FB_DRAW "fbdraw"
 #define FB_WATCH_LOG LOG_MOUNT "/" FB_WATCH
@@ -165,10 +164,9 @@
     "{\"image\":\"fbcheck\"," FB_CONSOLE_BODY ",\"envs\":[\"ROLE=writer\"],"    \
     "\"drivers\":[{\"name\":\"fb\",\"options\":\"screens=main\"}]}"
 
-/* inputcheck is one image in three roles: an owner that waits in poll() on a
- * device's events node and a socket, an injector that queues one batch for it,
- * and a wapp parked in a read on an idle device. The devices come from
- * `system.inputs`, so a build without the input driver skips the check. */
+/* inputcheck runs as an owner, an injector and a blocked reader. The devices
+ * come from `system.inputs`, so a build without the input driver skips the
+ * check. */
 #define IN_OWN "inown"
 #define IN_INJ "ininj"
 #define IN_BLK "inblk"

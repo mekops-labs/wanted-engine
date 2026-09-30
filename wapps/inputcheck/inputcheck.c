@@ -1,10 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* inputcheck — one image, three roles selected by the ROLE env var. The owner
- * waits in poll() on a device's events node and a socket, then checks the
- * records an injector queued. The injector writes one batch. The blocked role
- * parks in a read on an idle device until it is stopped. Each reports findings
- * to its log. */
+/* inputcheck: ROLE picks an owner that polls a device's events node, an
+ * injector that queues one batch, or a role blocked in a read until stopped.
+ * Each role reports its findings to its log. */
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -98,7 +96,7 @@ static int owner(void) {
              ? "input-records:ordered\n"
              : "input-records:wrong\n");
 
-    /* Nothing is left queued: a second read would block, so read non-blocking. */
+    /* Nothing is queued: read non-blocking so the second read cannot hang. */
     fcntl(efd, F_SETFL, fcntl(efd, F_GETFL) | O_NONBLOCK);
     emit(read(efd, got, RECORD_BYTES) < 0 && errno == EAGAIN
              ? "input-events:drained\n"

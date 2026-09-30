@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* fbcheck — one image, two roles selected by the ROLE env var. The writer
- * draws a pattern into /dev/fb/main and flushes part of it. The observer waits
- * in poll() on the screen's damage node and a socket, then checks the flushed
- * rectangle and pixels. Both report findings to their log. */
+/* fbcheck: ROLE picks a writer that flushes part of /dev/fb/main, or an
+ * observer that polls the damage node and checks the rectangle and pixels.
+ * Each role reports its findings to its log. */
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -137,7 +136,7 @@ static int observer(void) {
              ? "fb-damage:rectangle\n"
              : "fb-damage:wrong\n");
 
-    /* Nothing is left queued: a second read would block, so read non-blocking. */
+    /* Nothing is queued: read non-blocking so the second read cannot hang. */
     int flags = fcntl(mfd, F_GETFL);
     fcntl(mfd, F_SETFL, flags | O_NONBLOCK);
     emit(read(mfd, rec, sizeof(rec)) < 0 && errno == EAGAIN
