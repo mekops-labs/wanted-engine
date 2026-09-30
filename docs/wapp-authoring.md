@@ -67,7 +67,7 @@ Wapps target **`wasm32-wasi`** and link against WASI `snapshot_preview1`. The en
 | `fd_filestat_set_times`, `path_filestat_set_times` | refused | `EPERM`: no VFS node stores times that can be set. |
 | `fd_fdstat_set_rights`, `proc_raise` | refused | `ENOTSUP`: rights are fixed by the preopen grant, and wapps have no signals. |
 | `clock_time_get`, `clock_res_get` | full | Backed by the platform clock. |
-| `random_get` | full | Backed by the platform RNG. |
+| `random_get` | full | Backed by the platform RNG: the kernel random device on Linux and NuttX, the hardware RNG on ESP-IDF. |
 | `args_get`, `args_sizes_get` | full | `argv[0]` is the wapp name; `argv[1..]` come from the launch config's `args[]`. |
 | `environ_get`, `environ_sizes_get` | full | The environment is the launch config's `envs[]` (POSIX `KEY=VALUE` entries). |
 | `poll_oneoff` | full | Any mix of clock, `fd_read` and `fd_write` subscriptions; relative and absolute clocks. A subscription on a bad fd fires with its error. A closed peer fires `fd_read` with the hangup flag. `nbytes` reports the bytes readable where the driver knows them, else 0. |
