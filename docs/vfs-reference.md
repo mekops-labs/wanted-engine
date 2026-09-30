@@ -170,6 +170,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `gpio` | `drivers[]` | `/dev/gpio/<name>/` | Digital I/O, one subtree per granted pin; see below. Backed by ESP-IDF and NuttX. On Linux the grant fails the launch with `-ENOSYS` until the libgpiod backing lands. |
 | `uart` | `drivers[]` | `/dev/uart/<port>/` | A serial port: a `data` byte stream plus writable `baud` and `format`; see below. Backed by ESP-IDF and Linux. On NuttX the grant fails the launch with `-ENOSYS`. |
 | `fb` | `drivers[]` | `/dev/fb/<screen>/` | A screen as a framebuffer: pixels written to `data`, made visible by `ctl` `flush`; see below. Screens are the headless in-memory buffers declared in `system.screens`. Built with `CONFIG_WANTED_VFS_FB`. |
+| `input` | `drivers[]` | `/dev/input/<device>/` | Keyboard, encoder and text events as 8-byte records, one subtree per granted device; see below. Devices are the virtual ones declared in `system.inputs`, fed only through `inject`. Built with `CONFIG_WANTED_VFS_INPUT`. |
 | `wifi` | `drivers[]` | `/dev/wifi/` | Wi-Fi station and access-point control; see below. Backed by ESP-IDF and NuttX; `-ENODEV` elsewhere. |
 | `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `abort` / `confirm` / `rollback`), `read` drains a status snapshot (`active_slot`, `status`, `pending_slot`, `last_failed_slot`, `boot_attempts`, and `pending_digest` — the staged image's own build-time digest, the value `/proc/wanted`'s `digest` reports once it boots, so confirming an update compares like with like; the line is absent when nothing is staged or the platform stamps none); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. End every `begin`: `commit` makes the staged image bootable, `abort` discards it. A session left open holds the slot, and every later `begin` answers `-EBUSY` until the board reboots. `rollback` reverts a booted image and reboots the board; it does not end a streaming write. Backed by ESP-IDF (`esp_ota_ops`) and Linux (slot directories under a boot root); `-ENOSYS` on NuttX. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
@@ -449,6 +450,72 @@ With `CONFIG_WANTED_VFS_FB_OBSERVE` an `observe` grant gets a read-only view:
   `CONFIG_WANTED_FB_MAX_OBSERVERS` observe one screen; the next fails its launch.
 - A build without observers fails an `observe` grant at launch. It is never
   read as a writer grant.
+
+### `input` — keyboard, encoder and text events
+
+An `input` grant hands one or more devices to one wapp as their owner:
+
+```
+/dev/input/
+  <device>/
+    events  (r)   event records, whole records per read
+    info    (r)   "<types> keymap=<keymap>\n", e.g. "key text rel keymap=us"
+```
+
+```json
+{ "name": "input", "options": "devices=kbd,keymap=us" }
+```
+
+`devices=` lists the devices, comma separated, and `keymap=` follows it. A name
+the engine does not know, a repeated or empty name, a missing `keymap=`, and a
+keymap other than the one each device declares fail the launch.
+
+Each record is 8 bytes, little-endian:
+
+| Offset | Field | Meaning |
+|---|---|---|
+| 0 | `sync` | `1` on the last record of a batch |
+| 1 | `type` | `EV_SYN` `0x00`, `EV_KEY` `0x01`, `EV_REL` `0x02`, `EV_TEXT` `0xF0` |
+| 2 | `code` (u16) | `SYN_DROPPED` `3`; a Linux key code; a Linux relative axis; `0` |
+| 4 | `value` (i32) | key state `1` down, `0` up, `2` repeat; a signed delta; a Unicode scalar |
+
+- `events` returns whole records and needs a buffer of at least 8 bytes
+  (`-EINVAL` otherwise). It blocks until a record is queued. `O_NONBLOCK`
+  returns `-EAGAIN` when the queue is empty, and a stop ends a blocked read with
+  `-EINTR`. `poll()` reports it readable while a record is queued.
+- A device queues 64 records. On overflow the engine clears the queue and queues
+  one `EV_SYN` record with code `SYN_DROPPED`. A reader treats every held key as
+  released on it.
+- `EV_TEXT` carries the Unicode character the backing composed, with layers and
+  Shift applied. A wapp reads `EV_TEXT` for what types and `EV_KEY` for keys
+  that produce no character, and skips any `type` it does not know.
+- One wapp owns a device. A second grant naming it fails the launch, and a grant
+  naming several devices takes all of them or fails. Records queued before the
+  owner launched are dropped.
+- A device is declared in `system.inputs` and has no hardware behind it. The
+  engine merges no devices and reads no keyboard itself.
+
+With `CONFIG_WANTED_VFS_INPUT_INJECT` a trailing `inject` token grants the
+write side of the devices instead:
+
+```json
+{ "name": "input", "options": "devices=kbd,keymap=us,inject" }
+```
+
+```
+/dev/input/<device>/
+  info    (r)   as above
+  inject  (w)   event records, queued for the owner
+```
+
+- An `inject` grant has no `events` node and does not count as the owner, so it
+  may launch before or after the owner and several may coexist.
+- A write takes whole records and queues each one as if the device produced it.
+  A length that is not a multiple of 8 returns `-EINVAL` and queues nothing.
+- Injection is as sensitive as typing on the device. Enable it only in test and
+  simulator builds.
+- A build without injection fails an `inject` grant at launch. It is never read
+  as an owner grant.
 
 ### `wifi` — Wi-Fi station and access point
 
