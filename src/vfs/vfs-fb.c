@@ -267,7 +267,8 @@ static void detachObserver(fb_screen_t *s, const fb_observer_t *q) {
 }
 
 /* Register this grant's queues on every screen, or on none. The first observer
- * of a screen allocates its flushed copy. */
+ * of a screen allocates its flushed copy, starting from the live pixels so a
+ * late observer sees the screen. */
 static int attachObservers(struct vfs_driver_ctx_t *ctx) {
     int rc = 0;
     uint8_t done = 0;
@@ -282,7 +283,7 @@ static int attachObservers(struct vfs_driver_ctx_t *ctx) {
             if (s->flushed == NULL)
                 rc = -ENOMEM;
             else
-                memset(s->flushed, 0, s->size);
+                memcpy(s->flushed, s->pixels, s->size);
         }
         if (rc == 0)
             s->observers[s->observerCnt++] = &ctx->queues[done];
