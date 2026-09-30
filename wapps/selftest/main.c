@@ -165,6 +165,30 @@
     "{\"image\":\"fbcheck\"," FB_CONSOLE_BODY ",\"envs\":[\"ROLE=writer\"],"    \
     "\"drivers\":[{\"name\":\"fb\",\"options\":\"screens=main\"}]}"
 
+/* inputcheck is one image in three roles: an owner that waits in poll() on a
+ * device's events node and a socket, an injector that queues one batch for it,
+ * and a wapp parked in a read on an idle device. The devices come from
+ * `system.inputs`, so a build without the input driver skips the check. */
+#define IN_OWN "inown"
+#define IN_INJ "ininj"
+#define IN_BLK "inblk"
+#define IN_OWN_LOG LOG_MOUNT "/" IN_OWN
+#define IN_BLK_LOG LOG_MOUNT "/" IN_BLK
+#define IN_CONSOLE_BODY                                                        \
+    "\"console\":{\"in\":{\"name\":\"null\"},"                               \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}}"
+#define IN_OWN_CFG_BODY                                                        \
+    "{\"image\":\"inputcheck\"," IN_CONSOLE_BODY ",\"envs\":[\"ROLE=owner\"],"  \
+    "\"drivers\":[{\"name\":\"input\",\"options\":\"devices=kbd,keymap=us\"}],"  \
+    "\"sockets\":[{\"name\":\"peer\",\"address\":\"udp://127.0.0.1:8896\"}]}"
+#define IN_INJ_CFG_BODY                                                        \
+    "{\"image\":\"inputcheck\"," IN_CONSOLE_BODY ",\"envs\":[\"ROLE=injector\"],"  \
+    "\"drivers\":[{\"name\":\"input\","                                      \
+    "\"options\":\"devices=kbd,keymap=us,inject\"}]}"
+#define IN_BLK_CFG_BODY                                                        \
+    "{\"image\":\"inputcheck\"," IN_CONSOLE_BODY ",\"envs\":[\"ROLE=blocked\"],"   \
+    "\"drivers\":[{\"name\":\"input\",\"options\":\"devices=kbd2,keymap=us\"}]}"
+
 /* The supervisor's own launch config wires all three resource sections, so they
  * are verified in this namespace: a `config` map mounted outside /dev, a named
  * socket, and the `wanted` device driver. */
@@ -1503,6 +1527,74 @@ static void fb_check(void) {
     delete_wapp(FB_DRAW);
 }
 
+/* An owner launched first, blocked in poll() on events and a socket, wakes on
+ * the batch an injector queues, and reads it back byte for byte. A third wapp
+ * parked in a read on an idle device ends promptly on a stop. */
+static void input_check(void) {
+    static char buf[512]; /* off the 4 KiB wapp stack */
+    char state[96], blk[96];
+
+    if (!has_driver("input")) {
+        tap_diag("input: skipped — engine built without the input driver");
+        return;
+    }
+
+    create_wapp(IN_OWN);
+    create_wapp(IN_INJ);
+    int cfg = write_path("/dev/wanted/wapps/" IN_OWN "/config",
+                         IN_OWN_CFG_BODY) >= 0 &&
+              write_path("/dev/wanted/wapps/" IN_INJ "/config",
+                         IN_INJ_CFG_BODY) >= 0;
+    int up = cfg && start_wapp(IN_OWN) &&
+             wait_state("/dev/wanted/wapps/" IN_OWN "/state", 1);
+    int injected = up && start_wapp(IN_INJ);
+    wait_dead(IN_INJ);
+    wait_dead(IN_OWN);
+
+    int got = read_path(IN_OWN_LOG, buf, sizeof(buf)) > 0;
+    tap_ok(injected && got && strstr(buf, "input-done") != NULL,
+           "input: the owner and the injector both ran to completion");
+    tap_ok(got && strstr(buf, "input-info:ok") != NULL,
+           "input: info reports the declared types and keymap");
+    tap_ok(got && strstr(buf, "input-poll:woke-on-inject") != NULL,
+           "input: poll on events and a socket wakes on an injected record, "
+           "and not before");
+    tap_ok(got && strstr(buf, "input-records:ordered") != NULL &&
+               strstr(buf, "input-events:drained") != NULL,
+           "input: the injected batch arrives in order and nothing is left");
+    tap_ok(got && strstr(buf, "input-inject:denied") != NULL,
+           "input: an owner has no inject node");
+    delete_wapp(IN_OWN);
+
+    /* The injector's own log is on the same mount. */
+    static char injlog[128];
+    int injgot = read_path(LOG_MOUNT "/" IN_INJ, injlog, sizeof(injlog)) > 0;
+    tap_ok(injgot && strstr(injlog, "input-events:denied") != NULL &&
+               strstr(injlog, "input-injected") != NULL,
+           "input: an inject grant writes records and has no events node");
+    delete_wapp(IN_INJ);
+
+    create_wapp(IN_BLK);
+    wapp_node(state, sizeof(state), IN_BLK, "state");
+    wapp_node(blk, sizeof(blk), IN_BLK, "config");
+    int blocked = write_path(blk, IN_BLK_CFG_BODY) >= 0 && start_wapp(IN_BLK) &&
+                  wait_state(state, 1);
+    stop_wapp(IN_BLK);
+    int prompt = 0;
+    for (int i = 0; i < 2 && !prompt; i++) {
+        sleep(1);
+        prompt = read_path(state, buf, sizeof(buf)) > 0 &&
+                 !strstr(buf, "running") && !strstr(buf, "starting");
+    }
+    if (!prompt)
+        wait_dead(IN_BLK); /* bound a stuck slot so the suite goes on */
+    int parked = read_path(IN_BLK_LOG, buf, sizeof(buf)) > 0 &&
+                 strstr(buf, "input-blocked") != NULL;
+    tap_ok(blocked && parked && prompt,
+           "input: a stop ends a wapp blocked on events promptly");
+    delete_wapp(IN_BLK);
+}
+
 int main(void) {
     /* Phases run in order, each announced with a current/total counter before
      * it runs, so a long mostly-sleeping check is visibly progressing. The
@@ -1520,6 +1612,7 @@ int main(void) {
         {"dgram_listen_check", dgram_listen_check},
         {"ota_check", ota_check},
         {"fb_check", fb_check},
+        {"input_check", input_check},
         {"pipe_duplex_check", pipe_duplex_check},
         {"multi_reader_pipe_check", multi_reader_pipe_check},
         {"robustness_checks", robustness_checks},
