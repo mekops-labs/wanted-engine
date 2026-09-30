@@ -1107,21 +1107,25 @@ static int32_t wasi_fd_datasync(wasm_exec_env_t exec_env, int32_t fd) {
     return wasi_fd_sync(exec_env, fd);
 }
 
+__wasi_errno_t WasiRandomFill(wasi_random_fn fill, uint8_t *buf, uint32_t len) {
+    while (len > 0) {
+        int64_t got = fill(buf, len);
+        if (got < 0)
+            return WasiErrno((int)got);
+        if (got == 0)
+            return __WASI_ERRNO_IO;
+        buf += got;
+        len -= (uint32_t)got;
+    }
+    return __WASI_ERRNO_SUCCESS;
+}
+
 static int32_t wasi_random_get(wasm_exec_env_t exec_env, int32_t buf_app,
                                int32_t buf_len) {
     uint8_t *buf = vaddr(exec_env, buf_app, (uint32_t)buf_len);
     if (!buf)
         return __WASI_ERRNO_FAULT;
-
-    uint32_t remaining = (uint32_t)buf_len;
-    while (remaining > 0) {
-        int64_t got = PlatfromGetRandom(buf, remaining);
-        if (got < 0)
-            return WasiErrno((int)got);
-        buf += got;
-        remaining -= (uint32_t)got;
-    }
-    return __WASI_ERRNO_SUCCESS;
+    return WasiRandomFill(PlatfromGetRandom, buf, (uint32_t)buf_len);
 }
 
 static int32_t wasi_clock_res_get(wasm_exec_env_t exec_env, int32_t wasi_clk_id,

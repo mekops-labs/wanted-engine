@@ -853,6 +853,20 @@ static void crashloop_check(void) {
     delete_wapp("crasher");
 }
 
+/* random_get, through wasi-libc's getentropy: it must return, and fill the
+ * buffer. */
+static void random_check(void) {
+    unsigned char a[32] = {0};
+    unsigned char b[32] = {0};
+    static const unsigned char zero[32] = {0};
+
+    int ra = getentropy(a, sizeof(a));
+    int rb = getentropy(b, sizeof(b));
+    tap_ok(ra == 0 && rb == 0, "random: random_get returns and succeeds");
+    tap_ok(memcmp(a, zero, sizeof(a)) != 0 && memcmp(a, b, sizeof(a)) != 0,
+           "random: two calls fill the buffer with different bytes");
+}
+
 /* Prove /dev/pipe is a process-wide channel between two distinct wapps. Two
  * instances run the single `duplex` image and pick their side from the ROLE env
  * var; the supervisor verifies the payload reached the reader's log. */
@@ -1430,6 +1444,7 @@ int main(void) {
         {"bind_mount_escape_check", bind_mount_escape_check},
         {"listen_check", listen_check},
         {"dgram_listen_check", dgram_listen_check},
+        {"random_check", random_check},
         {"ota_check", ota_check},
         {"pipe_duplex_check", pipe_duplex_check},
         {"multi_reader_pipe_check", multi_reader_pipe_check},

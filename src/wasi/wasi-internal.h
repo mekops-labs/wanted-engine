@@ -15,6 +15,14 @@ __wasi_errno_t WasiErrno(int errnum);
  * ("wasi_snapshot_preview1" or "wasi_unstable"). */
 bool WasiHasNative(const char *ns, const char *name);
 
+/* A platform fill: writes up to `len` bytes into `buf` and returns how many,
+ * or a negative errno. */
+typedef int64_t (*wasi_random_fn)(uint8_t *buf, size_t len);
+
+/* Fill `buf` through `fill`, asking again after a short fill. A fill that
+ * writes nothing is an I/O error, so a broken platform cannot hang a guest. */
+__wasi_errno_t WasiRandomFill(wasi_random_fn fill, uint8_t *buf, uint32_t len);
+
 /* poll_oneoff over native copies of the guest's arrays: waits until at least
  * one subscription fires, then writes one event per fired subscription. */
 __wasi_errno_t WasiPollOneoff(vfs_ctx_t c, const __wasi_subscription_t *in,

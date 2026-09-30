@@ -13,5 +13,5 @@ int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len) {
     if (buf == NULL)
         return -EINVAL;
     esp_fill_random(buf, buf_len);
-    return 0;
+    return (int64_t)buf_len;
 }
