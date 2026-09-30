@@ -37,5 +37,5 @@ int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len) {
     }
 
     close(fd);
-    return 0;
+    return (int64_t)buf_len;
 }
