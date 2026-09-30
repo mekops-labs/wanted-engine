@@ -41,6 +41,9 @@ int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout,
 /* Hand the CPU to another ready thread; returns 0 or a negative errno. */
 int PlatformYield(void);
 
+/* Fill `buf` with random bytes. Returns how many were written, at least 1 for a
+ * non-empty buffer, or a negative errno. The caller asks again after a short
+ * fill. */
 int64_t PlatfromGetRandom(uint8_t *buf, size_t buf_len);
 
 /* Ed25519 signature verification sizes (RFC 8032). */
