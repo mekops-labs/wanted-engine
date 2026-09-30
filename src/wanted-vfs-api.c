@@ -10,6 +10,7 @@
 #include <vfs-devfs.h>
 #include <vfs-drivers.h>
 #include <vfs-fb.h>
+#include <vfs-input.h>
 #include <vfs-netfs.h>
 #include <wanted-api.h>
 #include <wanted-autoconf.h>
@@ -153,6 +154,63 @@ static int declareScreens(json_t const *list) {
 #endif
 }
 
+#ifdef CONFIG_WANTED_VFS_INPUT
+/* One `types` entry of an input device declaration. */
+static int inputTypeBit(const char *name) {
+    if (name == NULL)
+        return 0;
+    if (strcmp(name, "key") == 0)
+        return INPUT_TYPE_KEY;
+    if (strcmp(name, "text") == 0)
+        return INPUT_TYPE_TEXT;
+    if (strcmp(name, "rel") == 0)
+        return INPUT_TYPE_REL;
+    return 0;
+}
+#endif
+
+/* system.inputs: each entry declares one virtual input device fed only through
+ * inject. Every field is required, and an entry the engine cannot honour fails
+ * the parse. */
+static int declareInputs(json_t const *list) {
+#ifdef CONFIG_WANTED_VFS_INPUT
+    if (JSON_ARRAY != json_getType(list))
+        return -EINVAL;
+
+    for (json_t const *e = json_getChild(list); e; e = json_getSibling(e)) {
+        if (JSON_OBJ != json_getType(e))
+            return -EINVAL;
+
+        json_t const *types = json_getProperty(e, "types");
+        const char *name = json_getPropertyValue(e, "name");
+        const char *keymap = json_getPropertyValue(e, "keymap");
+        if (!name || !keymap || !types || JSON_ARRAY != json_getType(types))
+            return -EINVAL;
+
+        input_device_desc_t desc = {0};
+        desc.name = name;
+        desc.keymap = keymap;
+        for (json_t const *t = json_getChild(types); t;
+             t = json_getSibling(t)) {
+            int bit = JSON_TEXT == json_getType(t)
+                          ? inputTypeBit(json_getValue(t))
+                          : 0;
+            if (bit == 0)
+                return -EINVAL;
+            desc.types |= (uint8_t)bit;
+        }
+
+        int rc = InputDeviceRegister(&desc, NULL);
+        if (rc < 0)
+            return rc;
+    }
+    return 0;
+#else
+    (void)list;
+    return -ENODEV;
+#endif
+}
+
 static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
     if (NULL == out || NULL == buf) {
         return -EINVAL;
@@ -194,6 +252,16 @@ static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
         int rc = declareScreens(screens);
         if (rc < 0) {
             DEBUG_TRACE(".system.screens is not usable (%d)", rc);
+            jsonScratchRelease(&scratch);
+            return rc;
+        }
+    }
+
+    json_t const *inputs = json_getProperty(system, "inputs");
+    if (inputs) {
+        int rc = declareInputs(inputs);
+        if (rc < 0) {
+            DEBUG_TRACE(".system.inputs is not usable (%d)", rc);
             jsonScratchRelease(&scratch);
             return rc;
         }
@@ -507,6 +575,9 @@ static const vfs_driver_table_t core_driver_table[] = {
 #endif
 #ifdef CONFIG_WANTED_VFS_FB
     {"fb", VfsFbInit},
+#endif
+#ifdef CONFIG_WANTED_VFS_INPUT
+    {"input", VfsInputInit},
 #endif
 #ifdef CONFIG_WANTED_VFS_OTA
     {"ota", VfsOtaInit},
