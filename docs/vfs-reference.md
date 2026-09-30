@@ -434,11 +434,13 @@ With `CONFIG_WANTED_VFS_FB_OBSERVE` an `observe` grant gets a read-only view:
   damage  (r)   flushed rectangles, four little-endian u16 each: x y w h
 ```
 
-- An observer has no `ctl`, and its `data` never shows a pixel the writer has
-  not flushed. The engine keeps a second copy of the screen while an observer
-  exists and updates it on each `flush`, before reporting the rectangle.
-- That copy starts black, so a screen the writer flushed before the observer
-  attached stays black until the writer flushes again.
+- An observer has no `ctl`. After it attaches, its `data` never shows a pixel
+  the writer has not flushed. The engine keeps a second copy of the screen while
+  an observer exists and updates it on each `flush`, before reporting the
+  rectangle.
+- That copy starts as the screen's pixels when the first observer attaches, so
+  an observer that starts late sees the screen. That first snapshot can include
+  pixels the writer has written and not yet flushed.
 - A `damage` read blocks until a flush is queued, returns whole records, and
   needs a buffer of at least 8 bytes (`-EINVAL` otherwise). `O_NONBLOCK` returns
   `-EAGAIN` when nothing is queued, and a stop ends a blocked read with
