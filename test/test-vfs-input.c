@@ -12,6 +12,9 @@
 #include <vfs-input.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
+#include <wanted-vfs-api.h>
+#include <wasi/wasi-internal.h>
+#include <wasi/wasi_types.h>
 
 /* /dev/input: the per-device subtree, the grant grammar, and the read,
  * overflow and ownership contract. Devices are virtual: the test registers
@@ -27,6 +30,7 @@ typedef struct peer_t {
 } peer_t;
 
 static peer_t owner;
+static peer_t injector;
 static input_device_t *mainDev;
 static input_device_t *auxDev;
 
@@ -55,6 +59,7 @@ static void detach(peer_t *p) {
 }
 
 static void teardown(void) {
+    detach(&injector);
     detach(&owner);
     InputDevicesReset();
 }
@@ -82,26 +87,31 @@ static int readNode(const char *path, char *buf, size_t bufLen) {
     return n;
 }
 
-static int writeNode(const char *path, const void *payload, size_t len) {
-    int fd = openNode(path, VFS_O_WRONLY);
+static int writeVia(peer_t *p, const char *path, const void *payload,
+                    size_t len) {
+    int fd = VfsOpen(p->vfs, path, VFS_O_WRONLY);
     if (fd < 0)
         return fd;
-    int n = VfsWrite(owner.vfs, fd, payload, len);
-    VfsClose(owner.vfs, fd);
+    int n = VfsWrite(p->vfs, fd, payload, len);
+    VfsClose(p->vfs, fd);
     return n;
 }
 
+static int writeNode(const char *path, const void *payload, size_t len) {
+    return writeVia(&owner, path, payload, len);
+}
+
 /* The names in a directory, joined by ',' into `out`. Returns 0 or -errno. */
-static int listDir(const char *path, char *out, size_t outLen) {
-    int fd = openNode(path, VFS_O_RDONLY);
+static int listDirVia(peer_t *p, const char *path, char *out, size_t outLen) {
+    int fd = VfsOpen(p->vfs, path, VFS_O_RDONLY);
     if (fd < 0)
         return fd;
 
     uint8_t buf[512];
     uint64_t cookie = 0;
     size_t used = 0;
-    int rc = VfsReadDir(owner.vfs, fd, buf, sizeof(buf), &cookie, &used);
-    VfsClose(owner.vfs, fd);
+    int rc = VfsReadDir(p->vfs, fd, buf, sizeof(buf), &cookie, &used);
+    VfsClose(p->vfs, fd);
     if (rc < 0)
         return rc;
 
@@ -120,6 +130,10 @@ static int listDir(const char *path, char *out, size_t outLen) {
         off += ent.d_namlen;
     }
     return 0;
+}
+
+static int listDir(const char *path, char *out, size_t outLen) {
+    return listDirVia(&owner, path, out, outLen);
 }
 
 /***************************************/
@@ -559,4 +573,251 @@ TEST_GROUP_RUNNER(input_owner) {
     RUN_TEST_CASE(input_owner, OwnersOfDifferentDevicesCoexist);
     RUN_TEST_CASE(input_owner, NewOwnerDoesNotSeeRecordsQueuedBeforeIt);
     RUN_TEST_CASE(input_owner, DeviceStaysRegisteredAcrossOwners);
+}
+
+#ifdef CONFIG_WANTED_VFS_INPUT_INJECT
+/***************************************/
+TEST_GROUP(input_inject);
+/***************************************/
+
+#define GRANT_INJECT "devices=main,keymap=default,inject"
+
+static int ownerFd;
+
+TEST_SETUP(input_inject) {
+    registerDevices();
+    TEST_ASSERT_TRUE(attach(&owner, GRANT_MAIN));
+    TEST_ASSERT_TRUE(attach(&injector, GRANT_INJECT));
+    ownerFd = openNode("/dev/input/main/events", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    TEST_ASSERT_TRUE(ownerFd >= 0);
+}
+
+TEST_TEAR_DOWN(input_inject) { teardown(); }
+
+TEST(input_inject, InjectGrantListsInfoAndInjectOnly) {
+    char names[64];
+    TEST_ASSERT_EQUAL_INT(
+        0, listDirVia(&injector, "/dev/input/main", names, sizeof(names)));
+    TEST_ASSERT_EQUAL_STRING("info,inject", names);
+    TEST_ASSERT_EQUAL_INT(
+        -ENOENT, VfsOpen(injector.vfs, "/dev/input/main/events", VFS_O_RDONLY));
+}
+
+TEST(input_inject, OwnerGrantHasNoInjectNode) {
+    char names[64];
+    TEST_ASSERT_EQUAL_INT(0, listDir("/dev/input/main", names, sizeof(names)));
+    TEST_ASSERT_EQUAL_STRING("events,info", names);
+    TEST_ASSERT_EQUAL_INT(
+        -ENOENT, VfsOpen(owner.vfs, "/dev/input/main/inject", VFS_O_WRONLY));
+}
+
+TEST(input_inject, InjectedRecordsReachTheOwnerByteForByte) {
+    const uint8_t batch[24] = {
+        0x00, 0x01, 0x1E, 0x00, 0x01, 0x00, 0x00, 0x00, /* KEY_A down */
+        0x00, 0xF0, 0x00, 0x00, 0x61, 0x00, 0x00, 0x00, /* text 'a' */
+        0x01, 0x02, 0x08, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, /* wheel -1 */
+    };
+    uint8_t got[32];
+
+    TEST_ASSERT_EQUAL_INT(24, writeVia(&injector, "/dev/input/main/inject",
+                                       batch, sizeof(batch)));
+    TEST_ASSERT_EQUAL_INT(24, VfsRead(owner.vfs, ownerFd, got, sizeof(got)));
+    TEST_ASSERT_EQUAL_MEMORY(batch, got, 24);
+}
+
+TEST(input_inject, PartialRecordIsEinvalAndQueuesNothing) {
+    uint8_t bytes[16] = {0};
+    uint8_t got[16];
+
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, writeVia(&injector, "/dev/input/main/inject", bytes, 7));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, writeVia(&injector, "/dev/input/main/inject", bytes, 12));
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(owner.vfs, ownerFd, got, 16));
+}
+
+TEST(input_inject, InjectOverflowYieldsSynDropped) {
+    static uint8_t batch[(INPUT_QUEUE_LEN + 1) * INPUT_EVENT_BYTES];
+    uint8_t got[INPUT_QUEUE_LEN * INPUT_EVENT_BYTES];
+
+    for (size_t i = 0; i < sizeof(batch); i += INPUT_EVENT_BYTES) {
+        memset(batch + i, 0, INPUT_EVENT_BYTES);
+        batch[i] = 1;
+        batch[i + 1] = EV_KEY;
+    }
+    TEST_ASSERT_EQUAL_INT(
+        (int)sizeof(batch),
+        writeVia(&injector, "/dev/input/main/inject", batch, sizeof(batch)));
+    TEST_ASSERT_EQUAL_INT(8, VfsRead(owner.vfs, ownerFd, got, sizeof(got)));
+    TEST_ASSERT_EQUAL_UINT8(EV_SYN, got[1]);
+    TEST_ASSERT_EQUAL_UINT8(SYN_DROPPED, got[2]);
+}
+
+TEST(input_inject, InjectNodeRefusesReads) {
+    char buf[8];
+    int fd = VfsOpen(injector.vfs, "/dev/input/main/inject", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(-EPERM, VfsRead(injector.vfs, fd, buf, sizeof(buf)));
+}
+
+TEST(input_inject, InjectGrantDoesNotClaimTheDevice) {
+    peer_t second;
+    TEST_ASSERT_TRUE(attach(&second, GRANT_INJECT));
+    detach(&second);
+    detach(&owner);
+    TEST_ASSERT_TRUE(attach(&owner, GRANT_MAIN));
+}
+
+TEST(input_inject, InjectGrantMayLaunchBeforeTheOwner) {
+    detach(&injector);
+    detach(&owner);
+    TEST_ASSERT_TRUE(attach(&injector, GRANT_INJECT));
+    TEST_ASSERT_TRUE(attach(&owner, GRANT_MAIN));
+}
+
+TEST(input_inject, MisplacedInjectTokenFailsLaunch) {
+    TEST_ASSERT_NULL(VfsInputInit(NULL, "devices=main,inject,keymap=default"));
+    TEST_ASSERT_NULL(VfsInputInit(NULL, "devices=main,keymap=default,inject,"));
+    TEST_ASSERT_NULL(
+        VfsInputInit(NULL, "devices=main,keymap=default,inject,inject"));
+    TEST_ASSERT_NULL(VfsInputInit(NULL, "devices=main,keymap=default,other"));
+}
+
+TEST_GROUP_RUNNER(input_inject) {
+    RUN_TEST_CASE(input_inject, InjectGrantListsInfoAndInjectOnly);
+    RUN_TEST_CASE(input_inject, OwnerGrantHasNoInjectNode);
+    RUN_TEST_CASE(input_inject, InjectedRecordsReachTheOwnerByteForByte);
+    RUN_TEST_CASE(input_inject, PartialRecordIsEinvalAndQueuesNothing);
+    RUN_TEST_CASE(input_inject, InjectOverflowYieldsSynDropped);
+    RUN_TEST_CASE(input_inject, InjectNodeRefusesReads);
+    RUN_TEST_CASE(input_inject, InjectGrantDoesNotClaimTheDevice);
+    RUN_TEST_CASE(input_inject, InjectGrantMayLaunchBeforeTheOwner);
+    RUN_TEST_CASE(input_inject, MisplacedInjectTokenFailsLaunch);
+}
+#endif /* CONFIG_WANTED_VFS_INPUT_INJECT */
+
+#ifndef CONFIG_WANTED_VFS_INPUT_INJECT
+/***************************************/
+TEST_GROUP(input_inject);
+/***************************************/
+
+TEST_SETUP(input_inject) { registerDevices(); }
+
+TEST_TEAR_DOWN(input_inject) { teardown(); }
+
+/* A build without injection never reads an inject grant as an owner's. */
+TEST(input_inject, InjectGrantFailsLaunchWithoutTheBuildOption) {
+    TEST_ASSERT_NULL(VfsInputInit(NULL, "devices=main,keymap=default,inject"));
+    TEST_ASSERT_TRUE(attach(&owner, GRANT_MAIN));
+}
+
+TEST_GROUP_RUNNER(input_inject) {
+    RUN_TEST_CASE(input_inject, InjectGrantFailsLaunchWithoutTheBuildOption);
+}
+#endif /* !CONFIG_WANTED_VFS_INPUT_INJECT */
+
+/***************************************/
+TEST_GROUP(input_poll);
+/***************************************/
+
+TEST_SETUP(input_poll) {
+    registerDevices();
+    TEST_ASSERT_TRUE(attach(&owner, GRANT_MAIN));
+    eventsFd = openNode("/dev/input/main/events", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(eventsFd >= 0);
+}
+
+TEST_TEAR_DOWN(input_poll) { teardown(); }
+
+static __wasi_subscription_t eventsSub(int fd) {
+    __wasi_subscription_t s;
+    memset(&s, 0, sizeof(s));
+    s.userdata = 1;
+    s.type = __WASI_EVENTTYPE_FD_READ;
+    s.u.fd_readwrite.fd = (uint32_t)fd;
+    return s;
+}
+
+static __wasi_subscription_t clockSub(uint64_t timeoutNs) {
+    __wasi_subscription_t s;
+    memset(&s, 0, sizeof(s));
+    s.userdata = 2;
+    s.type = __WASI_EVENTTYPE_CLOCK;
+    s.u.clock.id = 1; /* monotonic */
+    s.u.clock.timeout = timeoutNs;
+    return s;
+}
+
+TEST(input_poll, EventsAreNotReadableWhileTheQueueIsEmpty) {
+    uint32_t avail = 99;
+    TEST_ASSERT_EQUAL_INT(0, VfsPoll(owner.vfs, eventsFd, &avail));
+}
+
+TEST(input_poll, EventsAreReadableWithTheQueuedByteCount) {
+    uint32_t avail = 0;
+    push(mainDev, 0, EV_KEY, KEY_A, 1);
+    push(mainDev, 1, EV_TEXT, 0, 'a');
+
+    TEST_ASSERT_EQUAL_INT(VFS_POLL_IN, VfsPoll(owner.vfs, eventsFd, &avail));
+    TEST_ASSERT_EQUAL_UINT32(2 * INPUT_EVENT_BYTES, avail);
+}
+
+TEST(input_poll, EventsAreNotReadableOnceDrained) {
+    uint8_t rec[INPUT_EVENT_BYTES];
+    uint32_t avail = 0;
+    push(mainDev, 1, EV_KEY, KEY_A, 1);
+    TEST_ASSERT_EQUAL_INT(8, VfsRead(owner.vfs, eventsFd, rec, sizeof(rec)));
+
+    TEST_ASSERT_EQUAL_INT(0, VfsPoll(owner.vfs, eventsFd, &avail));
+}
+
+TEST(input_poll, InfoIsAlwaysReadable) {
+    uint32_t avail = 0;
+    int fd = openNode("/dev/input/main/info", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_TRUE((VfsPoll(owner.vfs, fd, &avail) & VFS_POLL_IN) != 0);
+}
+
+/* One poll_oneoff waits on events beside another source and wakes on a
+ * record. */
+TEST(input_poll, PollOneoffWakesOnAQueuedRecord) {
+    __wasi_subscription_t subs[2] = {eventsSub(eventsFd), clockSub(2000000)};
+    __wasi_event_t ev[2];
+    uint32_t n = 0;
+
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(owner.vfs, subs, ev, 2, &n));
+    TEST_ASSERT_EQUAL_UINT32(1, n);
+    TEST_ASSERT_EQUAL_UINT8(__WASI_EVENTTYPE_CLOCK, ev[0].type);
+
+    push(mainDev, 1, EV_KEY, KEY_A, 1);
+    subs[1] = clockSub(5000000000ULL);
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS,
+                             WasiPollOneoff(owner.vfs, subs, ev, 2, &n));
+    TEST_ASSERT_EQUAL_UINT32(1, n);
+    TEST_ASSERT_EQUAL_UINT8(__WASI_EVENTTYPE_FD_READ, ev[0].type);
+    TEST_ASSERT_EQUAL_UINT16(__WASI_ERRNO_SUCCESS, ev[0].error);
+    TEST_ASSERT_EQUAL_UINT64(INPUT_EVENT_BYTES, ev[0].fd_readwrite.nbytes);
+}
+
+/* A stop raises the wake descriptor, which ends a blocked events read. */
+TEST(input_poll, StopInterruptsABlockedEventsRead) {
+    int wake = PlatformWakeCreate();
+    TEST_ASSERT_TRUE(wake >= 0);
+    owner.drv->SetWake(owner.drv->ctx, wake);
+    VfsSetWakeFd(owner.vfs, wake);
+    PlatformWakeRaise(wake);
+
+    uint8_t rec[INPUT_EVENT_BYTES];
+    TEST_ASSERT_EQUAL_INT(-EINTR,
+                          VfsRead(owner.vfs, eventsFd, rec, sizeof(rec)));
+}
+
+TEST_GROUP_RUNNER(input_poll) {
+    RUN_TEST_CASE(input_poll, EventsAreNotReadableWhileTheQueueIsEmpty);
+    RUN_TEST_CASE(input_poll, EventsAreReadableWithTheQueuedByteCount);
+    RUN_TEST_CASE(input_poll, EventsAreNotReadableOnceDrained);
+    RUN_TEST_CASE(input_poll, InfoIsAlwaysReadable);
+    RUN_TEST_CASE(input_poll, PollOneoffWakesOnAQueuedRecord);
+    RUN_TEST_CASE(input_poll, StopInterruptsABlockedEventsRead);
 }
