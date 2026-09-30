@@ -26,12 +26,14 @@ static const char id[] = {'I', 'n', 'D', 'v'};
 #define INPUT_MAX_FDS 8
 #define INPUT_DEVICES_KEY "devices="
 #define INPUT_KEYMAP_KEY "keymap="
+#define INPUT_INJECT_TOKEN "inject"
 #define INPUT_SLEEP_NS 1000000ULL /* 1 ms */
 
 #define INPUT_NODE_ROOT 0
 #define INPUT_NODE_DEVICE 1
 #define INPUT_NODE_EVENTS 2
 #define INPUT_NODE_INFO 3
+#define INPUT_NODE_INJECT 4
 
 #define INPUT_INFO_MAX 48
 #define INPUT_BYTE_BITS 8
@@ -65,6 +67,7 @@ struct input_fd_t {
 struct vfs_driver_ctx_t {
     input_device_t *devices[CONFIG_WANTED_INPUT_MAX_DEVICES];
     uint8_t count;
+    bool inject; /* write-side grant: no events node, no ownership */
     bool claimed;
     int wakeFd;
     struct input_fd_t fds[INPUT_MAX_FDS];
@@ -145,13 +148,14 @@ void InputDevicePush(input_device_t *dev, const wanted_input_event_t *ev) {
 
 /* ── Grant parsing ───────────────────────────────────────────────────────── */
 
-/* Parse devices=<name>[,<name>...],keymap=<keymap> and resolve every name. The
- * keymap must be the one each device declares. Returns 0 or -EINVAL; the
- * caller frees the context on failure. */
+/* Parse devices=<name>[,<name>...],keymap=<keymap>[,inject] and resolve every
+ * name. The keymap must be the one each device declares. Returns 0 or -EINVAL;
+ * the caller frees the context on failure. */
 static int parseGrant(struct vfs_driver_ctx_t *ctx, const char *options) {
     const size_t devKeyLen = sizeof(INPUT_DEVICES_KEY) - 1;
     const size_t mapKeyLen = sizeof(INPUT_KEYMAP_KEY) - 1;
     const char *keymap = NULL;
+    size_t keymapLen = 0;
 
     if (options == NULL ||
         strncmp(options, INPUT_DEVICES_KEY, devKeyLen) != 0) {
@@ -169,9 +173,20 @@ static int parseGrant(struct vfs_driver_ctx_t *ctx, const char *options) {
         if (len == 0 || keymap != NULL)
             return -EINVAL;
         if (len >= mapKeyLen && strncmp(p, INPUT_KEYMAP_KEY, mapKeyLen) == 0) {
-            if (*end != '\0' || len == mapKeyLen)
+            if (len == mapKeyLen)
                 return -EINVAL;
             keymap = p + mapKeyLen;
+            keymapLen = len - mapKeyLen;
+            if (*end == ',') {
+                if (strcmp(end + 1, INPUT_INJECT_TOKEN) != 0)
+                    return -EINVAL;
+#ifdef CONFIG_WANTED_VFS_INPUT_INJECT
+                ctx->inject = true;
+#else
+                return -EINVAL;
+#endif
+                break;
+            }
         } else {
             input_device_t *d = findDevice(p, len);
             if (d == NULL || ctx->count >= CONFIG_WANTED_INPUT_MAX_DEVICES) {
@@ -193,7 +208,9 @@ static int parseGrant(struct vfs_driver_ctx_t *ctx, const char *options) {
     if (keymap == NULL || ctx->count == 0)
         return -EINVAL;
     for (uint8_t i = 0; i < ctx->count; i++) {
-        if (strcmp(ctx->devices[i]->keymap, keymap) != 0) {
+        const char *have = ctx->devices[i]->keymap;
+        if (strlen(have) != keymapLen ||
+            strncmp(have, keymap, keymapLen) != 0) {
             DEBUG_TRACE("input grant names an unknown keymap");
             return -EINVAL;
         }
@@ -205,6 +222,9 @@ static int parseGrant(struct vfs_driver_ctx_t *ctx, const char *options) {
  * before the claim are dropped. */
 static int claimDevices(struct vfs_driver_ctx_t *ctx) {
     int rc = 0;
+
+    if (ctx->inject)
+        return 0;
 
     PlatformMutexLock(table.lock);
     for (uint8_t i = 0; i < ctx->count; i++) {
@@ -263,10 +283,12 @@ static int resolve(const struct vfs_driver_ctx_t *ctx, const char *path,
         slash++;
     if (*slash == '\0')
         *node = INPUT_NODE_DEVICE;
-    else if (strcmp(slash, "events") == 0)
+    else if (strcmp(slash, "events") == 0 && !ctx->inject)
         *node = INPUT_NODE_EVENTS;
     else if (strcmp(slash, "info") == 0)
         *node = INPUT_NODE_INFO;
+    else if (strcmp(slash, INPUT_INJECT_TOKEN) == 0 && ctx->inject)
+        *node = INPUT_NODE_INJECT;
     else
         return -ENOENT;
     return 0;
@@ -284,6 +306,7 @@ static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
                  long *pos);
 static void _SetWake(vfs_driver_ctx_t d, int fd);
 static int _SetFlags(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags);
+static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail);
 static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
                     uint64_t *cookie, size_t *bufUsed);
 
@@ -317,6 +340,7 @@ vfs_driver_t *VfsInputInit(const wapp_t *wapp, const char *options) {
     driver->Seek = _Seek;
     driver->SetWake = _SetWake;
     driver->SetFlags = _SetFlags;
+    driver->Poll = _Poll;
     driver->ReadDir = _ReadDir;
 
     if (parseGrant(ctx, options) < 0 || claimDevices(ctx) < 0) {
@@ -391,6 +415,21 @@ static int _SetFlags(vfs_driver_ctx_t d, int fd, vfs_oflags_t flags) {
     return 0;
 }
 
+/* Only events waits on anything; every other node is always ready. */
+static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail) {
+    const struct input_fd_t *f = fdAt(d, fd);
+    if (f == NULL)
+        return -EBADF;
+    if (f->node == INPUT_NODE_EVENTS) {
+        PlatformMutexLock(table.lock);
+        uint8_t count = d->devices[f->device]->count;
+        PlatformMutexUnlock(table.lock);
+        *avail = (uint32_t)count * INPUT_EVENT_BYTES;
+        return count > 0 ? VFS_POLL_IN : 0;
+    }
+    return VFS_POLL_IN | VFS_POLL_OUT;
+}
+
 /* "<types> keymap=<keymap>\n", types in the order key, text, rel. */
 static int readInfo(vfs_driver_ctx_t d, struct input_fd_t *f, void *buf,
                     size_t nbyte) {
@@ -461,6 +500,32 @@ static int readEvents(vfs_driver_ctx_t d, struct input_fd_t *f, void *buf,
     }
 }
 
+#ifdef CONFIG_WANTED_VFS_INPUT_INJECT
+static void getRecord(const uint8_t *p, wanted_input_event_t *ev) {
+    uint32_t v = 0;
+    for (size_t i = 0; i < sizeof(v); i++)
+        v |= (uint32_t)p[4 + i] << (INPUT_BYTE_BITS * i);
+    ev->sync = p[0];
+    ev->type = p[1];
+    ev->code = (uint16_t)(p[2] | (p[3] << INPUT_BYTE_BITS));
+    ev->value = (int32_t)v;
+}
+
+/* Queue whole records for the device's owner; a partial record queues none. */
+static int writeInject(vfs_driver_ctx_t d, const struct input_fd_t *f,
+                       const void *buf, size_t nbyte) {
+    if (nbyte % INPUT_EVENT_BYTES != 0)
+        return -EINVAL;
+
+    for (size_t off = 0; off < nbyte; off += INPUT_EVENT_BYTES) {
+        wanted_input_event_t ev;
+        getRecord((const uint8_t *)buf + off, &ev);
+        InputDevicePush(d->devices[f->device], &ev);
+    }
+    return (int)nbyte;
+}
+#endif
+
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     struct input_fd_t *f = fdAt(d, fd);
     if (f == NULL)
@@ -474,6 +539,8 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     case INPUT_NODE_ROOT:
     case INPUT_NODE_DEVICE:
         return -EISDIR;
+    case INPUT_NODE_INJECT:
+        return -EPERM;
     default:
         return -ENOSYS;
     }
@@ -481,8 +548,6 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
 
 static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     const struct input_fd_t *f = fdAt(d, fd);
-    (void)buf;
-    (void)nbyte;
     if (f == NULL)
         return -EBADF;
 
@@ -493,6 +558,10 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     case INPUT_NODE_INFO:
     case INPUT_NODE_EVENTS:
         return -EPERM;
+#ifdef CONFIG_WANTED_VFS_INPUT_INJECT
+    case INPUT_NODE_INJECT:
+        return writeInject(d, f, buf, nbyte);
+#endif
     default:
         return -ENOSYS;
     }
@@ -514,8 +583,9 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
 
     if (f->node == INPUT_NODE_DEVICE) {
         vfs_dir_entry_t nodes[2] = {
-            {"events", VFS_FILETYPE_CHARACTER_DEVICE},
-            {"info", VFS_FILETYPE_CHARACTER_DEVICE},
+            {d->inject ? "info" : "events", VFS_FILETYPE_CHARACTER_DEVICE},
+            {d->inject ? INPUT_INJECT_TOKEN : "info",
+             VFS_FILETYPE_CHARACTER_DEVICE},
         };
         return VfsFlatDirReadDir(nodes, 2, buf, bufLen, cookie, bufUsed);
     }
