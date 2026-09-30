@@ -821,3 +821,92 @@ TEST_GROUP_RUNNER(input_poll) {
     RUN_TEST_CASE(input_poll, PollOneoffWakesOnAQueuedRecord);
     RUN_TEST_CASE(input_poll, StopInterruptsABlockedEventsRead);
 }
+
+/***************************************/
+TEST_GROUP(input_config);
+/***************************************/
+
+#define INPUT_CFG(list) "{\"system\":{\"inputs\":" list "}}"
+
+TEST_SETUP(input_config) {}
+
+TEST_TEAR_DOWN(input_config) { teardown(); }
+
+static int parseInputs(const char *json) {
+    return WantedParseConfig(json, strlen(json));
+}
+
+TEST(input_config, SystemConfigDeclaresADevice) {
+    TEST_ASSERT_EQUAL_INT(
+        0, parseInputs(INPUT_CFG("[{\"name\":\"kbd\",\"types\":[\"key\","
+                                 "\"text\",\"rel\"],\"keymap\":\"us\"}]")));
+    TEST_ASSERT_TRUE(attach(&owner, "devices=kbd,keymap=us"));
+    char buf[64];
+    TEST_ASSERT_GREATER_THAN_INT(0, readNode("/dev/input/kbd/info", buf, 64));
+    TEST_ASSERT_EQUAL_STRING("key text rel keymap=us\n", buf);
+}
+
+TEST(input_config, TypesAreAMaskWhateverTheirOrder) {
+    TEST_ASSERT_EQUAL_INT(
+        0, parseInputs(INPUT_CFG("[{\"name\":\"kbd\",\"types\":[\"rel\","
+                                 "\"key\"],\"keymap\":\"us\"}]")));
+    TEST_ASSERT_TRUE(attach(&owner, "devices=kbd,keymap=us"));
+    char buf[64];
+    TEST_ASSERT_GREATER_THAN_INT(0, readNode("/dev/input/kbd/info", buf, 64));
+    TEST_ASSERT_EQUAL_STRING("key rel keymap=us\n", buf);
+}
+
+/* A declaration the engine cannot honour fails the parse; nothing is skipped.
+ */
+TEST(input_config, MalformedDeclarationFailsTheParse) {
+    const char *bad[] = {
+        INPUT_CFG("{}"),
+        INPUT_CFG("[1]"),
+        INPUT_CFG("[{\"types\":[\"key\"],\"keymap\":\"us\"}]"),
+        INPUT_CFG("[{\"name\":\"a\",\"keymap\":\"us\"}]"),
+        INPUT_CFG("[{\"name\":\"a\",\"types\":[\"key\"]}]"),
+        INPUT_CFG("[{\"name\":\"a\",\"types\":[],\"keymap\":\"us\"}]"),
+        INPUT_CFG("[{\"name\":\"a\",\"types\":\"key\",\"keymap\":\"us\"}]"),
+        INPUT_CFG("[{\"name\":\"a\",\"types\":[\"abs\"],\"keymap\":\"us\"}]"),
+        INPUT_CFG("[{\"name\":\"a\",\"types\":[1],\"keymap\":\"us\"}]"),
+        INPUT_CFG("[{\"name\":\"a b\",\"types\":[\"key\"],\"keymap\":\"us\"}]"),
+        INPUT_CFG("[{\"name\":\"a\",\"types\":[\"key\"],\"keymap\":\"u,s\"}]"),
+    };
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        TEST_ASSERT_TRUE_MESSAGE(parseInputs(bad[i]) != 0, bad[i]);
+        InputDevicesReset();
+    }
+}
+
+TEST(input_config, DeclaringTheSameDeviceAgainIsAccepted) {
+    const char *cfg =
+        INPUT_CFG("[{\"name\":\"kbd\",\"types\":[\"key\"],\"keymap\":\"us\"}]");
+    TEST_ASSERT_EQUAL_INT(0, parseInputs(cfg));
+    TEST_ASSERT_EQUAL_INT(0, parseInputs(cfg));
+}
+
+TEST(input_config, DeclaringADeviceDifferentlyFailsTheParse) {
+    TEST_ASSERT_EQUAL_INT(
+        0, parseInputs(INPUT_CFG("[{\"name\":\"kbd\",\"types\":[\"key\"],"
+                                 "\"keymap\":\"us\"}]")));
+    TEST_ASSERT_TRUE(
+        parseInputs(INPUT_CFG("[{\"name\":\"kbd\",\"types\":[\"key\","
+                              "\"text\"],\"keymap\":\"us\"}]")) != 0);
+}
+
+/* Naming input in a launch config reaches this driver: it is in the core
+ * table. */
+TEST(input_config, DriverIsListedAmongTheGrantableDrivers) {
+    char names[512];
+    TEST_ASSERT_GREATER_THAN_INT(0, WantedListDrivers(names, sizeof(names)));
+    TEST_ASSERT_NOT_NULL(strstr(names, "input"));
+}
+
+TEST_GROUP_RUNNER(input_config) {
+    RUN_TEST_CASE(input_config, DriverIsListedAmongTheGrantableDrivers);
+    RUN_TEST_CASE(input_config, SystemConfigDeclaresADevice);
+    RUN_TEST_CASE(input_config, TypesAreAMaskWhateverTheirOrder);
+    RUN_TEST_CASE(input_config, MalformedDeclarationFailsTheParse);
+    RUN_TEST_CASE(input_config, DeclaringTheSameDeviceAgainIsAccepted);
+    RUN_TEST_CASE(input_config, DeclaringADeviceDifferentlyFailsTheParse);
+}
