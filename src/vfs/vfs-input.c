@@ -568,6 +568,7 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
 }
 
 static int _Seek(vfs_driver_ctx_t d, int fd, long off, vfs_whence_t whence,
+                 /* NOLINTNEXTLINE(readability-non-const-parameter) */
                  long *pos) {
     (void)off;
     (void)whence;

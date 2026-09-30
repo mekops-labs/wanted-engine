@@ -597,7 +597,7 @@ static void publishFlush(fb_screen_t *s, uint16_t x, uint16_t y, uint16_t w,
     PlatformMutexLock(table.lock);
     if (s->flushed != NULL) {
         for (uint16_t row = y; row < y + h; row++) {
-            size_t off = (size_t)row * s->stride + (size_t)x * bpp;
+            size_t off = ((size_t)row * s->stride) + ((size_t)x * bpp);
             memcpy(s->flushed + off, s->pixels + off, (size_t)w * bpp);
         }
         for (uint8_t i = 0; i < s->observerCnt; i++)
