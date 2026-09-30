@@ -633,6 +633,63 @@ TEST(fb_observe, OnlyTheFlushedRectangleReachesTheObserver) {
     }
 }
 
+/* The group's observer is detached first, so each test starts with no flushed
+ * copy and the writer's pixels as the only record of the screen. */
+static void expectObserved(peer_t *p, uint8_t value) {
+    uint8_t got[MAIN_BYTES];
+    TEST_ASSERT_EQUAL_INT(MAIN_BYTES, readObserved(p, got, sizeof(got)));
+    for (size_t i = 0; i < sizeof(got); i++)
+        TEST_ASSERT_EQUAL_UINT8(value, got[i]);
+}
+
+TEST(fb_observe, LateObserverSeesWhatWasFlushedBeforeItAttached) {
+    detach(&watcher);
+    drawAll(0xAB);
+    TEST_ASSERT_EQUAL_INT(5, writeNode("/dev/fb/main/ctl", "flush"));
+
+    TEST_ASSERT_TRUE(attach(&watcher, "screens=main,observe"));
+    expectObserved(&watcher, 0xAB);
+}
+
+TEST(fb_observe, AnAttachTimeSnapshotIncludesWritesNotYetFlushed) {
+    detach(&watcher);
+    drawAll(0x5A);
+
+    TEST_ASSERT_TRUE(attach(&watcher, "screens=main,observe"));
+    expectObserved(&watcher, 0x5A);
+}
+
+TEST(fb_observe, WritesAfterAttachStillWaitForAFlush) {
+    detach(&watcher);
+    drawAll(0x11);
+    TEST_ASSERT_EQUAL_INT(5, writeNode("/dev/fb/main/ctl", "flush"));
+    TEST_ASSERT_TRUE(attach(&watcher, "screens=main,observe"));
+
+    drawAll(0x22);
+    expectObserved(&watcher, 0x11);
+    TEST_ASSERT_EQUAL_INT(5, writeNode("/dev/fb/main/ctl", "flush"));
+    expectObserved(&watcher, 0x22);
+}
+
+TEST(fb_observe, ASecondObserverSeesTheFlushedCopyNotTheLivePixels) {
+    drawAll(0x11);
+    TEST_ASSERT_EQUAL_INT(5, writeNode("/dev/fb/main/ctl", "flush"));
+    drawAll(0x22);
+
+    TEST_ASSERT_TRUE(attach(&watcher2, "screens=main,observe"));
+    expectObserved(&watcher2, 0x11);
+}
+
+TEST(fb_observe, TheCopyStartsAgainFromTheLivePixelsWhenTheLastObserverLeaves) {
+    drawAll(0x11);
+    TEST_ASSERT_EQUAL_INT(5, writeNode("/dev/fb/main/ctl", "flush"));
+    detach(&watcher);
+    drawAll(0x33);
+
+    TEST_ASSERT_TRUE(attach(&watcher, "screens=main,observe"));
+    expectObserved(&watcher, 0x33);
+}
+
 TEST(fb_observe, ObserverCannotWrite) {
     int fd = openNode(&watcher, "/dev/fb/main/data", VFS_O_RDWR);
     uint8_t b = 1;
@@ -803,6 +860,13 @@ TEST_GROUP_RUNNER(fb_observe) {
     RUN_TEST_CASE(fb_observe, FullFlushReportsTheWholeScreen);
     RUN_TEST_CASE(fb_observe, UnflushedWritesNeverReachTheObserver);
     RUN_TEST_CASE(fb_observe, OnlyTheFlushedRectangleReachesTheObserver);
+    RUN_TEST_CASE(fb_observe, LateObserverSeesWhatWasFlushedBeforeItAttached);
+    RUN_TEST_CASE(fb_observe, AnAttachTimeSnapshotIncludesWritesNotYetFlushed);
+    RUN_TEST_CASE(fb_observe, WritesAfterAttachStillWaitForAFlush);
+    RUN_TEST_CASE(fb_observe,
+                  ASecondObserverSeesTheFlushedCopyNotTheLivePixels);
+    RUN_TEST_CASE(fb_observe,
+                  TheCopyStartsAgainFromTheLivePixelsWhenTheLastObserverLeaves);
     RUN_TEST_CASE(fb_observe, ObserverCannotWrite);
     RUN_TEST_CASE(fb_observe, NonBlockingDamageReadIsEagainWhenIdle);
     RUN_TEST_CASE(fb_observe, DamageReadsWholeRecordsOnly);
