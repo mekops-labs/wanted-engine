@@ -138,6 +138,24 @@ config WANTED_VFS_UART
 	  exclusively. Needs PlatformUart* — present on ESP-IDF and Linux,
 	  absent on NuttX (grant fails the launch).
 
+config WANTED_VFS_FB
+	bool "fb — framebuffer"
+	default n
+	help
+	  /dev/fb/<screen>/{info,data,ctl}: pixels written to a file, made
+	  visible by an explicit flush. Screens are the headless in-memory
+	  buffers declared in the system.screens configuration.
+
+config WANTED_VFS_FB_OBSERVE
+	bool "fb observers — read-only view of a flushed screen"
+	depends on WANTED_VFS_FB
+	default n
+	help
+	  An `observe` grant reads the last flushed image and the flushed
+	  rectangles from /dev/fb/<screen>/damage. Costs one more copy of the
+	  screen while an observer exists. Without it an `observe` grant fails
+	  the launch.
+
 config WANTED_VFS_OTA
 	bool "ota — A/B firmware update"
 	default y
@@ -190,6 +208,31 @@ config WANTED_UART_BUF_SIZE
 	  Receive and transmit ring the backing installs for a granted port. The
 	  receive ring bounds how far a wapp can fall behind a talking peer before
 	  bytes are lost.
+
+config WANTED_FB_MAX_SCREENS
+	int "Screens the fb driver can hold"
+	depends on WANTED_VFS_FB
+	default 2
+	range 1 8
+	help
+	  Size of the engine-wide screen table.
+
+config WANTED_FB_MAX_OBSERVERS
+	int "Observers per screen"
+	depends on WANTED_VFS_FB_OBSERVE
+	default 4
+	range 1 16
+	help
+	  Observer grants that may hold one screen at once.
+
+config WANTED_FB_DAMAGE_QUEUE
+	int "Flushed rectangles queued per observer"
+	depends on WANTED_VFS_FB_OBSERVE
+	default 16
+	range 2 256
+	help
+	  An observer that falls behind by more than this many flushes has its
+	  queue replaced by one full-screen rectangle.
 
 config WANTED_OTA_SLOT_ROOT
 	string "OTA slot directory (host backings)"

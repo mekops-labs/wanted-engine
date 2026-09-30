@@ -40,6 +40,8 @@ stages:
     - $BUILD_DIR
     expire_in: 20 minutes
   script:
+    - just setconfig WANTED_VFS_FB=y
+    - just setconfig WANTED_VFS_FB_OBSERVE=y
     - just build
 
 .unit_test_job_template: &unit_defs
@@ -125,6 +127,8 @@ coverage:
     CC: gcc
   script:
     - just setconfig WANTED_BUILD_COVERAGE=y
+    - just setconfig WANTED_VFS_FB=y
+    - just setconfig WANTED_VFS_FB_OBSERVE=y
     - just build
     - just coverage
   coverage: '/lines: \d+\.\d+/'

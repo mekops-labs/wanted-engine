@@ -29,6 +29,26 @@ default_config() {
     fi
 }
 CONFIG=${2:-$(default_config)}
+
+# A build with the fb driver needs the screen the fb check draws on, which only
+# the engine config can declare; a build without it must not carry the key.
+with_screens() {
+    local cfgdir out=/tmp/wanted-selftest-config.$$.json
+    cfgdir=$(dirname "$(dirname "$WANTED")")
+    grep -qx 'CONFIG_WANTED_VFS_FB=y' "$cfgdir/.config" 2>/dev/null || {
+        echo "$1"
+        return
+    }
+    python3 - "$1" "$out" <<'PY'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+cfg["system"]["screens"] = [
+    {"name": "main", "width": 16, "height": 8, "format": "rgb565"}]
+json.dump(cfg, open(sys.argv[2], "w"), indent=4)
+PY
+    echo "$out"
+}
+CONFIG=$(with_screens "$CONFIG")
 REGISTRY_ROOT=${REGISTRY_ROOT:-./registry}
 VOLUME_ROOT=${VOLUME_ROOT:-./data}
 # Host dir backing the /host `platform` bind mount, and a secret outside it that
@@ -47,7 +67,7 @@ mkdir -p "$REGISTRY_ROOT"
 # Launched test wapps, packaged into the registry as <name>@<version>.wapp. The
 # `duplex` image is launched as two instances (reader/writer) by the supervisor
 # via the config `image` field — it is staged once, not aliased.
-TEST_WAPPS="trapper:0.0.1-1 looper:0.0.1-1 stackbomb:0.0.1-1 membomb:0.0.1-1 cpuhog:0.0.1-1 blocker:0.0.1-1 pblock:0.0.1-1 escaper:0.0.1-1 fdhog:0.0.1-1 crasher:0.0.1-1 argenv:0.0.1-1 duplex:0.0.1-1 volcheck:0.0.1-1 bigmem:0.0.1-1 biginit:0.0.1-1 observer:0.0.1-1"
+TEST_WAPPS="trapper:0.0.1-1 looper:0.0.1-1 stackbomb:0.0.1-1 membomb:0.0.1-1 cpuhog:0.0.1-1 blocker:0.0.1-1 pblock:0.0.1-1 escaper:0.0.1-1 fdhog:0.0.1-1 crasher:0.0.1-1 argenv:0.0.1-1 duplex:0.0.1-1 volcheck:0.0.1-1 bigmem:0.0.1-1 biginit:0.0.1-1 observer:0.0.1-1 fbcheck:0.0.1-1"
 
 staged=""
 # Package wapps/<name> into the registry as <name>@<ver>.wapp. An image is just
@@ -68,7 +88,7 @@ stage() {
 }
 malformed="noappwasm badwasm truncated"
 cleanup() {
-    rm -f "$staged"
+    rm -f "$staged" "/tmp/wanted-selftest-config.$$.json"
     for m in $malformed; do rm -f "$REGISTRY_ROOT/$m"@*.wapp; done
     rm -rf "$VOLUME_ROOT" "$BIND_HOST_DIR" "$BIND_SECRET"
 }

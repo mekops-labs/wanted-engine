@@ -169,6 +169,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `inflate` | `drivers[]` | `/dev/inflate` | Streaming gzip decompression device; see below. |
 | `gpio` | `drivers[]` | `/dev/gpio/<name>/` | Digital I/O, one subtree per granted pin; see below. Backed by ESP-IDF and NuttX. On Linux the grant fails the launch with `-ENOSYS` until the libgpiod backing lands. |
 | `uart` | `drivers[]` | `/dev/uart/<port>/` | A serial port: a `data` byte stream plus writable `baud` and `format`; see below. Backed by ESP-IDF and Linux. On NuttX the grant fails the launch with `-ENOSYS`. |
+| `fb` | `drivers[]` | `/dev/fb/<screen>/` | A screen as a framebuffer: pixels written to `data`, made visible by `ctl` `flush`; see below. Screens are the headless in-memory buffers declared in `system.screens`. Built with `CONFIG_WANTED_VFS_FB`. |
 | `wifi` | `drivers[]` | `/dev/wifi/` | Wi-Fi station and access-point control; see below. Backed by ESP-IDF and NuttX; `-ENODEV` elsewhere. |
 | `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `abort` / `confirm` / `rollback`), `read` drains a status snapshot (`active_slot`, `status`, `pending_slot`, `last_failed_slot`, `boot_attempts`, and `pending_digest` — the staged image's own build-time digest, the value `/proc/wanted`'s `digest` reports once it boots, so confirming an update compares like with like; the line is absent when nothing is staged or the platform stamps none); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. End every `begin`: `commit` makes the staged image bootable, `abort` discards it. A session left open holds the slot, and every later `begin` answers `-EBUSY` until the board reboots. `rollback` reverts a booted image and reboots the board; it does not end a streaming write. Backed by ESP-IDF (`esp_ota_ops`) and Linux (slot directories under a boot root); `-ENOSYS` on NuttX. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
@@ -384,6 +385,70 @@ running platform is rejected at launch, not ignored.
 - One wapp holds a port, exclusively; a second grant on a held port fails the
   launch. Routing several logical users onto one physical link is a broker
   wapp's job — it holds the grant and its peers reach it over `/dev/pipe`.
+
+### `fb` — framebuffer
+
+An `fb` grant hands one or more screens to one wapp as its writer:
+
+```
+/dev/fb/
+  <screen>/
+    info    (r)   "<width> <height> <format> <stride>\n"
+    data    (rw)  pixels; the file offset is the byte offset
+    ctl     (w)   "flush" | "flush <x> <y> <w> <h>" | "blank on" | "blank off"
+```
+
+```json
+{ "name": "fb", "options": "screens=main" }
+```
+
+`screens=` lists the screens the wapp may touch, comma separated. A name the
+engine does not know, a repeated name, and an empty entry fail the launch.
+`observe` is reserved and never a screen name.
+
+- `format` is `rgb565` or `rgb888`. `stride` is the byte length of one row.
+- `data` takes positional I/O (`pread`/`pwrite`); plain `read` and `write` use
+  and advance the descriptor's offset. An access is truncated at the end of the
+  screen, and one starting past the end transfers 0 bytes.
+- **A write changes the framebuffer, not the panel.** `flush` makes it visible
+  and returns once the backing has handed the frame to the panel. A backing
+  whose writes already reach the panel accepts `flush` and returns at once.
+- A `ctl` line that is not one of the four forms, or a rectangle that is empty
+  or leaves the screen, returns `-EINVAL`.
+- One writer holds a screen; a second grant naming it fails the launch. A grant
+  naming several screens takes all of them or fails.
+- The engine converts, scales and draws nothing. Drawing is a library compiled
+  into the wapp.
+
+With `CONFIG_WANTED_VFS_FB_OBSERVE` an `observe` grant gets a read-only view:
+
+```json
+{ "name": "fb", "options": "screens=main,observe" }
+```
+
+```
+/dev/fb/<screen>/
+  info    (r)   as above
+  data    (r)   the last flushed image
+  damage  (r)   flushed rectangles, four little-endian u16 each: x y w h
+```
+
+- An observer has no `ctl`, and its `data` never shows a pixel the writer has
+  not flushed. The engine keeps a second copy of the screen while an observer
+  exists and updates it on each `flush`, before reporting the rectangle.
+- That copy starts black, so a screen the writer flushed before the observer
+  attached stays black until the writer flushes again.
+- A `damage` read blocks until a flush is queued, returns whole records, and
+  needs a buffer of at least 8 bytes (`-EINVAL` otherwise). `O_NONBLOCK` returns
+  `-EAGAIN` when nothing is queued, and a stop ends a blocked read with
+  `-EINTR`. `poll()` reports it readable while a record is queued.
+- Each observer has its own queue of `CONFIG_WANTED_FB_DAMAGE_QUEUE` records.
+  An observer that falls behind gets one full-screen record in place of its
+  queue, so no flush goes unreported.
+- Observers do not count against the writer, and may launch before it. At most
+  `CONFIG_WANTED_FB_MAX_OBSERVERS` observe one screen; the next fails its launch.
+- A build without observers fails an `observe` grant at launch. It is never
+  read as a writer grant.
 
 ### `wifi` — Wi-Fi station and access point
 
