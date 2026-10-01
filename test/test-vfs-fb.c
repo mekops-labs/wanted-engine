@@ -421,7 +421,26 @@ TEST(fb_ctl, CtlIsWriteOnly) {
     TEST_ASSERT_EQUAL_INT(-EPERM, readNode("/dev/fb/main/ctl", buf, 8));
 }
 
+TEST(fb_ctl, PixelsHoldWhatTheWriterWrote) {
+    uint32_t stride = 0;
+    TEST_ASSERT_EQUAL_INT(2, writeNode("/dev/fb/main/data", "AB"));
+    const uint8_t *px = FbScreenPixels("main", &stride);
+    TEST_ASSERT_NOT_NULL(px);
+    TEST_ASSERT_EQUAL_UINT32(MAIN_W * 2, stride);
+    TEST_ASSERT_EQUAL_UINT8('A', px[0]);
+    TEST_ASSERT_EQUAL_UINT8('B', px[1]);
+}
+
+TEST(fb_ctl, PixelsOfAnUnknownScreenAreNull) {
+    uint32_t stride = 7;
+    TEST_ASSERT_NULL(FbScreenPixels("nope", &stride));
+    TEST_ASSERT_NULL(FbScreenPixels(NULL, &stride));
+    TEST_ASSERT_NOT_NULL(FbScreenPixels("main", NULL));
+}
+
 TEST_GROUP_RUNNER(fb_ctl) {
+    RUN_TEST_CASE(fb_ctl, PixelsHoldWhatTheWriterWrote);
+    RUN_TEST_CASE(fb_ctl, PixelsOfAnUnknownScreenAreNull);
     RUN_TEST_CASE(fb_ctl, FlushHandsTheWholeScreenToTheBacking);
     RUN_TEST_CASE(fb_ctl, FlushRectangleHandsThatRectangleToTheBacking);
     RUN_TEST_CASE(fb_ctl, MalformedLinesAreEinval);

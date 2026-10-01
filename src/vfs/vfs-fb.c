@@ -172,6 +172,17 @@ int FbScreenRegister(const fb_screen_desc_t *desc) {
     return 0;
 }
 
+const uint8_t *FbScreenPixels(const char *name, uint32_t *stride) {
+    if (name == NULL)
+        return NULL;
+    const fb_screen_t *s = findScreen(name, strlen(name));
+    if (s == NULL)
+        return NULL;
+    if (stride != NULL)
+        *stride = s->stride;
+    return s->pixels;
+}
+
 void FbScreensReset(void) {
     for (uint8_t i = 0; i < table.count; i++) {
         WantedFree(table.screens[i].pixels);

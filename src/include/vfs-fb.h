@@ -33,5 +33,10 @@ typedef struct fb_screen_desc_t {
  * -ENOSPC table full, -ENOMEM no room for pixels. */
 int FbScreenRegister(const fb_screen_desc_t *desc);
 
+/* The screen's pixels and, when `stride` is not NULL, its row length in bytes.
+ * NULL for an unknown name. Valid until FbScreensReset. A backing reads them
+ * in its Flush. */
+const uint8_t *FbScreenPixels(const char *name, uint32_t *stride);
+
 /* Drop every screen. Only valid while no fb driver instance exists. */
 void FbScreensReset(void);
