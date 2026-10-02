@@ -1,6 +1,20 @@
 Changelog
 =========
 
+0.22.1 (2026-10-02)
+-------------------
+
+### Added
+
+- `FbScreenPixels` returns a registered screen's pixels and row stride by
+  name. A backing reads them in its `Flush`; they stay valid until
+  `FbScreensReset`.
+
+### Build
+
+- `provisioning.version` and `wifi-mgr.version` read 0.11.2, the version of the
+  `wapps/sheriff` pin.
+
 0.22.0 (2026-09-30)
 -------------------
 
