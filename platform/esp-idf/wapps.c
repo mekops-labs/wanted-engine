@@ -16,6 +16,7 @@
 
 #include <board.h>
 #include <platform.h>
+#include <vfs-led.h>
 #include <vfs.h>
 #include <wanted-api.h>
 #include <wanted.h>
@@ -269,6 +270,9 @@ void PlatformWappLoop(void) {
     for (;;) {
         sleep(1);
         BoardHeartbeat();
+#ifdef CONFIG_WANTED_VFS_LED
+        LedTick();
+#endif
 
         pthread_mutex_lock(&state_mtx);
         int shutdown = shutdown_requested;

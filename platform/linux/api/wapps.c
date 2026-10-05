@@ -17,6 +17,7 @@
 
 #include <config-linux.h>
 #include <platform.h>
+#include <vfs-led.h>
 #include <wanted-api.h>
 #include <wanted.h>
 #include <wanted_malloc.h>
@@ -311,6 +312,9 @@ void PlatformRequestReboot(void) {
 void PlatformWappLoop(void) {
     for (;;) {
         sleep(1);
+#ifdef CONFIG_WANTED_VFS_LED
+        LedTick();
+#endif
 
         pthread_mutex_lock(&state_mtx);
         int shutdown = shutdown_requested;
