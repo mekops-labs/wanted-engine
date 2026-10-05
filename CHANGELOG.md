@@ -1,6 +1,40 @@
 Changelog
 =========
 
+0.23.0 (2026-10-06)
+-------------------
+
+### Added
+
+- `CONFIG_WANTED_VFS_LED` adds `/dev/led/<name>/`, one subtree per granted LED.
+- `brightness` sets the level at once and reads the level the LED shows.
+- `ctl` takes `fade <level> <ms>`. A fade runs in hardware where the backing
+  has one.
+- A pin LED is `<name>:<address>:<mode>` in the grant, with `pwm` or `onoff`.
+- A bare name in the grant selects a device the board registered.
+- `activity=<led>:<input>` ties an LED to an input device.
+- The `heartbeat` trigger beats an LED every 5 s from the engine loop.
+- The `activity` trigger fades an LED to `idle_level` after `idle_ms` without
+  an event on its input device, and back on the next event.
+- An `idle_ms` of 0 turns the idle fade off.
+- A grant with `observe` fails the launch.
+- `LedDeviceRegister` adds a board LED to the engine-wide table.
+- `InputDeviceFind` returns a registered input device by name.
+- `PlatformLedOpen`, `Set`, `Fade`, `Get`, `HwFade`, `Max` and `Close` back a
+  pin LED.
+- ESP-IDF backs a `pwm` LED with an LEDC channel and hardware fades.
+- ESP-IDF backs an `onoff` LED with a GPIO that a timer switches after a fade.
+- Linux and the unit-test platform back an LED with state only.
+- `CONFIG_WANTED_LED_MAX_DEVICES` sets the LED table size.
+
+### Changed
+
+- The Linux and ESP-IDF engine loops call `LedTick` about once a second.
+
+### Build
+
+- The unit-test and coverage CI builds enable `led`.
+
 0.22.1 (2026-10-02)
 -------------------
 
