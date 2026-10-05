@@ -12,6 +12,7 @@
 #include <platform.h>
 #include <vfs-drivers.h>
 #include <vfs-input.h>
+#include <vfs-led.h>
 #include <vfs.h>
 #include <wanted-api.h>
 #include <wanted-autoconf.h>
@@ -96,6 +97,10 @@ static input_device_t *findDevice(const char *name, size_t nameLen) {
     return NULL;
 }
 
+input_device_t *InputDeviceFind(const char *name) {
+    return name != NULL ? findDevice(name, strlen(name)) : NULL;
+}
+
 int InputDeviceRegister(const input_device_desc_t *desc, input_device_t **out) {
     if (desc == NULL || desc->name == NULL || desc->keymap == NULL ||
         !validToken(desc->name) || !validToken(desc->keymap) ||
@@ -144,6 +149,9 @@ void InputDevicePush(input_device_t *dev, const wanted_input_event_t *ev) {
         dev->count++;
     }
     PlatformMutexUnlock(table.lock);
+#ifdef CONFIG_WANTED_VFS_LED
+    LedActivity(dev);
+#endif
 }
 
 /* ── Grant parsing ───────────────────────────────────────────────────────── */

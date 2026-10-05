@@ -41,6 +41,9 @@ typedef struct input_device_t input_device_t;
  * keymap, -ENOSPC table full. `out` may be NULL. */
 int InputDeviceRegister(const input_device_desc_t *desc, input_device_t **out);
 
+/* The device registered under `name`, or NULL. */
+input_device_t *InputDeviceFind(const char *name);
+
 /* Queue `ev` for the device's owner. A full queue is cleared and holds one
  * SYN_DROPPED record instead; the event that overflowed it is lost. */
 void InputDevicePush(input_device_t *dev, const wanted_input_event_t *ev);

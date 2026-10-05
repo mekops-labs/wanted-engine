@@ -173,6 +173,15 @@ config WANTED_VFS_INPUT_INJECT
 	  owner cannot tell them from real input. For tests and simulators only;
 	  without it an `inject` grant fails the launch.
 
+config WANTED_VFS_LED
+	bool "led — LEDs and backlights"
+	default n
+	help
+	  /dev/led/<name>/{brightness,max_brightness,trigger,idle_ms,idle_level,
+	  ctl}: brightness levels, fades, and the heartbeat and activity
+	  triggers. LEDs on a pin are named in the grant; a board registers the
+	  others by name.
+
 config WANTED_VFS_OTA
 	bool "ota — A/B firmware update"
 	default y
@@ -258,6 +267,15 @@ config WANTED_INPUT_MAX_DEVICES
 	range 1 8
 	help
 	  Size of the engine-wide device table. Each device holds a 64-event queue.
+
+config WANTED_LED_MAX_DEVICES
+	int "LEDs the led driver can hold"
+	depends on WANTED_VFS_LED
+	default 4
+	range 1 8
+	help
+	  Size of the engine-wide LED table, shared by board devices and the
+	  pin LEDs of live grants.
 
 config WANTED_OTA_SLOT_ROOT
 	string "OTA slot directory (host backings)"
