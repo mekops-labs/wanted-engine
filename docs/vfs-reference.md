@@ -171,6 +171,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `uart` | `drivers[]` | `/dev/uart/<port>/` | A serial port: a `data` byte stream plus writable `baud` and `format`; see below. Backed by ESP-IDF and Linux. On NuttX the grant fails the launch with `-ENOSYS`. |
 | `fb` | `drivers[]` | `/dev/fb/<screen>/` | A screen as a framebuffer: pixels written to `data`, made visible by `ctl` `flush`; see below. Screens are the headless in-memory buffers declared in `system.screens`. Built with `CONFIG_WANTED_VFS_FB`. |
 | `input` | `drivers[]` | `/dev/input/<device>/` | Keyboard, encoder and text events as 8-byte records, one subtree per granted device; see below. Devices are the virtual ones declared in `system.inputs`, fed only through `inject`. Built with `CONFIG_WANTED_VFS_INPUT`. |
+| `led` | `drivers[]` | `/dev/led/<name>/` | LEDs and backlights: brightness, fades and the `heartbeat` and `activity` triggers, one subtree per granted LED; see below. Pin LEDs are backed by ESP-IDF (LEDC PWM, GPIO) and by a state-only backing on Linux. Built with `CONFIG_WANTED_VFS_LED`. |
 | `wifi` | `drivers[]` | `/dev/wifi/` | Wi-Fi station and access-point control; see below. Backed by ESP-IDF and NuttX; `-ENODEV` elsewhere. |
 | `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `abort` / `confirm` / `rollback`), `read` drains a status snapshot (`active_slot`, `status`, `pending_slot`, `last_failed_slot`, `boot_attempts`, and `pending_digest` — the staged image's own build-time digest, the value `/proc/wanted`'s `digest` reports once it boots, so confirming an update compares like with like; the line is absent when nothing is staged or the platform stamps none); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. End every `begin`: `commit` makes the staged image bootable, `abort` discards it. A session left open holds the slot, and every later `begin` answers `-EBUSY` until the board reboots. `rollback` reverts a booted image and reboots the board; it does not end a streaming write. Backed by ESP-IDF (`esp_ota_ops`) and Linux (slot directories under a boot root); `-ENOSYS` on NuttX. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
@@ -518,6 +519,62 @@ write side of the devices instead:
   simulator builds.
 - A build without injection fails an `inject` grant at launch. It is never read
   as an owner grant.
+
+### `led` — LEDs and backlights
+
+A `led` grant hands one or more LEDs to one wapp:
+
+```
+/dev/led/
+  <name>/
+    brightness      (rw)  the level the LED shows now, 0..max_brightness
+    max_brightness  (r)   1 for an on/off LED, 255 for a PWM pin LED
+    trigger         (rw)  none | heartbeat | activity
+    idle_ms         (rw)  activity trigger: milliseconds of inactivity, 10000 by default
+    idle_level      (rw)  activity trigger: the level it fades to, 0 by default
+    ctl             (w)   fade <level> <ms>
+```
+
+```json
+{ "name": "led", "options": "leds=kbd:46:pwm,display,activity=kbd:kbd,activity=display:kbd" }
+```
+
+`leds=` lists the entries, comma separated. An entry with colons,
+`<name>:<address>:<mode>`, opens a pin LED: `mode` is `pwm` or `onoff`, and the
+backing interprets `address` (on ESP-IDF a decimal GPIO number). A bare `<name>`
+selects a device the board registered with `LedDeviceRegister`
+(`src/include/vfs-led.h`). `activity=<led>:<input>` ties a granted LED to an
+input device. Names are `[A-Za-z0-9_-]`, at most 15 characters. A repeated
+name, a malformed entry, an unknown board device, an address the backing
+refuses and an unknown input device fail the launch.
+
+- `brightness` sets the level at once and reads the level the LED shows now,
+  which moves during a fade. A value above `max_brightness`, or anything that
+  is not decimal digits, returns `-EINVAL`.
+- `ctl` takes one line, `fade <level> <ms>`. The LED ramps from its current
+  level to `<level>` over `<ms>` milliseconds, in hardware where the backing
+  has it. A duration of 0 sets the level at once. Any other line returns
+  `-EINVAL`.
+- An on/off LED has `max_brightness` 1, and a fade on it switches at the end.
+- `trigger` starts at `none`, where `brightness` alone controls the LED.
+  - `heartbeat` runs from the engine loop, so it stops when the loop stops. A
+    beat is a fade up and down on a backing with hardware fades, and an on
+    period of one loop pass otherwise. While it runs, a write to `brightness`
+    or `ctl` returns `-EBUSY`. Writing another trigger leaves the LED dark.
+  - `activity` holds the level last written to `brightness` or `ctl`. After
+    `idle_ms` with no event on its input device it fades to `idle_level` over
+    1 s, never brighter than the level held. The next event fades back over
+    100 ms. A write to `brightness` or `ctl` counts as activity. An `idle_ms`
+    of 0 turns the fade off. Without an `activity=` entry for the LED, writing
+    `activity` returns `-EINVAL`.
+- One wapp owns a LED. A second grant naming it fails the launch with
+  `-EBUSY`, and a grant naming several LEDs takes all of them or fails.
+- A pin LED exists while its grant does. A board device stays registered, and
+  its trigger and idle settings return to their defaults when the grant ends.
+- `observe` grants are not available: such a grant fails the launch.
+
+The engine loop calls `LedTick()` about once a second, so idle and heartbeat
+timing has that resolution. Input events reach the activity trigger at once.
 
 ### `wifi` — Wi-Fi station and access point
 
