@@ -12,6 +12,7 @@ set(sources
     dummy-wapps.c
     dummy-net.c
     dummy-ota.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/led-state.c
     ${CMAKE_SOURCE_DIR}/platform/posix/sha256.c)
 add_library(platform_dummy STATIC ${sources})
 

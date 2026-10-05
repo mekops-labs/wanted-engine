@@ -243,6 +243,31 @@ int PlatformGpioRead(const platform_gpio_t *g, bool *level);
 int PlatformGpioWrite(platform_gpio_t *g, bool level);
 void PlatformGpioClose(platform_gpio_t *g);
 
+/* LED backing for the core /dev/led driver. `address` is the grant's middle
+ * field, read only here. Open returns -ENOSYS, -EINVAL, -EBUSY or -ENOSPC, each
+ * of which fails the launch. A level is 0..PlatformLedMax. */
+typedef struct platform_led_t platform_led_t;
+
+#define PLAT_LED_MODE_ONOFF 0
+#define PLAT_LED_MODE_PWM 1
+
+typedef struct plat_led_cfg_t {
+    const char *address;
+    uint8_t mode; /* PLAT_LED_MODE_* */
+} plat_led_cfg_t;
+
+int PlatformLedOpen(const plat_led_cfg_t *cfg, platform_led_t **out);
+unsigned PlatformLedMax(const platform_led_t *l);
+/* True when a fade runs in hardware, with no further calls. */
+bool PlatformLedHwFade(const platform_led_t *l);
+int PlatformLedSet(platform_led_t *l, unsigned level);
+/* Ramp to `level` over `ms` and return at once. An on/off LED switches at the
+ * end of the fade. */
+int PlatformLedFade(platform_led_t *l, unsigned level, unsigned ms);
+/* The level the LED shows now. */
+unsigned PlatformLedGet(const platform_led_t *l);
+void PlatformLedClose(platform_led_t *l);
+
 /* UART backing for the core /dev/uart driver: the platform owns the port, the
  * driver everything above it. `options` carries the grant keys the driver left
  * unconsumed; reject an unknown one. The port must be made exclusive here. */

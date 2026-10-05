@@ -24,6 +24,7 @@ set(sources
     api/fs-volume.c
     ${CMAKE_SOURCE_DIR}/platform/posix/clock.c
     ${CMAKE_SOURCE_DIR}/platform/posix/fs.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/led-state.c
     ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
     ${CMAKE_SOURCE_DIR}/platform/posix/wake.c
     ${CMAKE_SOURCE_DIR}/platform/posix/ready.c
