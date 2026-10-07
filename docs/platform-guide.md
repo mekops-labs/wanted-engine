@@ -21,7 +21,7 @@ Every platform implements the contract in `platform/include/platform.h`. A confo
 | Filesystem | `PlatformOpenStateDir`, `PlatformFsRename`, `PlatformFsMkdir`, `PlatformFsRmdir`, `PlatformVolumeRoot` |
 | Network | `PlatformNetOpen` / `Connect` / `Recv` / `Send` / `Accept` / `Shutdown` / `Close` / `Free`; `PlatformNetWaitReadable` and `PlatformNetPoll`, the blocking and non-blocking readiness checks behind blocking reads and `poll_oneoff` |
 | Readiness | `PlatformFdReady` — non-blocking readiness of a host descriptor (the platform console, host files); the shared body is `posix/ready.c`, over `select` |
-| Clock | `PlatformClockGetRes` / `GetTime` / `NanoSleep`; `PlatformYield` behind `sched_yield` (the shared body in `posix/clock.c` calls `sched_yield`) |
+| Clock | `PlatformClockGetRes` / `GetTime` / `SetTime` / `NanoSleep`; `PlatformYield` behind `sched_yield` (the shared body in `posix/clock.c` calls `sched_yield`) |
 | Random | `PlatfromGetRandom` |
 | Storage | `PlatformStorageStats` — free/total bytes of the store backing the registry and volumes, reported at `/proc/memory`; zeroes where the platform cannot answer |
 | Identity | `PlatformName`, `PlatformFirmwareDigest` — the build-time image digest reported at `/proc/wanted`; `-ENOSYS` where the platform stamps none |
@@ -39,6 +39,8 @@ The invariants every platform must honour: a wapp runs on its own thread; `Platf
 A few symbols carry a contract the signature does not show. A port that gets these wrong compiles and then misbehaves at runtime, so they are written out here.
 
 **`PlatformLed*` backs the pin LEDs of the core `led` driver.** `PlatformLedOpen` takes the grant's address and mode; `Set`, `Fade` and `Get` move and read the level, and `HwFade` says whether a fade runs without further calls. ESP-IDF uses an LEDC channel (8 bits at 1 kHz) with hardware fades for `pwm` and a GPIO for `onoff`. `platform/posix/led-state.c` keeps state only, with fades that follow the monotonic clock. A board that has its own LED chip registers it with `LedDeviceRegister`.
+
+**`PlatformClockSetTime` backs the `rtc` driver's system clock.** It sets `CLOCK_REALTIME` only, through `clock_settime` in `posix/clock.c`, and returns `-errno` when the host refuses. The dummy platform keeps a settable realtime offset and `DummyClockFailSet` injects a failure. A board with a clock chip registers it as the device `main` with `RtcDeviceRegister` from `BoardInit()`; without one the engine serves a software `main`.
 
 **`PlatformGpio*` and `PlatformUart*` back a core driver.** The driver owns the wapp-facing tree, the grant grammar, the blocking policy and the line-setting text format; the platform owns only the line or the port. `plat_gpio_cfg_t.address` is the grant's middle field (`pins=boot0:4:out` → `4`) and is interpreted in the backing and nowhere else — a decimal pin number on ESP-IDF, a character-device path such as `/dev/gpio0` on NuttX. A wapp never sees it, which is what lets one wapp image run on boards with different wiring. `plat_uart_cfg_t.options` carries every grant key the driver did not consume, comma-separated in the order written: `tx=1,rx=2` on ESP-IDF, `dev=/dev/ttyUSB0` on Linux. **Reject an unknown key** rather than ignoring it, so a grant that is meaningless on this target fails the launch instead of half-applying.
 
@@ -73,7 +75,7 @@ Linux and the NuttX simulator are both POSIX environments, so most of the seam h
 |--------|----------|
 | `posix/socket.c` | `PlatformNet*` — the BSD socket calls (open, connect, recv, send, accept, shutdown, close) |
 | `posix/mutex.c` | `PlatformMutex*` |
-| `posix/clock.c` | `PlatformClockGetRes` / `GetTime` |
+| `posix/clock.c` | `PlatformClockGetRes` / `GetTime` / `SetTime` |
 | `posix/fs.c` | `PlatformOpenStateDir`, `PlatformFsRename`, `PlatformFsMkdir` |
 | `posix/registry-store.c` | the filesystem registry store behind `PlatformRegistry*` |
 | `posix/wapps-image.c` | image load/unload behind `PlatformWappLoad` / `Unload` |
