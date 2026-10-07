@@ -59,6 +59,8 @@ struct vfs_driver_ctx_t {
 #define DUMMY_CLOCK_STEP_NS 1000000ULL /* 1 ms per GetTime call */
 
 static uint64_t g_clock_ns;
+static uint64_t g_realtime_delta_ns; /* wraps; added to the shared counter */
+static int g_clock_set_rc;
 static uint32_t g_prng_state = 0xDEAD1234U;
 
 /* ── Fs helpers ─────────────────────────────────────────────────────────── */
@@ -572,7 +574,18 @@ int PlatformClockGetTime(plat_clk_id_t clk_id, plat_timestamp_t *ts) {
     if (clk_id != PLAT_CLOCKID_REALTIME && clk_id != PLAT_CLOCKID_MONOTONIC)
         return -EINVAL;
     *ts = g_clock_ns;
+    if (clk_id == PLAT_CLOCKID_REALTIME)
+        *ts += g_realtime_delta_ns;
     g_clock_ns += DUMMY_CLOCK_STEP_NS;
+    return 0;
+}
+
+int PlatformClockSetTime(plat_clk_id_t clk_id, plat_timestamp_t ts) {
+    if (clk_id != PLAT_CLOCKID_REALTIME)
+        return -EINVAL;
+    if (g_clock_set_rc != 0)
+        return g_clock_set_rc;
+    g_realtime_delta_ns = ts - g_clock_ns;
     return 0;
 }
 
@@ -592,10 +605,14 @@ int PlatformYield(void) { return 0; }
 
 void DummyClockReset(void) {
     g_clock_ns = 0;
+    g_realtime_delta_ns = 0;
+    g_clock_set_rc = 0;
     g_prng_state = 0xDEAD1234U;
 }
 
 void DummyClockAdvance(uint64_t ns) { g_clock_ns += ns; }
+
+void DummyClockFailSet(int rc) { g_clock_set_rc = rc; }
 
 /* xorshift32 — deterministic, fixed seed. Typo in name is intentional:
  * matches the platform.h declaration. */

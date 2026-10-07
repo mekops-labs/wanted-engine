@@ -75,6 +75,63 @@ TEST(platform_clock, ClockAdvance_IncreasesCounter) {
     TEST_ASSERT_EQUAL_UINT64(t0 + 11000000ULL, t1);
 }
 
+#define NS_PER_S 1000000000ULL
+
+TEST(platform_clock, SetTime_RealtimeReadsBackTheSetValue) {
+    TEST_ASSERT_EQUAL_INT(0, PlatformClockSetTime(PLAT_CLOCKID_REALTIME,
+                                                  1791300000ULL * NS_PER_S));
+    plat_timestamp_t t;
+    TEST_ASSERT_EQUAL_INT(0, PlatformClockGetTime(PLAT_CLOCKID_REALTIME, &t));
+    TEST_ASSERT_EQUAL_UINT64(1791300000ULL * NS_PER_S, t);
+}
+
+TEST(platform_clock, SetTime_RealtimeKeepsRunningAfterTheSet) {
+    PlatformClockSetTime(PLAT_CLOCKID_REALTIME, 1791300000ULL * NS_PER_S);
+    plat_timestamp_t a, b;
+    PlatformClockGetTime(PLAT_CLOCKID_REALTIME, &a);
+    DummyClockAdvance(5 * NS_PER_S);
+    PlatformClockGetTime(PLAT_CLOCKID_REALTIME, &b);
+    TEST_ASSERT_EQUAL_UINT64(a + 5 * NS_PER_S + 1000000ULL, b);
+}
+
+TEST(platform_clock, SetTime_DoesNotMoveMonotonic) {
+    DummyClockAdvance(3 * NS_PER_S);
+    PlatformClockSetTime(PLAT_CLOCKID_REALTIME, 1791300000ULL * NS_PER_S);
+    plat_timestamp_t mono;
+    PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &mono);
+    TEST_ASSERT_EQUAL_UINT64(3 * NS_PER_S, mono);
+}
+
+TEST(platform_clock, SetTime_OnlyRealtimeIsSettable) {
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, PlatformClockSetTime(PLAT_CLOCKID_MONOTONIC, NS_PER_S));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PlatformClockSetTime(99, NS_PER_S));
+}
+
+TEST(platform_clock, SetTime_InjectedFailureLeavesTheClock) {
+    plat_timestamp_t before;
+    PlatformClockGetTime(PLAT_CLOCKID_REALTIME, &before);
+    DummyClockFailSet(-EPERM);
+    TEST_ASSERT_EQUAL_INT(
+        -EPERM,
+        PlatformClockSetTime(PLAT_CLOCKID_REALTIME, 1791300000ULL * NS_PER_S));
+    plat_timestamp_t after;
+    PlatformClockGetTime(PLAT_CLOCKID_REALTIME, &after);
+    TEST_ASSERT_EQUAL_UINT64(before + 1000000ULL, after);
+}
+
+TEST(platform_clock, Reset_ClearsTheSetTimeAndTheInjectedFailure) {
+    PlatformClockSetTime(PLAT_CLOCKID_REALTIME, 1791300000ULL * NS_PER_S);
+    DummyClockFailSet(-EPERM);
+    DummyClockReset();
+    TEST_ASSERT_EQUAL_INT(
+        0, PlatformClockSetTime(PLAT_CLOCKID_REALTIME, NS_PER_S));
+    DummyClockReset();
+    plat_timestamp_t t;
+    PlatformClockGetTime(PLAT_CLOCKID_REALTIME, &t);
+    TEST_ASSERT_EQUAL_UINT64(0, t);
+}
+
 TEST_GROUP_RUNNER(platform_clock) {
     RUN_TEST_CASE(platform_clock, Res_ReturnsOneMsForRealtimeAndMonotonic);
     RUN_TEST_CASE(platform_clock, Res_InvalidId_ReturnsEinval);
@@ -83,6 +140,12 @@ TEST_GROUP_RUNNER(platform_clock) {
     RUN_TEST_CASE(platform_clock, GetTime_RealtimeAndMonotonicShareCounter);
     RUN_TEST_CASE(platform_clock, Sleep_AdvancesCounter);
     RUN_TEST_CASE(platform_clock, ClockAdvance_IncreasesCounter);
+    RUN_TEST_CASE(platform_clock, SetTime_RealtimeReadsBackTheSetValue);
+    RUN_TEST_CASE(platform_clock, SetTime_RealtimeKeepsRunningAfterTheSet);
+    RUN_TEST_CASE(platform_clock, SetTime_DoesNotMoveMonotonic);
+    RUN_TEST_CASE(platform_clock, SetTime_OnlyRealtimeIsSettable);
+    RUN_TEST_CASE(platform_clock, SetTime_InjectedFailureLeavesTheClock);
+    RUN_TEST_CASE(platform_clock, Reset_ClearsTheSetTimeAndTheInjectedFailure);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

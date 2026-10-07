@@ -12,7 +12,8 @@
 /* Reset all in-memory file/directory/fd state. Call in TEST_SETUP. */
 void DummyFsReset(void);
 
-/* Reset the monotonic clock counter to zero and reseed the PRNG. */
+/* Reset the clock counter to zero, drop any time set through
+ * PlatformClockSetTime and any injected failure, and reseed the PRNG. */
 void DummyClockReset(void);
 
 /* Clear the stand-in for memory a reset does not clear — the equivalent of
@@ -25,6 +26,9 @@ void DummyResetReasonSet(const char *token);
 
 /* Advance the monotonic clock by `ns` nanoseconds without sleeping. */
 void DummyClockAdvance(uint64_t ns);
+
+/* Make PlatformClockSetTime return `rc` and change nothing; 0 restores it. */
+void DummyClockFailSet(int rc);
 
 /* Serve `body` from PlatformReadSmallFile for `path`; a NULL body answers
  * -ENOENT. One entry, replaced on each call and cleared by DummyFsReset. */
