@@ -391,6 +391,18 @@ TEST(rtc_pcf_init, ClearsStopAndTwelveHourModeAndKeepsTheRest) {
     TEST_ASSERT_EQUAL_HEX8(0x01 | 0x04, fb.regs[REG_CONTROL1]);
 }
 
+TEST(rtc_pcf_init, TheWriteIsOneByteAtControl1) {
+    rtc_bus_t b = bus();
+    fb.regs[REG_CONTROL1] = 0x22;
+    fb.regs[1] = 0x5A;
+    TEST_ASSERT_EQUAL_INT(0, RtcChipPcf85063.init(&b));
+    TEST_ASSERT_EQUAL_INT(2, fb.nTx);
+    TEST_ASSERT_TRUE(fb.log[1].write);
+    TEST_ASSERT_EQUAL_UINT8(REG_CONTROL1, fb.log[1].reg);
+    TEST_ASSERT_EQUAL_UINT(1, fb.log[1].len);
+    TEST_ASSERT_EQUAL_HEX8(0x5A, fb.regs[1]);
+}
+
 TEST(rtc_pcf_init, ClearsEachBitOnItsOwn) {
     rtc_bus_t b = bus();
     fb.regs[REG_CONTROL1] = 0x20;
@@ -431,6 +443,7 @@ TEST(rtc_pcf_init, ABusErrorIsReturned) {
 
 TEST_GROUP_RUNNER(rtc_pcf_init) {
     RUN_TEST_CASE(rtc_pcf_init, ClearsStopAndTwelveHourModeAndKeepsTheRest);
+    RUN_TEST_CASE(rtc_pcf_init, TheWriteIsOneByteAtControl1);
     RUN_TEST_CASE(rtc_pcf_init, ClearsEachBitOnItsOwn);
     RUN_TEST_CASE(rtc_pcf_init, WritesNothingWhenTheSettingsAreRight);
     RUN_TEST_CASE(rtc_pcf_init, NeverTouchesTheTimeRegisters);
@@ -554,6 +567,38 @@ TEST(rtc_chip_device, RegisterReportsNameErrorsAndKeepsItsPoolSlot) {
     TEST_ASSERT_EQUAL_INT(-EEXIST, RtcChipRegister("a", &RtcChipPcf85063, &b));
     TEST_ASSERT_EQUAL_INT(0, RtcChipRegister("b", &RtcChipPcf85063, &b));
     TEST_ASSERT_EQUAL_INT(-ENOSPC, RtcChipRegister("c", &RtcChipPcf85063, &b));
+}
+
+/* Fills a real time and leaves `valid` alone. */
+static int silentGet(const rtc_bus_t *b, rtc_tm_t *tm, bool *valid) {
+    (void)b;
+    (void)valid;
+    *tm = (rtc_tm_t){2026, 10, 6, 15, 20, 0, 2};
+    return 0;
+}
+
+TEST(rtc_chip_device, AChipThatReportsNothingIsInvalid) {
+    rtc_bus_t b = bus();
+    rtc_chip_t silent = {RtcChipPcf85063.init, silentGet, RtcChipPcf85063.set};
+    TEST_ASSERT_EQUAL_INT(0, RtcChipRegister("main", &silent, &b));
+    TEST_ASSERT_TRUE(attach("devices=main"));
+    expectLine("main/status", "invalid\n");
+    TEST_ASSERT_FALSE(RtcBoot());
+}
+
+TEST(rtc_chip_device, TwoChipsKeepTheirOwnBus) {
+    static fake_bus_t second;
+    second = fb;
+    second.regs[10] = bcd(27); /* 2027-10-06 15:20:00 */
+    rtc_bus_t b1 = bus();
+    rtc_bus_t b2 = {busRead, busWrite, &second};
+    TEST_ASSERT_EQUAL_INT(0, RtcChipRegister("main", &RtcChipPcf85063, &b1));
+    TEST_ASSERT_EQUAL_INT(0, RtcChipRegister("aux", &RtcChipPcf85063, &b2));
+    TEST_ASSERT_TRUE(attach("devices=main"));
+    expectLine("main/time", "1791300000\n");
+    detach();
+    TEST_ASSERT_TRUE(attach("devices=aux"));
+    expectLine("aux/time", "1822836000\n");
 }
 
 TEST(rtc_chip_device, TimeAndStatusReadTheChip) {
@@ -685,6 +730,8 @@ TEST_GROUP_RUNNER(rtc_chip_device) {
     RUN_TEST_CASE(rtc_chip_device, AFailedInitRegistersNothing);
     RUN_TEST_CASE(rtc_chip_device,
                   RegisterReportsNameErrorsAndKeepsItsPoolSlot);
+    RUN_TEST_CASE(rtc_chip_device, AChipThatReportsNothingIsInvalid);
+    RUN_TEST_CASE(rtc_chip_device, TwoChipsKeepTheirOwnBus);
     RUN_TEST_CASE(rtc_chip_device, TimeAndStatusReadTheChip);
     RUN_TEST_CASE(rtc_chip_device, AStoppedOscillatorIsInvalid);
     RUN_TEST_CASE(rtc_chip_device, RegistersThatMakeNoDateAreInvalid);
