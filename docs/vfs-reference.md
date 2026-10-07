@@ -607,7 +607,9 @@ device, and any number may hold `set`; the last write wins.
 - `status` reads `valid` or `invalid`, and returns `-EIO` when the device does
   not answer. A chip device is `invalid` after a power loss or a stopped
   oscillator. The software device is `invalid` until its first write since
-  boot.
+  boot. On Linux and OpenWrt, where the operating system keeps the clock, it
+  follows the host clock and is `valid` while that clock reads 2000-01-01 to
+  2099-12-31.
 - `source` reads `none` until a write, and then the source that the write
   named. After a boot in which `main` was `valid` it reads `rtc`.
 - `status` and `source` are read-only, and so is `time` without `set`: a write
@@ -627,12 +629,15 @@ sets the device, then the system clock, then the source and the quality byte:
 `rtc` gives `HARDWARE_RTC` (0), `sntp` gives `SNTP_CALIBRATED` (1), and `server`
 and `manual` give `SIMPLE_CALIBRATION` (2). If the device write fails, the
 write returns `-EIO` and nothing changes. If setting the system clock fails,
-the write returns `-EIO`, the device keeps the new time, and the source and the
+the write returns `-EIO`, or `-EPERM` when the operating system refuses to let
+the engine set it, the device keeps the new time, and the source and the
 quality byte keep their values. Any other device is a plain clock and leaves
 the system clock alone.
 
 Every engine provides `main`. Without a board device, `main` is a software
-device whose time is the system clock. A board registers chip devices with
+device whose time is the system clock. A hosted engine never writes the
+hardware clock: the operating system does that. A write to `main` there needs
+permission to set the host clock, which an engine in a container usually lacks. A board registers chip devices with
 `RtcChipRegister` or `RtcDeviceRegister` (`src/include/rtc-chip.h`,
 `src/include/vfs-rtc.h`) before the engine starts. A chip whose `set` leaves
 the oscillator-stop flag set returns `-EIO` from the write. The
