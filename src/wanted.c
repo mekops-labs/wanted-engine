@@ -1374,7 +1374,9 @@ int WantedStart(const char *cfg, size_t cfgLen) {
 #ifdef CONFIG_WANTED_VFS_RTC
     /* The board registered its clock devices already; the supervisor reads the
      * clock quality as soon as it runs. */
-    DEBUG_TRACE("RtcBoot -> %d", (int)RtcBoot());
+    bool clockSet = RtcBoot();
+    DEBUG_TRACE("RtcBoot -> %d", (int)clockSet);
+    (void)clockSet;
 #endif
 
     app = WantedGetCurrentSupervisor();
