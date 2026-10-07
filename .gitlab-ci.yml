@@ -45,6 +45,7 @@ stages:
     - just setconfig WANTED_VFS_INPUT=y
     - just setconfig WANTED_VFS_INPUT_INJECT=y
     - just setconfig WANTED_VFS_LED=y
+    - just setconfig WANTED_VFS_RTC=y
     - just build
 
 .unit_test_job_template: &unit_defs
@@ -135,6 +136,7 @@ coverage:
     - just setconfig WANTED_VFS_INPUT=y
     - just setconfig WANTED_VFS_INPUT_INJECT=y
     - just setconfig WANTED_VFS_LED=y
+    - just setconfig WANTED_VFS_RTC=y
     - just build
     - just coverage
   coverage: '/lines: \d+\.\d+/'

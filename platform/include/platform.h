@@ -35,6 +35,14 @@ typedef enum {
 
 int PlatformClockGetRes(plat_clk_id_t clk_id, uint64_t *resolution);
 int PlatformClockGetTime(plat_clk_id_t clk_id, plat_timestamp_t *time);
+/* Set the wall clock to `time` ns since the Unix epoch. Only REALTIME is
+ * settable. Returns 0, -EINVAL for another clock, or -errno when the host
+ * refuses. */
+int PlatformClockSetTime(plat_clk_id_t clk_id, plat_timestamp_t time);
+
+/* True when an operating system under the engine owns the wall clock and keeps
+ * it. False when the engine's platform starts the clock at zero. */
+bool PlatformClockIsHosted(void);
 int PlatformClockNanoSleep(plat_clk_id_t clk_id, plat_timestamp_t timeout,
                            plat_clk_flags_t flags);
 

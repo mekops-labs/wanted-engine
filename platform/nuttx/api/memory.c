@@ -29,6 +29,8 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
 
 const char *PlatformName(void) { return "nuttx"; }
 
+bool PlatformClockIsHosted(void) { return false; }
+
 /* No build-time image digest on this target. */
 int PlatformFirmwareDigest(char *buf, size_t bufLen) {
     return BoardImageDigestRunning(buf, bufLen);

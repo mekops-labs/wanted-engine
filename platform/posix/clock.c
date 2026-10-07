@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Shared POSIX clock queries (resolution + current time) and the scheduler
+/* Shared POSIX clock queries (resolution, current time, set time) and the
+ * scheduler
  * yield, used by every POSIX platform target. PlatformClockNanoSleep is
  * implemented per-platform. */
 
@@ -45,6 +46,14 @@ int PlatformClockGetTime(plat_clk_id_t clk_id, plat_timestamp_t *time) {
     *time = convert_timespec(&tp);
 
     return 0;
+}
+
+int PlatformClockSetTime(plat_clk_id_t clk_id, plat_timestamp_t time) {
+    if (clk_id != PLAT_CLOCKID_REALTIME)
+        return -EINVAL;
+
+    struct timespec tp = convert_timestamp(time);
+    return clock_settime(CLOCK_REALTIME, &tp) != 0 ? -errno : 0;
 }
 
 int PlatformYield(void) { return sched_yield() < 0 ? -errno : 0; }

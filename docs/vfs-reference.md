@@ -172,6 +172,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `fb` | `drivers[]` | `/dev/fb/<screen>/` | A screen as a framebuffer: pixels written to `data`, made visible by `ctl` `flush`; see below. Screens are the headless in-memory buffers declared in `system.screens`. Built with `CONFIG_WANTED_VFS_FB`. |
 | `input` | `drivers[]` | `/dev/input/<device>/` | Keyboard, encoder and text events as 8-byte records, one subtree per granted device; see below. Devices are the virtual ones declared in `system.inputs`, fed only through `inject`. Built with `CONFIG_WANTED_VFS_INPUT`. |
 | `led` | `drivers[]` | `/dev/led/<name>/` | LEDs and backlights: brightness, fades and the `heartbeat` and `activity` triggers, one subtree per granted LED; see below. Pin LEDs are backed by ESP-IDF (LEDC PWM, GPIO) and by a state-only backing on Linux. Built with `CONFIG_WANTED_VFS_LED`. |
+| `rtc` | `drivers[]` | `/dev/rtc/<name>/` | A wall-clock device: `time`, `status` and `source`; see below. The device named `main` is the engine's system clock. Built with `CONFIG_WANTED_VFS_RTC`. |
 | `wifi` | `drivers[]` | `/dev/wifi/` | Wi-Fi station and access-point control; see below. Backed by ESP-IDF and NuttX; `-ENODEV` elsewhere. |
 | `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `abort` / `confirm` / `rollback`), `read` drains a status snapshot (`active_slot`, `status`, `pending_slot`, `last_failed_slot`, `boot_attempts`, and `pending_digest` — the staged image's own build-time digest, the value `/proc/wanted`'s `digest` reports once it boots, so confirming an update compares like with like; the line is absent when nothing is staged or the platform stamps none); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. End every `begin`: `commit` makes the staged image bootable, `abort` discards it. A session left open holds the slot, and every later `begin` answers `-EBUSY` until the board reboots. `rollback` reverts a booted image and reboots the board; it does not end a streaming write. Backed by ESP-IDF (`esp_ota_ops`) and Linux (slot directories under a boot root); `-ENOSYS` on NuttX. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
@@ -575,6 +576,73 @@ refuses and an unknown input device fail the launch.
 
 The engine loop calls `LedTick()` about once a second, so idle and heartbeat
 timing has that resolution. Input events reach the activity trigger at once.
+
+### `rtc` — wall clock
+
+An `rtc` grant hands one clock device to a wapp:
+
+```
+/dev/rtc/
+  <name>/
+    time    (rw)  seconds since 1970-01-01 00:00:00 UTC, decimal
+    status  (r)   valid | invalid
+    source  (r)   none | rtc | sntp | server | manual
+```
+
+```json
+{ "name": "rtc", "options": "devices=main" }
+{ "name": "rtc", "options": "devices=main,set" }
+```
+
+`devices=` names exactly one device the engine or the board provides. The clause
+`set` allows writes to `time`. Names are `[A-Za-z0-9_-]`, at most 15 characters.
+A missing clause, a list of devices, an unknown clause and an unregistered
+device fail the launch. A device that was not granted answers `-ENOENT` for
+every node beneath it. Any number of wapps may hold a grant for the same
+device, and any number may hold `set`; the last write wins.
+
+- `time` reads the device's time, taken from the device at the time of the read,
+  followed by `\n`. It returns `-EIO` while `status` is `invalid` and when the
+  device does not answer.
+- `status` reads `valid` or `invalid`, and returns `-EIO` when the device does
+  not answer. A chip device is `invalid` after a power loss or a stopped
+  oscillator. The software device is `invalid` until its first write since
+  boot. On Linux and OpenWrt, where the operating system keeps the clock, it
+  follows the host clock and is `valid` while that clock reads 2000-01-01 to
+  2099-12-31.
+- `source` reads `none` until a write, and then the source that the write
+  named. After a boot in which `main` was `valid` it reads `rtc`.
+- `status` and `source` are read-only, and so is `time` without `set`: a write
+  or an open for writing returns `-EACCES`.
+- A read returns the whole line in one call, and a read after it returns 0. A
+  buffer shorter than the line gets the part that fits.
+- A write to `time` is one call holding `<seconds>` or `<seconds> <source>`,
+  with an optional final newline. `<source>` is `rtc`, `sntp`, `server` or
+  `manual`, and defaults to `manual`. `<seconds>` is an integer from 946684800
+  to 4102444799; a value outside the range, a sign, a fraction, a non-digit, an
+  unknown source or any other line returns `-EINVAL`.
+
+The device named `main` drives the engine's system clock. After the board has
+registered its devices and before the supervisor starts, a valid `main` sets
+`CLOCK_REALTIME` and `/proc/clock_quality` to `HARDWARE_RTC`. A write to `main`
+sets the device, then the system clock, then the source and the quality byte:
+`rtc` gives `HARDWARE_RTC` (0), `sntp` gives `SNTP_CALIBRATED` (1), and `server`
+and `manual` give `SIMPLE_CALIBRATION` (2). If the device write fails, the
+write returns `-EIO` and nothing changes. If setting the system clock fails,
+the write returns `-EIO`, or `-EPERM` when the operating system refuses to let
+the engine set it, the device keeps the new time, and the source and the
+quality byte keep their values. Any other device is a plain clock and leaves
+the system clock alone.
+
+Every engine provides `main`. Without a board device, `main` is a software
+device whose time is the system clock. A hosted engine never writes the
+hardware clock: the operating system does that. A write to `main` there needs
+permission to set the host clock, which an engine in a container usually lacks. A board registers chip devices with
+`RtcChipRegister` or `RtcDeviceRegister` (`src/include/rtc-chip.h`,
+`src/include/vfs-rtc.h`) before the engine starts. A chip whose `set` leaves
+the oscillator-stop flag set returns `-EIO` from the write. The
+device holds UTC: there are no time zones, daylight saving rules or leap
+seconds.
 
 ### `wifi` — Wi-Fi station and access point
 

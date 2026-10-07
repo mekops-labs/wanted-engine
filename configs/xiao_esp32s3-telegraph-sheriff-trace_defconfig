@@ -15,6 +15,10 @@ CONFIG_WANTED_MAX_DRIVERS_CNT=6
 CONFIG_WANTED_MAX_OPTIONS_SIZE=128
 
 CONFIG_WANTED_VFS_UART=y
+
+# The clock device: the wapp that keeps the display's clock with the engine's
+# holds an rtc grant, and Sheriff sets the clock through it.
+CONFIG_WANTED_VFS_RTC=y
 CONFIG_WANTED_PIPE_MAX_PIPES=16
 CONFIG_WANTED_VFS_SOCKET_LISTEN=y
 

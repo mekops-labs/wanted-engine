@@ -582,6 +582,9 @@ static const vfs_driver_table_t core_driver_table[] = {
 #ifdef CONFIG_WANTED_VFS_LED
     {"led", VfsLedInit},
 #endif
+#ifdef CONFIG_WANTED_VFS_RTC
+    {"rtc", VfsRtcInit},
+#endif
 #ifdef CONFIG_WANTED_VFS_OTA
     {"ota", VfsOtaInit},
 #endif

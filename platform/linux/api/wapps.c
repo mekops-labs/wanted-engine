@@ -454,6 +454,8 @@ void PlatformMemoryStats(size_t *heap_used, size_t *heap_total) {
 
 const char *PlatformName(void) { return "linux"; }
 
+bool PlatformClockIsHosted(void) { return true; }
+
 /* No build-time image digest on this target. buf is unused here but the
  * signature is the shared platform seam other targets write through. */
 /* NOLINTNEXTLINE(readability-non-const-parameter) */

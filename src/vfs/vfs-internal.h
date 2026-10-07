@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <vfs-procfs.h>
 #include <vfs.h>
+#include <wanted-autoconf.h>
 
 #define TRY_DRV(drv_ptr, oper, ...)                                            \
     (((drv_ptr)->oper != NULL) ? (drv_ptr)->oper((drv_ptr)->ctx, __VA_ARGS__)  \
@@ -76,8 +77,12 @@ typedef struct vfs_entry_t {
 struct vfs_tarfs_ctx_t;
 
 /* Direct DevFs/NetFs registration tables, filled by WantedInstallDriver. The
- * prefix router resolves an open by exact-matching a suffix against `name`. */
-#define VFS_DEVFS_MAX_ENTRIES 10
+ * prefix router resolves an open by exact-matching a suffix against `name`.
+ * /dev holds the built-ins (null, pipe, stdin, stdout, stderr) and a full
+ * drivers[] section. */
+#define VFS_DEVFS_BUILTINS 5
+#define VFS_DEVFS_MAX_ENTRIES                                                  \
+    (VFS_DEVFS_BUILTINS + CONFIG_WANTED_MAX_DRIVERS_CNT)
 
 /* ProcFS registration table — flat read-only entries under "/proc". */
 #define VFS_PROCFS_MAX_ENTRIES 16

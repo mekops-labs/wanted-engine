@@ -19,6 +19,9 @@
 #include <vfs-drivers.h>
 #include <vfs-pipe.h>
 #include <vfs-procfs.h>
+#ifdef CONFIG_WANTED_VFS_RTC
+#include <vfs-rtc.h>
+#endif
 #include <vfs-stdio.h>
 #include <vfs-tarfs.h>
 #include <vfs.h>
@@ -1367,6 +1370,14 @@ int WantedStart(const char *cfg, size_t cfgLen) {
     DEBUG_TRACE("ensureWamrInit -> %d", ret);
     if (ret < 0)
         return -1;
+
+#ifdef CONFIG_WANTED_VFS_RTC
+    /* The board registered its clock devices already; the supervisor reads the
+     * clock quality as soon as it runs. */
+    bool clockSet = RtcBoot();
+    DEBUG_TRACE("RtcBoot -> %d", (int)clockSet);
+    (void)clockSet;
+#endif
 
     app = WantedGetCurrentSupervisor();
     DEBUG_TRACE("WantedGetCurrentSupervisor -> %p", (void *)app);
