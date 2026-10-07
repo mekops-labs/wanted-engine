@@ -13,7 +13,11 @@
                 {"name": "ota"},
                 {"name": "sha256"},
                 {"name": "ed25519"},
-                {"name": "inflate"}
+                {"name": "inflate"},
+                {"name": "rtc", "options": "devices=main,set"}
+            ],
+            "sockets": [
+                {"name": "ntp", "address": "udp://pool.ntp.org:123", "role": "connect"}
             ],
             "mounts": [
                 {"name": "platform", "path": "/var/lib/sheriff", "options": "src=sheriff"},
