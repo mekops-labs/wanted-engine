@@ -55,7 +55,7 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/wapps/<name>/exit_code` | r | yes | WASI exit code (authoritative when `state == exited`; else the sentinel `-1`). |
 | `/proc/wapps/<name>/memory` | r | yes | Per-wapp WASM linear-memory accounting: `linear_cur` / `linear_max` (bytes) and `pages_cur` / `pages_max`. |
 | `/proc/memory` | r | yes | `heap_used` / `heap_total`, via `PlatformMemoryStats`; `store_free` / `store_total`; `wasm_pages_free` — WASM linear-memory pages the engine can still commit: every loaded wapp's headroom to its own ceiling, plus the full per-wapp ceiling for each free wapp slot. An image that declares its max equal to its initial memory reaches its ceiling as it instantiates and contributes no headroom, so the free slots are usually the whole figure. An uncapped build (`wasm_max_pages: 0`) counts no slot capacity — there is no page count to count. |
-| `/proc/clock_quality` | r | no | Platform clock-quality metric. |
+| `/proc/clock_quality` | r | no | `clock_quality:\t<0-3>` — the system clock's calibration: 0 hardware RTC, 1 SNTP, 2 simple (server or manual), 3 uncalibrated. |
 | `/proc/uptime` | r | no | `uptime_ms` — milliseconds since the engine started, the origin captured log lines are stamped from. |
 | `/proc/net` | r (dir) | no | A directory: one flat file per `sockets[]` entry *this wapp* holds, named after the entry (`readdir` enumerates them). Reads the wapp's own per-wapp socket table, so a wapp can never see another wapp's sockets. |
 | `/proc/net/<name>` | r | no | `connected` (`0`/`1`), `type` (the socket's scheme — known from config alone, always present), and `local` (the connected local endpoint, `<scheme>://<host>:<port>` or a bare path for `serial://`/`unix://` — present only once connected). |
@@ -195,9 +195,9 @@ the engine fixed its uptime origin at start:
 ```
 
 The stamp is boot-relative because a device need not have a trustworthy wall
-clock — `/proc/clock_quality` reads `3` (uncalibrated) until something sets the
-time, and an absolute stamp written before then would be wrong rather than
-merely coarse. `/proc/uptime` reports the same counter as `uptime_ms`, so a
+clock — `/proc/clock_quality` reads `clock_quality:\t3` (uncalibrated) until
+something sets the time, and an absolute stamp written before then would be
+wrong rather than merely coarse. `/proc/uptime` reports the same counter as `uptime_ms`, so a
 reader that pairs one read of it with its own clock resolves every stamp in a
 ring to absolute time.
 
@@ -625,13 +625,13 @@ device, and any number may hold `set`; the last write wins.
 The device named `main` drives the engine's system clock. After the board has
 registered its devices and before the supervisor starts, a valid `main` sets
 `CLOCK_REALTIME` and `/proc/clock_quality` to `HARDWARE_RTC`. A write to `main`
-sets the device, then the system clock, then the source and the quality byte:
+sets the device, then the system clock, then the source and the quality:
 `rtc` gives `HARDWARE_RTC` (0), `sntp` gives `SNTP_CALIBRATED` (1), and `server`
 and `manual` give `SIMPLE_CALIBRATION` (2). If the device write fails, the
 write returns `-EIO` and nothing changes. If setting the system clock fails,
 the write returns `-EIO`, or `-EPERM` when the operating system refuses to let
 the engine set it, the device keeps the new time, and the source and the
-quality byte keep their values. Any other device is a plain clock and leaves
+quality keep their values. Any other device is a plain clock and leaves
 the system clock alone.
 
 Every engine provides `main`. Without a board device, `main` is a software

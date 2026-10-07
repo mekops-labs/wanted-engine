@@ -385,37 +385,60 @@ TEST_TEAR_DOWN(procfs_clock_quality) {
     WantedSetClockQuality(WANTED_CLOCK_UNCALIBRATED);
 }
 
-TEST(procfs_clock_quality, DefaultIsUncalibrated) {
+/* Reads the node into `out` and returns its length. */
+static int readQuality(char *out, size_t cap) {
     int fd = VfsOpen(vfs, "/proc/clock_quality", VFS_O_RDONLY);
     TEST_ASSERT_TRUE(fd >= 0);
-
-    uint8_t b = 0xFF;
-    int n = VfsRead(vfs, fd, &b, 1);
-    TEST_ASSERT_EQUAL_INT(1, n);
-    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_UNCALIBRATED, b);
-    TEST_ASSERT_TRUE(b <= 3);
-
+    int n = VfsRead(vfs, fd, out, cap - 1);
     VfsClose(vfs, fd);
+    TEST_ASSERT_TRUE(n >= 0);
+    out[n] = '\0';
+    return n;
+}
+
+TEST(procfs_clock_quality, DefaultIsUncalibrated) {
+    char text[32];
+    int n = readQuality(text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("clock_quality:\t3\n", text);
+    TEST_ASSERT_EQUAL_INT((int)strlen("clock_quality:\t3\n"), n);
 }
 
 TEST(procfs_clock_quality, ReflectsCalibrationUpdate) {
+    char text[32];
     WantedSetClockQuality(WANTED_CLOCK_SNTP_CALIBRATED);
-    int fd = VfsOpen(vfs, "/proc/clock_quality", VFS_O_RDONLY);
-    TEST_ASSERT_TRUE(fd >= 0);
-
-    uint8_t b = 0xFF;
-    TEST_ASSERT_EQUAL_INT(1, VfsRead(vfs, fd, &b, 1));
-    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_SNTP_CALIBRATED, b);
-    VfsClose(vfs, fd);
+    readQuality(text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("clock_quality:\t1\n", text);
 
     /* Re-open and re-read to observe the new value. */
     WantedSetClockQuality(WANTED_CLOCK_SIMPLE_CALIBRATION);
-    fd = VfsOpen(vfs, "/proc/clock_quality", VFS_O_RDONLY);
-    TEST_ASSERT_TRUE(fd >= 0);
-    b = 0xFF;
-    TEST_ASSERT_EQUAL_INT(1, VfsRead(vfs, fd, &b, 1));
-    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_SIMPLE_CALIBRATION, b);
-    VfsClose(vfs, fd);
+    readQuality(text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("clock_quality:\t2\n", text);
+
+    WantedSetClockQuality(WANTED_CLOCK_HARDWARE_RTC);
+    readQuality(text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("clock_quality:\t0\n", text);
+}
+
+TEST(procfs_clock_quality, IsTextLikeTheOtherNodes) {
+    char text[32];
+    readQuality(text, sizeof(text));
+    for (size_t i = 0; text[i] != '\0'; i++)
+        TEST_ASSERT_TRUE(text[i] == '\t' || text[i] == '\n' ||
+                         (text[i] >= ' ' && text[i] < 0x7f));
+}
+
+TEST(procfs_clock_quality, ShortBufferGetsTheStartOfTheLine) {
+    char text[8];
+    WantedSetClockQuality(WANTED_CLOCK_SNTP_CALIBRATED);
+    int n = WantedProcReadClockQuality(NULL, text, sizeof(text));
+    TEST_ASSERT_EQUAL_INT((int)sizeof(text), n);
+    TEST_ASSERT_EQUAL_MEMORY("clock_qu", text, sizeof(text));
+}
+
+TEST(procfs_clock_quality, RejectsNullAndEmptyBuffers) {
+    char text[4];
+    TEST_ASSERT_EQUAL_INT(-EINVAL, WantedProcReadClockQuality(NULL, NULL, 8));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, WantedProcReadClockQuality(NULL, text, 0));
 }
 
 TEST(procfs_clock_quality, RejectsOutOfRangeWrite) {
@@ -427,6 +450,9 @@ TEST(procfs_clock_quality, RejectsOutOfRangeWrite) {
 TEST_GROUP_RUNNER(procfs_clock_quality) {
     RUN_TEST_CASE(procfs_clock_quality, DefaultIsUncalibrated);
     RUN_TEST_CASE(procfs_clock_quality, ReflectsCalibrationUpdate);
+    RUN_TEST_CASE(procfs_clock_quality, IsTextLikeTheOtherNodes);
+    RUN_TEST_CASE(procfs_clock_quality, ShortBufferGetsTheStartOfTheLine);
+    RUN_TEST_CASE(procfs_clock_quality, RejectsNullAndEmptyBuffers);
     RUN_TEST_CASE(procfs_clock_quality, RejectsOutOfRangeWrite);
 }
 

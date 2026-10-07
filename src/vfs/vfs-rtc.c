@@ -210,7 +210,7 @@ bool RtcBoot(void) {
 }
 
 /* The order of a write: the device, then the system clock, then the source
- * and the quality byte. Caller holds the lock. */
+ * and the quality. Caller holds the lock. */
 static int applyWrite(rtc_dev_t *d, uint32_t sec, rtc_source_t src) {
     if (d->soft) {
         int rc = setSystemClock(sec);

@@ -44,12 +44,20 @@ void WantedSetClockQuality(uint8_t q) {
 
 uint8_t WantedGetClockQuality(void) { return clockQuality; }
 
+/* /proc/clock_quality — the calibration as one `clock_quality:\t<0-3>` line,
+ * in the `key:\tvalue` form of the other top-level nodes. */
 int WantedProcReadClockQuality(vfs_ctx_t c, void *buf, size_t bufLen) {
     (void)c;
     if (!buf || bufLen < 1)
         return -EINVAL;
-    *(uint8_t *)buf = clockQuality;
-    return 1;
+    char line[24];
+    int w = snprintf(line, sizeof(line), "clock_quality:\t%u\n",
+                     (unsigned)clockQuality);
+    if (w < 0)
+        return -EIO;
+    size_t n = (size_t)w < bufLen ? (size_t)w : bufLen;
+    memcpy(buf, line, n);
+    return (int)n;
 }
 
 const char *StatusToString(status_t state) {
