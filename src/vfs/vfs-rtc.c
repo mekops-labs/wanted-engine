@@ -10,6 +10,7 @@
 #include "vfs-internal.h"
 #include <debug_trace.h>
 #include <platform.h>
+#include <rtc-chip.h>
 #include <rtc-time.h>
 #include <vfs-drivers.h>
 #include <vfs-rtc.h>
@@ -177,6 +178,7 @@ static bool isMain(const rtc_dev_t *d) {
 }
 
 void RtcDevicesReset(void) {
+    RtcChipsReset();
     PlatformMutexFree(table.lock);
     memset(&table, 0, sizeof(table));
 }

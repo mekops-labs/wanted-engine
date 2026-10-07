@@ -143,7 +143,8 @@ if(CONFIG_WANTED_VFS_LED)
 endif()
 if(CONFIG_WANTED_VFS_RTC)
     list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-rtc.c
-         ${ENGINE}/src/rtc/rtc-time.c)
+         ${ENGINE}/src/rtc/rtc-time.c ${ENGINE}/src/rtc/rtc-chip.c
+         ${ENGINE}/src/rtc/pcf85063.c)
 endif()
 if(CONFIG_WANTED_VFS_OTA)
     list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-ota.c)
