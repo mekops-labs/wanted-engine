@@ -26,7 +26,7 @@ typedef struct rtc_device_desc_t {
  * taken, -ENOSPC table full. */
 int RtcDeviceRegister(const rtc_device_desc_t *desc);
 
-/* Set the system clock and the quality byte from a valid `main`. Returns
+/* Set the system clock and the quality from a valid `main`. Returns
  * true when it did; false leaves everything alone. */
 bool RtcBoot(void);
 

@@ -1088,9 +1088,9 @@ TEST(rtc_acceptance, ASetGrantWritesTheSoftwareMain) {
     TEST_ASSERT_TRUE(sysSeconds() - T_NOW < 5);
     expectLine(&owner, "main/status", "valid\n");
     expectLine(&owner, "main/source", "sntp\n");
-    uint8_t q = 99;
-    TEST_ASSERT_EQUAL_INT(1, WantedProcReadClockQuality(NULL, &q, 1));
-    TEST_ASSERT_EQUAL_UINT8(1, q);
+    char q[32] = {0};
+    TEST_ASSERT_EQUAL_INT(17, WantedProcReadClockQuality(NULL, q, sizeof(q)));
+    TEST_ASSERT_EQUAL_STRING("clock_quality:\t1\n", q);
 }
 
 TEST(rtc_acceptance, AGrantWithoutSetCannotWriteTime) {

@@ -81,8 +81,8 @@ int WantedParseWappConfigJson(const char *buf, size_t bufLen,
  * the caller merges into a copy before tearing the running instance down. */
 int WantedMergeConfigOverlay(wapp_config_t *cfg, const char *dir);
 
-/* Engine clock-quality state, exposed as one byte at /proc/clock_quality and
- * read as authoritative by a wapp deciding whether to trust the wall clock. An
+/* Engine clock-quality state, exposed as text at /proc/clock_quality and read
+ * as authoritative by a wapp deciding whether to trust the wall clock. An
  * updater calls WantedSetClockQuality whenever the calibration changes. */
 #define WANTED_CLOCK_HARDWARE_RTC 0
 #define WANTED_CLOCK_SNTP_CALIBRATED 1
