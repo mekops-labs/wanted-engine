@@ -182,6 +182,16 @@ config WANTED_VFS_LED
 	  triggers. LEDs on a pin are named in the grant; a board registers the
 	  others by name.
 
+config WANTED_VFS_RTC
+	bool "rtc — wall-clock devices"
+	default n
+	help
+	  /dev/rtc/<name>/{time,status,source}: a wall-clock device as three text
+	  files. The device named `main` sets the engine's system clock at boot
+	  and when a wapp with the `set` grant writes `time`. A board registers
+	  chip devices by name; without one, `main` is a software device that
+	  follows the system clock.
+
 config WANTED_VFS_OTA
 	bool "ota — A/B firmware update"
 	default y
@@ -276,6 +286,15 @@ config WANTED_LED_MAX_DEVICES
 	help
 	  Size of the engine-wide LED table, shared by board devices and the
 	  pin LEDs of live grants.
+
+config WANTED_RTC_MAX_DEVICES
+	int "Clock devices the rtc driver can hold"
+	depends on WANTED_VFS_RTC
+	default 2
+	range 1 4
+	help
+	  Size of the engine-wide clock device table, shared by board devices and
+	  the software `main`.
 
 config WANTED_OTA_SLOT_ROOT
 	string "OTA slot directory (host backings)"

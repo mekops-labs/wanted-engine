@@ -98,6 +98,9 @@ vfs_driver_t *VfsInputInit(const wapp_t *wapp, const char *options);
 #ifdef CONFIG_WANTED_VFS_LED
 vfs_driver_t *VfsLedInit(const wapp_t *wapp, const char *options);
 #endif
+#ifdef CONFIG_WANTED_VFS_RTC
+vfs_driver_t *VfsRtcInit(const wapp_t *wapp, const char *options);
+#endif
 vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options);
 #ifdef CONFIG_WANTED_VFS_OTA
 vfs_driver_t *VfsOtaInit(const wapp_t *wapp, const char *options);
