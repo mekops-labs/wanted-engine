@@ -609,8 +609,18 @@ TEST(rtc_write, ADeviceFailureIsEioAndKeepsEverything) {
 
 TEST(rtc_write, ASystemClockFailureIsEioAndTheDeviceKeepsTheNewTime) {
     TEST_ASSERT_EQUAL_INT(10, writeTime(&owner, "1791300000"));
-    DummyClockFailSet(-EPERM);
+    DummyClockFailSet(-ENOSYS);
     TEST_ASSERT_EQUAL_INT(-EIO, writeTime(&owner, "1800000000 sntp"));
+    TEST_ASSERT_EQUAL_UINT32(T_OTHER, chip.sec);
+    expectLine(&owner, "main/source", "manual\n");
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_SIMPLE_CALIBRATION,
+                            WantedGetClockQuality());
+}
+
+TEST(rtc_write, ARefusedSystemClockIsEpermAndTheDeviceKeepsTheNewTime) {
+    TEST_ASSERT_EQUAL_INT(10, writeTime(&owner, "1791300000"));
+    DummyClockFailSet(-EPERM);
+    TEST_ASSERT_EQUAL_INT(-EPERM, writeTime(&owner, "1800000000 sntp"));
     TEST_ASSERT_EQUAL_UINT32(T_OTHER, chip.sec);
     expectLine(&owner, "main/source", "manual\n");
     TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_SIMPLE_CALIBRATION,
@@ -638,6 +648,8 @@ TEST_GROUP_RUNNER(rtc_write) {
     RUN_TEST_CASE(rtc_write, ADeviceFailureIsEioAndKeepsEverything);
     RUN_TEST_CASE(rtc_write,
                   ASystemClockFailureIsEioAndTheDeviceKeepsTheNewTime);
+    RUN_TEST_CASE(rtc_write,
+                  ARefusedSystemClockIsEpermAndTheDeviceKeepsTheNewTime);
     RUN_TEST_CASE(rtc_write, ANonMainDeviceLeavesTheSystemClockAndTheQuality);
 }
 
@@ -684,7 +696,7 @@ TEST(rtc_software, ItFollowsTheSystemClockAfterTheWrite) {
 
 TEST(rtc_software, AFailedSystemClockSetLeavesItInvalid) {
     TEST_ASSERT_TRUE(attach(&owner, "devices=main,set"));
-    DummyClockFailSet(-EPERM);
+    DummyClockFailSet(-ENOSYS);
     TEST_ASSERT_EQUAL_INT(-EIO, writeTime(&owner, "1791300000 sntp"));
     expectLine(&owner, "main/status", "invalid\n");
     expectLine(&owner, "main/source", "none\n");
@@ -963,6 +975,104 @@ TEST_GROUP_RUNNER(rtc_ops) {
     RUN_TEST_CASE(rtc_ops, ADirectoryCannotBeRead);
     RUN_TEST_CASE(rtc_ops, ReadDirOfAFileIsEnotdir);
     RUN_TEST_CASE(rtc_ops, DirectoryEntriesCarryTheirType);
+}
+
+/***************************************/
+TEST_GROUP(rtc_hosted);
+/***************************************/
+
+#define MIN_UNIX 946684800ULL
+#define MAX_UNIX 4102444799ULL
+
+TEST_SETUP(rtc_hosted) {
+    setupRtc();
+    DummyClockHostedSet(true);
+}
+TEST_TEAR_DOWN(rtc_hosted) { teardownRtc(); }
+
+static void setHostClock(unsigned long long sec) {
+    TEST_ASSERT_EQUAL_INT(
+        0, PlatformClockSetTime(PLAT_CLOCKID_REALTIME, sec * NS_PER_S));
+}
+
+TEST(rtc_hosted, MainMirrorsAHostClockThatIsSet) {
+    setHostClock(T_NOW);
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    expectLine(&owner, "main/status", "valid\n");
+    char buf[32];
+    TEST_ASSERT_TRUE(readVia(&owner, "main/time", buf, sizeof(buf)) > 0);
+    TEST_ASSERT_TRUE((uint32_t)atol(buf) - T_NOW < 5);
+    expectLine(&owner, "main/source", "none\n");
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_UNCALIBRATED, WantedGetClockQuality());
+}
+
+TEST(rtc_hosted, MainIsInvalidWhileTheHostClockIsUnset) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    expectLine(&owner, "main/status", "invalid\n");
+    expectReadError(&owner, "main/time", -EIO);
+}
+
+TEST(rtc_hosted, TheHostClockMustLieInTheRange) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    setHostClock(MIN_UNIX - 1);
+    expectLine(&owner, "main/status", "invalid\n");
+    setHostClock(MIN_UNIX);
+    expectLine(&owner, "main/status", "valid\n");
+    setHostClock(MAX_UNIX);
+    expectLine(&owner, "main/status", "valid\n");
+    setHostClock(MAX_UNIX + 1);
+    expectLine(&owner, "main/status", "invalid\n");
+}
+
+TEST(rtc_hosted, AnEngineThatOwnsItsClockStaysInvalidUntilWritten) {
+    DummyClockHostedSet(false);
+    setHostClock(T_NOW);
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    expectLine(&owner, "main/status", "invalid\n");
+}
+
+TEST(rtc_hosted, AWriteSetsTheHostClock) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main,set"));
+    TEST_ASSERT_EQUAL_INT(15, writeTime(&owner, "1791300000 sntp"));
+    TEST_ASSERT_TRUE(sysSeconds() - T_NOW < 5);
+    expectLine(&owner, "main/status", "valid\n");
+    expectLine(&owner, "main/source", "sntp\n");
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_SNTP_CALIBRATED,
+                            WantedGetClockQuality());
+}
+
+TEST(rtc_hosted, AWriteWithoutPermissionIsEpermAndChangesNothing) {
+    setHostClock(T_NOW);
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main,set"));
+    DummyClockFailSet(-EPERM);
+    TEST_ASSERT_EQUAL_INT(-EPERM, writeTime(&owner, "1800000000 sntp"));
+    TEST_ASSERT_TRUE(sysSeconds() - T_NOW < 5);
+    expectLine(&owner, "main/source", "none\n");
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_UNCALIBRATED, WantedGetClockQuality());
+}
+
+TEST(rtc_hosted, AnotherFailureToSetTheHostClockIsEio) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main,set"));
+    DummyClockFailSet(-EINVAL);
+    TEST_ASSERT_EQUAL_INT(-EIO, writeTime(&owner, "1800000000 sntp"));
+}
+
+TEST(rtc_hosted, BootLeavesTheHostClockAndTheQuality) {
+    setHostClock(T_NOW);
+    TEST_ASSERT_FALSE(RtcBoot());
+    TEST_ASSERT_TRUE(sysSeconds() - T_NOW < 5);
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_UNCALIBRATED, WantedGetClockQuality());
+}
+
+TEST_GROUP_RUNNER(rtc_hosted) {
+    RUN_TEST_CASE(rtc_hosted, MainMirrorsAHostClockThatIsSet);
+    RUN_TEST_CASE(rtc_hosted, MainIsInvalidWhileTheHostClockIsUnset);
+    RUN_TEST_CASE(rtc_hosted, TheHostClockMustLieInTheRange);
+    RUN_TEST_CASE(rtc_hosted, AnEngineThatOwnsItsClockStaysInvalidUntilWritten);
+    RUN_TEST_CASE(rtc_hosted, AWriteSetsTheHostClock);
+    RUN_TEST_CASE(rtc_hosted, AWriteWithoutPermissionIsEpermAndChangesNothing);
+    RUN_TEST_CASE(rtc_hosted, AnotherFailureToSetTheHostClockIsEio);
+    RUN_TEST_CASE(rtc_hosted, BootLeavesTheHostClockAndTheQuality);
 }
 
 /***************************************/

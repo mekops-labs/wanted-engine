@@ -44,6 +44,8 @@ void PlatformStorageStats(size_t *free_b, size_t *total_b) {
 
 const char *PlatformName(void) { return "esp-idf"; }
 
+bool PlatformClockIsHosted(void) { return false; }
+
 /* The toolchain stamps the ELF SHA-256 into the image descriptor at build time,
  * so this reads a digest rather than computing one. The raw field is encoded
  * here because esp_app_get_elf_sha256() truncates; see the platform guide. */

@@ -30,6 +30,10 @@ void DummyClockAdvance(uint64_t ns);
 /* Make PlatformClockSetTime return `rc` and change nothing; 0 restores it. */
 void DummyClockFailSet(int rc);
 
+/* Make PlatformClockIsHosted return `hosted`; DummyClockReset restores false.
+ */
+void DummyClockHostedSet(bool hosted);
+
 /* Serve `body` from PlatformReadSmallFile for `path`; a NULL body answers
  * -ENOENT. One entry, replaced on each call and cleared by DummyFsReset. */
 void DummySmallFileSet(const char *path, const char *body);

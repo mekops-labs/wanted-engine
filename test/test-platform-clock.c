@@ -132,6 +132,17 @@ TEST(platform_clock, Reset_ClearsTheSetTimeAndTheInjectedFailure) {
     TEST_ASSERT_EQUAL_UINT64(0, t);
 }
 
+TEST(platform_clock, Hosted_DefaultsToAnEngineThatOwnsItsClock) {
+    TEST_ASSERT_FALSE(PlatformClockIsHosted());
+}
+
+TEST(platform_clock, Hosted_FollowsTheFakeAndResets) {
+    DummyClockHostedSet(true);
+    TEST_ASSERT_TRUE(PlatformClockIsHosted());
+    DummyClockReset();
+    TEST_ASSERT_FALSE(PlatformClockIsHosted());
+}
+
 TEST_GROUP_RUNNER(platform_clock) {
     RUN_TEST_CASE(platform_clock, Res_ReturnsOneMsForRealtimeAndMonotonic);
     RUN_TEST_CASE(platform_clock, Res_InvalidId_ReturnsEinval);
@@ -140,6 +151,8 @@ TEST_GROUP_RUNNER(platform_clock) {
     RUN_TEST_CASE(platform_clock, GetTime_RealtimeAndMonotonicShareCounter);
     RUN_TEST_CASE(platform_clock, Sleep_AdvancesCounter);
     RUN_TEST_CASE(platform_clock, ClockAdvance_IncreasesCounter);
+    RUN_TEST_CASE(platform_clock, Hosted_DefaultsToAnEngineThatOwnsItsClock);
+    RUN_TEST_CASE(platform_clock, Hosted_FollowsTheFakeAndResets);
     RUN_TEST_CASE(platform_clock, SetTime_RealtimeReadsBackTheSetValue);
     RUN_TEST_CASE(platform_clock, SetTime_RealtimeKeepsRunningAfterTheSet);
     RUN_TEST_CASE(platform_clock, SetTime_DoesNotMoveMonotonic);

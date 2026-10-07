@@ -76,7 +76,9 @@ static int softGet(void *ctx, uint32_t *sec, bool *valid) {
     if (rc < 0)
         return rc;
     *sec = (uint32_t)(ns / RTC_NS_PER_S);
-    *valid = d->softValid;
+    /* A host that keeps the clock vouches for it once it reads a date. */
+    *valid = d->softValid || (PlatformClockIsHosted() && *sec >= RTC_UNIX_MIN &&
+                              *sec <= RTC_UNIX_MAX);
     return 0;
 }
 
@@ -211,14 +213,16 @@ bool RtcBoot(void) {
  * and the quality byte. Caller holds the lock. */
 static int applyWrite(rtc_dev_t *d, uint32_t sec, rtc_source_t src) {
     if (d->soft) {
-        if (setSystemClock(sec) < 0)
-            return -EIO;
+        int rc = setSystemClock(sec);
+        if (rc < 0)
+            return rc == -EPERM ? -EPERM : -EIO;
         d->softValid = true;
     } else {
         if (d->ops.set(d->ctx, sec) < 0)
             return -EIO;
-        if (isMain(d) && setSystemClock(sec) < 0)
-            return -EIO;
+        int rc = isMain(d) ? setSystemClock(sec) : 0;
+        if (rc < 0)
+            return rc == -EPERM ? -EPERM : -EIO;
     }
     d->source = src;
     if (isMain(d))

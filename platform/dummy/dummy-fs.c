@@ -61,6 +61,7 @@ struct vfs_driver_ctx_t {
 static uint64_t g_clock_ns;
 static uint64_t g_realtime_delta_ns; /* wraps; added to the shared counter */
 static int g_clock_set_rc;
+static bool g_clock_hosted;
 static uint32_t g_prng_state = 0xDEAD1234U;
 
 /* ── Fs helpers ─────────────────────────────────────────────────────────── */
@@ -607,12 +608,17 @@ void DummyClockReset(void) {
     g_clock_ns = 0;
     g_realtime_delta_ns = 0;
     g_clock_set_rc = 0;
+    g_clock_hosted = false;
     g_prng_state = 0xDEAD1234U;
 }
 
 void DummyClockAdvance(uint64_t ns) { g_clock_ns += ns; }
 
 void DummyClockFailSet(int rc) { g_clock_set_rc = rc; }
+
+void DummyClockHostedSet(bool hosted) { g_clock_hosted = hosted; }
+
+bool PlatformClockIsHosted(void) { return g_clock_hosted; }
 
 /* xorshift32 — deterministic, fixed seed. Typo in name is intentional:
  * matches the platform.h declaration. */
