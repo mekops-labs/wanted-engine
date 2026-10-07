@@ -633,7 +633,9 @@ the system clock alone.
 
 Every engine provides `main`. Without a board device, `main` is a software
 device whose time is the system clock. A board registers chip devices with
-`RtcDeviceRegister` (`src/include/vfs-rtc.h`) before the engine starts. The
+`RtcChipRegister` or `RtcDeviceRegister` (`src/include/rtc-chip.h`,
+`src/include/vfs-rtc.h`) before the engine starts. A chip whose `set` leaves
+the oscillator-stop flag set returns `-EIO` from the write. The
 device holds UTC: there are no time zones, daylight saving rules or leap
 seconds.
 
