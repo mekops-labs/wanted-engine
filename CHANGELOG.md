@@ -1,6 +1,50 @@
 Changelog
 =========
 
+0.24.0 (2026-10-07)
+-------------------
+
+### Added
+
+- `CONFIG_WANTED_VFS_RTC` adds `/dev/rtc/<name>/{time,status,source}`, a wall
+  clock as three text files.
+- A grant is `devices=<name>`, with an optional `,set` that allows writes.
+- `time` reads the Unix time in seconds. `status` reads `valid` or `invalid`.
+- `source` reads `none` until a write, then the source that the write named.
+- A write to `time` is `<seconds>` or `<seconds> <source>`. `<source>` is `rtc`,
+  `sntp`, `server` or `manual`, and defaults to `manual`.
+- A write sets `/proc/clock_quality`: 0 for `rtc`, 1 for `sntp`, 2 for `server`
+  and `manual`.
+- A valid `main` device sets the system clock at startup, with source `rtc`.
+  Each write to its `time` sets the system clock.
+- Without a board chip, `main` is a software device. On Linux and OpenWrt it
+  follows the host clock.
+- `RtcDeviceRegister` adds a board clock device to the engine-wide table.
+- `RtcChipRegister` registers a clock chip on a register bus. `RtcChipPcf85063`
+  drives the NXP PCF85063A.
+- `PlatformClockSetTime` sets the wall clock. `PlatformClockIsHosted` tells
+  whether an operating system keeps it.
+- `CONFIG_WANTED_RTC_MAX_DEVICES` sets the clock device table size.
+- The Telegraph Sheriff defconfigs enable `rtc`. The bring-up config grants it
+  to Sheriff, with an `ntp` socket.
+
+### Changed
+
+- `/proc/clock_quality` reads `clock_quality:\t<n>\n`. A reader of the single
+  byte it served must parse the line.
+
+### Fixed
+
+- The `/dev` table holds the five built-ins and `CONFIG_WANTED_MAX_DRIVERS_CNT`
+  drivers. It held ten entries, and a `drivers[]` section failed at its sixth
+  driver with `-ENOSPC`.
+
+### Build
+
+- Bumped `wapps/sheriff` to v0.12.0. `provisioning.version` and
+  `wifi-mgr.version` read 0.12.0.
+- The unit-test and coverage CI builds enable `rtc`.
+
 0.23.0 (2026-10-06)
 -------------------
 
