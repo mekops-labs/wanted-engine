@@ -463,8 +463,6 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
         return -EISDIR;
     if (f->node != RTC_NODE_TIME || !d->canSet)
         return -EACCES;
-    if (nbyte >= RTC_LINE_MAX)
-        return -EINVAL;
 
     uint32_t sec;
     rtc_source_t src;
