@@ -236,11 +236,46 @@ TEST(rtc_register, AFullTableIsRefused) {
     TEST_ASSERT_EQUAL_INT(-ENOSPC, registerChip("extra", &chip));
 }
 
+TEST(rtc_register, TokenGrammarBoundaries) {
+    const char *good[] = {"A", "Z", "a", "z", "0", "9", "_", "-"};
+    const char *bad[] = {"@", "[", "`", "{", "/", ":", " ", ".", "\n"};
+    for (size_t i = 0; i < sizeof(good) / sizeof(good[0]); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(0, registerChip(good[i], &chip), good[i]);
+        RtcDevicesReset();
+    }
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        TEST_ASSERT_EQUAL_INT_MESSAGE(-EINVAL, registerChip(bad[i], &chip),
+                                      bad[i]);
+        RtcDevicesReset();
+    }
+}
+
+TEST(rtc_register, AFailedGrantLeavesTheNameMainFree) {
+    TEST_ASSERT_NULL(VfsRtcInit(NULL, "devices=nope"));
+    TEST_ASSERT_NULL(VfsRtcInit(NULL, "devices=ma"));
+    TEST_ASSERT_NULL(VfsRtcInit(NULL, "devices=mai"));
+    TEST_ASSERT_EQUAL_INT(0, registerChip("main", &chip));
+}
+
+TEST(rtc_register, ALongestNameWorksEndToEnd) {
+    TEST_ASSERT_EQUAL_INT(0, registerChip("abcdefghijklmno", &chip));
+    chip.valid = true;
+    chip.sec = T_NOW;
+    TEST_ASSERT_TRUE(attach(&owner, "devices=abcdefghijklmno"));
+    char names[64];
+    TEST_ASSERT_EQUAL_INT(0, listDir(&owner, "", names, sizeof(names)));
+    TEST_ASSERT_EQUAL_STRING("abcdefghijklmno", names);
+    expectLine(&owner, "abcdefghijklmno/time", "1791300000\n");
+}
+
 TEST_GROUP_RUNNER(rtc_register) {
     RUN_TEST_CASE(rtc_register, RejectsABadDescription);
     RUN_TEST_CASE(rtc_register, NamesFollowTheTokenGrammar);
     RUN_TEST_CASE(rtc_register, ARepeatedNameIsRefused);
     RUN_TEST_CASE(rtc_register, AFullTableIsRefused);
+    RUN_TEST_CASE(rtc_register, TokenGrammarBoundaries);
+    RUN_TEST_CASE(rtc_register, AFailedGrantLeavesTheNameMainFree);
+    RUN_TEST_CASE(rtc_register, ALongestNameWorksEndToEnd);
 }
 
 /***************************************/
@@ -754,6 +789,180 @@ TEST_GROUP_RUNNER(rtc_boot) {
     RUN_TEST_CASE(rtc_boot, AFailedSystemClockSetLeavesTheQualityAndTheSource);
     RUN_TEST_CASE(rtc_boot, TheSoftwareMainChangesNothing);
     RUN_TEST_CASE(rtc_boot, OnlyMainDrivesTheSystemClock);
+}
+
+/***************************************/
+TEST_GROUP(rtc_ops);
+/***************************************/
+
+#define DRIVER_ID 0x64437452U /* "RtCd" read as a little-endian word */
+
+TEST_SETUP(rtc_ops) {
+    setupRtc();
+    chip.sec = T_NOW;
+    chip.valid = true;
+    registerChip("main", &chip);
+}
+TEST_TEAR_DOWN(rtc_ops) { teardownRtc(); }
+
+static int openRaw(const char *path, int flags) {
+    return owner.drv->Open(owner.drv->ctx, path, flags);
+}
+
+TEST(rtc_ops, StatTellsDirectoriesFromNodes) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    const char *paths[] = {"", "main", "main/time", "main/status",
+                           "main/source"};
+    for (size_t i = 0; i < 5; i++) {
+        int fd = openRaw(paths[i], VFS_O_RDONLY);
+        TEST_ASSERT_TRUE(fd >= 0);
+        vfs_stat_t st;
+        memset(&st, 0xFF, sizeof(st));
+        TEST_ASSERT_EQUAL_INT(0, owner.drv->Stat(owner.drv->ctx, fd, &st));
+        TEST_ASSERT_EQUAL_UINT32(DRIVER_ID, st.dev);
+        TEST_ASSERT_EQUAL_UINT(i < 2 ? VFS_FILETYPE_DIRECTORY
+                                     : VFS_FILETYPE_CHARACTER_DEVICE,
+                               st.filetype);
+        TEST_ASSERT_EQUAL_UINT32(0, st.size);
+    }
+}
+
+TEST(rtc_ops, TheDriverIsADirectoryWithItsOwnId) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    TEST_ASSERT_EQUAL_UINT(VFS_FILETYPE_DIRECTORY, owner.drv->filetype);
+    TEST_ASSERT_EQUAL_UINT32(DRIVER_ID, owner.drv->bytesId);
+}
+
+TEST(rtc_ops, ABadDescriptorIsEbadfOnEveryOperation) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main,set"));
+    int bad[] = {-1, 0, 7, 8, 100};
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        char buf[16];
+        vfs_stat_t st;
+        uint64_t cookie = 0;
+        size_t used = 0;
+        int fd = bad[i];
+        void *c = owner.drv->ctx;
+        TEST_ASSERT_EQUAL_INT(-EBADF, owner.drv->Read(c, fd, buf, sizeof(buf)));
+        TEST_ASSERT_EQUAL_INT(-EBADF, owner.drv->Write(c, fd, "1", 1));
+        TEST_ASSERT_EQUAL_INT(-EBADF, owner.drv->Close(c, fd));
+        TEST_ASSERT_EQUAL_INT(-EBADF, owner.drv->Stat(c, fd, &st));
+        TEST_ASSERT_EQUAL_INT(
+            -EBADF,
+            owner.drv->ReadDir(c, fd, buf, sizeof(buf), &cookie, &used));
+    }
+}
+
+TEST(rtc_ops, ASecondCloseIsEbadf) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    int fd = openRaw("main/time", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(0, owner.drv->Close(owner.drv->ctx, fd));
+    TEST_ASSERT_EQUAL_INT(-EBADF, owner.drv->Close(owner.drv->ctx, fd));
+}
+
+TEST(rtc_ops, TheNinthOpenIsEmfileAndAClosedSlotIsReused) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    int fds[8];
+    for (int i = 0; i < 8; i++) {
+        fds[i] = openRaw("main/time", VFS_O_RDONLY);
+        TEST_ASSERT_TRUE(fds[i] >= 0);
+    }
+    TEST_ASSERT_EQUAL_INT(-EMFILE, openRaw("main/time", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, owner.drv->Close(owner.drv->ctx, fds[3]));
+    TEST_ASSERT_EQUAL_INT(fds[3], openRaw("main/time", VFS_O_RDONLY));
+}
+
+TEST(rtc_ops, AReusedSlotStartsAfresh) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    char buf[32];
+    int fd = openRaw("main/time", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(11, owner.drv->Read(owner.drv->ctx, fd, buf, 32));
+    TEST_ASSERT_EQUAL_INT(0, owner.drv->Read(owner.drv->ctx, fd, buf, 32));
+    owner.drv->Close(owner.drv->ctx, fd);
+    fd = openRaw("main/time", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(11, owner.drv->Read(owner.drv->ctx, fd, buf, 32));
+}
+
+TEST(rtc_ops, TheWriteGuardsHoldBelowTheOpenCheck) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    void *c = owner.drv->ctx;
+    int fd = openRaw("main/time", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-EACCES, owner.drv->Write(c, fd, "1791300000", 10));
+    TEST_ASSERT_EQUAL_INT(0, chip.setCalls);
+    detach(&owner);
+
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main,set"));
+    c = owner.drv->ctx;
+    fd = openRaw("main/status", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-EACCES, owner.drv->Write(c, fd, "1791300000", 10));
+    fd = openRaw("main/source", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-EACCES, owner.drv->Write(c, fd, "1791300000", 10));
+    fd = openRaw("main", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-EISDIR, owner.drv->Write(c, fd, "1791300000", 10));
+    fd = openRaw("", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-EISDIR, owner.drv->Write(c, fd, "1791300000", 10));
+    TEST_ASSERT_EQUAL_INT(0, chip.setCalls);
+}
+
+TEST(rtc_ops, ADirectoryCannotBeRead) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    char buf[8];
+    int root = openRaw("", VFS_O_RDONLY);
+    int dev = openRaw("main", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-EISDIR,
+                          owner.drv->Read(owner.drv->ctx, root, buf, 8));
+    TEST_ASSERT_EQUAL_INT(-EISDIR,
+                          owner.drv->Read(owner.drv->ctx, dev, buf, 8));
+}
+
+TEST(rtc_ops, ReadDirOfAFileIsEnotdir) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    uint8_t buf[64];
+    uint64_t cookie = 0;
+    size_t used = 0;
+    int fd = openRaw("main/time", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-ENOTDIR,
+                          owner.drv->ReadDir(owner.drv->ctx, fd, buf,
+                                             sizeof(buf), &cookie, &used));
+}
+
+TEST(rtc_ops, DirectoryEntriesCarryTheirType) {
+    TEST_ASSERT_TRUE(attach(&owner, "devices=main"));
+    const char *dirs[] = {"", "main"};
+    for (size_t d = 0; d < 2; d++) {
+        int fd = openRaw(dirs[d], VFS_O_RDONLY);
+        uint8_t buf[256];
+        uint64_t cookie = 0;
+        size_t used = 0;
+        TEST_ASSERT_EQUAL_INT(0,
+                              owner.drv->ReadDir(owner.drv->ctx, fd, buf,
+                                                 sizeof(buf), &cookie, &used));
+        size_t off = 0;
+        int seen = 0;
+        while (off + sizeof(vfs_dirent_t) <= used) {
+            vfs_dirent_t ent;
+            memcpy(&ent, buf + off, sizeof(ent));
+            TEST_ASSERT_EQUAL_UINT(d == 0 ? VFS_FILETYPE_DIRECTORY
+                                          : VFS_FILETYPE_CHARACTER_DEVICE,
+                                   ent.d_type);
+            off += sizeof(ent) + ent.d_namlen;
+            seen++;
+        }
+        TEST_ASSERT_EQUAL_INT(d == 0 ? 1 : 3, seen);
+    }
+}
+
+TEST_GROUP_RUNNER(rtc_ops) {
+    RUN_TEST_CASE(rtc_ops, StatTellsDirectoriesFromNodes);
+    RUN_TEST_CASE(rtc_ops, TheDriverIsADirectoryWithItsOwnId);
+    RUN_TEST_CASE(rtc_ops, ABadDescriptorIsEbadfOnEveryOperation);
+    RUN_TEST_CASE(rtc_ops, ASecondCloseIsEbadf);
+    RUN_TEST_CASE(rtc_ops, TheNinthOpenIsEmfileAndAClosedSlotIsReused);
+    RUN_TEST_CASE(rtc_ops, AReusedSlotStartsAfresh);
+    RUN_TEST_CASE(rtc_ops, TheWriteGuardsHoldBelowTheOpenCheck);
+    RUN_TEST_CASE(rtc_ops, ADirectoryCannotBeRead);
+    RUN_TEST_CASE(rtc_ops, ReadDirOfAFileIsEnotdir);
+    RUN_TEST_CASE(rtc_ops, DirectoryEntriesCarryTheirType);
 }
 
 /***************************************/

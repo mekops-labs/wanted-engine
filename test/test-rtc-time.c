@@ -115,6 +115,25 @@ TEST(rtc_calendar, EveryFieldIsRangeChecked) {
         TEST_ASSERT_EQUAL_INT(-EINVAL, RtcTmToUnix(&bad[i], &t));
 }
 
+TEST(rtc_calendar, EveryMonthEndsOnItsLastDay) {
+    static const uint8_t common[] = {31, 28, 31, 30, 31, 30,
+                                     31, 31, 30, 31, 30, 31};
+    for (unsigned year = 2096; year <= 2097; year++) {
+        for (unsigned mon = 1; mon <= 12; mon++) {
+            unsigned last = common[mon - 1];
+            if (mon == 2 && year == 2096)
+                last = 29;
+            uint32_t t;
+            rtc_tm_t ok = {
+                (uint16_t)year, (uint8_t)mon, (uint8_t)last, 0, 0, 0, 0};
+            rtc_tm_t past = ok;
+            past.mday = (uint8_t)(last + 1);
+            TEST_ASSERT_EQUAL_INT(0, RtcTmToUnix(&ok, &t));
+            TEST_ASSERT_EQUAL_INT(-EINVAL, RtcTmToUnix(&past, &t));
+        }
+    }
+}
+
 TEST(rtc_calendar, TheLastValidFieldsAreAccepted) {
     TEST_ASSERT_EQUAL_UINT32(4102444799UL, unixOf(2099, 12, 31, 23, 59, 59));
     TEST_ASSERT_EQUAL_UINT32(946684800UL, unixOf(2000, 1, 1, 0, 0, 0));
@@ -168,6 +187,7 @@ TEST_GROUP_RUNNER(rtc_calendar) {
     RUN_TEST_CASE(rtc_calendar, FebruaryHasNoLeapDayIn2100);
     RUN_TEST_CASE(rtc_calendar, FebruaryHasNoLeapDayInACommonYear);
     RUN_TEST_CASE(rtc_calendar, EveryFieldIsRangeChecked);
+    RUN_TEST_CASE(rtc_calendar, EveryMonthEndsOnItsLastDay);
     RUN_TEST_CASE(rtc_calendar, TheLastValidFieldsAreAccepted);
     RUN_TEST_CASE(rtc_calendar, NullArgumentsAreRefused);
     RUN_TEST_CASE(rtc_calendar, AgreesWithGmtimeAcrossTheRange);
@@ -280,6 +300,14 @@ TEST(rtc_grammar, LengthIsTheBufferNotAStringEnd) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, RtcParseWrite("1791300000", 0, &sec, &src));
 }
 
+TEST(rtc_grammar, ADigitPastTheLengthIsNotRead) {
+    uint32_t sec = 0;
+    rtc_source_t src = RTC_SRC_NONE;
+    TEST_ASSERT_EQUAL_INT(0, RtcParseWrite("17913000001", 10, &sec, &src));
+    TEST_ASSERT_EQUAL_UINT32(1791300000UL, sec);
+    TEST_ASSERT_EQUAL_INT(RTC_SRC_MANUAL, src);
+}
+
 TEST(rtc_grammar, NullArgumentsAreRefused) {
     uint32_t sec;
     rtc_source_t src;
@@ -298,6 +326,7 @@ TEST_GROUP_RUNNER(rtc_grammar) {
     RUN_TEST_CASE(rtc_grammar, UnknownCutAndExtraSourcesAreRefused);
     RUN_TEST_CASE(rtc_grammar, AnEmbeddedNulIsRefused);
     RUN_TEST_CASE(rtc_grammar, LengthIsTheBufferNotAStringEnd);
+    RUN_TEST_CASE(rtc_grammar, ADigitPastTheLengthIsNotRead);
     RUN_TEST_CASE(rtc_grammar, NullArgumentsAreRefused);
 }
 
@@ -329,7 +358,15 @@ TEST(rtc_source, NamesAreTheTextTheNodeReads) {
     TEST_ASSERT_EQUAL_STRING("manual", RtcSourceName(RTC_SRC_MANUAL));
 }
 
+TEST(rtc_source, ASourceOutOfRangeIsNone) {
+    rtc_source_t past = (rtc_source_t)(RTC_SRC_MANUAL + 1);
+    TEST_ASSERT_EQUAL_STRING("none", RtcSourceName(past));
+    TEST_ASSERT_EQUAL_UINT8(WANTED_CLOCK_UNCALIBRATED, RtcSourceQuality(past));
+    TEST_ASSERT_EQUAL_STRING("none", RtcSourceName((rtc_source_t)99));
+}
+
 TEST_GROUP_RUNNER(rtc_source) {
     RUN_TEST_CASE(rtc_source, QualityFollowsTheSource);
     RUN_TEST_CASE(rtc_source, NamesAreTheTextTheNodeReads);
+    RUN_TEST_CASE(rtc_source, ASourceOutOfRangeIsNone);
 }
