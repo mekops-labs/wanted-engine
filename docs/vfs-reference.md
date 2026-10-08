@@ -668,7 +668,8 @@ There is no per-resource identity in the path — a device has one radio — so
 - **`scan`**, after `write "scan"` on `ctl`, streams the result as one
   `<ssid> <bssid> <rssi>` line per visible AP, then EOF. A `read` before any
   scan has run on that descriptor also returns EOF.
-- **`ctl`** takes one command per write:
+- **`ctl`** takes one command per write, at most 159 bytes; a longer write
+  answers `-EINVAL`:
   - `scan` — runs a blocking scan; the result appears on `scan`.
   - `connect <ssid> [pass]` — stores the credentials as the live intent and
     associates. An empty `pass` configures an open network. An `<ssid>` that

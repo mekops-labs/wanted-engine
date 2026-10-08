@@ -37,7 +37,7 @@ static const char id[] = {'W', 'i', 'f', 'i'};
 #define WIFI_MAX_FDS 4   /* concurrent opens across status/scan/ctl */
 #define WIFI_SSID_MAX 33 /* 32 + NUL */
 #define WIFI_PASS_MAX 64 /* 63 + NUL */
-#define WIFI_CMD_MAX 128 /* longest accepted command line */
+#define WIFI_CMD_MAX 160 /* longest accepted command line */
 
 #define WIFI_NODE_ROOT 0
 #define WIFI_NODE_STATUS 1
@@ -632,7 +632,9 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     }
 
     char cmd[WIFI_CMD_MAX];
-    size_t len = (nbyte < sizeof(cmd) - 1) ? nbyte : sizeof(cmd) - 1;
+    if (nbyte > sizeof(cmd) - 1)
+        return -EINVAL;
+    size_t len = nbyte;
     memcpy(cmd, buf, len);
     cmd[len] = '\0';
     /* Trim a trailing newline so callers may or may not send one. */
