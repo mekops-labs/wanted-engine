@@ -30,6 +30,7 @@
 #include <wanted-hmac.h>
 #include <wanted_malloc.h>
 #include <wifi-bringup.h>
+#include <wifi-ctl.h>
 
 static const char id[] = {'W', 'i', 'f', 'i'};
 
@@ -650,17 +651,10 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     }
 
     if (strncmp(cmd, "connect", 7) == 0) {
-        /* "connect <ssid> [pass]" — split on the two spaces. */
-        char *ssid = cmd + 7;
-        while (*ssid == ' ')
-            ssid++;
-        if (*ssid == '\0')
+        char *ssid;
+        char *pass;
+        if (WifiCtlSplitConnect(cmd + 7, &ssid, &pass) < 0)
             return -EINVAL;
-        char *pass = ssid;
-        while (*pass != '\0' && *pass != ' ')
-            pass++;
-        if (*pass == ' ')
-            *pass++ = '\0';
         return (setStationIntent(ssid, pass) < 0) ? -EIO : (int)nbyte;
     }
 

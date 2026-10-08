@@ -671,7 +671,11 @@ There is no per-resource identity in the path — a device has one radio — so
 - **`ctl`** takes one command per write:
   - `scan` — runs a blocking scan; the result appears on `scan`.
   - `connect <ssid> [pass]` — stores the credentials as the live intent and
-    associates. An empty `pass` configures an open network.
+    associates. An empty `pass` configures an open network. An `<ssid>` that
+    starts with `"` runs to the next unescaped `"`, may hold spaces, and uses
+    `\"` and `\\` as escapes; `pass` is the rest of the line after one space.
+    An empty or unterminated quoted SSID, an unknown escape, or text glued to
+    the closing quote answers `-EINVAL`.
   - `disconnect` — clears the stored intent and drops the association.
   - `ap_start` — hosts an access point with driver-derived credentials (below).
     Replaces whatever intent — station or AP — was previously stored.
