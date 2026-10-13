@@ -11,7 +11,7 @@
 # nearest tag, short hash, build timestamp, and `dirty` if the tree is — that
 # no real release will ever carry.
 #
-# Usage: docker/publish-images.sh [-a AUTHFILE] [-p] [-k] [-b BOARD -i BIN] [image ...]
+# Usage: docker/publish-images.sh [-a AUTHFILE] [-p] [-k] [-b BOARD -i BIN [-C CONFIG]] [image ...]
 #   -a, --authfile AUTHFILE   podman --authfile to push with. Implies push.
 #   -p, --push                push even without -a, e.g. a registry that
 #                             takes anonymous pushes. Redundant with -a.
@@ -23,6 +23,9 @@
 #   -i, --bin BIN             path to the built firmware .bin.
 #   -c, --variant VARIANT     configuration name, in the tag and the
 #                             firmware.variant label.
+#   -C, --config CONFIG       the .config the .bin was built from, hashed into
+#                             the firmware.config label. Default: a .config
+#                             beside the .bin, else build/.config.
 #
 #   docker/publish-images.sh                          # build + verify, no push
 #   docker/publish-images.sh -a ~/auth.json           # ... and push both
@@ -30,6 +33,7 @@
 #   docker/publish-images.sh -a ~/auth.json -b rp2350 -i wanted.bin firmware
 #   docker/publish-images.sh -b rp2350 -i wanted.bin -c nowifi firmware
 #   docker/publish-images.sh -p -k -b rp2350 -i wanted.bin firmware  # local registry, no auth
+#   docker/publish-images.sh -b t_lorapager -i ota.bin -C build-tlp/.config firmware
 set -euo pipefail
 
 REGISTRY=${REGISTRY:-registry.gitlab.com/mekops/wanted/wanted-engine}
@@ -39,7 +43,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CONTEXT=$ROOT/docker
 
 usage() {
-    echo "usage: docker/publish-images.sh [-a AUTHFILE] [-p] [-k] [-b BOARD -i BIN] [build|wapp-sdk|firmware ...]" >&2
+    echo "usage: docker/publish-images.sh [-a AUTHFILE] [-p] [-k] [-b BOARD -i BIN [-C CONFIG]] [build|wapp-sdk|firmware ...]" >&2
     exit 2
 }
 
@@ -49,6 +53,7 @@ insecure=false
 board=
 bin=
 variant=
+config=
 args=()
 while [ $# -gt 0 ]; do
     case $1 in
@@ -58,6 +63,7 @@ while [ $# -gt 0 ]; do
         -b|--board) board=$2; shift 2 ;;
         -i|--bin) bin=$2; shift 2 ;;
         -c|--variant) variant=$2; shift 2 ;;
+        -C|--config) config=$2; shift 2 ;;
         -h|--help) usage ;;
         --) shift; args+=("$@"); break ;;
         -*) usage ;;
@@ -179,7 +185,11 @@ firmware_tag() {
 # a variant name stands for. Empty where no build directory is at hand.
 config_hash() {
     local cfg
-    for cfg in "$ROOT/build/.config" "$(dirname "$1")/.config"; do
+    if [ -n "$config" ]; then
+        sha256sum "$config" | cut -d' ' -f1
+        return 0
+    fi
+    for cfg in "$(dirname "$1")/.config" "$ROOT/build/.config"; do
         if [ -f "$cfg" ]; then
             sha256sum "$cfg" | cut -d' ' -f1
             return 0
@@ -257,6 +267,10 @@ publish_firmware() {
         return 1
     fi
     bin=$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")
+    if [ -n "$config" ] && [ ! -f "$config" ]; then
+        echo "FAIL: build configuration not found: $config" >&2
+        return 1
+    fi
 
     release=$(firmware_version "$bin")
     ver=$(firmware_tag "$release")

@@ -1,6 +1,19 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- `docker/publish-images.sh -C <file>` names the `.config` that the
+  `firmware.config` label hashes.
+
+### Fixed
+
+- Without `-C`, `firmware.config` hashes a `.config` beside the `.bin` before
+  `build/.config`.
+
 0.24.0 (2026-10-07)
 -------------------
 

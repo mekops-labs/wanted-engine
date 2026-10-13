@@ -291,15 +291,19 @@ The reference is `$REGISTRY/wanted-engine:<version>` — `$REGISTRY` defaults to
 | `firmware.size` | The `.bin`'s length in bytes. |
 | `firmware.config` | SHA-256 of the `.config` the binary was built from. |
 
-The version is a release tag and nothing else: an untagged or dirty tree stamps itself `X.Y.Z+<timestamp>`, which is not a legal registry tag and would never match what the device reports, so the script refuses to publish one.
+A clean checkout of a release tag publishes under that release. Any other build publishes under the dev version stamped into the `.bin` at build time, with the `+` that an OCI tag forbids written as `.`: `X.Y.Z.g<hash>.<timestamp>`.
+
+`firmware.config` hashes the file that `-C` names. Without `-C`, it hashes a `.config` beside the `.bin`, else `build/.config`. A build in another `BUILD_DIR` passes `-C <BUILD_DIR>/.config`, or the label names another build's configuration.
 
 ### Two builds of one release
 
-A board whose `.config` changed is a different image, but the engine's version comes from `git describe` and so is unchanged. `-c VARIANT` names the configuration and tags the image `<release>-<variant>` — `0.15.0-nowifi` against `0.15.0`. The device compares tags, so two builds of one release must not share one.
+A board whose `.config` changed is a different image, but the engine's version comes from `git describe` and so is unchanged. `-c VARIANT` names the configuration and tags the image `<release>-<board>-<variant>` — `0.15.0-rp2350-nowifi` against `0.15.0-rp2350`. The device compares tags, so two builds of one release must not share one.
 
 The variant must match `[A-Za-z0-9._]+`. A `-` or `+` inside it would move the **release core** — everything before the first `-` — which is what the device converges on and what `verify` re-checks against the release tag. `firmware.config` records which configuration the variant name stands for, so two images tagged `cfg1` can be told apart if they were never the same build.
 
-Publishing a variant is not a substitute for a release. A code change gets a new version; a variant says the code is the same and the configuration is not.
+Publishing a variant is not a substitute for a release. A code change gets a new version; a variant says the engine code is the same and the configuration is not.
+
+An out-of-tree board (`BOARD_DIR`) holds code that the engine's version does not cover. Its repository uses its own version as the variant, such as `0.24.0-t_lorapager-0.5.0`, so a change of board code on one engine release gets a new tag.
 
 The two firmware labels exist because `podman` always writes the layer as a **gzipped tar**, whose digest measures the archive rather than the image inside it. A control plane reads the labels off the image config to learn the image's own digest and size, and the device unwraps the layer as it flashes. The `verify` step re-hashes the source `.bin` and fails if the label disagrees.
 
