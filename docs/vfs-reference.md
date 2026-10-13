@@ -639,8 +639,12 @@ device whose time is the system clock. A hosted engine never writes the
 hardware clock: the operating system does that. A write to `main` there needs
 permission to set the host clock, which an engine in a container usually lacks. A board registers chip devices with
 `RtcChipRegister` or `RtcDeviceRegister` (`src/include/rtc-chip.h`,
-`src/include/vfs-rtc.h`) before the engine starts. A chip whose `set` leaves
-the oscillator-stop flag set returns `-EIO` from the write. The
+`src/include/vfs-rtc.h`) before the engine starts. The library drives the
+PCF85063A (`RtcChipPcf85063`) and the PCF8563 (`RtcChipPcf8563`).
+`RtcChipPcfDetect` tells the two apart at address 0x51: it writes bit 7 of
+register 03h, which only the PCF85063A stores, and restores the byte. The
+PCF8563 reads its time as invalid when the century bit is set. A chip whose
+`set` leaves the oscillator-stop flag set returns `-EIO` from the write. The
 device holds UTC: there are no time zones, daylight saving rules or leap
 seconds.
 

@@ -61,8 +61,14 @@ if(CONFIG_WANTED_VFS_LED)
     list(APPEND vfs-srcs "vfs/vfs-led.c")
 endif()
 if(CONFIG_WANTED_VFS_RTC)
-    list(APPEND vfs-srcs "vfs/vfs-rtc.c" "rtc/rtc-time.c" "rtc/rtc-chip.c"
-         "rtc/pcf85063.c")
+    list(
+        APPEND
+        vfs-srcs
+        "vfs/vfs-rtc.c"
+        "rtc/rtc-time.c"
+        "rtc/rtc-chip.c"
+        "rtc/pcf85063.c"
+        "rtc/pcf8563.c")
 endif()
 if(CONFIG_WANTED_VFS_LORA)
     list(APPEND vfs-srcs "vfs/vfs-lora.c")

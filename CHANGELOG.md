@@ -28,6 +28,10 @@ Unreleased
   `-EAGAIN`; `status` gives `tx_ready_ms`.
 - `LoraDeviceRegister`, `LoraDevicePush` and `LoraTimeOnAirUs` serve board
   backings.
+- `RtcChipPcf8563` drives the NXP PCF8563 for 2000 to 2099. A set century
+  bit reads as an invalid time.
+- `RtcChipPcfDetect` tells the PCF85063A from the PCF8563, which share I2C
+  address 0x51.
 
 ### Fixed
 

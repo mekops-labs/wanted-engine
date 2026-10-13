@@ -29,6 +29,13 @@ typedef struct rtc_chip_t {
 /* NXP PCF85063A at I2C address 0x51. */
 extern const rtc_chip_t RtcChipPcf85063;
 
+/* NXP PCF8563 at I2C address 0x51. The century bit is clear in 2000..2099. */
+extern const rtc_chip_t RtcChipPcf8563;
+
+/* Tell the PCF85063A from the PCF8563 at address 0x51 by one bit that only the
+ * PCF85063A stores, and set `chip` to it. Returns 0 or the bus error. */
+int RtcChipPcfDetect(const rtc_bus_t *bus, const rtc_chip_t **chip);
+
 /* Initialize `chip` on `bus` (copied) and register it as the device `name`.
  * Errors: -EINVAL a missing function, the RtcDeviceRegister errors, or the
  * chip's init error. The device is registered only on success. */
