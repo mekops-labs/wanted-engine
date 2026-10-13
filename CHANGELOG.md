@@ -8,6 +8,26 @@ Unreleased
 
 - `docker/publish-images.sh -C <file>` names the `.config` that the
   `firmware.config` label hashes.
+- `CONFIG_WANTED_VFS_LORA` adds `/dev/lora/<name>/{rx,tx,ctl,status}` for LoRa
+  radios a board registers.
+- A grant is `devices=<name>[,<name>...]`, with an optional `,tx` that allows
+  transmit.
+- The first open of `rx`, `tx` or `ctl` takes the radio; another wapp's open
+  returns `-EBUSY` until the owner closes all three.
+- `ctl` takes `set freq= sf= bw= [cr=] [sync=] [power=] [preamble=] [cad=]`,
+  `start` and `stop`.
+- `rx` reads 20-byte frame records followed by the payload.
+- The frame queue holds `CONFIG_WANTED_LORA_QUEUE_LEN` frames and drops the
+  oldest when full.
+- A `tx` write sends one frame of 1 to 255 bytes and resumes receive after it.
+- With `cad=1`, a `tx` write on a busy channel returns `-EBUSY`.
+- A `tx` write on a channel outside the board's bands returns `-EPERM`;
+  receive takes any channel the chip accepts.
+- `power` is clamped to the band's limit.
+- A duty-cycle account per band refuses a frame over its hourly share with
+  `-EAGAIN`; `status` gives `tx_ready_ms`.
+- `LoraDeviceRegister`, `LoraDevicePush` and `LoraTimeOnAirUs` serve board
+  backings.
 
 ### Fixed
 

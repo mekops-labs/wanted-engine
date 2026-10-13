@@ -192,6 +192,15 @@ config WANTED_VFS_RTC
 	  chip devices by name; without one, `main` is a software device that
 	  follows the system clock.
 
+config WANTED_VFS_LORA
+	bool "lora — LoRa radios"
+	default n
+	help
+	  /dev/lora/<name>/{rx,tx,ctl,status}: one owner per radio, frame
+	  records on rx, one frame per tx write. The board registers each radio
+	  with a backing and its bands; the core enforces the bands and the
+	  duty cycle.
+
 config WANTED_VFS_OTA
 	bool "ota — A/B firmware update"
 	default y
@@ -295,6 +304,22 @@ config WANTED_RTC_MAX_DEVICES
 	help
 	  Size of the engine-wide clock device table, shared by board devices and
 	  the software `main`.
+
+config WANTED_LORA_MAX_DEVICES
+	int "Radios the lora driver can hold"
+	depends on WANTED_VFS_LORA
+	default 1
+	range 1 4
+	help
+	  Size of the engine-wide radio table.
+
+config WANTED_LORA_QUEUE_LEN
+	int "Received frames queued per radio"
+	depends on WANTED_VFS_LORA
+	default 16
+	range 2 64
+	help
+	  Each frame takes about 280 bytes. A full queue drops its oldest frame.
 
 config WANTED_OTA_SLOT_ROOT
 	string "OTA slot directory (host backings)"

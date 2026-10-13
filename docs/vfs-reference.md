@@ -644,6 +644,100 @@ the oscillator-stop flag set returns `-EIO` from the write. The
 device holds UTC: there are no time zones, daylight saving rules or leap
 seconds.
 
+### `lora` — LoRa radios
+
+A `lora` grant hands LoRa radios the board registered to a wapp:
+
+```
+/dev/lora/
+  <name>/
+    rx      (r)   frame records, one per received frame
+    tx      (w)   one write is one frame
+    ctl     (w)   set, start, stop
+    status  (r)   key=value lines
+```
+
+```json
+{ "name": "lora", "options": "devices=main" }
+{ "name": "lora", "options": "devices=main,tx" }
+```
+
+`devices=` lists radios the board registered, and a final `tx` allows writes
+to `tx`. Names are `[A-Za-z0-9_-]`, at most 15 characters. An unknown radio, a
+radio named twice and an unknown clause fail the launch. A radio that was not
+granted answers `-ENOENT` for every node beneath it. Without `tx`, an open of
+`tx` for writing and any write to it return `-EACCES`.
+
+One wapp owns a radio at a time. Its first open of `rx`, `tx` or `ctl` takes
+the radio and wakes the chip into standby; an open of any of the three by
+another wapp returns `-EBUSY`. When the owner has closed all three, the chip
+sleeps and its settings are forgotten. `status` is readable by every holder of
+the grant, whoever owns the radio.
+
+`ctl` takes one command per write, with an optional final newline:
+
+- `set freq=<Hz> sf=<5..12> bw=<kHz> [cr=<5..8>] [sync=0x<hh>] [power=<dBm>]
+  [preamble=<n>] [cad=<0|1>]` configures the modem. `freq`, `sf` and `bw` are
+  required; `bw` takes up to three decimals (`62.5`, `31.25`). The defaults are
+  `cr=5`, `sync=0x12` and `preamble=8`. `sync` is the 1-byte LoRa sync word
+  (`0x12` private, `0x34` LoRaWAN, `0x2B` Meshtastic); the backing converts it
+  for its chip. A malformed command, a repeated or unknown key and a value the
+  chip refuses return `-EINVAL`, and change nothing. Receive is never limited,
+  so any channel the chip takes is accepted. `power` is clamped to the limit of
+  the band holding the channel, `freq ± bw/2`, and defaults to it, or to 0 dBm
+  outside every band. `cad=1` on a radio without channel
+  activity detection returns `-ENOTSUP`. A `set` while receiving stops, applies
+  and resumes receive.
+- `start` begins continuous receive; before a successful `set` it returns
+  `-EINVAL`. `stop` returns the radio to standby.
+
+`rx` returns whole records, as many as fit; a buffer smaller than the next
+record returns `-EINVAL` and consumes nothing. A read blocks until a record is
+queued, a non-blocking read returns `-EAGAIN`, and `poll` reports readable when
+a record is queued. A record is a 20-byte little-endian header, then the
+payload:
+
+| Offset | Field | Meaning |
+|---|---|---|
+| 0 | `flags` u8 | bit 0: CRC good |
+| 1 | reserved u8 | 0 |
+| 2 | `len` u16 | payload bytes, 0 to 255 |
+| 4 | `rssi` i16 | tenths of a dBm |
+| 6 | `snr` i16 | tenths of a dB |
+| 8 | `dropped` u32 | frames discarded since the previous record was read |
+| 12 | `t_ms` u64 | milliseconds since engine start, when the frame was queued |
+
+Frames are queued only while the radio receives and only with a good CRC. The
+queue holds `CONFIG_WANTED_LORA_QUEUE_LEN` frames; when it is full, the oldest
+is discarded and counted.
+
+A write to `tx` is one frame of 1 to 255 bytes: a longer one returns
+`-EMSGSIZE`, an empty one `-EINVAL`, and one before a `set` `-EINVAL`. It blocks
+until the frame is sent. A radio that was receiving resumes receive before the
+write returns. With `cad=1`, the write detects channel activity first and
+returns `-EBUSY` on a busy channel, sending nothing. A chip fault returns
+`-EIO`. A radio without transmit returns `-ENOTSUP`.
+
+The board declares bands, each with a frequency range, a power limit and a duty
+cycle as a share of an hour. A write to `tx` on a channel outside every band
+returns `-EPERM`, so a board without bands receives only. The core keeps a duty-cycle account for each
+band from the time on air of each frame sent (explicit header and CRC, as the
+SX126x and LR11xx data sheets give it), over the last hour. A frame that would
+exceed it returns `-EAGAIN`; a busy channel charges nothing.
+
+`status` reads `state` (`sleep`, `standby`, `rx`, `tx`), `owner` (`none`,
+`held`), after a `set` the applied `freq`, `sf`, `bw`, `cr`, `sync`, `power`,
+`preamble` and `cad`, then `rx_frames`, `rx_dropped`, `queue`, `tx_frames`,
+`tx_busy`, `tx_ready_ms` and `chip`. `tx_ready_ms` is the wait until a frame of
+the last size written fits the account, 255 bytes before the first. A wapp
+ignores a key it does not know.
+
+A board registers a radio with `LoraDeviceRegister` (`src/include/vfs-lora.h`):
+a name, a chip name for `status`, the backing's operations (`configure`,
+`start`, `stop`, `sleep`, and optional `transmit` and `channel_active`), and its
+bands. The backing pushes each received frame with `LoraDevicePush` and never
+touches the queue or the account.
+
 ### `wifi` — Wi-Fi station and access point
 
 A `wifi` grant reaches the board's one radio:
