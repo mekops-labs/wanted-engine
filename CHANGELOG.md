@@ -32,6 +32,8 @@ Unreleased
   bit reads as an invalid time.
 - `RtcChipPcfDetect` tells the PCF85063A from the PCF8563, which share I2C
   address 0x51.
+- `loracheck` wapp: `status`, `rx` and `tx` commands drive `/dev/lora/main`
+  from the launch arguments and print the results, to check a board's radio.
 
 ### Fixed
 

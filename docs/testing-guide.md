@@ -67,6 +67,8 @@ Each scenario is a small purpose-built wapp under `wapps/` that the supervisor l
 
 A companion recipe, `just syscontrol` (Linux) / `just nuttx-syscontrol` (sim), runs `test/syscontrol.sh`, which drives the `wsh` supervisor through poweroff / reboot / exit and asserts the engine-process lifecycle the in-WASM suite cannot observe — including that a respawned supervisor keeps a working console.
 
+The `loracheck` wapp checks a board's radio by hand, from the `wsh` debug shell, with a launch config that grants `lora` with `devices=main,tx` and the arguments `["status"]`, `["rx","secs=30"]` or `["tx","count=3","len=32"]`. Other arguments are `freq`, `sf`, `bw`, `sync`, `power`, `cad`, `gap` and `text`. Seed it into a build with `CONFIG_WANTED_SEED_WAPPS="loracheck"`. It prints each `ctl` result, each received frame and each `tx` result, then the `status` file. It is not part of the automated suite.
+
 A standalone script, `test/devcheck.sh`, boots the `devcheck` wapp as the supervisor and round-trips the `sha256` / `ed25519` / `inflate` offload devices end to end (WASI → VFS → driver), powering the engine off after one pass.
 
 ## Cross-architecture selftest (OpenWRT qemu)
