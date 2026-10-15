@@ -7,16 +7,23 @@
 
 #define FB_FORMAT_RGB565 0
 #define FB_FORMAT_RGB888 1
+#define FB_FORMAT_MONO1 2 /* 1 bit, the leftmost pixel in the high bit */
+#define FB_FORMAT_GRAY4 3 /* 4 bits, the even pixel in the high nibble */
 
 #define FB_NAME_MAX 15
 
-/* Panel operations a backing supplies; both optional. A NULL Flush or Blank is
- * a backing whose writes already reach the panel. */
+/* Panel operations a backing supplies; all are optional. A NULL Flush or
+ * Blank is a backing whose writes already reach the panel. */
 typedef struct fb_backing_ops_t {
     /* Return once the panel holds the rectangle. `wakeFd` ends the wait. */
     int (*Flush)(void *backing, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                  int wakeFd);
     int (*Blank)(void *backing, bool on);
+    /* Grow a flush rectangle to the unit the panel writes, such as a page of
+     * rows. The engine passes the grown rectangle to Flush and reports it to
+     * observers, after clamping it to the screen. */
+    void (*Widen)(void *backing, uint16_t *x, uint16_t *y, uint16_t *w,
+                  uint16_t *h);
 } fb_backing_ops_t;
 
 typedef struct fb_screen_desc_t {

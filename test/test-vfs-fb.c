@@ -901,6 +901,313 @@ TEST_GROUP_RUNNER(fb_observe) {
 }
 
 /***************************************/
+TEST_GROUP(fb_bits);
+/***************************************/
+
+/* A panel that stores whole 8-row pages. */
+static void pageWiden(void *backing, uint16_t *x, uint16_t *y, uint16_t *w,
+                      uint16_t *h) {
+    (void)backing;
+    (void)x;
+    (void)w;
+    uint16_t end = (uint16_t)((*y + *h + 7) & ~7);
+    *y = (uint16_t)(*y & ~7);
+    *h = (uint16_t)(end - *y);
+}
+
+static const fb_backing_ops_t pageOps = {panelFlush, panelBlank, pageWiden};
+
+/* A faulty backing that makes the rectangle smaller. */
+static void shrinkWiden(void *backing, uint16_t *x, uint16_t *y, uint16_t *w,
+                        uint16_t *h) {
+    (void)backing;
+    (void)x;
+    (void)y;
+    (void)w;
+    *h = (uint16_t)(*h - 1);
+}
+
+static const fb_backing_ops_t shrinkOps = {panelFlush, panelBlank, shrinkWiden};
+
+/* A faulty backing that moves the rectangle down and keeps its far edge. */
+static void shiftWiden(void *backing, uint16_t *x, uint16_t *y, uint16_t *w,
+                       uint16_t *h) {
+    (void)backing;
+    (void)x;
+    (void)w;
+    *y = (uint16_t)(*y + 1);
+    *h = (uint16_t)(*h + 1);
+}
+
+static const fb_backing_ops_t shiftOps = {panelFlush, panelBlank, shiftWiden};
+
+static void declare(const char *name, uint16_t w, uint16_t h, uint8_t format,
+                    const fb_backing_ops_t *ops) {
+    fb_screen_desc_t d = {name, w, h, format, ops, NULL};
+    TEST_ASSERT_EQUAL_INT(0, FbScreenRegister(&d));
+}
+
+TEST_SETUP(fb_bits) { memset(&panel, 0, sizeof(panel)); }
+
+TEST_TEAR_DOWN(fb_bits) {
+#ifdef CONFIG_WANTED_VFS_FB_OBSERVE
+    detach(&watcher);
+#endif
+    teardown();
+}
+
+static void expectFlushed(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+    TEST_ASSERT_EQUAL_INT(1, panel.flushes);
+    TEST_ASSERT_EQUAL_UINT16(x, panel.x);
+    TEST_ASSERT_EQUAL_UINT16(y, panel.y);
+    TEST_ASSERT_EQUAL_UINT16(w, panel.w);
+    TEST_ASSERT_EQUAL_UINT16(h, panel.h);
+}
+
+TEST(fb_bits, Mono1StrideRoundsUpToWholeBytes) {
+    declare("bw", 10, 3, FB_FORMAT_MONO1, NULL);
+    declare("full", 16, 2, FB_FORMAT_MONO1, NULL);
+    TEST_ASSERT_TRUE(setupGrant("screens=bw,full"));
+    char buf[64];
+    TEST_ASSERT_GREATER_THAN_INT(0, readNode("/dev/fb/bw/info", buf, 64));
+    TEST_ASSERT_EQUAL_STRING("10 3 mono1 2\n", buf);
+    TEST_ASSERT_GREATER_THAN_INT(0, readNode("/dev/fb/full/info", buf, 64));
+    TEST_ASSERT_EQUAL_STRING("16 2 mono1 2\n", buf);
+}
+
+TEST(fb_bits, Gray4StrideRoundsUpToWholeBytes) {
+    declare("grey", 5, 2, FB_FORMAT_GRAY4, NULL);
+    declare("even", 6, 1, FB_FORMAT_GRAY4, NULL);
+    TEST_ASSERT_TRUE(setupGrant("screens=grey,even"));
+    char buf[64];
+    TEST_ASSERT_GREATER_THAN_INT(0, readNode("/dev/fb/grey/info", buf, 64));
+    TEST_ASSERT_EQUAL_STRING("5 2 gray4 3\n", buf);
+    TEST_ASSERT_GREATER_THAN_INT(0, readNode("/dev/fb/even/info", buf, 64));
+    TEST_ASSERT_EQUAL_STRING("6 1 gray4 3\n", buf);
+}
+
+TEST(fb_bits, DataSizeIsStrideTimesHeight) {
+    declare("bw", 10, 3, FB_FORMAT_MONO1, NULL);
+    declare("grey", 5, 2, FB_FORMAT_GRAY4, NULL);
+    TEST_ASSERT_TRUE(setupGrant("screens=bw,grey"));
+    vfs_stat_t st;
+    int fd = VfsOpen(vfs, "/dev/fb/bw/data", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(0, VfsStat(vfs, fd, &st));
+    TEST_ASSERT_EQUAL_UINT32(6, st.size);
+    VfsClose(vfs, fd);
+    fd = VfsOpen(vfs, "/dev/fb/grey/data", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(0, VfsStat(vfs, fd, &st));
+    TEST_ASSERT_EQUAL_UINT32(6, st.size);
+    VfsClose(vfs, fd);
+}
+
+TEST(fb_bits, PixelsAreAddressedByByte) {
+    declare("bw", 10, 3, FB_FORMAT_MONO1, NULL);
+    TEST_ASSERT_TRUE(setupGrant("screens=bw"));
+    int fd = VfsOpen(vfs, "/dev/fb/bw/data", VFS_O_RDWR);
+    TEST_ASSERT_TRUE(fd >= 0);
+    const uint8_t byte = 0xA5;
+    TEST_ASSERT_EQUAL_INT(1, VfsPwrite(vfs, fd, &byte, 1, 3));
+    uint8_t back = 0;
+    TEST_ASSERT_EQUAL_INT(1, VfsPread(vfs, fd, &back, 1, 3));
+    TEST_ASSERT_EQUAL_UINT8(0xA5, back);
+    VfsClose(vfs, fd);
+
+    uint32_t stride = 0;
+    const uint8_t *px = FbScreenPixels("bw", &stride);
+    TEST_ASSERT_EQUAL_UINT32(2, stride);
+    TEST_ASSERT_EQUAL_UINT8(0xA5, px[3]);
+    TEST_ASSERT_EQUAL_UINT8(0x00, px[2]);
+}
+
+TEST(fb_bits, Mono1FlushWidensToWholeBytes) {
+    declare("bw", 24, 3, FB_FORMAT_MONO1, &panelOps);
+    TEST_ASSERT_TRUE(setupGrant("screens=bw"));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/bw/ctl", "flush 3 1 2 1"));
+    expectFlushed(0, 1, 8, 1);
+    memset(&panel, 0, sizeof(panel));
+    TEST_ASSERT_EQUAL_INT(14, writeNode("/dev/fb/bw/ctl", "flush 7 0 2 1\n"));
+    expectFlushed(0, 0, 16, 1);
+    memset(&panel, 0, sizeof(panel));
+    TEST_ASSERT_EQUAL_INT(14, writeNode("/dev/fb/bw/ctl", "flush 8 2 8 1\n"));
+    expectFlushed(8, 2, 8, 1);
+}
+
+TEST(fb_bits, Mono1WideningStopsAtTheScreenEdge) {
+    declare("bw", 10, 3, FB_FORMAT_MONO1, &panelOps);
+    TEST_ASSERT_TRUE(setupGrant("screens=bw"));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/bw/ctl", "flush 7 0 2 1"));
+    expectFlushed(0, 0, 10, 1);
+    memset(&panel, 0, sizeof(panel));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/bw/ctl", "flush 9 2 1 1"));
+    expectFlushed(8, 2, 2, 1);
+}
+
+TEST(fb_bits, Gray4FlushWidensToWholeBytes) {
+    declare("grey", 8, 2, FB_FORMAT_GRAY4, &panelOps);
+    TEST_ASSERT_TRUE(setupGrant("screens=grey"));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/grey/ctl", "flush 1 0 2 1"));
+    expectFlushed(0, 0, 4, 1);
+    memset(&panel, 0, sizeof(panel));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/grey/ctl", "flush 4 1 1 1"));
+    expectFlushed(4, 1, 2, 1);
+}
+
+TEST(fb_bits, Gray4WideningStopsAtTheScreenEdge) {
+    declare("grey", 5, 2, FB_FORMAT_GRAY4, &panelOps);
+    TEST_ASSERT_TRUE(setupGrant("screens=grey"));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/grey/ctl", "flush 3 0 2 1"));
+    expectFlushed(2, 0, 3, 1);
+}
+
+TEST(fb_bits, ColourFormatsAreNotWidened) {
+    declare("rgb", 8, 4, FB_FORMAT_RGB565, &panelOps);
+    TEST_ASSERT_TRUE(setupGrant("screens=rgb"));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/rgb/ctl", "flush 3 1 2 2"));
+    expectFlushed(3, 1, 2, 2);
+}
+
+TEST(fb_bits, BackingMayWidenToItsOwnUnit) {
+    declare("page", 16, 16, FB_FORMAT_MONO1, &pageOps);
+    TEST_ASSERT_TRUE(setupGrant("screens=page"));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/page/ctl", "flush 2 3 4 2"));
+    expectFlushed(0, 0, 8, 8);
+    memset(&panel, 0, sizeof(panel));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/page/ctl", "flush 0 7 1 2"));
+    expectFlushed(0, 0, 8, 16);
+}
+
+TEST(fb_bits, WideningPastTheScreenIsClamped) {
+    declare("tall", 8, 12, FB_FORMAT_MONO1, &pageOps);
+    TEST_ASSERT_TRUE(setupGrant("screens=tall"));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/tall/ctl", "flush 0 9 1 1"));
+    expectFlushed(0, 8, 8, 4);
+}
+
+TEST(fb_bits, ABackingCannotShrinkTheRectangle) {
+    declare("bw", 16, 8, FB_FORMAT_MONO1, &shrinkOps);
+    TEST_ASSERT_TRUE(setupGrant("screens=bw"));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/bw/ctl", "flush 0 2 8 3"));
+    expectFlushed(0, 2, 8, 3);
+}
+
+TEST(fb_bits, ABackingCannotMoveTheRectangle) {
+    declare("bw", 16, 8, FB_FORMAT_MONO1, &shiftOps);
+    TEST_ASSERT_TRUE(setupGrant("screens=bw"));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/bw/ctl", "flush 0 2 8 3"));
+    expectFlushed(0, 2, 8, 3);
+}
+
+TEST(fb_bits, UnknownFormatIsRefused) {
+    fb_screen_desc_t d = {"bad", 4, 4, 9, NULL, NULL};
+    TEST_ASSERT_EQUAL_INT(-EINVAL, FbScreenRegister(&d));
+}
+
+TEST(fb_bits, RedeclaringASubByteScreenIdenticallyIsAccepted) {
+    declare("bw", 10, 3, FB_FORMAT_MONO1, NULL);
+    declare("bw", 10, 3, FB_FORMAT_MONO1, NULL);
+    fb_screen_desc_t other = {"bw", 10, 3, FB_FORMAT_GRAY4, NULL, NULL};
+    TEST_ASSERT_EQUAL_INT(-EEXIST, FbScreenRegister(&other));
+}
+
+#ifdef CONFIG_WANTED_VFS_FB_OBSERVE
+TEST(fb_bits, ObserverDamageIsTheWidenedRectangle) {
+    declare("page", 16, 16, FB_FORMAT_MONO1, &pageOps);
+    TEST_ASSERT_TRUE(setupGrant("screens=page"));
+    TEST_ASSERT_TRUE(attach(&watcher, "screens=page,observe"));
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/page/ctl", "flush 2 3 4 2"));
+
+    uint8_t rec[DAMAGE_REC];
+    int fd = openNode(&watcher, "/dev/fb/page/damage", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(DAMAGE_REC,
+                          VfsRead(watcher.vfs, fd, rec, sizeof(rec)));
+    expectRecord(rec, 0, 0, 8, 8);
+    VfsClose(watcher.vfs, fd);
+}
+
+TEST(fb_bits, ObserverCopyHoldsTheWidenedBytes) {
+    declare("bw", 24, 3, FB_FORMAT_MONO1, NULL);
+    TEST_ASSERT_TRUE(setupGrant("screens=bw"));
+    TEST_ASSERT_TRUE(attach(&watcher, "screens=bw,observe"));
+
+    uint8_t all[9];
+    memset(all, 0xFF, sizeof(all));
+    int fd = VfsOpen(vfs, "/dev/fb/bw/data", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(9, VfsPwrite(vfs, fd, all, sizeof(all), 0));
+    VfsClose(vfs, fd);
+    TEST_ASSERT_EQUAL_INT(13, writeNode("/dev/fb/bw/ctl", "flush 3 1 2 1"));
+
+    uint8_t got[9];
+    fd = openNode(&watcher, "/dev/fb/bw/data", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(9, VfsRead(watcher.vfs, fd, got, sizeof(got)));
+    VfsClose(watcher.vfs, fd);
+    const uint8_t want[9] = {0, 0, 0, 0xFF, 0, 0, 0, 0, 0};
+    TEST_ASSERT_EQUAL_MEMORY(want, got, sizeof(want));
+
+    TEST_ASSERT_EQUAL_INT(15, writeNode("/dev/fb/bw/ctl", "flush 17 2 3 1\n"));
+    fd = openNode(&watcher, "/dev/fb/bw/data", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(9, VfsRead(watcher.vfs, fd, got, sizeof(got)));
+    VfsClose(watcher.vfs, fd);
+    const uint8_t later[9] = {0, 0, 0, 0xFF, 0, 0, 0, 0, 0xFF};
+    TEST_ASSERT_EQUAL_MEMORY(later, got, sizeof(later));
+}
+
+TEST(fb_bits, Gray4ObserverSeesTheWidenedDamageAndBytes) {
+    declare("grey", 8, 2, FB_FORMAT_GRAY4, NULL);
+    TEST_ASSERT_TRUE(setupGrant("screens=grey"));
+    TEST_ASSERT_TRUE(attach(&watcher, "screens=grey,observe"));
+
+    uint8_t all[8];
+    memset(all, 0xFF, sizeof(all));
+    int fd = VfsOpen(vfs, "/dev/fb/grey/data", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_EQUAL_INT(8, VfsPwrite(vfs, fd, all, sizeof(all), 0));
+    VfsClose(vfs, fd);
+    TEST_ASSERT_EQUAL_INT(14, writeNode("/dev/fb/grey/ctl", "flush 5 1 1 1\n"));
+
+    uint8_t rec[DAMAGE_REC];
+    fd = openNode(&watcher, "/dev/fb/grey/damage", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(DAMAGE_REC,
+                          VfsRead(watcher.vfs, fd, rec, sizeof(rec)));
+    VfsClose(watcher.vfs, fd);
+    expectRecord(rec, 4, 1, 2, 1);
+
+    uint8_t got[8];
+    fd = openNode(&watcher, "/dev/fb/grey/data", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(8, VfsRead(watcher.vfs, fd, got, sizeof(got)));
+    VfsClose(watcher.vfs, fd);
+    const uint8_t want[8] = {0, 0, 0, 0, 0, 0, 0xFF, 0};
+    TEST_ASSERT_EQUAL_MEMORY(want, got, sizeof(want));
+}
+#endif
+
+TEST_GROUP_RUNNER(fb_bits) {
+    RUN_TEST_CASE(fb_bits, Mono1StrideRoundsUpToWholeBytes);
+    RUN_TEST_CASE(fb_bits, Gray4StrideRoundsUpToWholeBytes);
+    RUN_TEST_CASE(fb_bits, DataSizeIsStrideTimesHeight);
+    RUN_TEST_CASE(fb_bits, PixelsAreAddressedByByte);
+    RUN_TEST_CASE(fb_bits, Mono1FlushWidensToWholeBytes);
+    RUN_TEST_CASE(fb_bits, Mono1WideningStopsAtTheScreenEdge);
+    RUN_TEST_CASE(fb_bits, Gray4FlushWidensToWholeBytes);
+    RUN_TEST_CASE(fb_bits, Gray4WideningStopsAtTheScreenEdge);
+    RUN_TEST_CASE(fb_bits, ColourFormatsAreNotWidened);
+    RUN_TEST_CASE(fb_bits, BackingMayWidenToItsOwnUnit);
+    RUN_TEST_CASE(fb_bits, WideningPastTheScreenIsClamped);
+    RUN_TEST_CASE(fb_bits, ABackingCannotShrinkTheRectangle);
+    RUN_TEST_CASE(fb_bits, ABackingCannotMoveTheRectangle);
+    RUN_TEST_CASE(fb_bits, UnknownFormatIsRefused);
+    RUN_TEST_CASE(fb_bits, RedeclaringASubByteScreenIdenticallyIsAccepted);
+#ifdef CONFIG_WANTED_VFS_FB_OBSERVE
+    RUN_TEST_CASE(fb_bits, ObserverDamageIsTheWidenedRectangle);
+    RUN_TEST_CASE(fb_bits, ObserverCopyHoldsTheWidenedBytes);
+    RUN_TEST_CASE(fb_bits, Gray4ObserverSeesTheWidenedDamageAndBytes);
+#endif
+}
+
+/***************************************/
 TEST_GROUP(fb_config);
 /***************************************/
 
@@ -982,10 +1289,39 @@ TEST(fb_config, DriverIsListedAmongTheGrantableDrivers) {
     TEST_ASSERT_NOT_NULL(strstr(names, "fb"));
 }
 
+TEST(fb_config, SystemConfigDeclaresAMono1Screen) {
+    TEST_ASSERT_EQUAL_INT(
+        0, parseScreens(SCREEN_CFG("[{\"name\":\"oled\",\"width\":128,"
+                                   "\"height\":64,\"format\":\"mono1\"}]")));
+    TEST_ASSERT_TRUE(setupGrant("screens=oled"));
+    char buf[64];
+    TEST_ASSERT_GREATER_THAN_INT(0, readNode("/dev/fb/oled/info", buf, 64));
+    TEST_ASSERT_EQUAL_STRING("128 64 mono1 16\n", buf);
+}
+
+TEST(fb_config, SystemConfigDeclaresAGray4Screen) {
+    TEST_ASSERT_EQUAL_INT(
+        0, parseScreens(SCREEN_CFG("[{\"name\":\"ink\",\"width\":5,"
+                                   "\"height\":2,\"format\":\"gray4\"}]")));
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    char buf[64];
+    TEST_ASSERT_GREATER_THAN_INT(0, readNode("/dev/fb/ink/info", buf, 64));
+    TEST_ASSERT_EQUAL_STRING("5 2 gray4 3\n", buf);
+}
+
+TEST(fb_config, UnknownFormatFailsTheParse) {
+    TEST_ASSERT_TRUE(
+        parseScreens(SCREEN_CFG("[{\"name\":\"a\",\"width\":4,"
+                                "\"height\":4,\"format\":\"mono\"}]")) != 0);
+}
+
 TEST_GROUP_RUNNER(fb_config) {
     RUN_TEST_CASE(fb_config, DriverIsListedAmongTheGrantableDrivers);
     RUN_TEST_CASE(fb_config, SystemConfigDeclaresAScreen);
     RUN_TEST_CASE(fb_config, SystemConfigDeclaresAnRgb888Screen);
+    RUN_TEST_CASE(fb_config, SystemConfigDeclaresAMono1Screen);
+    RUN_TEST_CASE(fb_config, SystemConfigDeclaresAGray4Screen);
+    RUN_TEST_CASE(fb_config, UnknownFormatFailsTheParse);
     RUN_TEST_CASE(fb_config, MalformedDeclarationFailsTheParse);
     RUN_TEST_CASE(fb_config, DeclaringTheSameScreenAgainIsAccepted);
     RUN_TEST_CASE(fb_config, DeclaringAScreenDifferentlyFailsTheParse);

@@ -148,6 +148,10 @@ static int declareScreens(json_t const *list) {
             desc.format = FB_FORMAT_RGB565;
         else if (strcmp(format, "rgb888") == 0)
             desc.format = FB_FORMAT_RGB888;
+        else if (strcmp(format, "mono1") == 0)
+            desc.format = FB_FORMAT_MONO1;
+        else if (strcmp(format, "gray4") == 0)
+            desc.format = FB_FORMAT_GRAY4;
         else
             return -EINVAL;
 

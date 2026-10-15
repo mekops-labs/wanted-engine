@@ -409,7 +409,14 @@ An `fb` grant hands one or more screens to one wapp as its writer:
 engine does not know, a repeated name, and an empty entry fail the launch.
 `observe` is reserved and never a screen name.
 
-- `format` is `rgb565` or `rgb888`. `stride` is the byte length of one row.
+- `format` is `rgb565`, `rgb888`, `mono1` or `gray4`. `stride` is the byte
+  length of one row. A row of `mono1` holds 8 pixels per byte, the leftmost in
+  the high bit, and a row of `gray4` holds 2 per byte, the even pixel in the
+  high nibble; `stride` is the row rounded up to whole bytes. A higher value is
+  lighter.
+- A flush of a `mono1` or `gray4` screen is widened to whole bytes, and a
+  backing may widen it further to the unit its panel writes. The backing and
+  `damage` get the widened rectangle.
 - `data` takes positional I/O (`pread`/`pwrite`); plain `read` and `write` use
   and advance the descriptor's offset. An access is truncated at the end of the
   screen, and one starting past the end transfers 0 bytes.

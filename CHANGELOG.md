@@ -6,6 +6,12 @@ Unreleased
 
 ### Added
 
+- The `fb` driver serves the formats `mono1` (1 bit per pixel) and `gray4`
+  (4 bits), in `FbScreenRegister` and in `system.screens`. A row starts on a
+  byte boundary, so `stride` is the row rounded up to whole bytes.
+- A flush of a `mono1` or `gray4` screen is widened to whole bytes. A backing
+  may also set `Widen` in `fb_backing_ops_t` to grow a flush to its panel's
+  unit, such as a page of rows. `Flush` and `damage` get the widened rectangle.
 - `docker/publish-images.sh -C <file>` names the `.config` that the
   `firmware.config` label hashes.
 - `CONFIG_WANTED_VFS_LORA` adds `/dev/lora/<name>/{rx,tx,ctl,status}` for LoRa

@@ -106,12 +106,38 @@ struct vfs_driver_ctx_t {
 
 /* ── Screen table ────────────────────────────────────────────────────────── */
 
-static uint8_t pixelBytes(uint8_t format) {
-    return format == FB_FORMAT_RGB888 ? 3 : 2;
+/* Bits one pixel takes, or 0 for a format this driver does not know. */
+static uint8_t pixelBits(uint8_t format) {
+    switch (format) {
+    case FB_FORMAT_RGB565:
+        return 16;
+    case FB_FORMAT_RGB888:
+        return 24;
+    case FB_FORMAT_MONO1:
+        return 1;
+    case FB_FORMAT_GRAY4:
+        return 4;
+    default:
+        return 0;
+    }
 }
 
 static const char *formatName(uint8_t format) {
-    return format == FB_FORMAT_RGB888 ? "rgb888" : "rgb565";
+    switch (format) {
+    case FB_FORMAT_RGB888:
+        return "rgb888";
+    case FB_FORMAT_MONO1:
+        return "mono1";
+    case FB_FORMAT_GRAY4:
+        return "gray4";
+    default:
+        return "rgb565";
+    }
+}
+
+/* Bytes of one row that hold `pixels` pixels, rounded up to a whole byte. */
+static uint32_t rowBytes(uint8_t format, uint32_t pixels) {
+    return (pixels * pixelBits(format) + 7) / 8;
 }
 
 /* [A-Za-z0-9_-], 1..FB_NAME_MAX characters. The observe token is reserved. */
@@ -137,8 +163,7 @@ static fb_screen_t *findScreen(const char *name, size_t nameLen) {
 
 int FbScreenRegister(const fb_screen_desc_t *desc) {
     if (desc == NULL || desc->name == NULL || !validName(desc->name) ||
-        desc->width == 0 || desc->height == 0 ||
-        (desc->format != FB_FORMAT_RGB565 && desc->format != FB_FORMAT_RGB888))
+        desc->width == 0 || desc->height == 0 || pixelBits(desc->format) == 0)
         return -EINVAL;
     const fb_screen_t *have = findScreen(desc->name, strlen(desc->name));
     if (have != NULL) {
@@ -157,7 +182,7 @@ int FbScreenRegister(const fb_screen_desc_t *desc) {
     s->width = desc->width;
     s->height = desc->height;
     s->format = desc->format;
-    s->stride = (uint32_t)desc->width * pixelBytes(desc->format);
+    s->stride = rowBytes(desc->format, desc->width);
     s->size = s->stride * desc->height;
     s->ops = desc->ops;
     s->backing = desc->backing;
@@ -602,14 +627,15 @@ static void queueDamage(fb_observer_t *o, const fb_damage_t *rec,
 /* Copy the rectangle into the flushed copy, then tell every observer. */
 static void publishFlush(fb_screen_t *s, uint16_t x, uint16_t y, uint16_t w,
                          uint16_t h) {
-    const uint8_t bpp = pixelBytes(s->format);
+    const uint32_t first = rowBytes(s->format, x);
+    const uint32_t bytes = rowBytes(s->format, w);
     const fb_damage_t rec = {x, y, w, h};
 
     PlatformMutexLock(table.lock);
     if (s->flushed != NULL) {
         for (uint16_t row = y; row < y + h; row++) {
-            size_t off = ((size_t)row * s->stride) + ((size_t)x * bpp);
-            memcpy(s->flushed + off, s->pixels + off, (size_t)w * bpp);
+            size_t off = ((size_t)row * s->stride) + first;
+            memcpy(s->flushed + off, s->pixels + off, bytes);
         }
         for (uint8_t i = 0; i < s->observerCnt; i++)
             queueDamage(s->observers[i], &rec, s);
@@ -618,8 +644,46 @@ static void publishFlush(fb_screen_t *s, uint16_t x, uint16_t y, uint16_t w,
 }
 #endif
 
+/* A sub-byte pixel format flushes whole bytes: grow the columns to them. */
+static void alignToBytes(const fb_screen_t *s, uint16_t *x, uint16_t *w) {
+    const uint8_t bits = pixelBits(s->format);
+    if (bits >= 8)
+        return;
+    const uint32_t per = 8u / bits;
+    uint32_t end = ((uint32_t)*x + *w + per - 1) / per * per;
+    *x = (uint16_t)(*x / per * per);
+    if (end > s->width)
+        end = s->width;
+    *w = (uint16_t)(end - *x);
+}
+
+/* Let the backing grow the rectangle to its own unit. A result past the screen
+ * is cut at its edge, and one that does not cover the request is ignored. */
+static void widenByBacking(const fb_screen_t *s, uint16_t *x, uint16_t *y,
+                           uint16_t *w, uint16_t *h) {
+    if (s->ops == NULL || s->ops->Widen == NULL)
+        return;
+    uint16_t wx = *x, wy = *y, ww = *w, wh = *h;
+    s->ops->Widen(s->backing, &wx, &wy, &ww, &wh);
+    if (wx >= s->width || wy >= s->height)
+        return;
+    if ((uint32_t)wx + ww > s->width)
+        ww = (uint16_t)(s->width - wx);
+    if ((uint32_t)wy + wh > s->height)
+        wh = (uint16_t)(s->height - wy);
+    if (wx > *x || wy > *y || (uint32_t)wx + ww < (uint32_t)*x + *w ||
+        (uint32_t)wy + wh < (uint32_t)*y + *h)
+        return;
+    *x = wx;
+    *y = wy;
+    *w = ww;
+    *h = wh;
+}
+
 static int flushRect(vfs_driver_ctx_t d, fb_screen_t *s, uint16_t x, uint16_t y,
                      uint16_t w, uint16_t h) {
+    alignToBytes(s, &x, &w);
+    widenByBacking(s, &x, &y, &w, &h);
 #ifdef CONFIG_WANTED_VFS_FB_OBSERVE
     publishFlush(s, x, y, w, h);
 #endif
