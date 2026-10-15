@@ -649,7 +649,7 @@ static void alignToBytes(const fb_screen_t *s, uint16_t *x, uint16_t *w) {
     const uint8_t bits = pixelBits(s->format);
     if (bits >= 8)
         return;
-    const uint32_t per = 8u / bits;
+    const uint32_t per = 8U / bits;
     uint32_t end = ((uint32_t)*x + *w + per - 1) / per * per;
     *x = (uint16_t)(*x / per * per);
     if (end > s->width)
