@@ -40,6 +40,8 @@ Unreleased
   address 0x51.
 - `loracheck` wapp: `status`, `rx` and `tx` commands drive `/dev/lora/main`
   from the launch arguments and print the results, to check a board's radio.
+- `fbpattern` wapp: draws a test image of known bits on a `mono1` screen,
+  flushes it, and can hold the panel blank for a time.
 
 ### Fixed
 

@@ -69,6 +69,8 @@ A companion recipe, `just syscontrol` (Linux) / `just nuttx-syscontrol` (sim), r
 
 The `loracheck` wapp checks a board's radio by hand, from the `wsh` debug shell, with a launch config that grants `lora` with `devices=main,tx` and the arguments `["status"]`, `["rx","secs=30"]` or `["tx","count=3","len=32"]`. Other arguments are `freq`, `sf`, `bw`, `sync`, `power`, `cad`, `gap` and `text`. Seed it into a build with `CONFIG_WANTED_SEED_WAPPS="loracheck"`. It prints each `ctl` result, each received frame and each `tx` result, then the `status` file. It is not part of the automated suite.
 
+The `fbpattern` wapp checks a board's `mono1` panel by hand, with a launch config that grants `fb` with `screens=<name>` and the arguments `["<name>"]`, `["<name>","pattern=checker"]` or `["<name>","blank=3"]`. It draws a border, a ruler, an F and a checkerboard (`image`, the default), a full white screen (`fill`), a black one (`clear`) or alternating pixels (`checker`), flushes, and with `blank=<seconds>` holds the panel blank for that long.
+
 A standalone script, `test/devcheck.sh`, boots the `devcheck` wapp as the supervisor and round-trips the `sha256` / `ed25519` / `inflate` offload devices end to end (WASI → VFS → driver), powering the engine off after one pass.
 
 ## Cross-architecture selftest (OpenWRT qemu)
