@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.25.0 (2026-10-15)
+-------------------
 
 ### Added
 
@@ -42,11 +42,22 @@ Unreleased
   from the launch arguments and print the results, to check a board's radio.
 - `fbpattern` wapp: draws a test image of known bits on a `mono1` screen,
   flushes it, and can hold the panel blank for a time.
+- `connect` on `/dev/wifi/ctl` accepts a quoted SSID: the text up to the next
+  unescaped `"`, with `\"` and `\\` as escapes. An empty or unterminated SSID,
+  or an unknown escape, returns `-EINVAL`.
 
 ### Fixed
 
 - Without `-C`, `firmware.config` hashes a `.config` beside the `.bin` before
   `build/.config`.
+- A write of more than 159 bytes to `/dev/wifi/ctl` returns `-EINVAL`. The
+  driver cut it at 127 bytes.
+
+### Build
+
+- Bumped `wapps/sheriff` to v0.13.0. `provisioning.version` and
+  `wifi-mgr.version` read 0.13.0.
+- The unit-test and coverage CI builds enable `lora`.
 
 0.24.0 (2026-10-07)
 -------------------
