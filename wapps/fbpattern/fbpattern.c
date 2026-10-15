@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* fbpattern: draws a test image of known bits on a mono1 screen and flushes
- * it. The first argument names the screen; the rest are key=value pairs:
- * pattern (image, fill, clear or checker) and blank (seconds to hold the panel
- * blank after the flush). */
+/* fbpattern: draws a test image on a mono1 screen and flushes it. Arguments:
+ * the screen name, then pattern=image|fill|clear|checker and blank=<seconds>
+ * to hold the panel blank after the flush. */
 #include <fcntl.h>
 #include <poll.h>
 #include <stdint.h>

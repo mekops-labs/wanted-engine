@@ -60,18 +60,14 @@ vfs_driver_t *VfsConfigInit(const wapp_t *wapp, const char *options);
 #ifdef CONFIG_WANTED_VFS_SOCKET
 vfs_driver_t *VfsSocketInit(const wapp_t *wapp, const char *options);
 
-/* Local endpoint of a socket driver's connected socket, formatted
- * "<addr>:<port>" into `buf` — the address a peer would see this connection
- * come from. Returns the byte count or a negative errno: -EINVAL when `drv`
- * is not a socket driver, -ENOTCONN with no live connection to report. Used
- * by /proc/net/<name> (vfs-procfs-net.c), never exposed to wasm directly. */
+/* Local endpoint of a socket driver's connected socket as "<addr>:<port>" in
+ * `buf`. Returns the byte count, -EINVAL when `drv` is not a socket driver, or
+ * -ENOTCONN without a live connection. For /proc/net/<name> only. */
 int VfsSocketLocalAddr(const vfs_driver_t *drv, char *buf, size_t buflen);
 
-/* The scheme a socket driver was configured with — "tcp", "udp", "tcps",
- * "udps", "serial" or "unix", the same vocabulary VfsSocketInit's own option
- * string parses. Known from config alone, so unlike VfsSocketLocalAddr it
- * never depends on connection state. Returns NULL when `drv` is not a socket
- * driver. Used by /proc/net/<name> (vfs-procfs-net.c). */
+/* The scheme a socket driver was configured with: "tcp", "udp", "tcps", "udps",
+ * "serial" or "unix". Known from config alone. NULL when `drv` is not a socket
+ * driver. For /proc/net/<name>. */
 const char *VfsSocketLinkType(const vfs_driver_t *drv);
 #endif
 #ifdef CONFIG_WANTED_VFS_SHA256

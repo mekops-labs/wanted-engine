@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* loracheck: drives /dev/lora/main from its launch arguments and prints what
- * the radio did. The first argument is the command (status, rx or tx); the
- * rest are key=value pairs: freq, sf, bw, sync, power, cad, secs, count, gap,
- * len and text. */
+/* loracheck: drives /dev/lora/main from its launch arguments. The first is the
+ * command (status, rx or tx); the rest are key=value: freq, sf, bw, sync,
+ * power, cad, secs, count, gap, len and text. */
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>

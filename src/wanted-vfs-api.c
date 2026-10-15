@@ -966,8 +966,7 @@ int WantedParseWappConfigJson(const char *buf, size_t bufLen,
 
 /* Launch-config overlay: the addresses a provisioning blob carries, written by
  * the supervisor beside the blob and merged here on a supervisor reload. It
- * carries the blob's own `key=value` grammar, so the supervisor reuses the key
- * names it already parses rather than paying for a second encoding. */
+ * uses the blob's own `key=value` grammar. */
 #define CONFIG_OVERLAY_NAME "overlay"
 #define CONFIG_OVERLAY_MAX 512
 
@@ -1073,11 +1072,8 @@ int WantedMergeConfigOverlay(wapp_config_t *cfg, const char *dir) {
             if (pass == 0)
                 goto next;
 
-            /* Apply only what the launch config leaves unset. That is what
-             * gives an explicitly-set address precedence over the blob's: on
-             * OpenWRT the init script renders UCI into the launch config
-             * before the engine starts, so an entry already present is one an
-             * operator pinned by hand. */
+            /* Apply only what the launch config leaves unset, so an address the
+             * operator pinned by hand keeps precedence over the blob's. */
             if (socketIndex(cfg, key, keyLen) >= 0)
                 goto next;
             if (cfg->socketsCnt >= CONFIG_WANTED_MAX_DRIVERS_CNT) {

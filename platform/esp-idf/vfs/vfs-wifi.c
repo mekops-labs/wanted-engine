@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* ESP-IDF WiFi driver: /dev/wifi/{status,scan,ctl}. Station and access-point
- * control for a single radio; the driver owns reconnection and derives AP
- * credentials from the hardware serial, so nothing credential-shaped crosses
- * the wapp boundary. */
+/* ESP-IDF WiFi driver: /dev/wifi/{status,scan,ctl}. The driver owns
+ * reconnection and derives AP credentials from the hardware serial, so none
+ * crosses the wapp boundary. */
 
 #include <errno.h>
 #include <stdbool.h>
@@ -44,10 +43,9 @@ static const char id[] = {'W', 'i', 'f', 'i'};
 #define WIFI_NODE_SCAN 2
 #define WIFI_NODE_CTL 3
 
-/* AP credentials never come from a wapp. SSID carries no secret (a compiled-in
- * prefix plus the low 24 bits of the serial, in hex); the passphrase is
- * HMAC-SHA256(serial, label), rendered as its first 8 hex digits — WPA2-PSK's
- * own floor, and short enough for an operator to type or read off a label. */
+/* AP credentials never come from a wapp. SSID: "wanted-" plus the low 24 bits
+ * of the serial in hex. Passphrase: the first 8 hex digits of
+ * HMAC-SHA256(serial, label), WPA2-PSK's own floor. */
 #define WIFI_AP_SSID_PREFIX "wanted-"
 #define WIFI_AP_SSID_SUFFIX_LEN 6 /* hex digits: low 24 bits of the serial */
 #define WIFI_AP_PASS_LABEL "wanted-ap-passphrase-v1"
@@ -143,10 +141,9 @@ static void ipEventHandler(void *arg, esp_event_base_t base, int32_t evId,
     }
 }
 
-/* One-time WiFi bring-up: NVS (needed for calibration data), the default
- * event loop, both the STA and AP netifs, the driver, the event handlers and
- * the reconnect timer. Idempotent, so every wapp granted the driver finds the
- * radio ready. */
+/* One-time bring-up of NVS, the event loop, both netifs, the driver, the event
+ * handlers and the reconnect timer. Idempotent: every wapp finds the radio
+ * ready. */
 static bool wifiEnsureStarted(void) {
     if (g_wifiStarted)
         return true;
@@ -265,10 +262,9 @@ static char *scanCollect(void) {
     return out;
 }
 
-/* Configure the target AP and start an asynchronous association; the event
- * handlers above update the connection state as the radio associates and
- * leases an address, and re-associate it on an unsolicited drop. Replaces
- * whatever intent — station or AP — was previously stored. */
+/* Store the target AP and start an asynchronous association. The event
+ * handlers track the state and re-associate on a drop. Replaces any previous
+ * station or AP intent. */
 static int setStationIntent(const char *ssid, const char *pass) {
     wifi_config_t conf;
     memset(&conf, 0, sizeof(conf));
@@ -370,12 +366,9 @@ int EspWifiBringup(const char *ssid, const char *pass, int timeoutSec) {
     return -ETIMEDOUT;
 }
 
-/* Fills `ssidOut`/`passOut` from the hardware serial: SSID carries a
- * compiled-in prefix plus the low 24 bits of the serial (already hex text, so
- * its last WIFI_AP_SSID_SUFFIX_LEN characters are exactly that); the
- * passphrase is HMAC-SHA256(serial, label), truncated to its first
- * WIFI_AP_PASS_HEX_LEN hex digits. -ENODEV where the platform has no serial to
- * derive from — no fallback to a fixed passphrase. */
+/* Fills `ssidOut`/`passOut` from the hardware serial: "wanted-" plus the low
+ * 24 bits of the serial in hex, and the first WIFI_AP_PASS_HEX_LEN hex digits
+ * of HMAC-SHA256(serial, label). -ENODEV without a serial, with no fallback. */
 static int deriveApCredentials(char ssidOut[WIFI_SSID_MAX],
                                char passOut[WIFI_AP_PASS_HEX_LEN + 1]) {
     char serial[PLATFORM_SERIAL_MAX_LEN + 1];

@@ -1,11 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* NuttX WiFi driver: /dev/wifi/{status,scan,ctl}, so the wapp stays pure
- * WASI. The radio is reached through the WAPI library on wlan0; see the VFS
- * reference for the wire text. The driver owns station reconnection; it never
- * hosts an access point — bcm43xxx has no AP write path, and mapping ap_start
- * onto WAPI_MODE_MASTER would silently select ad-hoc instead, so ap_start and
- * ap_stop both answer -ENODEV unconditionally. */
+/* NuttX WiFi driver: /dev/wifi/{status,scan,ctl} over the WAPI library on
+ * wlan0. The driver owns station reconnection. ap_start and ap_stop answer
+ * -ENODEV: bcm43xxx has no AP write path (WAPI_MODE_MASTER means ad-hoc). */
 
 #include <errno.h>
 #include <stdbool.h>
@@ -85,10 +82,9 @@ struct vfs_driver_ctx_t {
 static char *g_scanBuf;
 static size_t g_scanLen;
 
-/* Module-level, not per-descriptor: a fire-and-forget wapp raises a link and
- * exits, and the link — and the intent to hold it — must survive it. Guarded
- * by g_wifiMutex, since the monitor thread below reads and updates it
- * concurrently with VFS calls on a wapp's own thread. */
+/* Module-level, not per-descriptor: the link and the intent to hold it outlive
+ * the wapp that raised them. Guarded by g_wifiMutex; the monitor thread
+ * updates it concurrently with VFS calls. */
 static bool g_wifiStarted;
 static bool g_wifiConnected;
 static bool g_hasIntent;
@@ -245,11 +241,9 @@ static void wifiDisconnectNow(const char *ifname) {
     close(sock);
 }
 
-/* Retries a stored intent on a fixed poll cadence, with a capped backoff
- * between failed attempts, for as long as the intent stands —
- * "disconnected means no intent stored, never gave up", applied without an
- * async disconnect event to trigger off. Runs for the life of the process:
- * the wapp that stored the intent may already be gone. */
+/* Retries a stored intent on a fixed poll, with capped backoff between failed
+ * attempts, for as long as the intent stands. Runs for the life of the process:
+ * the wapp that stored the intent may be gone. */
 static void *wifiMonitorThread(void *arg) {
     (void)arg;
     for (;;) {
@@ -329,10 +323,8 @@ static void wifiEnsureStarted(void) {
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-    /* PTHREAD_STACK_MIN (CONFIG_PTHREAD_STACK_MIN) is sized for a trivial
-     * thread; this one calls into wpa_driver_wext_associate() and the DHCP
-     * client (netlib_obtain_ipv4addr()), both stack-heavy, and overflows the
-     * minimum immediately. */
+    /* The minimum stack overflows in wpa_driver_wext_associate() and
+     * netlib_obtain_ipv4addr(), both stack-heavy. */
     pthread_attr_setstacksize(&attr, 4096);
     if (pthread_create(&g_monitorThread, &attr, wifiMonitorThread, NULL) == 0)
         pthread_detach(g_monitorThread);
