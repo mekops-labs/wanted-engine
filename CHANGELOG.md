@@ -1,6 +1,15 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Fixed
+
+- An ESP-IDF build stages the default launch configuration at every build,
+  not only when CMake configures. Every board directory mounts at `/board`,
+  so a build after another board's kept the other board's configuration.
+
 0.25.0 (2026-10-15)
 -------------------
 

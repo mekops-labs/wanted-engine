@@ -146,10 +146,15 @@ else()
     set(_cfg_origin "configured")
 endif()
 set(_cfg_staged "${CMAKE_CURRENT_BINARY_DIR}/wanted-config.json")
+if(IS_ABSOLUTE "${WANTED_DEFAULT_CONFIG}")
+    set(_cfg_src "${WANTED_DEFAULT_CONFIG}")
+else()
+    set(_cfg_src "${_repo}/${WANTED_DEFAULT_CONFIG}")
+endif()
 set_property(
     DIRECTORY
     APPEND
-    PROPERTY CMAKE_CONFIGURE_DEPENDS "${_repo}/${WANTED_DEFAULT_CONFIG}")
+    PROPERTY CMAKE_CONFIGURE_DEPENDS "${_cfg_src}")
 execute_process(
     COMMAND "${_repo}/utils/default-config.sh" "${_repo}"
             "${WANTED_DEFAULT_CONFIG}" "${_cfg_staged}"
@@ -163,6 +168,21 @@ if(NOT _cfg_rc EQUAL 0)
 endif()
 message(
     STATUS "Default configuration: ${WANTED_DEFAULT_CONFIG} (${_cfg_origin})")
+
+# Staged again at every build: every board directory mounts at the same path, so
+# a configure that sees no change of path keeps the last board's file.
+# copy_if_different re-embeds it only when its content changed. The early
+# expansion pass runs this file as a script, where targets cannot be made.
+if(NOT CMAKE_BUILD_EARLY_EXPANSION)
+    add_custom_target(
+        wanted_config_stage ALL
+        COMMAND "${_repo}/utils/default-config.sh" "${_repo}"
+                "${WANTED_DEFAULT_CONFIG}" "${_cfg_staged}.new"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_cfg_staged}.new"
+                "${_cfg_staged}"
+        BYPRODUCTS "${_cfg_staged}"
+        VERBATIM)
+endif()
 
 # The console uses a different peripheral per board: USB-Serial/JTAG on the S3,
 # UART on the classic part. IDF_TARGET is always defined by the time a component
@@ -192,6 +212,10 @@ idf_component_register(
     ${_extra_embed}
     EMBED_TXTFILES
     "${_cfg_staged}")
+
+if(NOT CMAKE_BUILD_EARLY_EXPANSION)
+    add_dependencies(${COMPONENT_LIB} wanted_config_stage)
+endif()
 
 # The generated seed declarations live in the build directory.
 target_include_directories(${COMPONENT_LIB}
