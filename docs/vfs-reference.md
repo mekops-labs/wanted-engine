@@ -85,7 +85,10 @@ log_slots:	3
 reg_slots:	0
 drivers:	null log 9p config platform socket sha256 ed25519 inflate wanted
 serial:	0123456789abcdef
+reg_store:	files file unit=0 total=0 free=0 largest_free=0
 ```
+
+`reg_store` has one line for each registry store, after the `drivers` line. It carries the same figures as `/dev/wanted/reg_capacity`, for a wapp that holds no registry grant.
 
 `serial` is the unit's own hardware identity, stable across reflashes: the SPI
 flash chip's factory id on ESP-IDF, the OTP device id on RP2350, and a

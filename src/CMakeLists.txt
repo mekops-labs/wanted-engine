@@ -79,8 +79,14 @@ if(CONFIG_WANTED_VFS_OTA)
     list(APPEND vfs-srcs "vfs/vfs-ota.c")
 endif()
 if(CONFIG_WANTED_VFS_WANTED)
-    list(APPEND vfs-srcs "vfs/vfs-wanted.c" "vfs/vfs-wanted-config.c"
-         "vfs/vfs-wanted-wapps.c" "vfs/vfs-wanted-registry.c")
+    list(
+        APPEND
+        vfs-srcs
+        "vfs/vfs-wanted.c"
+        "vfs/vfs-wanted-config.c"
+        "vfs/vfs-wanted-wapps.c"
+        "vfs/vfs-wanted-registry.c"
+        "vfs/vfs-wanted-reg-capacity.c")
 endif()
 
 set(wasi-src "wasi/wasi-vfs.c" "wasi/wasi-poll.c")

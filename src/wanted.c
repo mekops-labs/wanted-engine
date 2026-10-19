@@ -487,6 +487,21 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
         }
     }
 
+    /* One line for each registry store, last so a short reader loses these
+     * before any other field. */
+    registry_capacity_t cap[REGISTRY_MAX_STORES];
+    int stores = RegistryCapacity(cap, REGISTRY_MAX_STORES);
+    for (int i = 0; i < stores && w < (int)bufLen; i++) {
+        int n = snprintf((char *)buf + w, (size_t)((int)bufLen - w),
+                         "reg_store:\t%s %s unit=%u total=%u free=%u "
+                         "largest_free=%u\n",
+                         cap[i].name, cap[i].kind, (unsigned)cap[i].unit,
+                         (unsigned)cap[i].total, (unsigned)cap[i].freeBytes,
+                         (unsigned)cap[i].largestFree);
+        if (n > 0 && w + n < (int)bufLen)
+            w += n;
+    }
+
     return w < (int)bufLen ? w : (int)bufLen;
 }
 

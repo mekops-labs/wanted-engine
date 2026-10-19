@@ -549,6 +549,41 @@ static bool appendMemoryProfile(const reg_entry_t *entry, char *buf, int *n,
     return true;
 }
 
+int WantedRenderRegistryCapacity(char *buf, size_t bufLen) {
+    registry_capacity_t cap[REGISTRY_MAX_STORES];
+    int n = RegistryCapacity(cap, REGISTRY_MAX_STORES);
+    size_t used = 0;
+    int w;
+
+    if (buf == NULL || bufLen == 0)
+        return -EINVAL;
+    w = snprintf(buf, bufLen, "[");
+    if (w < 0 || (size_t)w >= bufLen)
+        return -EMSGSIZE;
+    used = (size_t)w;
+    for (int i = 0; i < n; i++) {
+        w = snprintf(
+            buf + used, bufLen - used,
+            "%s{\"name\":\"%s\",\"kind\":\"%s\",\"unit\":%u,\"total\":%u,"
+            "\"free\":%u,\"largest_free\":%u,\"mappable\":%s,"
+            "\"scattered\":%s,\"removable\":%s,\"present\":%s}",
+            i > 0 ? "," : "", cap[i].name, cap[i].kind, (unsigned)cap[i].unit,
+            (unsigned)cap[i].total, (unsigned)cap[i].freeBytes,
+            (unsigned)cap[i].largestFree,
+            (cap[i].caps & REGISTRY_CAP_MAPPABLE) ? "true" : "false",
+            (cap[i].caps & REGISTRY_CAP_SCATTERED) ? "true" : "false",
+            (cap[i].caps & REGISTRY_CAP_REMOVABLE) ? "true" : "false",
+            cap[i].present ? "true" : "false");
+        if (w < 0 || used + (size_t)w >= bufLen)
+            return -EMSGSIZE;
+        used += (size_t)w;
+    }
+    w = snprintf(buf + used, bufLen - used, "]\n");
+    if (w < 0 || used + (size_t)w >= bufLen)
+        return -EMSGSIZE;
+    return (int)(used + (size_t)w);
+}
+
 /* A time field: Unix seconds, or null when the record holds none. */
 static void appendTime(char *buf, int *n, size_t bufLen, const char *key,
                        int64_t t) {

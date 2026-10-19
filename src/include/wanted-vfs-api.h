@@ -44,6 +44,11 @@ int WantedRegistrySetSignature(const char *ref, const uint8_t *payload,
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen);
 
+/* Render the capacity of each registry store as a JSON array of objects, with
+ * sizes in bytes. Returns the length, or -EMSGSIZE when `bufLen` is too small.
+ */
+int WantedRenderRegistryCapacity(char *buf, size_t bufLen);
+
 /* Parse a wasm module's declared linear-memory limits from the leading `len`
  * bytes of its app.wasm, filling *init, *has_max and *max. -ENOENT when those
  * bytes hold no memory section, -EINVAL on a bad header. Allocation-free. */
