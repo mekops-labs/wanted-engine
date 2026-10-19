@@ -12,6 +12,7 @@
 #include <wanted-vfs-api.h>
 
 #include <platform.h>
+#include <registry.h>
 
 #define ID {'W', 'r', 'e', 'g'}
 
@@ -133,7 +134,7 @@ static bool validInstallRef(const char *ref) {
  * lookup is not always preceded by an open of the root — a caller that asks
  * whether one image is installed never enumerates the directory. */
 static int refreshEntries(vfs_driver_ctx_t d) {
-    int ret = PlatformRegistryRead(d->entries, MAX_REG_ENTRIES);
+    int ret = RegistryRead(d->entries, MAX_REG_ENTRIES);
 
     if (ret < 0)
         return ret;

@@ -32,6 +32,7 @@
 
 #include <log-store.h>
 #include <platform.h>
+#include <registry.h>
 
 struct wamrData_t {
     wasm_module_t module;
@@ -432,8 +433,7 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
         PlatformWorkerStackSize(), CONFIG_WANTED_WASM_MAX_MEMORY_PAGES,
         CONFIG_WANTED_MAX_DRIVERS_CNT, CONFIG_WANTED_MAX_OPTIONS_SIZE,
         TARFS_MAX_LAYERS, WAPP_MAX_ARGS, WAPP_MAX_ENVS, CONFIG_WANTED_LOG_SLOTS,
-        PlatformRegistrySlots(),
-        WantedImageVerifyEnforced() ? "enforcing" : "reporting",
+        (size_t)0, WantedImageVerifyEnforced() ? "enforcing" : "reporting",
         WantedImageVerifyFloor() ? "enforcing" : "reporting", resetReason());
 
     if (w < 0)
@@ -1075,7 +1075,7 @@ static int loadSupervisorFromRegistry(const char *path, wapp_t *w) {
         e.name[WAPP_MAX_NAME_LEN - 1] = '\0';
     }
 
-    int ret = PlatformRegistryWappLoad(&e, w);
+    int ret = RegistryLoad(&e, w);
     if (ret < 0)
         return ret;
 
@@ -1104,7 +1104,7 @@ static bool installedSupervisorVersion(const char *ref, char *out, size_t len) {
     if (strchr(ref, ':') != NULL) /* pinned by the config; not ours to judge */
         return false;
 
-    int num = PlatformRegistryRead(list, CONFIG_WANTED_MAX_WAPPS);
+    int num = RegistryRead(list, CONFIG_WANTED_MAX_WAPPS);
     if (num < 0)
         return false;
     if (num > CONFIG_WANTED_MAX_WAPPS)

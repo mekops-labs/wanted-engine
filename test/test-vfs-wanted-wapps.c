@@ -202,14 +202,14 @@ TEST(vfs_wanted_wapps, CtlUnknownVerb_ReturnsEinval) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Write(drv->ctx, c, "frobnicate", 10));
 }
 
-TEST(vfs_wanted_wapps, CtlStart_NoImageReturnsEnosys) {
+TEST(vfs_wanted_wapps, CtlStart_NoImageReturnsEnoent) {
     /* A live wapp (no pending reservation) passes the config gate, so start
-     * reaches the loader; the dummy cannot map an image and returns -ENOSYS.
-     * Identity comes from the path; the verb is just "start". */
+     * reaches the loader; the registry holds no such image and the load
+     * returns -ENOENT. Identity comes from the path; the verb is "start". */
     wapp_state_t seed = MakeState("alpha", 1, RUNNING, 1, 0, 0, 0);
     DummyWappStateSeed(&seed, 1);
     int c = OpenLeaf("alpha/ctl");
-    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, c, "start", 5));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Write(drv->ctx, c, "start", 5));
 }
 
 TEST(vfs_wanted_wapps, CtlOversizedWrite_ReturnsEmsgsize) {
@@ -239,7 +239,7 @@ TEST(vfs_wanted_wapps, ConfigWrite_MalformedJsonRejected) {
 }
 
 /* The root ctl does not launch wapps — `start` is not a root verb; a wapp is
- * started through its own wapps/<name>/ctl (see CtlStart_NoImageReturnsEnosys).
+ * started through its own wapps/<name>/ctl (see CtlStart_NoImageReturnsEnoent).
  */
 TEST(vfs_wanted_wapps, RootCtlStartRejected_ReturnsEinval) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
@@ -317,11 +317,12 @@ TEST(vfs_wanted_wapps, CtlStartWithImage_CreatedWithoutConfig_ReachesLoader) {
     TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create ghost", 12) > 0);
 
     int c = OpenLeaf("ghost/ctl");
-    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, c, "start duplex", 12));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Write(drv->ctx, c, "start duplex", 12));
 }
 
 /* Two distinct instances can be created and bound to a single image via config
- * `image`; each start reaches the loader independently (dummy → -ENOSYS). This
+ * `image`; each start reaches the loader independently (no such image →
+ * -ENOENT). This
  * is the multi-instance path: one image, N instance names. */
 TEST(vfs_wanted_wapps, MultiInstance_TwoInstancesOneImage) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
@@ -335,9 +336,9 @@ TEST(vfs_wanted_wapps, MultiInstance_TwoInstancesOneImage) {
     TEST_ASSERT_TRUE(drv->Write(drv->ctx, wc, cfg, strlen(cfg)) > 0);
 
     int r = OpenLeaf("reader/ctl");
-    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, r, "start", 5));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Write(drv->ctx, r, "start", 5));
     int w = OpenLeaf("writer/ctl");
-    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, w, "start", 5));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Write(drv->ctx, w, "start", 5));
 }
 
 TEST(vfs_wanted_wapps, RootCtlCreateNoName_ReturnsEinval) {
@@ -467,7 +468,7 @@ TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, CtlStop_TransitionsState);
     RUN_TEST_CASE(vfs_wanted_wapps, CtlStop_TrimsTrailingNewline);
     RUN_TEST_CASE(vfs_wanted_wapps, CtlUnknownVerb_ReturnsEinval);
-    RUN_TEST_CASE(vfs_wanted_wapps, CtlStart_NoImageReturnsEnosys);
+    RUN_TEST_CASE(vfs_wanted_wapps, CtlStart_NoImageReturnsEnoent);
     RUN_TEST_CASE(vfs_wanted_wapps, CtlOversizedWrite_ReturnsEmsgsize);
     RUN_TEST_CASE(vfs_wanted_wapps, ConfigWrite_ParsesJson);
     RUN_TEST_CASE(vfs_wanted_wapps, ConfigWrite_MalformedJsonRejected);

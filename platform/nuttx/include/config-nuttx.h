@@ -16,8 +16,3 @@
 #undef REGISTRY_ROOT
 #define REGISTRY_ROOT CONFIG_RP23XX_FLASH_MTD_REGISTRY_MOUNTPOINT
 #endif
-
-/* Upper bound on registry entries materialised when resolving a wapp whose
- * version is unspecified. Embedded targets avoid VLAs, so this caps the
- * on-stack scan buffer. */
-#define REGISTRY_MAX_ENTRIES 50

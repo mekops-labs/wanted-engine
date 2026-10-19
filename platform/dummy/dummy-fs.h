@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <registry-meta.h>
+#include <registry-store.h>
 #include <wanted-api.h>
 
 /* Reset all in-memory file/directory/fd state. Call in TEST_SETUP. */
@@ -47,6 +48,10 @@ void DummyRegistryReset(void);
 int DummyRegistrySeed(const reg_entry_t *entries, size_t count);
 int DummyRegistrySetMeta(const reg_entry_t *entry, const registry_meta_t *meta);
 int DummyRegistryDropMeta(const reg_entry_t *entry);
+
+/* Serve the registry from `store` instead of the in-memory one; NULL restores
+ * it. The registry starts over against the new store. */
+void DummyRegistryUseStore(registry_store_t *store);
 
 /* ── GPIO fake control (dummy-gpio.c) ───────────────────────────────────── */
 

@@ -17,7 +17,7 @@ Every platform implements the contract in `platform/include/platform.h`. A confo
 | Area | Symbols |
 |------|---------|
 | Wapp lifecycle | `PlatformWappLoad` / `Unload` / `Start` / `Stop` / `Release` / `Loop` / `GetState`, `PlatformWorkerStackSize` |
-| Registry backend | `PlatformRegistryRead` / `Write` / `Remove` / `WappLoad` / `ReadImage` |
+| Registry store | `PlatformRegistryStores` — the blob and record stores the registry core in `src/registry.c` runs on |
 | Filesystem | `PlatformOpenStateDir`, `PlatformFsRename`, `PlatformFsMkdir`, `PlatformFsRmdir`, `PlatformVolumeRoot` |
 | Network | `PlatformNetOpen` / `Connect` / `Recv` / `Send` / `Accept` / `Shutdown` / `Close` / `Free`; `PlatformNetWaitReadable` and `PlatformNetPoll`, the blocking and non-blocking readiness checks behind blocking reads and `poll_oneoff` |
 | Readiness | `PlatformFdReady` — non-blocking readiness of a host descriptor (the platform console, host files); the shared body is `posix/ready.c`, over `select` |
@@ -77,7 +77,9 @@ Linux and the NuttX simulator are both POSIX environments, so most of the seam h
 | `posix/mutex.c` | `PlatformMutex*` |
 | `posix/clock.c` | `PlatformClockGetRes` / `GetTime` / `SetTime` |
 | `posix/fs.c` | `PlatformOpenStateDir`, `PlatformFsRename`, `PlatformFsMkdir` |
-| `posix/registry-store.c` | the filesystem registry store behind `PlatformRegistry*` |
+| `posix/registry-fs.c` | the filesystem registry store: one file for each blob, named by its digest, and one for each entry record |
+| `posix/registry-stores.c` | `PlatformRegistryStores`, naming the filesystem store |
+| `posix/file-map.c` | `PlatformFileMap` / `Unmap` — mapping a file, or copying it where mapping is not available |
 | `posix/wapps-image.c` | image load/unload behind `PlatformWappLoad` / `Unload` |
 | `posix/sha256.c` | the software SHA-256 body behind `PlatformSha256*` |
 
@@ -89,7 +91,6 @@ The ESP-IDF port also reuses `posix/socket.c` (over lwIP). A target layer (`plat
 | Sleep (`PlatformNanoSleep`) | `api/clock-sleep.c` | `api/clock-sleep.c` (signal-EINTR quirk) |
 | Secure sockets | OpenSSL (`api/ssocket.c`) | mbedTLS — the shared `posix/ssocket-mbedtls.c`, gated by `CONFIG_SYSTEM_WANTED_TLS` |
 | Memory stats | `mallinfo2` | NuttX heap walk |
-| Registry backend glue | host directory (`api/registry.c`) | hostfs (`api/registry.c`) |
 | Entry point | `wanted-cli` `main` | `wanted_sim_main` (NuttX init task) |
 
 `platform/dummy/` is the exception: a unit-test stub that implements the whole seam **in memory** and shares none of the POSIX sources — the model for a target that is not POSIX at all.
@@ -609,7 +610,7 @@ Neither the OpenSSL nor the mbedTLS body branches on direction: both uncondition
 
 1. Create `platform/<name>/`. If the target is POSIX-like, link `platform/posix/` and implement only the deltas (thread/stop model, memory stats, secure sockets if any, registry-backend glue, entry point); otherwise implement every `Platform*` symbol from `platform.h` yourself, with `platform/dummy/` as the model for a from-scratch port. Either way, no stubs.
 2. Provide a stop mechanism that **interrupts a blocked host syscall**, not just a cooperative flag.
-3. Implement a registry backend (filesystem, flash blob, or in-memory) behind `PlatformRegistry*`.
+3. Implement a registry store (filesystem, flash, or in-memory) behind `registry_store_t` in `platform/include/registry-store.h`, and return it from `PlatformRegistryStores`. Every rule above the store lives in `src/registry.c`.
 4. Wire the build (`WANTED_PLATFORM=<name>`) and a board/app entry point.
 
 The NuttX port is the reference for a constrained target. Its findings carry over: keep `wamrData_t` opaque and reach it through the `WantedWappTerminate` accessor; avoid VLAs; avoid `scandir` and GNU extensions (use `opendir`/`readdir`/`qsort`); confirm `CONFIG_INTERPRETERS_WAMR_THREAD_MGR` so `wasm_runtime_terminate` takes effect, and that thread cleanup does not rely on `pthread_cleanup_push`.

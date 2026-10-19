@@ -1,0 +1,150 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Shared file mapping for wapp images. Linux maps the file zero-copy; NuttX
+ * copies it into a heap buffer through an internal-RAM bounce buffer. See the
+ * platform guide. */
+
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/mman.h>
+
+#ifdef __NuttX__
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
+#include <platform.h>
+#include <wanted-api.h>
+#include <wanted_malloc.h>
+
+#include <debug_trace.h>
+
+#define FATAL(err, msg, ...)                                                   \
+    {                                                                          \
+        DEBUG_TRACE("Fatal: " msg, ##__VA_ARGS__);                             \
+        return err;                                                            \
+    }
+
+#ifdef __NuttX__
+
+/* Bounce buffer for image reads. Static, so it lives in .bss and therefore
+ * internal RAM, which an SPI-flash read target must be. A mutex serialises the
+ * shared buffer. */
+#define IMAGE_READ_CHUNK 2048
+static uint8_t g_image_bounce[IMAGE_READ_CHUNK];
+static pthread_mutex_t g_image_bounce_lock = PTHREAD_MUTEX_INITIALIZER;
+
+int PlatformFileMap(const char *path, uint8_t **ptr, size_t *len) {
+    struct stat st;
+    uint8_t *img;
+    int fd;
+    size_t off;
+
+    if (NULL == ptr || NULL == len) {
+        return -EINVAL;
+    }
+
+    DEBUG_TRACE("Opening: %s\n", path);
+
+    fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        FATAL(-errno, "can't open wapp: %s", path);
+    }
+
+    if (fstat(fd, &st) < 0 || st.st_size <= 0) {
+        /* cppcheck-suppress unreadVariable */ /* used only by DEBUG_TRACE */
+        int e = errno;
+        close(fd);
+        FATAL(-EINVAL, "bad wapp size: %s errno=%d", path, e);
+    }
+
+    img = (uint8_t *)PlatformExtramMalloc((size_t)st.st_size);
+    if (NULL == img) {
+        close(fd);
+        FATAL(-ENOMEM, "can't alloc image (size=%lld)", (long long)st.st_size);
+    }
+
+    pthread_mutex_lock(&g_image_bounce_lock);
+    for (off = 0; off < (size_t)st.st_size;) {
+        size_t want = (size_t)st.st_size - off;
+        ssize_t got;
+        if (want > sizeof(g_image_bounce))
+            want = sizeof(g_image_bounce);
+        errno = 0;
+        got = read(fd, g_image_bounce, want);
+        if (got <= 0) {
+            /* NuttX may return the negative errno directly (errno left 0); a
+             * zero return is an unexpected mid-file EOF. */
+            int e = (got < 0) ? (errno ? -errno : (int)got) : -EIO;
+            pthread_mutex_unlock(&g_image_bounce_lock);
+            PlatformExtramFree(img);
+            close(fd);
+            FATAL(e, "read failed (%d) at %zu of %lld: %s", e, off,
+                  (long long)st.st_size, path);
+        }
+        memcpy(img + off, g_image_bounce, (size_t)got);
+        off += (size_t)got;
+    }
+    pthread_mutex_unlock(&g_image_bounce_lock);
+
+    close(fd);
+
+    *ptr = img;
+    *len = (size_t)st.st_size;
+    return 0;
+}
+
+int PlatformFileUnmap(uint8_t *ptr, size_t len) {
+    (void)len;
+    PlatformExtramFree(ptr);
+    return 0;
+}
+
+#else /* !__NuttX__ */
+
+int PlatformFileMap(const char *path, uint8_t **ptr, size_t *len) {
+    long filesize;
+    FILE *f;
+    uint8_t *img;
+
+    if (NULL == ptr || NULL == len) {
+        return -EINVAL;
+    }
+
+    DEBUG_TRACE("Opening: %s\n", path);
+
+    f = fopen(path, "rb");
+
+    if (NULL == f) {
+        FATAL(-errno, "can't open wapp: %s", path);
+    }
+
+    fseek(f, 0L, SEEK_END);
+    filesize = ftell(f);
+    rewind(f);
+
+    img = (uint8_t *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fileno(f), 0);
+    if (img == MAP_FAILED) {
+        int e = errno;
+        fclose(f);
+        FATAL(-e, "can't map file %s (size=%ld) errno=%d", path, filesize, e);
+    }
+
+    *ptr = img;
+    *len = (size_t)filesize;
+
+    fclose(f);
+    return 0;
+}
+
+int PlatformFileUnmap(uint8_t *ptr, size_t len) {
+    if (munmap(ptr, len) < 0)
+        FATAL(-errno, "can't unmap file");
+    return 0;
+}
+
+#endif /* __NuttX__ */

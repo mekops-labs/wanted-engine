@@ -6,6 +6,7 @@ set(sources
     dummy-uart.c
     dummy-extram.c
     dummy-registry.c
+    ${CMAKE_SOURCE_DIR}/platform/registry/registry-mem.c
     dummy-wake.c
     dummy-persist-mem.c
     dummy-reset-reason.c

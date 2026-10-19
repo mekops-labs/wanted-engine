@@ -155,9 +155,9 @@ What this layer guarantees: a failed or compromised firmware update does not bri
 
 ### 9. Registry metadata and image signatures
 
-Every registry backend stores one metadata record per installed image: the stored length, the SHA-256 of the bytes as they were written, a layer count, a signature with its key id, and a flag marking a firmware-seeded image. The digest is computed on the install stream, so it covers exactly what the backend stored and costs no extra read.
+Every registry store holds one record per installed image: the total stored length, the length and SHA-256 of each layer as it was written, a layer count, the install sequence and times, a signature with its key id, and a flag marking a firmware-seeded image. Each digest is computed on the install stream, so it covers exactly what the store kept and costs no extra read.
 
-The record lives beside the image — a `.meta` sidecar on the posix backings, the LittleFS index record on ESP-IDF, and RAM on the in-memory backing. Removing an image removes its record.
+The record is the entry: an image is listed once its record is written, and the record is replaced whole or not at all. The file store keeps it as a file beside its blobs, and the in-memory store keeps it in RAM. Removing an image removes its record.
 
 A signature arrives through the `reg/<name>:<version>.sig` route on the registry mount, under the same grant as an install, so signature delivery adds no platform seam. The payload is a big-endian key id and the 64-byte Ed25519 signature, which keeps every wire encoding out of the engine.
 

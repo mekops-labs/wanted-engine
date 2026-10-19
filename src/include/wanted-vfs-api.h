@@ -30,8 +30,8 @@ int WantedRegistryRemove(const reg_entry_t *entry);
  * then the raw signature. -ENOENT when no such image is installed. */
 int WantedRegistrySetSignature(const char *ref, const uint8_t *payload,
                                size_t payloadLen);
-/* Synthesize a small JSON descriptor (name/version/size) for a registry entry
- * into buf — the entry alone is the source, with no image load. */
+/* Synthesize a small JSON descriptor for a registry entry into buf: its record
+ * and the linear-memory profile read from the merged image. */
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen);
 

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include <platform.h>
+#include <registry.h>
 
 #include "dummy-fs.h"
 
@@ -67,7 +68,7 @@ int PlatformWappLoad(const char *name, wapp_t *wapp) {
 }
 
 int PlatformWappUnload(const wapp_t *wapp) {
-    (void)wapp;
+    RegistryUnload(wapp);
     return 0;
 }
 

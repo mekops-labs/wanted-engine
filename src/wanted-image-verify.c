@@ -9,6 +9,7 @@
 
 #include <debug_trace.h>
 #include <platform.h>
+#include <registry.h>
 #include <wanted-autoconf.h>
 #include <wanted-image-verify.h>
 #include <wanted_log.h>
@@ -171,7 +172,7 @@ image_verify_state_t WantedVerifyImage(const reg_entry_t *entry,
 
     if (entry == NULL || w == NULL)
         return IMAGE_VERIFY_NO_RECORD;
-    if (PlatformRegistryMetaRead(entry, &meta) < 0)
+    if (RegistryMetaRead(entry, &meta) < 0)
         return IMAGE_VERIFY_NO_RECORD;
     if (meta.flags & REGISTRY_META_SEEDED)
         return IMAGE_VERIFY_SEEDED;

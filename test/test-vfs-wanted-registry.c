@@ -8,6 +8,8 @@
 #include "test-utils.h"
 
 #include <platform.h>
+#include <registry-mem.h>
+#include <registry.h>
 #include <vfs.h>
 #include <wanted-api.h>
 #include <wanted-vfs-api.h>
@@ -189,10 +191,9 @@ TEST(vfs_registry_driver, WriteRootNoRef_ReturnsErofs) {
     TEST_ASSERT_EQUAL_INT(-EROFS, drv->Write(drv->ctx, 0, "{}", 2));
 }
 
-TEST(vfs_registry_driver, WriteByRef_Chunk_Unsupported) {
+TEST(vfs_registry_driver, WriteByRef_FirstChunk_StartsInstall) {
     drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
-    /* WantedWriteRegistry -> PlatformRegistryWrite(START_WRITE) -> -ENOSYS. */
-    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, 0, "{}", 2));
+    TEST_ASSERT_EQUAL_INT(2, drv->Write(drv->ctx, 0, "{}", 2));
 }
 
 /* An out-of-grammar install ref is rejected at open rather than naming a file.
@@ -277,7 +278,7 @@ TEST(vfs_registry_driver, Unlink_ByNameVersion_RemovesEntry) {
     SeedTwo();
     drv->Open(drv->ctx, "/", VFS_O_RDONLY);
     TEST_ASSERT_EQUAL_INT(0, drv->Unlink(drv->ctx, 0, "app2:2.3.4"));
-    TEST_ASSERT_EQUAL_INT(1, PlatformRegistryRead(NULL, 0));
+    TEST_ASSERT_EQUAL_INT(1, RegistryRead(NULL, 0));
 }
 
 TEST(vfs_registry_driver, Unlink_RemovesEntry) {
@@ -285,7 +286,7 @@ TEST(vfs_registry_driver, Unlink_RemovesEntry) {
     drv->Open(drv->ctx, "/", VFS_O_RDONLY);
 
     TEST_ASSERT_EQUAL_INT(0, drv->Unlink(drv->ctx, 0, "app1"));
-    TEST_ASSERT_EQUAL_INT(1, PlatformRegistryRead(NULL, 0));
+    TEST_ASSERT_EQUAL_INT(1, RegistryRead(NULL, 0));
 }
 
 TEST(vfs_registry_driver, Unlink_Unknown_ReturnsEnoent) {
@@ -296,9 +297,10 @@ TEST(vfs_registry_driver, Unlink_Unknown_ReturnsEnoent) {
 
 TEST(vfs_registry_driver, Close_AfterFailedStart_DoesNotFinalize) {
     drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
-    /* The dummy backing refuses START_WRITE, so nothing is in flight and the
-     * close has nothing to finalize. */
-    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, 0, "{}", 2));
+    /* A store with no room refuses the first chunk, so nothing is in flight
+     * and the close has nothing to finalize. */
+    RegistryMemSetLimit(1);
+    TEST_ASSERT_EQUAL_INT(-ENOSPC, drv->Write(drv->ctx, 0, "{}", 2));
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, 0));
 }
 
@@ -308,8 +310,9 @@ TEST(vfs_registry_driver, Close_AfterFailedStart_DoesNotFinalize) {
 TEST(vfs_registry_driver, WriteRegistry_FailedStart_LeavesWriteUnarmed) {
     bool cont = false;
 
+    RegistryMemSetLimit(1);
     TEST_ASSERT_EQUAL_INT(
-        -ENOSYS,
+        -ENOSPC,
         WantedWriteRegistry(&cont, "newapp:1.0.0-1", (const uint8_t *)"{}", 2));
     TEST_ASSERT_FALSE(cont);
 }
@@ -356,8 +359,8 @@ TEST(vfs_registry_driver, Install_SurvivesAnotherDescriptorClosing) {
     int other = OpenEntry("app1");
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, other));
 
-    /* Still an install, and still named: the dummy refuses the write itself. */
-    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, install, "{}", 2));
+    /* Still an install, and still named. */
+    TEST_ASSERT_EQUAL_INT(2, drv->Write(drv->ctx, install, "{}", 2));
 }
 
 /* An install must not be renamed by a later open. */
@@ -367,7 +370,7 @@ TEST(vfs_registry_driver, Install_KeepsItsRefAcrossAnotherOpen) {
     TEST_ASSERT_TRUE(first >= 0);
     TEST_ASSERT_TRUE(second >= 0);
     TEST_ASSERT_TRUE(first != second);
-    TEST_ASSERT_EQUAL_INT(-ENOSYS, drv->Write(drv->ctx, first, "{}", 2));
+    TEST_ASSERT_EQUAL_INT(2, drv->Write(drv->ctx, first, "{}", 2));
 }
 
 /* The end-of-file flag is per descriptor. */
@@ -478,7 +481,7 @@ TEST(vfs_registry_driver, Sig_Write_RecordsSignatureOnEntry) {
                           drv->Write(drv->ctx, fd, payload, sizeof(payload)));
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
 
-    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryMetaRead(&entry, &meta));
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&entry, &meta));
     TEST_ASSERT_EQUAL_UINT32(3, meta.keyId);
     TEST_ASSERT_TRUE((meta.flags & REGISTRY_META_SIGNED) != 0);
     TEST_ASSERT_EQUAL_UINT8(0xab, meta.signature[0]);
@@ -501,7 +504,7 @@ TEST(vfs_registry_driver, Sig_ArrivesInChunks_AppliedWhole) {
         drv->Write(drv->ctx, fd, payload + 10, sizeof(payload) - 10));
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
 
-    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryMetaRead(&entry, &meta));
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&entry, &meta));
     TEST_ASSERT_TRUE((meta.flags & REGISTRY_META_SIGNED) != 0);
 }
 
@@ -518,7 +521,7 @@ TEST(vfs_registry_driver, Sig_ShortPayload_RefusedAtClose) {
     TEST_ASSERT_EQUAL_INT(20, drv->Write(drv->ctx, fd, payload, 20));
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Close(drv->ctx, fd));
 
-    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryMetaRead(&entry, &meta));
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&entry, &meta));
     TEST_ASSERT_EQUAL_INT(0, meta.flags & REGISTRY_META_SIGNED);
 }
 
@@ -569,7 +572,7 @@ TEST(vfs_registry_driver, Sig_NoBytesWritten_IsNoOp) {
     TEST_ASSERT_TRUE(fd >= 0);
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
 
-    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryMetaRead(&entry, &meta));
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&entry, &meta));
     TEST_ASSERT_EQUAL_INT(0, meta.flags & REGISTRY_META_SIGNED);
 }
 
@@ -583,7 +586,7 @@ TEST(vfs_registry_driver, MetaRead_SeededEntry_CarriesStoredSize) {
     reg_entry_t entry = MakeEntry("app2", "2.3.4", 84);
 
     SeedTwo();
-    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryMetaRead(&entry, &meta));
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&entry, &meta));
     TEST_ASSERT_EQUAL_UINT32(REGISTRY_META_MAGIC, meta.magic);
     TEST_ASSERT_EQUAL_UINT32(84, meta.size);
 }
@@ -613,16 +616,16 @@ TEST(vfs_registry_driver, Descriptor_ReportsWhetherTheEntryIsSigned) {
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"verify\":\"signed\""));
 }
 
-/* An install interrupted before its record landed: the image is there and the
- * record is not, and the descriptor has to say so or nothing repairs it. */
+/* An entry removed while a descriptor on it is open leaves a descriptor that
+ * has no record, and it has to say so. */
 TEST(vfs_registry_driver, Descriptor_ReportsAMissingRecord) {
     char buf[256];
     reg_entry_t e = MakeEntry("app1", "1.0.0", 42);
 
     SeedTwo();
+    int fd = OpenEntry("app1:1.0.0");
     TEST_ASSERT_EQUAL_INT(0, DummyRegistryDropMeta(&e));
 
-    int fd = OpenEntry("app1:1.0.0");
     int n = drv->Read(drv->ctx, fd, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
     buf[n] = '\0';
@@ -655,7 +658,7 @@ TEST_GROUP_RUNNER(vfs_registry_driver) {
     RUN_TEST_CASE(vfs_registry_driver, Write_NotOpened_ReturnsEbadf);
     RUN_TEST_CASE(vfs_registry_driver, OpenForWrite_ByRef_ReturnsWriteFd);
     RUN_TEST_CASE(vfs_registry_driver, WriteRootNoRef_ReturnsErofs);
-    RUN_TEST_CASE(vfs_registry_driver, WriteByRef_Chunk_Unsupported);
+    RUN_TEST_CASE(vfs_registry_driver, WriteByRef_FirstChunk_StartsInstall);
     RUN_TEST_CASE(vfs_registry_driver, OpenForWrite_InvalidRef_ReturnsEinval);
     RUN_TEST_CASE(vfs_registry_driver, OpenForWrite_ValidRefs_Accepted);
     RUN_TEST_CASE(vfs_registry_driver, Read_FdBeyondEntries_ReturnsEbadf);
