@@ -430,13 +430,14 @@ config WANTED_MAX_WAPPS
 	  one slot, so 1 leaves room for no child wapps.
 
 config WANTED_MAX_WAPP_IMAGE_KB
-	int "Maximum wapp image size (KiB)"
+	int "Registry flash per wapp (KiB)"
 	default 160
 	range 64 1024
 	help
-	  Upper bound on one registry image. A raw-flash-slot backing takes
-	  this as its slot size and multiplies by WANTED_MAX_WAPPS to size
-	  the partition — costs flash whether or not any image grows into it.
+	  Sizes the raw flash partition that holds wapp images on a board:
+	  this many KiB for each of WANTED_MAX_WAPPS. An image is not bound
+	  to it; one takes as much of the partition as it needs. Changing it
+	  moves the partition table, which a firmware update does not apply.
 
 config WANTED_WASM_STACK_SIZE
 	int "WASM operand stack per instance (bytes)"
