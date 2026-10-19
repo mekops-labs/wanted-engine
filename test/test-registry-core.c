@@ -473,6 +473,109 @@ TEST(registry_core, RefLongerThanTheLimit_IsRefused) {
                                         (const uint8_t *)"x", 1));
 }
 
+static const uint8_t seedImage[] = "seed-image-bytes";
+
+TEST(registry_core, Resident_IsListedWithItsSizeAndSeededFlag) {
+    reg_entry_t list[4];
+    reg_entry_t e = entryOf("seed", "1.0.0");
+    registry_meta_t meta;
+
+    TEST_ASSERT_EQUAL_INT(0, RegistryAddResident("seed:1.0.0", seedImage,
+                                                 sizeof(seedImage), 1234));
+    TEST_ASSERT_EQUAL_INT(1, RegistryRead(list, 4));
+    TEST_ASSERT_EQUAL_STRING("seed", list[0].name);
+    TEST_ASSERT_EQUAL_UINT32(sizeof(seedImage), list[0].size);
+
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&e, &meta));
+    TEST_ASSERT_TRUE((meta.flags & REGISTRY_META_SEEDED) != 0);
+    TEST_ASSERT_EQUAL_UINT32(0, meta.installSeq);
+    TEST_ASSERT_EQUAL_INT64(1234, meta.created);
+    TEST_ASSERT_EQUAL_INT64(0, meta.installed);
+}
+
+TEST(registry_core, Resident_HoldsNoStoreSpace_AndLoadsWithoutACopy) {
+    reg_entry_t e = entryOf("seed", "1.0.0");
+
+    TEST_ASSERT_EQUAL_INT(
+        0, RegistryAddResident("seed:1.0.0", seedImage, sizeof(seedImage), 0));
+    TEST_ASSERT_EQUAL_INT(0, blobCount());
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&e, &wapp));
+    TEST_ASSERT_TRUE(wapp.layers[0] == seedImage);
+    TEST_ASSERT_EQUAL_UINT32(sizeof(seedImage), wapp.layer_lens[0]);
+    TEST_ASSERT_TRUE(RegistryIsMapped(&e));
+    TEST_ASSERT_TRUE(RegistryUnload(&wapp));
+    TEST_ASSERT_FALSE(RegistryIsMapped(&e));
+}
+
+TEST(registry_core, Resident_CannotBeRemovedOrSigned) {
+    reg_entry_t e = entryOf("seed", "1.0.0");
+    uint8_t sig[REGISTRY_META_SIG_LEN] = {1};
+
+    TEST_ASSERT_EQUAL_INT(
+        0, RegistryAddResident("seed:1.0.0", seedImage, sizeof(seedImage), 0));
+    TEST_ASSERT_EQUAL_INT(-EPERM, RegistryRemove(&e));
+    TEST_ASSERT_EQUAL_INT(-EPERM, RegistryMetaSetSignature(&e, 1, sig));
+    TEST_ASSERT_EQUAL_INT(1, RegistryRead(NULL, 0));
+}
+
+TEST(registry_core, InstalledEntry_TakesThePlaceOfAResidentOfTheSameRef) {
+    reg_entry_t e = entryOf("seed", "1.0.0");
+    registry_meta_t meta;
+    reg_entry_t list[4];
+
+    TEST_ASSERT_EQUAL_INT(
+        0, RegistryAddResident("seed:1.0.0", seedImage, sizeof(seedImage), 0));
+    TEST_ASSERT_EQUAL_INT(0, installPlain("seed:1.0.0", "newer"));
+    TEST_ASSERT_EQUAL_INT(1, RegistryRead(list, 4));
+    TEST_ASSERT_EQUAL_UINT32(5, list[0].size);
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&e, &meta));
+    TEST_ASSERT_EQUAL_INT(0, meta.flags & REGISTRY_META_SEEDED);
+
+    TEST_ASSERT_EQUAL_INT(0, RegistryRemove(&e));
+    TEST_ASSERT_EQUAL_INT(1, RegistryRead(list, 4));
+    TEST_ASSERT_EQUAL_UINT32(sizeof(seedImage), list[0].size);
+    TEST_ASSERT_EQUAL_INT(0, blobCount());
+}
+
+TEST(registry_core, BareName_PrefersAnInstallOverAResident) {
+    reg_entry_t bare = entryOf("app", "");
+
+    TEST_ASSERT_EQUAL_INT(
+        0, RegistryAddResident("app:9.9.9", seedImage, sizeof(seedImage), 0));
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&bare, &wapp));
+    TEST_ASSERT_EQUAL_STRING("9.9.9", wapp.version);
+    RegistryUnload(&wapp);
+
+    memset(&wapp, 0, sizeof(wapp));
+    TEST_ASSERT_EQUAL_INT(0, installPlain("app:0.1.0", "installed"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&bare, &wapp));
+    TEST_ASSERT_EQUAL_STRING("0.1.0", wapp.version);
+    RegistryUnload(&wapp);
+}
+
+TEST(registry_core, Resident_SurvivesARestartOfTheRegistry) {
+    TEST_ASSERT_EQUAL_INT(
+        0, RegistryAddResident("seed:1.0.0", seedImage, sizeof(seedImage), 0));
+    RegistryDeinit();
+    TEST_ASSERT_EQUAL_INT(1, RegistryRead(NULL, 0));
+}
+
+TEST(registry_core, Resident_RefusesBadInput_AndAFullTable) {
+    char ref[16];
+
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          RegistryAddResident("seed:1", seedImage, 0, 0));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, RegistryAddResident("seed:1", NULL, 4, 0));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, RegistryAddResident("", seedImage, 4, 0));
+    for (int i = 0; i < 16; i++) {
+        snprintf(ref, sizeof(ref), "s%d:1", i);
+        TEST_ASSERT_EQUAL_INT(0, RegistryAddResident(ref, seedImage, 4, 0));
+    }
+    TEST_ASSERT_EQUAL_INT(-ENOSPC,
+                          RegistryAddResident("extra:1", seedImage, 4, 0));
+    TEST_ASSERT_EQUAL_INT(0, RegistryAddResident("s3:1", seedImage, 8, 0));
+}
+
 TEST_GROUP_RUNNER(registry_core) {
     RUN_TEST_CASE(registry_core, PlainInstall_ListsOneLayerEntry);
     RUN_TEST_CASE(registry_core, PlainInstall_Replaces_FreesTheOldBlob);
@@ -513,4 +616,13 @@ TEST_GROUP_RUNNER(registry_core) {
     RUN_TEST_CASE(registry_core, List_IsSortedByNameThenVersion);
     RUN_TEST_CASE(registry_core, List_ReportsTheTotalWhenTheBufferIsShort);
     RUN_TEST_CASE(registry_core, RefLongerThanTheLimit_IsRefused);
+    RUN_TEST_CASE(registry_core, Resident_IsListedWithItsSizeAndSeededFlag);
+    RUN_TEST_CASE(registry_core,
+                  Resident_HoldsNoStoreSpace_AndLoadsWithoutACopy);
+    RUN_TEST_CASE(registry_core, Resident_CannotBeRemovedOrSigned);
+    RUN_TEST_CASE(registry_core,
+                  InstalledEntry_TakesThePlaceOfAResidentOfTheSameRef);
+    RUN_TEST_CASE(registry_core, BareName_PrefersAnInstallOverAResident);
+    RUN_TEST_CASE(registry_core, Resident_SurvivesARestartOfTheRegistry);
+    RUN_TEST_CASE(registry_core, Resident_RefusesBadInput_AndAFullTable);
 }

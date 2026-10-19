@@ -13,14 +13,24 @@
 #define MAX_MAPS                                                               \
     ((size_t)(CONFIG_WANTED_MAX_WAPPS + 1) * REGISTRY_META_MAX_LAYERS)
 #define MAX_BLOBS 64
+#define MAX_RESIDENT 16
 #define NS_PER_SEC 1000000000ULL
 
 typedef struct {
     bool used;
-    registry_store_t *store;
+    registry_store_t *store; /* NULL for a resident image */
     registry_blob_map_t map;
     uint8_t digest[REGISTRY_DIGEST_LEN];
 } map_t;
+
+typedef struct {
+    bool used;
+    registry_key_t key;
+    const uint8_t *data;
+    size_t len;
+    int64_t created;
+    uint8_t digest[REGISTRY_DIGEST_LEN];
+} resident_t;
 
 typedef struct {
     bool used;
@@ -52,6 +62,7 @@ static struct {
     stage_t stage;
     pending_t pending[MAX_PENDING];
     map_t maps[MAX_MAPS];
+    resident_t resident[MAX_RESIDENT];
     /* Scratch the lock serialises; kept out of the stack on small targets. */
     registry_key_t keys[REGISTRY_MAX_ENTRIES];
     registry_key_t scanKeys[REGISTRY_MAX_ENTRIES];
@@ -119,16 +130,58 @@ static void keyFromEntry(const reg_entry_t *e, registry_key_t *key) {
     strncpy(key->version, e->version, REGISTRY_KEY_NAME_LEN - 1);
 }
 
+static resident_t *residentFind(const registry_key_t *key) {
+    for (size_t i = 0; i < MAX_RESIDENT; i++) {
+        if (g.resident[i].used && keyEq(&g.resident[i].key, key))
+            return &g.resident[i];
+    }
+    return NULL;
+}
+
+static resident_t *residentByDigest(const uint8_t *digest) {
+    for (size_t i = 0; i < MAX_RESIDENT; i++) {
+        if (g.resident[i].used &&
+            memcmp(g.resident[i].digest, digest, REGISTRY_DIGEST_LEN) == 0)
+            return &g.resident[i];
+    }
+    return NULL;
+}
+
+static void residentMeta(const resident_t *r, registry_meta_t *meta) {
+    memset(meta, 0, sizeof(*meta));
+    meta->magic = REGISTRY_META_MAGIC;
+    meta->layerCount = 1;
+    meta->size = (uint32_t)r->len;
+    meta->layerLen[0] = (uint32_t)r->len;
+    memcpy(meta->layerDigest[0], r->digest, REGISTRY_DIGEST_LEN);
+    meta->created = r->created;
+    meta->flags = REGISTRY_META_SEEDED | REGISTRY_META_CLOCK_UNSET;
+}
+
+/* An installed entry wins over a resident image of the same ref. */
 static int readMeta(const registry_key_t *key, registry_meta_t *meta) {
     registry_store_t *p = primary();
-    int n;
+    const resident_t *r = residentFind(key);
+    int n = -ENODEV;
 
-    if (p == NULL || p->ops->recGet == NULL)
-        return -ENODEV;
-    n = p->ops->recGet(p, key, g.rec, sizeof(g.rec));
-    if (n < 0)
+    if (p != NULL && p->ops->recGet != NULL)
+        n = p->ops->recGet(p, key, g.rec, sizeof(g.rec));
+    if (n >= 0)
+        return RegistryRecordDecode(g.rec, (size_t)n, meta) ? 0 : -ENOENT;
+    if (r == NULL)
         return n;
-    return RegistryRecordDecode(g.rec, (size_t)n, meta) ? 0 : -ENOENT;
+    residentMeta(r, meta);
+    return 0;
+}
+
+/* The ref has a resident image and no installed entry. */
+static bool residentOnly(const registry_key_t *key) {
+    registry_store_t *p = primary();
+
+    if (residentFind(key) == NULL)
+        return false;
+    return p == NULL || p->ops->recGet == NULL ||
+           p->ops->recGet(p, key, g.rec, sizeof(g.rec)) < 0;
 }
 
 static int writeMeta(const registry_key_t *key, const registry_meta_t *meta) {
@@ -153,6 +206,16 @@ static int listKeys(registry_key_t *keys) {
         return n;
     if (n > REGISTRY_MAX_ENTRIES)
         n = REGISTRY_MAX_ENTRIES;
+    for (size_t i = 0; i < MAX_RESIDENT && n < REGISTRY_MAX_ENTRIES; i++) {
+        bool listed = false;
+
+        if (!g.resident[i].used)
+            continue;
+        for (int k = 0; k < n && !listed; k++)
+            listed = keyEq(&keys[k], &g.resident[i].key);
+        if (!listed)
+            keys[n++] = g.resident[i].key;
+    }
     sortKeys(keys, (size_t)n);
     return n;
 }
@@ -619,10 +682,32 @@ static registry_store_t *storeHolding(const uint8_t *digest) {
     return NULL;
 }
 
+static int mapResident(const resident_t *r, uint8_t **ptr, size_t *outLen) {
+    for (size_t i = 0; i < MAX_MAPS; i++) {
+        map_t *m = &g.maps[i];
+
+        if (m->used)
+            continue;
+        m->used = true;
+        m->store = NULL;
+        m->map.ptr = r->data;
+        m->map.len = r->len;
+        memcpy(m->digest, r->digest, REGISTRY_DIGEST_LEN);
+        *ptr = (uint8_t *)r->data;
+        *outLen = r->len;
+        return 0;
+    }
+    return -ENOMEM;
+}
+
 static int mapBlob(const uint8_t *digest, size_t len, uint8_t **ptr,
                    size_t *outLen) {
-    registry_store_t *s = storeHolding(digest);
+    const resident_t *r = residentByDigest(digest);
+    registry_store_t *s;
 
+    if (r != NULL)
+        return mapResident(r, ptr, outLen);
+    s = storeHolding(digest);
     if (s == NULL)
         return -ENOENT;
     for (size_t i = 0; i < MAX_MAPS; i++) {
@@ -652,7 +737,8 @@ static void unmapPtr(const uint8_t *ptr) {
         if (!m->used || m->map.ptr != ptr)
             continue;
         memcpy(digest, m->digest, sizeof(digest));
-        m->store->ops->blobUnmap(m->store, &m->map);
+        if (m->store != NULL)
+            m->store->ops->blobUnmap(m->store, &m->map);
         memset(m, 0, sizeof(*m));
         dropIfFree(digest);
         return;
@@ -782,6 +868,8 @@ int RegistryMetaSetSignature(const reg_entry_t *entry, uint32_t keyId,
     lock();
     keyFromEntry(entry, &want);
     rc = resolve(&want, &key, &meta);
+    if (rc == 0 && residentOnly(&key))
+        rc = -EPERM;
     if (rc == 0) {
         meta.keyId = keyId;
         memcpy(meta.signature, sig, REGISTRY_META_SIG_LEN);
@@ -825,12 +913,48 @@ void RegistryMarkSeeded(const char *ref) {
         return;
     ensureReady();
     lock();
-    if (resolve(&want, &key, &meta) == 0 &&
+    if (resolve(&want, &key, &meta) == 0 && !residentOnly(&key) &&
         !(meta.flags & REGISTRY_META_SEEDED)) {
         meta.flags |= REGISTRY_META_SEEDED;
         writeMeta(&key, &meta);
     }
     unlock();
+}
+
+int RegistryAddResident(const char *ref, const uint8_t *data, size_t len,
+                        int64_t created) {
+    registry_key_t key;
+    resident_t *slot = NULL;
+    void *sha;
+    int rc;
+
+    if (data == NULL || len == 0)
+        return -EINVAL;
+    rc = parseRef(ref, &key);
+    if (rc < 0)
+        return rc;
+    sha = PlatformSha256New();
+    if (sha == NULL)
+        return -ENOMEM;
+
+    slot = residentFind(&key);
+    for (size_t i = 0; i < MAX_RESIDENT && slot == NULL; i++) {
+        if (!g.resident[i].used)
+            slot = &g.resident[i];
+    }
+    if (slot == NULL) {
+        PlatformSha256Free(sha);
+        return -ENOSPC;
+    }
+    PlatformSha256Update(sha, data, len);
+    PlatformSha256Final(sha, slot->digest);
+    PlatformSha256Free(sha);
+    slot->used = true;
+    slot->key = key;
+    slot->data = data;
+    slot->len = len;
+    slot->created = created;
+    return 0;
 }
 
 int RegistryCapacity(registry_capacity_t *out, size_t max) {
@@ -851,6 +975,8 @@ int RegistryCapacity(registry_capacity_t *out, size_t max) {
     return (int)n;
 }
 
+void RegistryClearResident(void) { memset(g.resident, 0, sizeof(g.resident)); }
+
 void RegistryDeinit(void) {
     if (!g.ready)
         return;
@@ -859,7 +985,7 @@ void RegistryDeinit(void) {
         primary()->ops->stageAbort(primary(), g.stage.handle);
     stageClear();
     for (size_t i = 0; i < MAX_MAPS; i++) {
-        if (g.maps[i].used)
+        if (g.maps[i].used && g.maps[i].store != NULL)
             g.maps[i].store->ops->blobUnmap(g.maps[i].store, &g.maps[i].map);
     }
     memset(g.maps, 0, sizeof(g.maps));

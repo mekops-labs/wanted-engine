@@ -67,6 +67,14 @@ bool RegistryIsMapped(const reg_entry_t *entry);
 /* Marks `ref` as firmware-provided, so RegistryRemove refuses it. */
 void RegistryMarkSeeded(const char *ref);
 
+/* Lists the one-layer image `data` as `ref`, from memory that stays mapped. It
+ * holds no store space and cannot be removed; an installed entry of the same
+ * ref takes its place. `created` is the build time in Unix seconds, or 0. */
+int RegistryAddResident(const char *ref, const uint8_t *data, size_t len,
+                        int64_t created);
+/* Forgets every resident image. */
+void RegistryClearResident(void);
+
 /* One object for each store, up to `max`. Returns the store count. */
 int RegistryCapacity(registry_capacity_t *out, size_t max);
 

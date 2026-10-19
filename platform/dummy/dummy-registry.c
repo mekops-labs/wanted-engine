@@ -101,6 +101,7 @@ static int storeImage(uint8_t digest[REGISTRY_DIGEST_LEN]) {
 
 void DummyRegistryReset(void) {
     RegistryDeinit();
+    RegistryClearResident();
     RegistryMemReset();
     seedSeq = 0;
 }
