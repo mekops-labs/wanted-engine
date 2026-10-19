@@ -637,6 +637,141 @@ TEST(registry_page, PowerCut_DuringAFirstInstall_LeavesNothingOrTheWholeImage) {
     TEST_ASSERT_TRUE(whole > 0);
 }
 
+static uint32_t storeFreeUnits(void) {
+    registry_capacity_t cap;
+
+    TEST_ASSERT_EQUAL_INT(0, store->ops->capacity(store, &cap));
+    return cap.freeBytes / SIM_UNIT;
+}
+
+static void digestFilled(uint8_t out[REGISTRY_DIGEST_LEN], uint8_t v) {
+    memset(out, v, REGISTRY_DIGEST_LEN);
+}
+
+TEST(registry_page, Adopt_SharedEdgeUnits_AreFreedOnlyWhenBothAreGone) {
+    uint8_t a[REGISTRY_DIGEST_LEN];
+    uint8_t b[REGISTRY_DIGEST_LEN];
+    uint8_t digests[4][REGISTRY_DIGEST_LEN];
+    registry_blob_map_t map;
+
+    boot(true);
+    TEST_ASSERT_EQUAL_INT(0, store->ops->init(store));
+    digestFilled(a, 0xa1);
+    digestFilled(b, 0xb2);
+    fill(sim.mem, 6000, 11);
+    fill(sim.mem + 6000, 5000, 22);
+
+    TEST_ASSERT_EQUAL_INT(0, RegistryPageAdopt(store, a, 0, 6000));
+    TEST_ASSERT_EQUAL_INT(0, RegistryPageAdopt(store, b, 6000, 5000));
+    TEST_ASSERT_EQUAL_UINT32(SIM_UNITS - 3, storeFreeUnits());
+
+    TEST_ASSERT_EQUAL_INT(0, store->ops->blobDrop(store, a));
+    TEST_ASSERT_EQUAL_UINT32(SIM_UNITS - 2, storeFreeUnits());
+    TEST_ASSERT_EQUAL_INT(0, store->ops->blobMap(store, b, 0, &map));
+    {
+        uint8_t expect[5000];
+
+        fill(expect, sizeof(expect), 22);
+        TEST_ASSERT_EQUAL_UINT32(5000, map.len);
+        TEST_ASSERT_EQUAL_MEMORY(expect, map.ptr, sizeof(expect));
+    }
+    store->ops->blobUnmap(store, &map);
+
+    TEST_ASSERT_EQUAL_INT(0, store->ops->blobDrop(store, b));
+    TEST_ASSERT_EQUAL_UINT32(SIM_UNITS, storeFreeUnits());
+    TEST_ASSERT_EQUAL_INT(0, store->ops->blobList(store, digests, 4));
+}
+
+/* The entry record the conversion writes for an adopted blob. */
+static void plantEntry(const char *name, const char *version,
+                       const uint8_t digest[REGISTRY_DIGEST_LEN],
+                       uint32_t len) {
+    registry_meta_t meta;
+    registry_key_t key;
+    uint8_t rec[REGISTRY_RECORD_MAX];
+    size_t n;
+
+    memset(&meta, 0, sizeof(meta));
+    meta.magic = REGISTRY_META_MAGIC;
+    meta.layerCount = 1;
+    meta.size = len;
+    meta.layerLen[0] = len;
+    memcpy(meta.layerDigest[0], digest, REGISTRY_DIGEST_LEN);
+    n = RegistryRecordEncode(&meta, rec, sizeof(rec));
+    memset(&key, 0, sizeof(key));
+    strcpy(key.name, name);
+    strcpy(key.version, version);
+    TEST_ASSERT_TRUE(n > 0);
+    TEST_ASSERT_EQUAL_INT(0, store->ops->recPut(store, &key, rec, n));
+}
+
+TEST(registry_page, Adopt_NeverLetsANewBlobTakeASharedUnit) {
+    static const size_t big[] = {5 * SIM_UNIT};
+    uint8_t a[REGISTRY_DIGEST_LEN];
+    uint8_t b[REGISTRY_DIGEST_LEN];
+
+    boot(true);
+    TEST_ASSERT_EQUAL_INT(0, store->ops->init(store));
+    digestFilled(a, 0xa1);
+    digestFilled(b, 0xb2);
+    fill(sim.mem, 6000, 11);
+    fill(sim.mem + 6000, 5000, 22);
+    TEST_ASSERT_EQUAL_INT(0, RegistryPageAdopt(store, a, 0, 6000));
+    TEST_ASSERT_EQUAL_INT(0, RegistryPageAdopt(store, b, 6000, 5000));
+    TEST_ASSERT_EQUAL_INT(0, store->ops->blobDrop(store, a));
+    plantEntry("old", "1", b, 5000);
+
+    /* Unit 1 still holds the start of the other blob. */
+    TEST_ASSERT_EQUAL_INT(0, installImage("new:1", 1, big, 3));
+    TEST_ASSERT_EQUAL_INT(0, sim.violations);
+    {
+        uint8_t expect[5000];
+        registry_blob_map_t map;
+
+        fill(expect, sizeof(expect), 22);
+        TEST_ASSERT_EQUAL_INT(0, store->ops->blobMap(store, b, 0, &map));
+        TEST_ASSERT_EQUAL_MEMORY(expect, map.ptr, sizeof(expect));
+        store->ops->blobUnmap(store, &map);
+    }
+}
+
+TEST(registry_page, Adopt_IsIdempotent_AndRefusesBadRanges) {
+    uint8_t a[REGISTRY_DIGEST_LEN];
+    uint8_t b[REGISTRY_DIGEST_LEN];
+    uint8_t c[REGISTRY_DIGEST_LEN];
+
+    boot(true);
+    TEST_ASSERT_EQUAL_INT(0, store->ops->init(store));
+    digestFilled(a, 0xa1);
+    digestFilled(b, 0xb2);
+    digestFilled(c, 0xc3);
+    TEST_ASSERT_EQUAL_INT(0, RegistryPageAdopt(store, a, 0, 1000));
+    TEST_ASSERT_EQUAL_INT(0, RegistryPageAdopt(store, a, 0, 1000));
+    TEST_ASSERT_EQUAL_UINT32(SIM_UNITS - 1, storeFreeUnits());
+    TEST_ASSERT_EQUAL_INT(-EINVAL, RegistryPageAdopt(store, b, 0, 0));
+    TEST_ASSERT_EQUAL_INT(-EEXIST,
+                          RegistryPageAdopt(store, b, SIM_SIZE - 100, 5000));
+    TEST_ASSERT_EQUAL_INT(0, RegistryPageAdopt(store, c, 2 * SIM_UNIT, 100));
+}
+
+TEST(registry_page, Restart_KeepsAdoptedBlobsThatShareAUnit) {
+    uint8_t a[REGISTRY_DIGEST_LEN];
+    uint8_t b[REGISTRY_DIGEST_LEN];
+    uint8_t digests[4][REGISTRY_DIGEST_LEN];
+
+    boot(true);
+    TEST_ASSERT_EQUAL_INT(0, store->ops->init(store));
+    digestFilled(a, 0xa1);
+    digestFilled(b, 0xb2);
+    TEST_ASSERT_EQUAL_INT(0, RegistryPageAdopt(store, a, 0, 6000));
+    TEST_ASSERT_EQUAL_INT(0, RegistryPageAdopt(store, b, 6000, 5000));
+
+    reboot();
+    TEST_ASSERT_EQUAL_INT(0, store->ops->init(store));
+    TEST_ASSERT_EQUAL_INT(2, store->ops->blobList(store, digests, 4));
+    TEST_ASSERT_EQUAL_UINT32(SIM_UNITS - 3, storeFreeUnits());
+}
+
 TEST_GROUP_RUNNER(registry_page) {
     RUN_TEST_CASE(registry_page, SmallBlob_TakesOneUnit);
     RUN_TEST_CASE(registry_page, LargeBlob_SpansUnitsAndReadsBackWhole);
@@ -654,6 +789,11 @@ TEST_GROUP_RUNNER(registry_page) {
     RUN_TEST_CASE(registry_page,
                   Restart_DiscardsABlobRecordThatOverlapsAnother);
     RUN_TEST_CASE(registry_page, Restart_RemovesAStrayStageFile);
+    RUN_TEST_CASE(registry_page,
+                  Adopt_SharedEdgeUnits_AreFreedOnlyWhenBothAreGone);
+    RUN_TEST_CASE(registry_page, Adopt_NeverLetsANewBlobTakeASharedUnit);
+    RUN_TEST_CASE(registry_page, Adopt_IsIdempotent_AndRefusesBadRanges);
+    RUN_TEST_CASE(registry_page, Restart_KeepsAdoptedBlobsThatShareAUnit);
     RUN_TEST_CASE(registry_page,
                   PowerCut_AtEveryOperation_LeavesAWholeEntry_Scattered);
     RUN_TEST_CASE(registry_page,

@@ -49,12 +49,12 @@ typedef struct {
 /* The store for `cfg`, which must outlive it. One at a time. */
 registry_store_t *RegistryPageStore(const registry_page_config_t *cfg);
 
-/* A blob that is resident in mapped flash and holds no unit. */
-typedef struct {
-    uint8_t digest[REGISTRY_DIGEST_LEN];
-    const uint8_t *data;
-    size_t len;
-} registry_resident_t;
+/* Takes over `length` bytes at `offset` that a layout without units placed, as
+ * a blob named by `digest`. Its extent need not align to units; units shared
+ * with another adopted blob stay used until both are dropped. */
+int RegistryPageAdopt(registry_store_t *s,
+                      const uint8_t digest[REGISTRY_DIGEST_LEN],
+                      uint32_t offset, uint32_t length);
 
 typedef struct {
     uint32_t units;

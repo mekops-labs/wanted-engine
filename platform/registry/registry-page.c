@@ -25,7 +25,9 @@ typedef struct {
 static struct {
     const registry_page_config_t *cfg;
     registry_store_t store;
-    uint8_t used[REGISTRY_PAGE_MAX_UNITS / 8];
+    uint8_t refs[REGISTRY_PAGE_MAX_UNITS]; /* blobs and stages on a unit */
+    uint8_t
+        adopted[REGISTRY_PAGE_MAX_UNITS / 8]; /* units an adopted blob names */
     struct {
         bool active;
         run_t runs[REGISTRY_PAGE_MAX_EXTENTS];
@@ -35,9 +37,13 @@ static struct {
     } stage;
 } g;
 
+/* A blob placed by a layout whose extents need not align to units. */
+#define BLOB_FLAG_ADOPTED 0x01
+
 typedef struct {
     uint8_t digest[REGISTRY_DIGEST_LEN];
     uint32_t length;
+    uint8_t flags;
     registry_extent_t ext[REGISTRY_PAGE_MAX_EXTENTS];
     size_t nExt;
 } blob_rec_t;
@@ -54,14 +60,15 @@ static uint32_t get32(const uint8_t *p) {
            ((uint32_t)p[3] << 24);
 }
 
-/* Layout: magic u32, extent count u8, three reserved bytes, length u32, digest,
- * then each extent as an offset u32 and a length u32. */
+/* Layout: magic u32, extent count u8, flags u8, two reserved bytes, length u32,
+ * digest, then each extent as an offset u32 and a length u32. */
 static size_t encodeBlob(const blob_rec_t *b, uint8_t *out) {
     size_t off = BLOB_HEADER_LEN;
 
     memset(out, 0, BLOB_REC_MAX);
     put32(out, BLOB_MAGIC);
     out[4] = (uint8_t)b->nExt;
+    out[5] = b->flags;
     put32(out + 8, b->length);
     memcpy(out + 12, b->digest, REGISTRY_DIGEST_LEN);
     for (size_t i = 0; i < b->nExt; i++) {
@@ -82,6 +89,7 @@ static bool decodeBlob(const uint8_t *in, size_t len, blob_rec_t *b) {
         len < BLOB_HEADER_LEN + (n * BLOB_EXTENT_LEN))
         return false;
     b->nExt = n;
+    b->flags = in[5];
     b->length = get32(in + 8);
     memcpy(b->digest, in + 12, REGISTRY_DIGEST_LEN);
     for (size_t i = 0; i < n; i++) {
@@ -124,25 +132,33 @@ static bool fromHex(const char *s, uint8_t *digest) {
     return true;
 }
 
-static bool unitUsed(uint32_t u) {
-    return (g.used[u / 8] & (1U << (u % 8))) != 0;
-}
+static bool unitUsed(uint32_t u) { return g.refs[u] > 0; }
 
 static void setUnit(uint32_t u, bool on) {
-    if (on)
-        g.used[u / 8] |= (uint8_t)(1U << (u % 8));
-    else
-        g.used[u / 8] &= (uint8_t)~(1U << (u % 8));
+    if (on && g.refs[u] < UINT8_MAX)
+        g.refs[u]++;
+    else if (!on && g.refs[u] > 0)
+        g.refs[u]--;
 }
 
-/* The units a byte range touches. */
-static void markRange(uint32_t offset, uint32_t length, bool on) {
+static bool unitAdopted(uint32_t u) {
+    return (g.adopted[u / 8] & (1U << (u % 8))) != 0;
+}
+
+/* Takes or gives back the units a byte range touches. A unit an adopted blob
+ * named stays marked while any blob uses it. */
+static void markRange(uint32_t offset, uint32_t length, bool on, bool adopted) {
     uint32_t unit = g.cfg->unit;
     uint32_t first = offset / unit;
     uint32_t last = (offset + length - 1) / unit;
 
-    for (uint32_t u = first; u <= last && u < g.cfg->units; u++)
+    for (uint32_t u = first; u <= last && u < g.cfg->units; u++) {
         setUnit(u, on);
+        if (adopted && on)
+            g.adopted[u / 8] |= (uint8_t)(1U << (u % 8));
+        if (!unitUsed(u))
+            g.adopted[u / 8] &= (uint8_t)~(1U << (u % 8));
+    }
 }
 
 static void freeStageUnits(void) {
@@ -402,7 +418,8 @@ static int _BlobDrop(registry_store_t *s,
     if (rc < 0)
         return rc;
     for (size_t i = 0; i < b.nExt; i++)
-        markRange(b.ext[i].offset, b.ext[i].length, false);
+        markRange(b.ext[i].offset, b.ext[i].length, false,
+                  (b.flags & BLOB_FLAG_ADOPTED) != 0);
     return 0;
 }
 
@@ -514,6 +531,7 @@ static int _Capacity(registry_store_t *s, registry_capacity_t *out) {
  * the blob shares with a neighbour by design, free of another blob. */
 static bool claimBlob(const blob_rec_t *b) {
     uint64_t end = (uint64_t)g.cfg->units * g.cfg->unit;
+    bool adopted = (b->flags & BLOB_FLAG_ADOPTED) != 0;
 
     for (size_t i = 0; i < b->nExt; i++) {
         uint32_t first;
@@ -525,12 +543,12 @@ static bool claimBlob(const blob_rec_t *b) {
         first = b->ext[i].offset / g.cfg->unit;
         last = (b->ext[i].offset + b->ext[i].length - 1) / g.cfg->unit;
         for (uint32_t u = first; u <= last; u++) {
-            if (unitUsed(u))
+            if (unitUsed(u) && !(adopted && unitAdopted(u)))
                 return false;
         }
     }
     for (size_t i = 0; i < b->nExt; i++)
-        markRange(b->ext[i].offset, b->ext[i].length, true);
+        markRange(b->ext[i].offset, b->ext[i].length, true, adopted);
     return true;
 }
 
@@ -557,7 +575,8 @@ static int _Init(registry_store_t *s) {
         return -errno;
     RegFilesDel(g.cfg->entryDir, STAGE_NAME);
     RegFilesDel(g.cfg->blobDir, STAGE_NAME);
-    memset(g.used, 0, sizeof(g.used));
+    memset(g.refs, 0, sizeof(g.refs));
+    memset(g.adopted, 0, sizeof(g.adopted));
     memset(&g.stage, 0, sizeof(g.stage));
     RegFilesList(g.cfg->blobDir, visitRebuild, NULL);
     return 0;
@@ -586,6 +605,40 @@ registry_store_t *RegistryPageStore(const registry_page_config_t *cfg) {
     g.cfg = cfg;
     g.store.ops = &ops;
     return &g.store;
+}
+
+int RegistryPageAdopt(registry_store_t *s,
+                      const uint8_t digest[REGISTRY_DIGEST_LEN],
+                      uint32_t offset, uint32_t length) {
+    char name[HEX_LEN + 1];
+    uint8_t rec[BLOB_REC_MAX];
+    blob_rec_t b;
+    size_t n;
+    int rc;
+
+    (void)s;
+    if (length == 0)
+        return -EINVAL;
+    if (loadBlob(digest, &b) == 0)
+        return 0;
+    memset(&b, 0, sizeof(b));
+    memcpy(b.digest, digest, REGISTRY_DIGEST_LEN);
+    b.length = length;
+    b.flags = BLOB_FLAG_ADOPTED;
+    b.nExt = 1;
+    b.ext[0].offset = offset;
+    b.ext[0].length = length;
+    if (!claimBlob(&b))
+        return -EEXIST;
+
+    toHex(digest, name);
+    n = encodeBlob(&b, rec);
+    rc = barrier();
+    if (rc == 0)
+        rc = RegFilesPut(g.cfg->blobDir, name, rec, n);
+    if (rc < 0)
+        markRange(offset, length, false, true);
+    return rc;
 }
 
 typedef struct {
