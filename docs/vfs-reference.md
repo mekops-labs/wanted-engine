@@ -156,7 +156,9 @@ share. The line is absent on a platform that stamps no digest.
 The wapp's root filesystem is **TarFS**: a read-only merge of the image's OCI layers (up to 4), newest-shadows-oldest. Any file packaged into the image appears here at its archived path.
 
 - **Layer merge** — a path resolved in the newest layer that defines it; an O(log N) sorted index avoids linear scans.
-- **Whiteouts** — a `.wh.<name>` entry in a newer layer logically deletes `<name>` from older layers.
+- **Whiteouts** — a `.wh.<name>` entry in a newer layer deletes `<name>` from older layers, and when `<name>` is a directory, everything under it. A whiteout hides nothing of its own layer, and a file of that layer wins over a whiteout of the same name.
+- **Opaque directories** — a `.wh..wh..opq` entry in a directory hides every older entry under that directory, at any depth. The entries of its own layer stay.
+- **Skipped entries** — hard links, symbolic links, device nodes and fifos are not served. The engine counts them when it loads the image and logs the count once. A directory holding only whiteouts or opaque markers does not exist.
 - **Format** — POSIX ustar, including PAX and GNU long-name entries.
 - **Read-only** — writes are rejected with `EROFS`. A wapp's writable storage is a **preopen** (a host directory bound into the namespace), not TarFS.
 

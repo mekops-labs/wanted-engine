@@ -613,6 +613,11 @@ int WantedWappRun(wapp_data_t *ctx) {
         return -1;
     }
 
+    if (TarFsSkipped(tarfs) > 0)
+        LOG_ERROR("wapp '%s': the image holds %u entries that cannot be served"
+                  " (links, devices, fifos)",
+                  wapp->name, (unsigned)TarFsSkipped(tarfs));
+
     wasm = TarFsEntrypointWasm(tarfs, &wasmLen);
     if (!wasm) {
         LOG_ERROR("wapp '%s': app.wasm absent from the image", wapp->name);

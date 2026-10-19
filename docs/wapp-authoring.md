@@ -35,7 +35,7 @@ hello@0.0.1-1.wapp           # the TAR (registry filename: <name>@<version>-<pac
 - **`app.wasm`** is the only mandatory entry; it is always named `app.wasm` *inside* the package regardless of its source filename. An image is just code plus optional data.
 - Every other entry appears to the wapp at its archived path. An asset at `assets/logo.png` is readable as `/assets/logo.png`.
 - The root is **read-only** (`EROFS` on write). Writable storage is a [preopen](#preopens), not a packaged file.
-- Multiple stacked layers merge newest-over-oldest with `.wh.<name>` whiteout deletion; see [VFS Reference → TarFS](vfs-reference.md#--tarfs-application-space). A single-layer image — one TAR — is the common case.
+- Multiple stacked layers merge newest-over-oldest, with `.wh.<name>` whiteouts and `.wh..wh..opq` opaque directories; see [VFS Reference → TarFS](vfs-reference.md#--tarfs-application-space). A single-layer image — one TAR — is the common case.
 
 ## Image identity
 

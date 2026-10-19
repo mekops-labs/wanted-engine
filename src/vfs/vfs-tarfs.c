@@ -15,6 +15,9 @@
 
 #define TAR_BLOCK_SIZE 512
 #define TARFS_WHITEOUT 0xFFFFU
+#define TARFS_OPAQUE 0xFFFEU
+#define OPAQUE_NAME ".wh..wh..opq"
+#define PROBE_MAX 512
 
 #define TAR_NAME_OFFSET 0
 #define TAR_NAME_LEN 100
@@ -55,6 +58,7 @@ struct vfs_tarfs_ctx_t {
     tar_index_entry_t *index;
     uint16_t index_len;
     uint16_t index_cap;
+    uint16_t skipped;
 
     /* Heap-owned path strings (whiteout targets — non-zero-copy). */
     char **owned;
@@ -250,6 +254,59 @@ static void parsePaxData(const uint8_t *data, size_t data_len,
 
 /* sorted_len: number of entries in ctx->index that are already sorted (i.e.
  * entries from all previously-indexed layers). Used for O(log N) dedup. */
+/* An entry that only marks a whiteout or an opaque directory. */
+static bool isMarker(const tar_index_entry_t *e) {
+    return e->layer_idx == TARFS_WHITEOUT || e->layer_idx == TARFS_OPAQUE;
+}
+
+/* Whether the sorted prefix [0, n) holds an entry of `kind` at exactly `path`.
+ * Entries with one path sit together, so the neighbours are checked too. */
+static bool indexHasKind(const tar_index_entry_t *idx, uint16_t n,
+                         const char *path, uint16_t kind) {
+    uint16_t lo = 0, hi = n;
+
+    while (lo < hi) {
+        uint16_t mid = lo + (uint16_t)((hi - lo) / 2);
+
+        if (strcmp(idx[mid].path_ptr, path) < 0)
+            lo = (uint16_t)(mid + 1);
+        else
+            hi = mid;
+    }
+    for (; lo < n && strcmp(idx[lo].path_ptr, path) == 0; lo++) {
+        if (idx[lo].layer_idx == kind)
+            return true;
+    }
+    return false;
+}
+
+/* Whether an entry of a newer layer already decides `path`: the path itself, a
+ * whiteout of a directory above it, or an opaque directory above it. */
+static bool coveredByNewer(const vfs_tarfs_ctx_t *ctx, uint16_t n,
+                           const char *path) {
+    char probe[PROBE_MAX];
+    size_t len = strlen(path);
+
+    if (indexContains(ctx->index, n, path))
+        return true;
+    if (indexHasKind(ctx->index, n, OPAQUE_NAME, TARFS_OPAQUE))
+        return true;
+    for (size_t i = 0; i < len && i + sizeof(OPAQUE_NAME) + 1 < PROBE_MAX;
+         i++) {
+        if (path[i] != '/')
+            continue;
+        memcpy(probe, path, i);
+        probe[i] = '\0';
+        if (indexHasKind(ctx->index, n, probe, TARFS_WHITEOUT))
+            return true;
+        probe[i] = '/';
+        memcpy(probe + i + 1, OPAQUE_NAME, sizeof(OPAQUE_NAME));
+        if (indexHasKind(ctx->index, n, probe, TARFS_OPAQUE))
+            return true;
+    }
+    return false;
+}
+
 static int indexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
                       uint16_t sorted_len) {
     const uint8_t *buf = ctx->layers[layer_idx];
@@ -404,20 +461,28 @@ static int indexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
         bool is_regular = (typeflag == '0' || typeflag == '\0');
         bool is_dir = (typeflag == '5');
 
-        /* Links, fifos, device nodes: unsupported. Directories are implicit
-         * (ReadDir uses path prefixes), so we don't index them either. */
+        /* Links, fifos, device nodes: unsupported, and counted. Directories
+         * are implicit (ReadDir uses path prefixes), so they are not indexed
+         * and not counted. */
         if (!is_regular || is_dir) {
+            if (!is_dir && ctx->skipped < UINT16_MAX)
+                ctx->skipped++;
             off = next_off;
             continue;
         }
 
         const char *base = pathBasename(eff_path);
-        bool is_whiteout = strncmp(base, ".wh.", 4) == 0 && base[4] != '\0';
+        bool is_opaque = strcmp(base, OPAQUE_NAME) == 0;
+        bool is_whiteout =
+            !is_opaque && strncmp(base, ".wh.", 4) == 0 && base[4] != '\0';
 
         const char *entry_path;
         uint16_t entry_layer;
 
-        if (is_whiteout) {
+        if (is_opaque) {
+            entry_path = eff_path;
+            entry_layer = TARFS_OPAQUE;
+        } else if (is_whiteout) {
             char *target = makeWhiteoutTarget(eff_path);
             if (!target)
                 return -ENOMEM;
@@ -433,16 +498,15 @@ static int indexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
             entry_layer = layer_idx;
         }
 
-        /* Newer-layer shadowing: first occurrence wins, so search only the
-         * sorted prefix from previous layers. Within-layer duplicates are the
-         * TAR writer's problem. */
-        if (indexContains(ctx->index, sorted_len, entry_path)) {
+        /* Newer layers decide first, so only the sorted prefix from them is
+         * searched; a whiteout or an opaque marker hides older layers only. */
+        if (coveredByNewer(ctx, sorted_len, entry_path)) {
             off = next_off;
             continue;
         }
 
         /* Pre-fetch the boot entrypoint from the topmost non-whiteout hit. */
-        if (!is_whiteout) {
+        if (!is_whiteout && !is_opaque) {
             if (strcmp(entry_path, "app.wasm") == 0 &&
                 ctx->entrypoint_wasm == NULL) {
                 ctx->entrypoint_wasm = buf + off + TAR_BLOCK_SIZE;
@@ -467,10 +531,16 @@ static int indexLayer(vfs_tarfs_ctx_t *ctx, uint8_t layer_idx,
     return 0;
 }
 
+/* By path; a file sorts before a marker of the same path, so a layer's own
+ * file is the one a lookup finds. */
 static int indexCmp(const void *a, const void *b) {
     const tar_index_entry_t *ea = a;
     const tar_index_entry_t *eb = b;
-    return strcmp(ea->path_ptr, eb->path_ptr);
+    int c = strcmp(ea->path_ptr, eb->path_ptr);
+
+    if (c != 0)
+        return c;
+    return (int)isMarker(ea) - (int)isMarker(eb);
 }
 
 /* Callers pass uint8_t *[]; const-qualifying the array elements would break
@@ -544,6 +614,10 @@ const uint8_t *TarFsEntrypointWasm(const vfs_tarfs_ctx_t *ctx, size_t *len) {
     return ctx->entrypoint_wasm;
 }
 
+uint16_t TarFsSkipped(const vfs_tarfs_ctx_t *ctx) {
+    return ctx ? ctx->skipped : 0;
+}
+
 uint16_t TarFsIndexLen(const vfs_tarfs_ctx_t *ctx) {
     return ctx ? ctx->index_len : 0;
 }
@@ -574,13 +648,23 @@ static const tar_index_entry_t *findExact(const vfs_tarfs_ctx_t *ctx,
     return NULL;
 }
 
+/* True when a file lives under `prefix`; a marker alone does not make a
+ * directory. */
 static bool directoryExists(const vfs_tarfs_ctx_t *ctx, const char *prefix,
                             size_t prefix_len) {
-    if (prefix_len == 0)
-        return ctx->index_len > 0;
-    uint16_t pos = lowerBound(ctx->index, ctx->index_len, prefix);
-    return pos < ctx->index_len &&
-           strncmp(ctx->index[pos].path_ptr, prefix, prefix_len) == 0;
+    uint16_t pos = 0;
+
+    if (prefix_len > 0)
+        pos = lowerBound(ctx->index, ctx->index_len, prefix);
+    for (; pos < ctx->index_len; pos++) {
+        const tar_index_entry_t *e = &ctx->index[pos];
+
+        if (prefix_len > 0 && strncmp(e->path_ptr, prefix, prefix_len) != 0)
+            return false;
+        if (!isMarker(e))
+            return true;
+    }
+    return false;
 }
 
 static tarfs_file_ctx_t *allocFileHandle(const tar_index_entry_t *e) {
@@ -649,9 +733,7 @@ void *TarFs_Open(const vfs_tarfs_ctx_t *ctx, const char *path,
 
     if (!trailing_slash) {
         const tar_index_entry_t *e = findExact(ctx, work);
-        if (e != NULL) {
-            if (e->layer_idx == TARFS_WHITEOUT)
-                return NULL;
+        if (e != NULL && !isMarker(e)) {
             if (flags & VFS_O_DIRECTORY)
                 return NULL;
             return allocFileHandle(e);
@@ -789,7 +871,7 @@ int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
         bool is_subdir = (slash != NULL);
         size_t namlen = is_subdir ? (size_t)(slash - suffix) : strlen(suffix);
 
-        if (!is_subdir && e->layer_idx == TARFS_WHITEOUT) {
+        if (!is_subdir && isMarker(e)) {
             i++;
             continue;
         }
@@ -807,6 +889,8 @@ int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
         if (is_subdir) {
             /* Sorted index keeps siblings under "<prefix><name>/" contiguous,
              * so dedup is a forward scan rather than a hash. */
+            bool has_file = !isMarker(e);
+
             next_i = (uint16_t)(i + 1);
             while (next_i < ctx->index_len) {
                 const char *p = ctx->index[next_i].path_ptr;
@@ -818,7 +902,13 @@ int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
                     break;
                 if (s[namlen] != '/')
                     break;
+                if (!isMarker(&ctx->index[next_i]))
+                    has_file = true;
                 next_i++;
+            }
+            if (!has_file) {
+                i = next_i;
+                continue;
             }
         } else {
             next_i = (uint16_t)(i + 1);
