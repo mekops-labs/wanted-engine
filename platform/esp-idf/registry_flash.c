@@ -13,7 +13,9 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "esp_heap_caps.h"
 #include "esp_partition.h"
+#include "esp_pthread.h"
 #include "spi_flash_mmap.h"
 
 #include <config-esp-idf.h>
@@ -30,6 +32,7 @@
 #define OLD_BATCH 8
 #define OLD_SLOT_TAIL 8
 #define MAP_MAX_PAGES 128
+#define HELPER_STACK_BYTES 4096
 
 typedef enum {
     JOB_MAP_RANGE,
@@ -99,16 +102,29 @@ static void *flashHelperMain(void *arg) {
     return NULL;
 }
 
-/* Starts the helper thread on first use. No esp_pthread_set_cfg call here: it
- * applies to the next pthread_create only, so this takes the plain default. */
+/* Starts the helper thread on first use. Its stack must be internal RAM: the
+ * mapping runs with the flash cache frozen. A creating thread's own pthread
+ * config would otherwise pass on, so the config is set here and put back. */
 static bool flashHelperEnsureStarted(void) {
+    esp_pthread_cfg_t prev;
+    esp_pthread_cfg_t cfg = esp_pthread_get_default_config();
+    bool hadPrev = esp_pthread_get_cfg(&prev) == ESP_OK;
+    int rc;
+
     if (g_flashHelperStarted)
         return true;
     if (sem_init(&g_flashJobReady, 0, 0) != 0)
         return false;
     if (sem_init(&g_flashJobDone, 0, 0) != 0)
         return false;
-    if (pthread_create(&g_flashHelperThread, NULL, flashHelperMain, NULL) != 0)
+    cfg.thread_name = "regflash";
+    cfg.stack_size = HELPER_STACK_BYTES;
+    cfg.stack_alloc_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    esp_pthread_set_cfg(&cfg);
+    rc = pthread_create(&g_flashHelperThread, NULL, flashHelperMain, NULL);
+    if (hadPrev)
+        esp_pthread_set_cfg(&prev);
+    if (rc != 0)
         return false;
     g_flashHelperStarted = true;
     return true;
