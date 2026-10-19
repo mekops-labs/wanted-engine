@@ -114,6 +114,8 @@ add_executable(
     ${CMAKE_SOURCE_DIR}/platform/registry/registry-page.c
     ${CMAKE_CURRENT_BINARY_DIR}/runner.c)
 target_link_libraries(tests unity ${project} platform_dummy)
+target_compile_definitions(
+    tests PRIVATE WANTED_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/test/fixtures")
 
 execute_process(
     COMMAND grep TEST_GROUP ${CMAKE_CURRENT_BINARY_DIR}/runner.c
