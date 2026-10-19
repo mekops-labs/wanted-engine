@@ -4,6 +4,11 @@ Changelog
 Unreleased
 ----------
 
+### Added
+
+- The ESP-IDF platform logs `serial: <hex>` on the console at every boot, when
+  the platform has a serial.
+
 ### Fixed
 
 - An ESP-IDF build stages the default launch configuration at every build,

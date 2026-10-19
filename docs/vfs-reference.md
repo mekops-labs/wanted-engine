@@ -95,6 +95,12 @@ frame. The line is absent, rather than empty, on a platform with no source for
 one: a container, a virtual machine with no DMI data, or a board whose
 firmware reports nothing.
 
+**ESP-IDF logs `serial` at every boot** on the console, as `serial: <hex>`,
+before the engine starts. Only the console shows it: it is not written to a
+wapp's log. Read the log of a board that is in hand, and give the value to
+`utils/ap-credentials.py` to get the SSID and passphrase of its setup access
+point.
+
 **Reading `serial` without writing a wapp**: boot the `wsh` debug supervisor
 (`just supervisor-variant wsh && just build`, see [Platform
 Guide](platform-guide.md#supervisor-variant)) and run `cat /proc/wanted` at

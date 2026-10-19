@@ -127,6 +127,11 @@ void app_main(void) {
     ESP_LOGI(TAG, "WANTED engine — ESP-IDF platform bring-up");
     ESP_LOGI(TAG, "platform: %s", PlatformName());
 
+    /* The input of the setup access point's passphrase, on the console only. */
+    char serial[PLATFORM_SERIAL_MAX_LEN + 1];
+    if (PlatformSerialNumber(serial, sizeof(serial)) > 0)
+        ESP_LOGI(TAG, "serial: %s", serial);
+
     /* A failed board init leaves its devices absent; the engine starts. */
     int boardRc = BoardInit();
     ESP_LOGI(TAG, "board: init -> rc=%d", boardRc);
