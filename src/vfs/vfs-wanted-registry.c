@@ -7,9 +7,11 @@
 #include <stdio.h>
 
 #include <vfs-drivers.h>
+#include <vfs-tarfs.h>
 #include <vfs.h>
 
 #include <wanted-vfs-api.h>
+#include <wanted_log.h>
 
 #include <platform.h>
 #include <registry.h>
@@ -34,14 +36,24 @@ static const char VERSION_SEPARATOR = ':';
 
 typedef enum {
     REG_FD_FREE = 0,
-    REG_FD_ROOT,  /* the mount root, enumerated with ReadDir */
-    REG_FD_ENTRY, /* one image, read as a synthesized descriptor */
-    REG_FD_WRITE, /* an install, named by the ref the open carried */
-    REG_FD_SIG,   /* a signature for the ref the open carried */
+    REG_FD_ROOT,   /* the mount root, enumerated with ReadDir */
+    REG_FD_ENTRY,  /* one image, read as a synthesized descriptor */
+    REG_FD_WRITE,  /* an install, named by the ref the open carried */
+    REG_FD_SIG,    /* a signature for the ref the open carried */
+    REG_FD_LAYER,  /* one layer of an image, named by ref and index */
+    REG_FD_COMMIT, /* the commit of an image's staged layers */
 } reg_fd_kind_t;
 
 /* Sibling route carrying an installed image's signature: "<ref>.sig". */
 #define REG_SIG_SUFFIX ".sig"
+/* Routes for an image of several layers: "<ref>#<n>" stages layer n, counted
+ * from the base, and "<ref>#layers" commits the layers staged for the ref. */
+#define REG_ROUTE_SEP '#'
+#define REG_ROUTE_COMMIT "layers"
+#define REG_LAYER_DIGITS 2
+/* Commit payload: the layer count, then optionally the image build time as a
+ * big-endian int64. */
+#define REG_COMMIT_MAX 9
 
 typedef struct {
     reg_fd_kind_t kind;
@@ -56,6 +68,10 @@ typedef struct {
     /* SIG: the payload buffered until close, which applies it whole. */
     uint8_t sig[REGISTRY_SIG_PAYLOAD_LEN];
     size_t sigLen;
+    /* LAYER: the layer index. COMMIT: the payload buffered until close. */
+    unsigned layer;
+    uint8_t commit[REG_COMMIT_MAX];
+    size_t commitLen;
 } reg_fd_t;
 
 static struct vfs_driver_ctx_t {
@@ -179,6 +195,47 @@ static reg_fd_t *getFd(vfs_driver_ctx_t d, int fd) {
     return &d->fds[fd];
 }
 
+/* Opens "<ref>#<n>" or "<ref>#layers" for write. */
+static int openLayerRoute(vfs_driver_ctx_t d, const char *path) {
+    const char *sep = strchr(path, REG_ROUTE_SEP);
+    const char *route = sep + 1;
+    size_t refLen = (size_t)(sep - path);
+    char ref[REG_REF_MAX];
+    unsigned layer = 0;
+    size_t digits = strlen(route);
+    int fd;
+
+    if (refLen == 0 || refLen >= REG_REF_MAX)
+        return -ENAMETOOLONG;
+    memcpy(ref, path, refLen);
+    ref[refLen] = '\0';
+    if (!validInstallRef(ref))
+        return -EINVAL;
+
+    if (strcmp(route, REG_ROUTE_COMMIT) == 0) {
+        fd = allocFd(d, REG_FD_COMMIT);
+    } else {
+        if (digits == 0 || digits > REG_LAYER_DIGITS)
+            return -EINVAL;
+        for (size_t i = 0; i < digits; i++) {
+            if (route[i] < '0' || route[i] > '9')
+                return -EINVAL;
+            layer = layer * 10 + (unsigned)(route[i] - '0');
+        }
+        if (layer >= TARFS_MAX_LAYERS) {
+            LOG_ERROR("%s: layer index %u is at the limit of %u layers", ref,
+                      layer, (unsigned)TARFS_MAX_LAYERS);
+            return -EINVAL;
+        }
+        fd = allocFd(d, REG_FD_LAYER);
+    }
+    if (fd < 0)
+        return fd;
+    memcpy(d->fds[fd].writeRef, ref, refLen + 1);
+    d->fds[fd].layer = layer;
+    return fd;
+}
+
 static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     int ret;
 
@@ -200,6 +257,9 @@ static int _Open(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
         size_t suffixLen = sizeof(REG_SIG_SUFFIX) - 1;
         if (path[0] == '\0')
             return -ENAMETOOLONG;
+
+        if (strchr(path, REG_ROUTE_SEP) != NULL)
+            return openLayerRoute(d, path);
 
         if (len > suffixLen &&
             strcmp(path + len - suffixLen, REG_SIG_SUFFIX) == 0) {
@@ -266,6 +326,25 @@ static int _Close(vfs_driver_ctx_t d, int fd) {
         if (len == 0)
             return 0;
         return WantedRegistrySetSignature(ref, payload, len);
+    }
+
+    if (f->kind == REG_FD_COMMIT) {
+        char ref[REG_REF_MAX];
+        uint8_t payload[REG_COMMIT_MAX];
+        size_t len = f->commitLen;
+
+        memcpy(ref, f->writeRef, sizeof(ref));
+        memcpy(payload, f->commit, sizeof(payload));
+        memset(f, 0, sizeof(*f));
+        if (len == 0)
+            return 0;
+        return WantedCommitRegistry(ref, payload, len);
+    }
+
+    if (f->kind == REG_FD_LAYER) {
+        finalize = f->startedWriting;
+        memset(f, 0, sizeof(*f));
+        return finalize ? WantedCloseRegistryLayer() : 0;
     }
 
     finalize = f->kind == REG_FD_WRITE && f->startedWriting;
@@ -336,6 +415,16 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
         f->sigLen += nbyte;
         return (int)nbyte;
     }
+    if (f->kind == REG_FD_COMMIT) {
+        if (f->commitLen + nbyte > sizeof(f->commit))
+            return -EMSGSIZE;
+        memcpy(f->commit + f->commitLen, buf, nbyte);
+        f->commitLen += nbyte;
+        return (int)nbyte;
+    }
+    if (f->kind == REG_FD_LAYER)
+        return WantedWriteRegistryLayer(&f->startedWriting, f->writeRef,
+                                        f->layer, buf, nbyte);
     /* Only an install accepts bytes; the root and a stored image do not. */
     if (f->kind != REG_FD_WRITE)
         return -EROFS;

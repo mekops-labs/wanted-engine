@@ -347,6 +347,43 @@ int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
     return RegistryWrite(CONTINUE_WRITE, ref, buf, bufLen);
 }
 
+int WantedWriteRegistryLayer(bool *cont, const char *ref, unsigned layer,
+                             const uint8_t *buf, size_t bufLen) {
+    if (buf == NULL)
+        return -EINVAL;
+    if (*cont == false) {
+        int ret = RegistryWriteLayer(START_WRITE, ref, layer, buf, bufLen);
+        if (ret < 0)
+            return ret;
+        *cont = true;
+        return ret;
+    }
+
+    return RegistryWriteLayer(CONTINUE_WRITE, ref, layer, buf, bufLen);
+}
+
+int WantedCloseRegistryLayer(void) {
+    return RegistryWriteLayer(FINISH_WRITE, NULL, 0, NULL, 0);
+}
+
+#define COMMIT_COUNT_ONLY 1
+#define COMMIT_WITH_CREATED 9
+
+int WantedCommitRegistry(const char *ref, const uint8_t *payload,
+                         size_t payloadLen) {
+    uint64_t created = 0;
+
+    if (ref == NULL || payload == NULL)
+        return -EINVAL;
+    if (payloadLen != COMMIT_COUNT_ONLY && payloadLen != COMMIT_WITH_CREATED)
+        return -EINVAL;
+    for (size_t i = 1; i < payloadLen; i++)
+        created = (created << 8) | payload[i];
+
+    return RegistryCommit(ref, payload[0], payloadLen == COMMIT_WITH_CREATED,
+                          (int64_t)created);
+}
+
 int WantedRegistryRemove(const reg_entry_t *entry) {
     if (entry == NULL)
         return -EINVAL;

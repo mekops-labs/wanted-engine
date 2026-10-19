@@ -24,6 +24,15 @@ const wantedConfig_t *WantedGetConfig(void);
 int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
                         size_t bufLen);
 int WantedCloseRegistry(void);
+/* Stage layer `layer` of the image `ref` names. A write that starts fails with
+ * the error the store gave; WantedCloseRegistryLayer ends it. */
+int WantedWriteRegistryLayer(bool *cont, const char *ref, unsigned layer,
+                             const uint8_t *buf, size_t bufLen);
+int WantedCloseRegistryLayer(void);
+/* Publish `ref` from its staged layers. `payload` is 1 byte, the layer count,
+ * or 9 bytes, the count then the image build time as a big-endian int64. */
+int WantedCommitRegistry(const char *ref, const uint8_t *payload,
+                         size_t payloadLen);
 int WantedRegistryRemove(const reg_entry_t *entry);
 /* Attach a signature to the installed image `ref` ("<name>[:<version>]")
  * names. `payload` is REGISTRY_SIG_PAYLOAD_LEN bytes: a big-endian key id
