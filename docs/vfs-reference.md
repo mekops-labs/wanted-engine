@@ -805,7 +805,7 @@ implicitly stop a running AP; only `ap_stop` or a fresh `connect` does.
 arguments — the driver derives both fields from the board's hardware serial
 (`/proc/wanted`'s `serial:` line): the SSID is a compiled-in prefix plus the
 low 24 bits of the serial in hex, carrying no secret; the passphrase is
-HMAC-SHA256 of the serial, rendered as its first 16 hex digits. A board
+HMAC-SHA256 of the serial, rendered as its first 8 hex digits. A board
 reporting no serial cannot host an AP — `ap_start` answers `-ENODEV` rather
 than falling back to a fixed passphrase.
 
