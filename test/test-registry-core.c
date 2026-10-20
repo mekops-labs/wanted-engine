@@ -851,6 +851,19 @@ TEST(registry_core, Remove_WhenTheListFails_KeepsTheBlob) {
     TEST_ASSERT_TRUE(storeHas("kept"));
 }
 
+TEST(registry_core, Blobs_AWalkSeesAnInstallMadeAfterTheLastOne) {
+    uint8_t digest[REGISTRY_DIGEST_LEN];
+
+    TEST_ASSERT_EQUAL_INT(0, installPlain("a:1", "first"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryBlobAt(0, digest));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, RegistryBlobAt(1, digest));
+    TEST_ASSERT_EQUAL_INT(0, installPlain("b:1", "second"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryBlobAt(1, digest));
+    TEST_ASSERT_EQUAL_INT(0, RegistryBlobAt(0, digest));
+    TEST_ASSERT_EQUAL_INT(0, RegistryBlobAt(1, digest));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, RegistryBlobAt(2, digest));
+}
+
 TEST(registry_core, Init_TwiceStartsTheStoresOnce) {
     TEST_ASSERT_EQUAL_INT(0, installPlain("app:1.0.0", "x"));
     RegistryInit();
@@ -867,6 +880,7 @@ TEST_GROUP_RUNNER(registry_core) {
                   Restart_WithMoreRecordsThanTheLimit_ReclaimsNothing);
     RUN_TEST_CASE(registry_core, Restart_WhenTheListFails_ReclaimsNothing);
     RUN_TEST_CASE(registry_core, Remove_WhenTheListFails_KeepsTheBlob);
+    RUN_TEST_CASE(registry_core, Blobs_AWalkSeesAnInstallMadeAfterTheLastOne);
     RUN_TEST_CASE(registry_core, Init_TwiceStartsTheStoresOnce);
     RUN_TEST_CASE(registry_core, PlainInstall_ListsOneLayerEntry);
     RUN_TEST_CASE(registry_core, PlainInstall_Replaces_FreesTheOldBlob);

@@ -69,6 +69,9 @@ static struct {
     uint8_t rec[REGISTRY_RECORD_MAX];
     uint8_t blobs[MAX_BLOBS][REGISTRY_DIGEST_LEN];
     uint8_t refs[MAX_BLOBS][REGISTRY_DIGEST_LEN];
+    /* g.blobs holds the visible blobs while this is set. */
+    bool visibleValid;
+    int visibleCount;
 } g;
 
 /* RegistryInit creates the lock before a second thread exists; the fallback
@@ -347,6 +350,7 @@ static void dropIfFree(const uint8_t digest[REGISTRY_DIGEST_LEN]) {
 static void reclaim(void) {
     size_t nRefs;
 
+    g.visibleValid = false;
     if (!listedDigests(&nRefs)) {
         LOG_ERROR("registry entries could not all be read; nothing reclaimed");
         return;
@@ -532,6 +536,7 @@ static int commitLocked(const registry_key_t *key, unsigned count,
     if (rc < 0)
         return rc;
     g.seq = meta.installSeq;
+    g.visibleValid = false;
 
     if (hadOld) {
         for (size_t i = 0; i < old.layerCount; i++)
@@ -749,8 +754,10 @@ int RegistryRemove(const reg_entry_t *entry) {
         rc = -EPERM;
     if (rc == 0)
         rc = p->ops->recDel(p, &key);
-    if (rc == 0)
+    if (rc == 0) {
+        g.visibleValid = false;
         dropAllIfFree(meta.layerDigest, meta.layerCount);
+    }
     unlock();
     return rc;
 }
@@ -1037,6 +1044,7 @@ int RegistryAddResident(const char *ref, const uint8_t *data, size_t len,
         slot->data = data;
         slot->len = len;
         slot->created = created;
+        g.visibleValid = false;
     }
     unlock();
     return slot != NULL ? 0 : -ENOSPC;
@@ -1116,14 +1124,17 @@ static bool blobLookup(const uint8_t digest[REGISTRY_DIGEST_LEN], uint32_t *len,
     return *entries > 0 && blobPresent(digest);
 }
 
+/* A walk starts at 0 and reads the list it built there. */
 int RegistryBlobAt(size_t n, uint8_t digest[REGISTRY_DIGEST_LEN]) {
-    int count;
     int rc = 0;
 
     lock();
     ensureReady();
-    count = visibleBlobs();
-    if (n >= (size_t)count)
+    if (n == 0 || !g.visibleValid) {
+        g.visibleCount = visibleBlobs();
+        g.visibleValid = true;
+    }
+    if (n >= (size_t)g.visibleCount)
         rc = -ENOENT;
     else
         memcpy(digest, g.blobs[n], REGISTRY_DIGEST_LEN);
@@ -1191,6 +1202,7 @@ int RegistryLinkLayer(const char *ref, unsigned layer,
 void RegistryClearResident(void) {
     lock();
     memset(g.resident, 0, sizeof(g.resident));
+    g.visibleValid = false;
     unlock();
 }
 
@@ -1213,6 +1225,7 @@ void RegistryDeinit(void) {
     }
     memset(g.maps, 0, sizeof(g.maps));
     memset(g.pending, 0, sizeof(g.pending));
+    g.visibleValid = false;
     g.ready = false;
     unlock();
 }
