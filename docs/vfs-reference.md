@@ -68,7 +68,7 @@ Each entry reads its value in one shot; a second read on the same fd returns EOF
 ```text
 platform:	linux
 version:	0.8.0+gf0d012c.20260713121818
-supervisor_abi:	3
+supervisor_abi:	2
 max_wapps:	3
 max_wapp_name:	15 B
 max_path:	256 B
@@ -88,7 +88,7 @@ serial:	0123456789abcdef
 reg_store:	files file unit=0 total=0 free=0 largest_free=0
 ```
 
-`reg_store` has one line for each registry store, after the `drivers` line. It carries the same figures as `/dev/wanted/reg_capacity`, for a wapp that holds no registry grant.
+`reg_store` has one line for each registry store, after the `drivers` line. It carries the same figures as `/dev/wanted/reg/capacity`, for a wapp that holds no registry grant.
 
 `serial` is the unit's own hardware identity, stable across reflashes: the SPI
 flash chip's factory id on ESP-IDF, the OTP device id on RP2350, and a
@@ -147,7 +147,7 @@ exact bytes that booted, thus a control plane confirming a firmware update
 compares it rather than `version`, which two builds of one source tree can
 share. The line is absent on a platform that stamps no digest.
 
-`supervisor_abi` is the version of the contract between the engine and a supervisor wapp: the shape of the `/dev/wanted` control plane, its verbs, and the wapp states it reports. It is bumped only when a supervisor built against an earlier value would misread this engine — never for an ordinary release, and never for an addition an older supervisor can ignore. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value; an engine reporting no ABI line at all is assumed compatible.
+`supervisor_abi` is the version of the contract between the engine and a supervisor wapp: the shape of the `/dev/wanted` control plane, its verbs, and the wapp states it reports. It is bumped only when a supervisor built against an earlier value would misread this engine — never for an ordinary release, and never for an addition an older supervisor can ignore. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value; an engine reporting no ABI line at all is assumed compatible. Version 2 moved the registry into one tree, `reg/images`, `reg/blobs` and `reg/capacity`.
 
 `platform` is the build target (`linux`, `nuttx`, `esp-idf`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
 

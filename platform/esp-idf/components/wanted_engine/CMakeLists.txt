@@ -36,7 +36,6 @@ set(vfs_srcs
     vfs-wanted-config.c
     vfs-wanted-wapps.c
     vfs-wanted-registry.c
-    vfs-wanted-reg-capacity.c
     vfs-virtual.c
     vfs-sha256.c
     vfs-ed25519.c

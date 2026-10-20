@@ -36,7 +36,7 @@ the same code can mean different things than it would on a native filesystem.
 | `ENOTSUP` | The driver does not implement this operation. | `OpenAt`/`readdir` on a driver that is a flat leaf; an op a virtual driver does not provide; `fcntl` changing the sync flags or the host console's mode; `fd_renumber` on a console slot or a preopen; `fd_fdstat_set_rights`; `proc_raise`. |
 | `ENOSYS` | The platform provides no backing for this call. | A filesystem op stubbed out on a constrained target (e.g. rename on a registry-only store). |
 | `EFBIG` / `ENOSPC` | The write exceeds a size or capacity bound. | A store or ring buffer at capacity; a write past a fixed region; a registry install with no room in the store, or no contiguous extent long enough. |
-| `E2BIG` | A registry commit names more layers than the build holds. | A `reg/<ref>#layers` write with a count above `max_layers`. |
+| `E2BIG` | A registry commit names more layers than the build holds. | A `reg/images/<ref>#layers` write with a count above `max_layers`. |
 | `EIO` | A backing I/O operation failed. | A host/flash read or write error under a driver. |
 
 ## Sockets (`/net`)

@@ -553,6 +553,75 @@ static bool appendMemoryProfile(const reg_entry_t *entry, char *buf, int *n,
     return true;
 }
 
+void WantedDigestToHex(const uint8_t digest[REGISTRY_META_DIGEST_LEN],
+                       char *hex) {
+    static const char digits[] = "0123456789abcdef";
+
+    for (size_t i = 0; i < REGISTRY_META_DIGEST_LEN; i++) {
+        *hex++ = digits[digest[i] >> 4];
+        *hex++ = digits[digest[i] & 0x0f];
+    }
+    *hex = '\0';
+}
+
+static int hexValue(char c) {
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    return -1;
+}
+
+int WantedDigestFromHex(const char *hex, size_t n,
+                        uint8_t digest[REGISTRY_META_DIGEST_LEN]) {
+    if (hex == NULL || n != REGISTRY_META_DIGEST_HEX_LEN)
+        return -EINVAL;
+    for (size_t i = 0; i < REGISTRY_META_DIGEST_LEN; i++) {
+        int hi = hexValue(*hex++);
+        int lo = hexValue(*hex++);
+
+        if (hi < 0 || lo < 0)
+            return -EINVAL;
+        digest[i] = (uint8_t)((hi << 4) | lo);
+    }
+    return 0;
+}
+
+int WantedRenderRegistryBlob(const uint8_t digest[REGISTRY_META_DIGEST_LEN],
+                             char *buf, size_t bufLen) {
+    registry_blob_info_t info;
+    int rc = RegistryBlobInfo(digest, &info);
+    int n;
+
+    if (rc < 0)
+        return rc;
+    n = snprintf(buf, bufLen,
+                 "{\"size\":%u,\"entries\":%u,\"mapped\":%s,"
+                 "\"resident\":%s,\"store\":\"%s\"}\n",
+                 (unsigned)info.size, (unsigned)info.entries,
+                 info.mapped ? "true" : "false",
+                 info.resident ? "true" : "false", info.store);
+    if (n < 0 || (size_t)n >= bufLen)
+        return -EMSGSIZE;
+    return n;
+}
+
+int WantedLinkRegistryLayer(const char *ref, unsigned layer,
+                            const uint8_t *payload, size_t payloadLen) {
+    uint8_t digest[REGISTRY_META_DIGEST_LEN];
+    size_t hexLen = REGISTRY_META_DIGEST_HEX_LEN;
+    int rc;
+
+    if (ref == NULL || payload == NULL)
+        return -EINVAL;
+    if (payloadLen == hexLen + 1 && payload[hexLen] == '\n')
+        payloadLen = hexLen;
+    rc = WantedDigestFromHex((const char *)payload, payloadLen, digest);
+    if (rc < 0)
+        return rc;
+    return RegistryLinkLayer(ref, layer, digest);
+}
+
 int WantedRenderRegistryCapacity(char *buf, size_t bufLen) {
     registry_capacity_t cap[REGISTRY_MAX_STORES];
     int n = RegistryCapacity(cap, REGISTRY_MAX_STORES);

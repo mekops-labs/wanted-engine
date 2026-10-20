@@ -53,14 +53,18 @@ TEST_TEAR_DOWN(vfs_registry_driver) { CloseAll(); }
 /* Open `path` for reading and return its descriptor, failing the test if the
  * open did not succeed. */
 static int OpenEntry(const char *path) {
-    int fd = drv->Open(drv->ctx, path, VFS_O_RDONLY);
+    char full[96];
+    int fd;
+
+    snprintf(full, sizeof(full), "images/%s", path);
+    fd = drv->Open(drv->ctx, full, VFS_O_RDONLY);
     TEST_ASSERT_TRUE_MESSAGE(fd >= 0, path);
     return fd;
 }
 
 TEST(vfs_registry_driver, OpenRoot_LoadsEntries) {
     SeedTwo();
-    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "/", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "images", VFS_O_RDONLY));
 
     vfs_stat_t st;
     TEST_ASSERT_EQUAL_INT(0, drv->Stat(drv->ctx, 0, &st));
@@ -74,19 +78,21 @@ TEST(vfs_registry_driver, OpenNullPath_ReturnsEinval) {
 
 TEST(vfs_registry_driver, OpenEntry_ReturnsDistinctDescriptors) {
     SeedTwo();
-    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "/", VFS_O_RDONLY));
-    TEST_ASSERT_EQUAL_INT(1, drv->Open(drv->ctx, "app1", VFS_O_RDONLY));
-    TEST_ASSERT_EQUAL_INT(2, drv->Open(drv->ctx, "app2", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "images", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(1, drv->Open(drv->ctx, "images/app1", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(2, drv->Open(drv->ctx, "images/app2", VFS_O_RDONLY));
 }
 
 TEST(vfs_registry_driver, OpenEntryByNameVersion_ReturnsFd) {
     SeedTwo();
-    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "app2:2.3.4", VFS_O_RDONLY) >= 0);
+    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "images/app2:2.3.4", VFS_O_RDONLY) >=
+                     0);
 }
 
 TEST(vfs_registry_driver, OpenUnknown_ReturnsEnoent) {
     SeedTwo();
-    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Open(drv->ctx, "ghost", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          drv->Open(drv->ctx, "images/ghost", VFS_O_RDONLY));
 }
 
 TEST(vfs_registry_driver, StatEntry_IsRegularFile) {
@@ -101,7 +107,7 @@ TEST(vfs_registry_driver, StatEntry_IsRegularFile) {
 
 TEST(vfs_registry_driver, Stat_BadFd_ReturnsEbadf) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
 
     vfs_stat_t st;
     TEST_ASSERT_EQUAL_INT(-EBADF, drv->Stat(drv->ctx, 99, &st));
@@ -111,7 +117,7 @@ TEST(vfs_registry_driver, Stat_BadFd_ReturnsEbadf) {
 
 TEST(vfs_registry_driver, ReadRoot_IsDirectory) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
 
     /* The registry root is a directory; reading it as a file is rejected.
      * Enumeration is via ReadDir. */
@@ -138,13 +144,13 @@ TEST(vfs_registry_driver, ReadEntry_DescriptorSynthesized) {
 
 TEST(vfs_registry_driver, Read_NullBuf_ReturnsEinval) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Read(drv->ctx, 0, NULL, 16));
 }
 
 TEST(vfs_registry_driver, Read_NotOpened_ReturnsEbadf) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
     drv->Close(drv->ctx, 0);
 
     uint8_t buf[16];
@@ -153,7 +159,7 @@ TEST(vfs_registry_driver, Read_NotOpened_ReturnsEbadf) {
 
 TEST(vfs_registry_driver, ReadDir_ListsNameVersionPairs) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
 
     uint8_t buf[256];
     uint64_t cookie = 0;
@@ -173,7 +179,7 @@ TEST(vfs_registry_driver, Write_EntryFd_ReturnsErofs) {
 
 TEST(vfs_registry_driver, Write_NotOpened_ReturnsEbadf) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
     drv->Close(drv->ctx, 0);
     TEST_ASSERT_EQUAL_INT(-EBADF, drv->Write(drv->ctx, 0, "x", 1));
 }
@@ -181,18 +187,19 @@ TEST(vfs_registry_driver, Write_NotOpened_ReturnsEbadf) {
 TEST(vfs_registry_driver, OpenForWrite_ByRef_ReturnsWriteFd) {
     /* Opening a "<name>:<ver>" path for write is an install: it names the image
      * by the ref and answers a descriptor the bytes go to. */
-    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY) >= 0);
+    TEST_ASSERT_TRUE(
+        drv->Open(drv->ctx, "images/newapp:1.0.0-1", VFS_O_WRONLY) >= 0);
 }
 
 TEST(vfs_registry_driver, WriteRootNoRef_ReturnsErofs) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
     /* The registry root is not writable; an install must open by ref. */
     TEST_ASSERT_EQUAL_INT(-EROFS, drv->Write(drv->ctx, 0, "{}", 2));
 }
 
 TEST(vfs_registry_driver, WriteByRef_FirstChunk_StartsInstall) {
-    drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
+    drv->Open(drv->ctx, "images/newapp:1.0.0-1", VFS_O_WRONLY);
     TEST_ASSERT_EQUAL_INT(2, drv->Write(drv->ctx, 0, "{}", 2));
 }
 
@@ -201,62 +208,68 @@ TEST(vfs_registry_driver, WriteByRef_FirstChunk_StartsInstall) {
  * and within its length bound. */
 TEST(vfs_registry_driver, OpenForWrite_InvalidRef_ReturnsEinval) {
     /* whitespace is not in the grammar (name and tag halves) */
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, drv->Open(drv->ctx, "images/bad name:1.0", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, drv->Open(drv->ctx, "images/app:bad tag", VFS_O_WRONLY));
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "bad name:1.0", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app:bad tag", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app name", VFS_O_WRONLY));
+                          drv->Open(drv->ctx, "images/app name", VFS_O_WRONLY));
     /* a tag carries no second separator */
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app:1:2", VFS_O_WRONLY));
+                          drv->Open(drv->ctx, "images/app:1:2", VFS_O_WRONLY));
     /* empty name or empty tag */
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, ":1.0", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "images/:1.0", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          drv->Open(drv->ctx, "images/app:", VFS_O_WRONLY));
     /* component may not start with a separator-class char */
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "-app:1.0", VFS_O_WRONLY));
+                          drv->Open(drv->ctx, "images/-app:1.0", VFS_O_WRONLY));
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app:.1.0", VFS_O_WRONLY));
+                          drv->Open(drv->ctx, "images/app:.1.0", VFS_O_WRONLY));
     /* a stray punctuation char outside the class */
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app:tag!", VFS_O_WRONLY));
+                          drv->Open(drv->ctx, "images/app:tag!", VFS_O_WRONLY));
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "ap/p:1.0", VFS_O_WRONLY));
+                          drv->Open(drv->ctx, "images/ap/p:1.0", VFS_O_WRONLY));
     /* name at/over its length bound (16 ≥ WAPP_MAX_NAME_LEN) */
     TEST_ASSERT_EQUAL_INT(
-        -EINVAL, drv->Open(drv->ctx, "aaaaaaaaaaaaaaaa:1", VFS_O_WRONLY));
+        -EINVAL,
+        drv->Open(drv->ctx, "images/aaaaaaaaaaaaaaaa:1", VFS_O_WRONLY));
     /* tag at/over its length bound (16 ≥ WAPP_MAX_VERSION_LEN) */
     TEST_ASSERT_EQUAL_INT(
-        -EINVAL, drv->Open(drv->ctx, "app:aaaaaaaaaaaaaaaa", VFS_O_WRONLY));
+        -EINVAL,
+        drv->Open(drv->ctx, "images/app:aaaaaaaaaaaaaaaa", VFS_O_WRONLY));
 }
 
 /* In-grammar refs are accepted — bare name (first-match) and pinned tags,
  * numeric or not — each answering its own descriptor. */
 TEST(vfs_registry_driver, OpenForWrite_ValidRefs_Accepted) {
-    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "app", VFS_O_WRONLY) >= 0);
-    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "app:1.0.0-1", VFS_O_WRONLY) >= 0);
-    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "app:stable", VFS_O_WRONLY) >= 0);
-    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "my_app.v2:latest", VFS_O_WRONLY) >=
+    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "images/app", VFS_O_WRONLY) >= 0);
+    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "images/app:1.0.0-1", VFS_O_WRONLY) >=
                      0);
+    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "images/app:stable", VFS_O_WRONLY) >=
+                     0);
+    TEST_ASSERT_TRUE(
+        drv->Open(drv->ctx, "images/my_app.v2:latest", VFS_O_WRONLY) >= 0);
 }
 
 TEST(vfs_registry_driver, Read_FdBeyondEntries_ReturnsEbadf) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
     uint8_t buf[16];
     TEST_ASSERT_EQUAL_INT(-EBADF, drv->Read(drv->ctx, 99, buf, sizeof(buf)));
 }
 
 TEST(vfs_registry_driver, Write_NullBuf_ReturnsEinval) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Write(drv->ctx, 0, NULL, 1));
 }
 
 TEST(vfs_registry_driver, ReadDir_NullBuf_ReturnsEinval) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
     uint64_t cookie = 0;
     size_t used = 0;
     TEST_ASSERT_EQUAL_INT(-EINVAL,
@@ -265,7 +278,7 @@ TEST(vfs_registry_driver, ReadDir_NullBuf_ReturnsEinval) {
 
 TEST(vfs_registry_driver, ReadDir_NotOpened_ReturnsEbadf) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
     drv->Close(drv->ctx, 0);
     uint8_t buf[64];
     uint64_t cookie = 0;
@@ -276,27 +289,27 @@ TEST(vfs_registry_driver, ReadDir_NotOpened_ReturnsEbadf) {
 
 TEST(vfs_registry_driver, Unlink_ByNameVersion_RemovesEntry) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
-    TEST_ASSERT_EQUAL_INT(0, drv->Unlink(drv->ctx, 0, "app2:2.3.4"));
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(0, drv->Unlink(drv->ctx, 0, "images/app2:2.3.4"));
     TEST_ASSERT_EQUAL_INT(1, RegistryRead(NULL, 0));
 }
 
 TEST(vfs_registry_driver, Unlink_RemovesEntry) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
 
-    TEST_ASSERT_EQUAL_INT(0, drv->Unlink(drv->ctx, 0, "app1"));
+    TEST_ASSERT_EQUAL_INT(0, drv->Unlink(drv->ctx, 0, "images/app1"));
     TEST_ASSERT_EQUAL_INT(1, RegistryRead(NULL, 0));
 }
 
 TEST(vfs_registry_driver, Unlink_Unknown_ReturnsEnoent) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
-    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Unlink(drv->ctx, 0, "ghost"));
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Unlink(drv->ctx, 0, "images/ghost"));
 }
 
 TEST(vfs_registry_driver, Close_AfterFailedStart_DoesNotFinalize) {
-    drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
+    drv->Open(drv->ctx, "images/newapp:1.0.0-1", VFS_O_WRONLY);
     /* A store with no room refuses the first chunk, so nothing is in flight
      * and the close has nothing to finalize. */
     RegistryMemSetLimit(1);
@@ -321,39 +334,42 @@ TEST(vfs_registry_driver, OpenEntry_WithoutOpeningRoot_Resolves) {
     /* A caller asking whether one image is installed never enumerates the
      * directory, so the lookup must load the entries itself. */
     SeedTwo();
-    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "app1:1.0.0", VFS_O_RDONLY) >= 0);
+    TEST_ASSERT_TRUE(drv->Open(drv->ctx, "images/app1:1.0.0", VFS_O_RDONLY) >=
+                     0);
 }
 
 TEST(vfs_registry_driver, OpenEntry_NamePrefix_ReturnsEnoent) {
     /* "app1" must not answer for a longer name that starts with it. */
     SeedTwo();
-    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Open(drv->ctx, "app1x", VFS_O_RDONLY));
     TEST_ASSERT_EQUAL_INT(-ENOENT,
-                          drv->Open(drv->ctx, "app1x:1.0.0", VFS_O_RDONLY));
+                          drv->Open(drv->ctx, "images/app1x", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -ENOENT, drv->Open(drv->ctx, "images/app1x:1.0.0", VFS_O_RDONLY));
 }
 
 TEST(vfs_registry_driver, OpenEntry_WrongVersion_ReturnsEnoent) {
     SeedTwo();
-    TEST_ASSERT_EQUAL_INT(-ENOENT,
-                          drv->Open(drv->ctx, "app1:9.9.9", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -ENOENT, drv->Open(drv->ctx, "images/app1:9.9.9", VFS_O_RDONLY));
 }
 
 TEST(vfs_registry_driver, Unlink_WithoutOpeningRoot_RemovesEntry) {
     SeedTwo();
-    TEST_ASSERT_EQUAL_INT(0, drv->Unlink(drv->ctx, 0, "app2:2.3.4"));
-    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Open(drv->ctx, "app2", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Unlink(drv->ctx, 0, "images/app2:2.3.4"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          drv->Open(drv->ctx, "images/app2", VFS_O_RDONLY));
 }
 
 TEST(vfs_registry_driver, Unlink_NamePrefix_ReturnsEnoent) {
     SeedTwo();
-    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Unlink(drv->ctx, 0, "app1x"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Unlink(drv->ctx, 0, "images/app1x"));
 }
 
 /* State is per descriptor: opening and closing another one must not
  * disturb an install. */
 TEST(vfs_registry_driver, Install_SurvivesAnotherDescriptorClosing) {
     SeedTwo();
-    int install = drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
+    int install = drv->Open(drv->ctx, "images/newapp:1.0.0-1", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(install >= 0);
 
     int other = OpenEntry("app1");
@@ -365,8 +381,8 @@ TEST(vfs_registry_driver, Install_SurvivesAnotherDescriptorClosing) {
 
 /* An install must not be renamed by a later open. */
 TEST(vfs_registry_driver, Install_KeepsItsRefAcrossAnotherOpen) {
-    int first = drv->Open(drv->ctx, "newapp:1.0.0-1", VFS_O_WRONLY);
-    int second = drv->Open(drv->ctx, "other:2.0.0", VFS_O_WRONLY);
+    int first = drv->Open(drv->ctx, "images/newapp:1.0.0-1", VFS_O_WRONLY);
+    int second = drv->Open(drv->ctx, "images/other:2.0.0", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(first >= 0);
     TEST_ASSERT_TRUE(second >= 0);
     TEST_ASSERT_TRUE(first != second);
@@ -390,7 +406,7 @@ TEST(vfs_registry_driver, Open_TableExhausted_ReturnsEmfile) {
     SeedTwo();
     int last = 0;
     for (int i = 0; i < 32 && last >= 0; i++)
-        last = drv->Open(drv->ctx, "app1", VFS_O_RDONLY);
+        last = drv->Open(drv->ctx, "images/app1", VFS_O_RDONLY);
     TEST_ASSERT_EQUAL_INT(-EMFILE, last);
 }
 
@@ -413,7 +429,7 @@ TEST(vfs_registry_driver, ReadDir_EntryFd_ReturnsEnotdir) {
  * buffer would hand the reader bytes this never wrote. */
 TEST(vfs_registry_driver, ReadDir_ShortBuffer_ReportsWhatItWrote) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
 
     /* Room for one entry only. */
     uint8_t buf[sizeof(vfs_dirent_t) + 16];
@@ -434,7 +450,7 @@ TEST(vfs_registry_driver, ReadDir_ShortBuffer_ReportsWhatItWrote) {
  * or never terminate. */
 TEST(vfs_registry_driver, ReadDir_ShortBuffer_WalksEveryEntryOnce) {
     SeedTwo();
-    drv->Open(drv->ctx, "/", VFS_O_RDONLY);
+    drv->Open(drv->ctx, "images", VFS_O_RDONLY);
 
     uint8_t buf[sizeof(vfs_dirent_t) + 16];
     uint64_t cookie = 0;
@@ -475,7 +491,7 @@ TEST(vfs_registry_driver, Sig_Write_RecordsSignatureOnEntry) {
     SeedTwo();
     MakeSigPayload(payload, 3, 0xab);
 
-    int fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    int fd = drv->Open(drv->ctx, "images/app1:1.0.0.sig", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(fd >= 0);
     TEST_ASSERT_EQUAL_INT(sizeof(payload),
                           drv->Write(drv->ctx, fd, payload, sizeof(payload)));
@@ -496,7 +512,7 @@ TEST(vfs_registry_driver, Sig_ArrivesInChunks_AppliedWhole) {
     SeedTwo();
     MakeSigPayload(payload, 1, 0x5a);
 
-    int fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    int fd = drv->Open(drv->ctx, "images/app1:1.0.0.sig", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(fd >= 0);
     TEST_ASSERT_EQUAL_INT(10, drv->Write(drv->ctx, fd, payload, 10));
     TEST_ASSERT_EQUAL_INT(
@@ -516,7 +532,7 @@ TEST(vfs_registry_driver, Sig_ShortPayload_RefusedAtClose) {
     SeedTwo();
     MakeSigPayload(payload, 1, 0x11);
 
-    int fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    int fd = drv->Open(drv->ctx, "images/app1:1.0.0.sig", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(fd >= 0);
     TEST_ASSERT_EQUAL_INT(20, drv->Write(drv->ctx, fd, payload, 20));
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Close(drv->ctx, fd));
@@ -531,7 +547,7 @@ TEST(vfs_registry_driver, Sig_OversizePayload_ReturnsEmsgsize) {
     SeedTwo();
     memset(payload, 0, sizeof(payload));
 
-    int fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    int fd = drv->Open(drv->ctx, "images/app1:1.0.0.sig", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(fd >= 0);
     TEST_ASSERT_EQUAL_INT(-EMSGSIZE,
                           drv->Write(drv->ctx, fd, payload, sizeof(payload)));
@@ -543,7 +559,7 @@ TEST(vfs_registry_driver, Sig_VersionlessRef_ReturnsEinval) {
     SeedTwo();
     MakeSigPayload(payload, 1, 0x22);
 
-    int fd = drv->Open(drv->ctx, "app1.sig", VFS_O_WRONLY);
+    int fd = drv->Open(drv->ctx, "images/app1.sig", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(fd >= 0);
     TEST_ASSERT_EQUAL_INT(sizeof(payload),
                           drv->Write(drv->ctx, fd, payload, sizeof(payload)));
@@ -556,7 +572,7 @@ TEST(vfs_registry_driver, Sig_UnknownImage_ReturnsEnoent) {
     SeedTwo();
     MakeSigPayload(payload, 1, 0x33);
 
-    int fd = drv->Open(drv->ctx, "ghost:9.9.9.sig", VFS_O_WRONLY);
+    int fd = drv->Open(drv->ctx, "images/ghost:9.9.9.sig", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(fd >= 0);
     TEST_ASSERT_EQUAL_INT(sizeof(payload),
                           drv->Write(drv->ctx, fd, payload, sizeof(payload)));
@@ -568,7 +584,7 @@ TEST(vfs_registry_driver, Sig_NoBytesWritten_IsNoOp) {
     reg_entry_t entry = MakeEntry("app1", "1.0.0", 42);
 
     SeedTwo();
-    int fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    int fd = drv->Open(drv->ctx, "images/app1:1.0.0.sig", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(fd >= 0);
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
 
@@ -577,8 +593,8 @@ TEST(vfs_registry_driver, Sig_NoBytesWritten_IsNoOp) {
 }
 
 TEST(vfs_registry_driver, Sig_InvalidRef_ReturnsEinvalAtOpen) {
-    TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app 1:1.0.0.sig", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, drv->Open(drv->ctx, "images/app 1:1.0.0.sig", VFS_O_WRONLY));
 }
 
 TEST(vfs_registry_driver, MetaRead_SeededEntry_CarriesStoredSize) {
@@ -604,7 +620,7 @@ TEST(vfs_registry_driver, Descriptor_ReportsWhetherTheEntryIsSigned) {
     drv->Close(drv->ctx, fd);
 
     MakeSigPayload(payload, 1, 0xc3);
-    fd = drv->Open(drv->ctx, "app1:1.0.0.sig", VFS_O_WRONLY);
+    fd = drv->Open(drv->ctx, "images/app1:1.0.0.sig", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(fd >= 0);
     drv->Write(drv->ctx, fd, payload, sizeof(payload));
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));

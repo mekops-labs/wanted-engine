@@ -6,7 +6,6 @@
 
 extern const vfs_driver_t WantedConfigDriver;
 extern const vfs_driver_t WantedRegistryDriver;
-extern const vfs_driver_t WantedRegCapacityDriver;
 extern const vfs_driver_t WantedWappsDriver;
 extern const vfs_driver_t WantedCtlDriver;
 
@@ -27,11 +26,6 @@ vfs_driver_t *VfsWantedInit(const wapp_t *wapp, const char *opt) {
     ret = drv->Register(drv->ctx, "reg", &WantedRegistryDriver);
     if (ret < 0) {
         DEBUG_TRACE("can't register reg (%d)", ret);
-        return NULL;
-    }
-    ret = drv->Register(drv->ctx, "reg_capacity", &WantedRegCapacityDriver);
-    if (ret < 0) {
-        DEBUG_TRACE("can't register reg_capacity (%d)", ret);
         return NULL;
     }
     /* Control plane: a path-addressed per-wapp namespace (wapps/<name>/...)

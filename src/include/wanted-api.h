@@ -19,7 +19,7 @@
 /* Version of the contract between the engine and a supervisor wapp: the shape
  * of the /dev/wanted control plane, its verbs, and the wapp states it reports.
  * Bump only when a supervisor built against an earlier value would misread. */
-#define WANTED_SUPERVISOR_ABI 1
+#define WANTED_SUPERVISOR_ABI 2
 
 #define WAPP_MAX_NAME_LEN 15
 #define WAPP_MAX_VERSION_LEN 15

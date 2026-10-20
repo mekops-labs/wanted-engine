@@ -43,8 +43,12 @@ TEST_TEAR_DOWN(vfs_registry_layers) {
     DummyRegistryReset();
 }
 
-static int openWrite(const char *path) {
-    int fd = drv->Open(drv->ctx, path, VFS_O_WRONLY);
+static int openWrite(const char *ref) {
+    char path[96];
+    int fd;
+
+    snprintf(path, sizeof(path), "images/%s", ref);
+    fd = drv->Open(drv->ctx, path, VFS_O_WRONLY);
 
     TEST_ASSERT_TRUE_MESSAGE(fd >= 0, path);
     return fd;
@@ -147,35 +151,38 @@ TEST(vfs_registry_layers, Commit_CountOfZeroOrAboveTheLimit_IsRefused) {
 TEST(vfs_registry_layers, LayerIndex_AtTheLimit_IsRefusedAtOpen) {
     char path[64];
 
-    snprintf(path, sizeof(path), "app:1.0.0#%d", REGISTRY_META_MAX_LAYERS);
+    snprintf(path, sizeof(path), "images/app:1.0.0#%d",
+             REGISTRY_META_MAX_LAYERS);
     TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, path, VFS_O_WRONLY));
-    snprintf(path, sizeof(path), "app:1.0.0#%d", REGISTRY_META_MAX_LAYERS - 1);
+    snprintf(path, sizeof(path), "images/app:1.0.0#%d",
+             REGISTRY_META_MAX_LAYERS - 1);
     TEST_ASSERT_TRUE(drv->Open(drv->ctx, path, VFS_O_WRONLY) >= 0);
 }
 
 TEST(vfs_registry_layers, RouteGrammar_RefusesWhatIsNotARoute) {
-    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Open(drv->ctx, "app:1#", VFS_O_WRONLY));
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app:1#x", VFS_O_WRONLY));
+                          drv->Open(drv->ctx, "images/app:1#", VFS_O_WRONLY));
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app:1#001", VFS_O_WRONLY));
+                          drv->Open(drv->ctx, "images/app:1#x", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, drv->Open(drv->ctx, "images/app:1#001", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, drv->Open(drv->ctx, "images/app:1#0.sig", VFS_O_WRONLY));
     TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app:1#0.sig", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "ap#p:1#0", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(-EINVAL,
-                          drv->Open(drv->ctx, "app 1:1#0", VFS_O_WRONLY));
+                          drv->Open(drv->ctx, "images/ap#p:1#0", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, drv->Open(drv->ctx, "images/app 1:1#0", VFS_O_WRONLY));
     TEST_ASSERT_EQUAL_INT(-ENAMETOOLONG,
-                          drv->Open(drv->ctx, "#0", VFS_O_WRONLY));
+                          drv->Open(drv->ctx, "images/#0", VFS_O_WRONLY));
 }
 
 TEST(vfs_registry_layers, RouteIsNotAnEntryToRead) {
     sendLayer("app:1.0.0#0", "base");
     TEST_ASSERT_EQUAL_INT(0, commitCount("app:1.0.0", 1));
-    TEST_ASSERT_EQUAL_INT(-ENOENT,
-                          drv->Open(drv->ctx, "app:1.0.0#0", VFS_O_RDONLY));
     TEST_ASSERT_EQUAL_INT(
-        -ENOENT, drv->Open(drv->ctx, "app:1.0.0#layers", VFS_O_RDONLY));
+        -ENOENT, drv->Open(drv->ctx, "images/app:1.0.0#0", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(
+        -ENOENT, drv->Open(drv->ctx, "images/app:1.0.0#layers", VFS_O_RDONLY));
 }
 
 TEST(vfs_registry_layers, TwoLayerWritesAtOnce_TheSecondGetsEbusy) {
@@ -216,7 +223,7 @@ TEST(vfs_registry_layers, Descriptor_ReportsLayersTimesAndUse) {
     sendLayer("app:1.0.0#1", "top");
     TEST_ASSERT_EQUAL_INT(0, commit("app:1.0.0", payload, sizeof(payload)));
 
-    fd = drv->Open(drv->ctx, "app:1.0.0", VFS_O_RDONLY);
+    fd = drv->Open(drv->ctx, "images/app:1.0.0", VFS_O_RDONLY);
     TEST_ASSERT_TRUE(fd >= 0);
     n = drv->Read(drv->ctx, fd, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
@@ -230,7 +237,7 @@ TEST(vfs_registry_layers, Descriptor_ReportsLayersTimesAndUse) {
     drv->Close(drv->ctx, fd);
 
     TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&e, &wapp));
-    fd = drv->Open(drv->ctx, "app:1.0.0", VFS_O_RDONLY);
+    fd = drv->Open(drv->ctx, "images/app:1.0.0", VFS_O_RDONLY);
     n = drv->Read(drv->ctx, fd, buf, sizeof(buf) - 1);
     buf[n] = '\0';
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"mapped\":true"));
@@ -249,7 +256,7 @@ TEST(vfs_registry_layers, Descriptor_ReportsTheInstallTimeOfASetClock) {
     sendLayer("app:1.0.0#0", "base");
     TEST_ASSERT_EQUAL_INT(0, commitCount("app:1.0.0", 1));
 
-    fd = drv->Open(drv->ctx, "app:1.0.0", VFS_O_RDONLY);
+    fd = drv->Open(drv->ctx, "images/app:1.0.0", VFS_O_RDONLY);
     n = drv->Read(drv->ctx, fd, buf, sizeof(buf) - 1);
     buf[n] = '\0';
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"clock_set\":true"));

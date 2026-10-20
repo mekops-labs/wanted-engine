@@ -16,6 +16,8 @@
 #define REGISTRY_META_MAGIC 0x57415034u    /* "WAP4" */
 #define REGISTRY_META_MAGIC_V3 0x57415033u /* "WAP3": one layer, no times */
 #define REGISTRY_META_DIGEST_LEN 32
+/* A digest as lowercase hex, without the NUL. */
+#define REGISTRY_META_DIGEST_HEX_LEN 64
 #define REGISTRY_META_SIG_LEN 64
 #define REGISTRY_META_MAX_LAYERS TARFS_MAX_LAYERS
 

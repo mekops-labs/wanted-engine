@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <registry-meta.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -43,6 +44,22 @@ int WantedRegistrySetSignature(const char *ref, const uint8_t *payload,
  * and the linear-memory profile read from the merged image. */
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen);
+
+/* A blob digest as the 64 lowercase hex digits a registry name carries. `hex`
+ * takes 65 bytes. */
+void WantedDigestToHex(const uint8_t digest[REGISTRY_META_DIGEST_LEN],
+                       char *hex);
+/* The reverse. -EINVAL unless `n` is 64 and every character is a lowercase hex
+ * digit. */
+int WantedDigestFromHex(const char *hex, size_t n,
+                        uint8_t digest[REGISTRY_META_DIGEST_LEN]);
+/* Describe the blob `digest` names as a JSON object, or -ENOENT. */
+int WantedRenderRegistryBlob(const uint8_t digest[REGISTRY_META_DIGEST_LEN],
+                             char *buf, size_t bufLen);
+/* Stage layer `layer` of `ref` as the blob named by `payload`: 64 hex digits,
+ * then an optional newline. -EINVAL for any other payload. */
+int WantedLinkRegistryLayer(const char *ref, unsigned layer,
+                            const uint8_t *payload, size_t payloadLen);
 
 /* Render the capacity of each registry store as a JSON array of objects, with
  * sizes in bytes. Returns the length, or -EMSGSIZE when `bufLen` is too small.

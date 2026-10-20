@@ -15,9 +15,9 @@
 #include "dummy-fs.h"
 #include "test-utils.h"
 
-/* vfs_reg_capacity — the read-only capacity node beside "reg". */
+/* vfs_reg_capacity — the read-only "capacity" node of the registry tree. */
 
-extern const vfs_driver_t WantedRegCapacityDriver;
+extern const vfs_driver_t WantedRegistryDriver;
 
 TEST_GROUP(vfs_reg_capacity);
 
@@ -25,12 +25,12 @@ static const vfs_driver_t *drv;
 
 TEST_SETUP(vfs_reg_capacity) {
     DummyRegistryReset();
-    drv = &WantedRegCapacityDriver;
-    drv->Close(drv->ctx, 0);
+    drv = &WantedRegistryDriver;
+    drv->Destroy((vfs_driver_t *)drv);
 }
 
 TEST_TEAR_DOWN(vfs_reg_capacity) {
-    drv->Close(drv->ctx, 0);
+    drv->Destroy((vfs_driver_t *)drv);
     DummyRegistryReset();
 }
 
@@ -39,7 +39,7 @@ TEST(vfs_reg_capacity, Read_ReturnsOneObjectForEachStore) {
     int n;
 
     RegistryMemSetLimit(100000);
-    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "capacity", VFS_O_RDONLY));
     n = drv->Read(drv->ctx, 0, buf, sizeof(buf) - 1);
     TEST_ASSERT_TRUE(n > 0);
     buf[n] = '\0';
@@ -63,7 +63,7 @@ TEST(vfs_reg_capacity, Read_FollowsWhatAnInstallUsed) {
         5, RegistryWrite(START_WRITE, "app:1", (const uint8_t *)"hello", 5));
     TEST_ASSERT_EQUAL_INT(0, RegistryWrite(FINISH_WRITE, NULL, NULL, 0));
 
-    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "capacity", VFS_O_RDONLY));
     n = drv->Read(drv->ctx, 0, buf, sizeof(buf) - 1);
     buf[n] = '\0';
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"free\":99995"));
@@ -75,7 +75,7 @@ TEST(vfs_reg_capacity, Read_InShortPieces_ReturnsTheWholeBody) {
     size_t at = 0;
     int n;
 
-    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "capacity", VFS_O_RDONLY));
     while ((n = drv->Read(drv->ctx, 0, piece, sizeof(piece))) > 0) {
         memcpy(whole + at, piece, (size_t)n);
         at += (size_t)n;
@@ -86,15 +86,17 @@ TEST(vfs_reg_capacity, Read_InShortPieces_ReturnsTheWholeBody) {
 }
 
 TEST(vfs_reg_capacity, Open_ForWrite_ReturnsErofs) {
-    TEST_ASSERT_EQUAL_INT(-EROFS, drv->Open(drv->ctx, "", VFS_O_WRONLY));
-    TEST_ASSERT_EQUAL_INT(-EROFS, drv->Open(drv->ctx, "", VFS_O_RDWR));
+    TEST_ASSERT_EQUAL_INT(-EROFS,
+                          drv->Open(drv->ctx, "capacity", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EROFS, drv->Open(drv->ctx, "capacity", VFS_O_RDWR));
 }
 
 TEST(vfs_reg_capacity, SecondOpen_ReturnsEbusyUntilTheFirstCloses) {
-    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "", VFS_O_RDONLY));
-    TEST_ASSERT_EQUAL_INT(-EBUSY, drv->Open(drv->ctx, "", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "capacity", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(-EBUSY,
+                          drv->Open(drv->ctx, "capacity", VFS_O_RDONLY));
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, 0));
-    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "capacity", VFS_O_RDONLY));
 }
 
 TEST(vfs_reg_capacity, Read_WithoutAnOpen_ReturnsEbadf) {
@@ -104,7 +106,7 @@ TEST(vfs_reg_capacity, Read_WithoutAnOpen_ReturnsEbadf) {
 }
 
 TEST(vfs_reg_capacity, Write_ReturnsErofs) {
-    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, drv->Open(drv->ctx, "capacity", VFS_O_RDONLY));
     TEST_ASSERT_EQUAL_INT(-EROFS, drv->Write(drv->ctx, 0, "x", 1));
 }
 

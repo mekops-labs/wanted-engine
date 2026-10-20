@@ -8,6 +8,18 @@ Unreleased
 
 - The ESP-IDF platform logs `serial: <hex>` on the console at every boot, when
   the platform has a serial.
+- `/dev/wanted/reg/blobs` lists the blobs the registry holds, named by the
+  SHA-256 of their bytes, and `blobs/<hex>` describes one.
+- A write of a blob's digest in hex to `reg/images/<ref>#<n>.link` stages
+  layer `n` as that blob without sending its bytes.
+
+### Changed
+
+- The registry is one tree: `reg/images` holds the image routes, `reg/blobs`
+  the blobs and `reg/capacity` the stores. The flat paths `reg/<ref>` and
+  `reg_capacity` are gone.
+- `supervisor_abi` is 2. A supervisor built for 1 rolls back to the
+  supervisor compiled into the firmware.
 
 ### Fixed
 
