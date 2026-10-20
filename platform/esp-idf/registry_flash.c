@@ -22,6 +22,7 @@
 #include <platform.h>
 #include <registry-page.h>
 #include <registry.h>
+#include <wanted_log.h>
 
 #define UNIT_SIZE SPI_FLASH_MMU_PAGE_SIZE
 #define ENTRY_DIR REGISTRY_ROOT "/entries"
@@ -344,6 +345,12 @@ size_t PlatformRegistryStores(registry_store_t **out, size_t max) {
     g_cfg.units = part->size / UNIT_SIZE;
     if (g_cfg.units > REGISTRY_PAGE_MAX_UNITS)
         g_cfg.units = REGISTRY_PAGE_MAX_UNITS;
+    /* Pages map by absolute page number, so a partition off a page boundary
+     * keeps each blob in one run, which maps at any offset. */
+    g_cfg.scattered = part->address % UNIT_SIZE == 0;
+    if (!g_cfg.scattered)
+        LOG_ERROR("wapps partition at 0x%x is off a page; blobs stay whole",
+                  (unsigned)part->address);
     page = RegistryPageStore(&g_cfg);
     g_ops = *page->ops;
     g_pageInit = page->ops->init;
