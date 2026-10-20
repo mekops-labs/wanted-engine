@@ -320,8 +320,12 @@ static void ensureReady(void) {
         g.lock = PlatformMutexNew();
     g.nStores = PlatformRegistryStores(g.stores, MAX_STORES);
     for (size_t i = 0; i < g.nStores; i++) {
-        if (g.stores[i]->ops->init != NULL)
-            g.stores[i]->ops->init(g.stores[i]);
+        int rc = g.stores[i]->ops->init != NULL
+                     ? g.stores[i]->ops->init(g.stores[i])
+                     : 0;
+
+        if (rc < 0)
+            LOG_ERROR("registry store %zu failed to start: %d", i, rc);
     }
     g.seq = 0;
     n = listKeys(g.keys);
@@ -430,8 +434,11 @@ static int commitLocked(const registry_key_t *key, unsigned count,
     for (unsigned i = 0; i < count; i++) {
         const pending_t *p = pendingFind(key, (uint8_t)i);
 
-        if (p == NULL)
+        if (p == NULL) {
+            LOG_ERROR("%s:%s commit of %u layers lacks layer %u", key->name,
+                      key->version, count, i);
             return -ENOENT;
+        }
         meta.layerLen[i] = p->len;
         memcpy(meta.layerDigest[i], p->digest, REGISTRY_DIGEST_LEN);
         if (meta.size + p->len < meta.size)
@@ -516,8 +523,11 @@ static int stageFinishLocked(void) {
     PlatformSha256Final(g.stage.sha, digest);
     stageClear();
     rc = s->ops->stageEnd(s, handle, digest, len);
-    if (rc < 0)
+    if (rc < 0) {
+        LOG_ERROR("%s:%s layer %u of %zu bytes refused by the store: %d",
+                  key.name, key.version, layer, len, rc);
         return rc;
+    }
     pendingAdd(&key, layer, digest, (uint32_t)len);
     if (!plain)
         return 0;
@@ -542,8 +552,11 @@ static int writeLayerLocked(write_state_t st, const char *ref, unsigned layer,
         rc = parseRef(ref, &key);
         if (rc < 0)
             return rc;
-        if (layer >= REGISTRY_META_MAX_LAYERS)
+        if (layer >= REGISTRY_META_MAX_LAYERS) {
+            LOG_ERROR("%s layer %u is past the limit of %u", ref, layer,
+                      REGISTRY_META_MAX_LAYERS);
             return -EINVAL;
+        }
         stageClear();
         g.stage.sha = PlatformSha256New();
         if (g.stage.sha == NULL)
