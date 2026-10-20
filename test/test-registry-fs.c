@@ -281,6 +281,25 @@ TEST(registry_fs, OldLayout_ARecordThatCannotLand_KeepsTheImageAndItsMeta) {
     TEST_ASSERT_FALSE(fileExists("registry/app@1.0.0.meta"));
 }
 
+TEST(registry_fs, OldLayout_ImagesConvertedTogether_ShareASequence) {
+    reg_entry_t bare = MakeEntry("app", "", 0);
+    reg_entry_t one = MakeEntry("app", "1.0.0", 0);
+    reg_entry_t two = MakeEntry("app", "2.0.0", 0);
+    registry_meta_t m1;
+    registry_meta_t m2;
+
+    TEST_ASSERT_EQUAL_INT(0, mkdir("registry", 0755));
+    writeFile("registry/app@2.0.0.wapp", "two", 3);
+    writeFile("registry/app@1.0.0.wapp", "one", 3);
+
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&one, &m1));
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&two, &m2));
+    TEST_ASSERT_EQUAL_UINT32(m1.installSeq, m2.installSeq);
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&bare, &wapp));
+    TEST_ASSERT_EQUAL_STRING("1.0.0", wapp.version);
+    RegistryUnload(&wapp);
+}
+
 TEST(registry_fs, Capacity_ReportsTheFileStore) {
     registry_capacity_t cap[2];
 
@@ -302,5 +321,7 @@ TEST_GROUP_RUNNER(registry_fs) {
     RUN_TEST_CASE(registry_fs, DroppedInImage_AppearsAndIsTheNewest);
     RUN_TEST_CASE(registry_fs,
                   OldLayout_ARecordThatCannotLand_KeepsTheImageAndItsMeta);
+    RUN_TEST_CASE(registry_fs,
+                  OldLayout_ImagesConvertedTogether_ShareASequence);
     RUN_TEST_CASE(registry_fs, Capacity_ReportsTheFileStore);
 }

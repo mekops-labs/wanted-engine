@@ -32,6 +32,9 @@
 #define OLD_BATCH 8
 #define OLD_SLOT_TAIL 8
 #define MAP_MAX_PAGES 128
+/* Every converted image shares one sequence: the old layout kept no install
+ * order, and a bare name took the first ref in sort order. */
+#define OLD_SEQ 1
 #define HELPER_STACK_BYTES 4096
 
 typedef enum {
@@ -281,7 +284,6 @@ static bool convertOld(registry_store_t *s, const char *file, uint32_t seq) {
 /* Converts every old index file and removes it once its records are written,
  * so a reset restarts the conversion where it stopped. */
 static void convertAll(registry_store_t *s) {
-    uint32_t seq = 0;
     size_t settled;
 
     remove(OLD_STAGE);
@@ -305,7 +307,7 @@ static void convertAll(registry_store_t *s) {
         for (size_t i = 0; i < n; i++) {
             char path[OLD_PATH_MAX];
 
-            if (!convertOld(s, names[i], ++seq))
+            if (!convertOld(s, names[i], OLD_SEQ))
                 continue;
             snprintf(path, sizeof(path), "%s/%s", REGISTRY_ROOT, names[i]);
             if (remove(path) == 0)

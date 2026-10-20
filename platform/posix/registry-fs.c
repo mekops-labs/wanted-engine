@@ -402,10 +402,11 @@ static uint32_t maxSeq(void) {
 }
 
 /* Converts every old-layout image in the root, in batches since a conversion
- * changes the directory it walks. A file dropped into the root later is
- * converted the same way, as the newest entry. */
+ * changes the directory it walks. A file dropped into the root later becomes
+ * the newest entry; one pass shares a sequence, so ties go by sort order. */
 static void convertAll(void) {
     char files[8][NAME_MAX + 1];
+    uint32_t seq = 0;
     size_t converted;
 
     do {
@@ -426,8 +427,10 @@ static void convertAll(void) {
             }
         }
         closedir(dir);
+        if (nFiles > 0 && seq == 0)
+            seq = maxSeq() + 1;
         for (size_t i = 0; i < nFiles; i++) {
-            if (convertOld(files[i], maxSeq() + 1))
+            if (convertOld(files[i], seq))
                 converted++;
         }
     } while (converted > 0);
