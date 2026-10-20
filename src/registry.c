@@ -348,19 +348,15 @@ static bool clockValid(int64_t *seconds) {
     return true;
 }
 
-static void pendingDrop(pending_t *p) {
-    uint8_t digest[REGISTRY_DIGEST_LEN];
-
-    memcpy(digest, p->digest, sizeof(digest));
-    memset(p, 0, sizeof(*p));
-    dropIfFree(digest);
-}
-
+/* Records the slot before freeing what it held: a digest staged again must
+ * not lose its blob in between. */
 static void pendingAdd(const registry_key_t *key, uint8_t index,
                        const uint8_t digest[REGISTRY_DIGEST_LEN],
                        uint32_t len) {
     pending_t *slot = NULL;
     pending_t *oldest = NULL;
+    uint8_t replaced[REGISTRY_DIGEST_LEN];
+    bool hadOld;
 
     for (size_t i = 0; i < MAX_PENDING; i++) {
         pending_t *p = &g.pending[i];
@@ -374,18 +370,19 @@ static void pendingAdd(const registry_key_t *key, uint8_t index,
         if (p->used && (oldest == NULL || p->order < oldest->order))
             oldest = p;
     }
-    if (slot == NULL) {
-        pendingDrop(oldest);
+    if (slot == NULL)
         slot = oldest;
-    } else if (slot->used) {
-        pendingDrop(slot);
-    }
+    hadOld = slot->used && !digestEq(slot->digest, digest);
+    if (hadOld)
+        memcpy(replaced, slot->digest, sizeof(replaced));
     slot->used = true;
     slot->key = *key;
     slot->index = index;
     memcpy(slot->digest, digest, REGISTRY_DIGEST_LEN);
     slot->len = len;
     slot->order = ++g.order;
+    if (hadOld)
+        dropIfFree(replaced);
 }
 
 static pending_t *pendingFind(const registry_key_t *key, uint8_t index) {

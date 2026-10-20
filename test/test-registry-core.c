@@ -3,6 +3,7 @@
 #include "unity_fixture.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <platform.h>
@@ -738,7 +739,34 @@ TEST(registry_core,
     TEST_ASSERT_EQUAL_INT(0, blobCount());
 }
 
+TEST(registry_core, Resend_OfTheSameBytes_KeepsTheBlob) {
+    reg_entry_t e = entryOf("app", "1.0.0");
+
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("app:1.0.0", 0, "base"));
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("app:1.0.0", 0, "base"));
+    TEST_ASSERT_EQUAL_INT(1, blobCount());
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("app:1.0.0", 1, false, 0));
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&e, &wapp));
+    TEST_ASSERT_EQUAL_MEMORY("base", wapp.layers[0], 4);
+    RegistryUnload(&wapp);
+}
+
+TEST(registry_core, LinkLayer_Twice_KeepsTheBlob) {
+    reg_entry_t e = entryOf("app", "2.0.0");
+    uint8_t digest[REGISTRY_DIGEST_LEN];
+
+    TEST_ASSERT_EQUAL_INT(0, installPlain("app:1.0.0", "shared"));
+    sha("shared", digest);
+    TEST_ASSERT_EQUAL_INT(0, RegistryLinkLayer("app:2.0.0", 0, digest));
+    TEST_ASSERT_EQUAL_INT(0, RegistryLinkLayer("app:2.0.0", 0, digest));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("app:2.0.0", 1, false, 0));
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&e, &wapp));
+    RegistryUnload(&wapp);
+}
+
 TEST_GROUP_RUNNER(registry_core) {
+    RUN_TEST_CASE(registry_core, Resend_OfTheSameBytes_KeepsTheBlob);
+    RUN_TEST_CASE(registry_core, LinkLayer_Twice_KeepsTheBlob);
     RUN_TEST_CASE(registry_core, PlainInstall_ListsOneLayerEntry);
     RUN_TEST_CASE(registry_core, PlainInstall_Replaces_FreesTheOldBlob);
     RUN_TEST_CASE(registry_core, StagedLayers_AreHiddenUntilCommit);
