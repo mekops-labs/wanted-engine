@@ -28,11 +28,6 @@
 
 int wanted_main(int argc, char *argv[]);
 
-/* Read all registry images into RAM now, while no wapp and therefore no PSRAM
- * activity is running, which is the only moment an ESP32 flash read is safe.
- * The cache then serves every launch. */
-void RegistryCachePreload(void);
-
 #define SEED_DIR                                                               \
     ROMFS_MOUNTPT "/registry" /* /rom/registry (bundled factory wapps) */
 
@@ -62,10 +57,6 @@ int wanted_esp32_main(int argc, char *argv[]) {
         perror("chdir " REGISTRY_VOLUME);
     else
         WantedSeedRegistry(SEED_DIR);
-
-    /* Cache every registry image in RAM before the supervisor starts (flash
-     * reads are only safe while no wapp holds PSRAM). */
-    RegistryCachePreload();
 
     int rc = wanted_main(argc, argv);
 
