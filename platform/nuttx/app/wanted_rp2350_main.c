@@ -26,6 +26,7 @@
 
 #include "boot-romfs.h" /* generated: boot_romfs_img[], boot_romfs_img_len */
 #include "debug_trace.h"
+#include "wanted_seed.h"
 
 #define ROMFS_MINOR 0
 #define ROMFS_SECTSIZE 512
@@ -44,52 +45,6 @@ int wanted_main(int argc, char *argv[]);
 
 #define SEED_DIR                                                               \
     ROMFS_MOUNTPT "/registry" /* /rom/registry (bundled factory wapps) */
-#define REGISTRY_DIR REGISTRY_ROOT
-#define SEED_COPY_BUF 1024
-
-/* Copy one factory image from the read-only boot ROMFS into the writable
- * registry. Best-effort: a failure just means that image is not installed. */
-static void seed_copy(const char *src, const char *dst) {
-    int in = open(src, O_RDONLY);
-    if (in < 0)
-        return;
-    int out = open(dst, O_WRONLY | O_CREAT | O_EXCL, 0644);
-    if (out < 0) {
-        close(in);
-        return;
-    }
-    char buf[SEED_COPY_BUF];
-    ssize_t n;
-    while ((n = read(in, buf, sizeof(buf))) > 0) {
-        if (write(out, buf, (size_t)n) != n)
-            break;
-    }
-    close(in);
-    close(out);
-}
-
-/* First-boot factory seed: copy any /rom/registry/*.wapp the firmware bundles
- * into the writable registry, skipping those already installed. A freshly
- * flashed board can then start its bundled wapps with no network. */
-static void seed_registry(void) {
-    DIR *d = opendir(SEED_DIR);
-    if (!d) {
-        DEBUG_TRACE("opendir(%s) failed: %s", SEED_DIR, strerror(errno));
-        return; /* no factory bundle */
-    }
-    mkdir(REGISTRY_DIR, 0755);
-    const struct dirent *e;
-    while ((e = readdir(d)) != NULL) {
-        if (e->d_name[0] == '.')
-            continue;
-        DEBUG_TRACE("seeding %s", e->d_name);
-        char src[256], dst[256];
-        snprintf(src, sizeof(src), "%s/%s", SEED_DIR, e->d_name);
-        snprintf(dst, sizeof(dst), "%s/%s", REGISTRY_DIR, e->d_name);
-        seed_copy(src, dst);
-    }
-    closedir(d);
-}
 
 #ifdef CONFIG_SYSTEM_WANTED_PROVISION_PROMPT
 
@@ -286,7 +241,7 @@ int wanted_rp2350_main(int argc, char *argv[]) {
         perror("chdir " REGISTRY_VOLUME);
     } else {
         DEBUG_TRACE("chdir %s ok", REGISTRY_VOLUME);
-        seed_registry();
+        WantedSeedRegistry(SEED_DIR);
 #ifdef CONFIG_SYSTEM_WANTED_PROVISION_PROMPT
         startConfigured = true;
         prompt_provision();

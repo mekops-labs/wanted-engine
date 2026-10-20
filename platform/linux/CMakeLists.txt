@@ -30,13 +30,14 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/posix/ready.c
     ${CMAKE_SOURCE_DIR}/platform/posix/persist-mem.c
     ${CMAKE_SOURCE_DIR}/platform/posix/reset-reason.c
-    ${CMAKE_SOURCE_DIR}/platform/posix/registry-store.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/registry-fs.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/registry-stores.c
     ${CMAKE_SOURCE_DIR}/platform/posix/socket.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/file-map.c
     ${CMAKE_SOURCE_DIR}/platform/posix/wapps-image.c
     ${CMAKE_SOURCE_DIR}/platform/posix/sha256.c
     api/crypto.c
     api/random.c
-    api/registry.c
     api/wapps.c)
 
 if(SECURE_SOCKETS)

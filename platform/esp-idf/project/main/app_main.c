@@ -18,6 +18,7 @@
 
 #include <board.h>
 #include <platform.h>
+#include <registry.h>
 #include <vfs-drivers.h>
 #include <vfs.h>
 #include <wanted-autoconf.h>
@@ -25,8 +26,6 @@
 
 #define TAG "wanted"
 #define LITTLEFS_PARTITION_LABEL "persist"
-/* Registry entries read when checking whether a seed ref is already present. */
-#define REGISTRY_SEED_LIST 16
 
 static bool mountLittleFs(void) {
     esp_vfs_littlefs_conf_t conf = {
@@ -50,51 +49,14 @@ static bool mountLittleFs(void) {
 /* Generated from the board's WANTED_EXTRA_SEEDS; empty when it names none. */
 #include "extra-seeds-decl.inc"
 
-/* True when the registry already holds `ref` ("<name>" or "<name>:<version>").
- */
-static bool registryHasRef(const char *ref) {
-    reg_entry_t list[REGISTRY_SEED_LIST];
-    int n = PlatformRegistryRead(list, REGISTRY_SEED_LIST);
-
-    /* The registry total, capped at what the call filled. */
-    if (n > REGISTRY_SEED_LIST)
-        n = REGISTRY_SEED_LIST;
-
-    const char *colon = strchr(ref, ':');
-    size_t nameLen = (colon != NULL) ? (size_t)(colon - ref) : strlen(ref);
-    const char *version = (colon != NULL) ? colon + 1 : "";
-
-    for (int i = 0; i < n; i++) {
-        if (strlen(list[i].name) != nameLen)
-            continue;
-        if (strncmp(list[i].name, ref, nameLen) != 0)
-            continue;
-        if (strcmp(list[i].version, version) == 0)
-            return true;
-    }
-    return false;
-}
-
-/* Factory-seeds a wapp into the flash registry, once. Leaves a ref the
- * registry already holds, so an image installed over a seeded ref survives the
- * next boot. */
+/* Lists a seed image from the app binary. It stays in the flash it was linked
+ * into and holds no space in the registry. */
 static void seedWapp(const char *ref, const uint8_t *start,
                      const uint8_t *end) {
-    /* Marked whether or not it is written: after the first boot the image is
-     * already there, and a ref the firmware owns is still not a supervisor's
-     * to reclaim. */
-    PlatformRegistryMarkSeeded(ref);
-
-    if (registryHasRef(ref)) {
-        ESP_LOGI(TAG, "seed: %s present, keeping the installed image", ref);
-        return;
-    }
-
     size_t len = (size_t)(end - start);
-    int w = PlatformRegistryWrite(START_WRITE, ref, start, len);
-    int fin = PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
-    ESP_LOGI(TAG, "seed: %s (%u bytes) -> write=%d finish=%d", ref,
-             (unsigned)len, w, fin);
+    int rc = RegistryAddResident(ref, start, len, 0);
+
+    ESP_LOGI(TAG, "seed: %s (%u bytes) -> %d", ref, (unsigned)len, rc);
 }
 
 /* Route the console VFS through the interrupt-driven driver so read(stdin)

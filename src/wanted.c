@@ -32,6 +32,7 @@
 
 #include <log-store.h>
 #include <platform.h>
+#include <registry.h>
 
 struct wamrData_t {
     wasm_module_t module;
@@ -432,8 +433,7 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
         PlatformWorkerStackSize(), CONFIG_WANTED_WASM_MAX_MEMORY_PAGES,
         CONFIG_WANTED_MAX_DRIVERS_CNT, CONFIG_WANTED_MAX_OPTIONS_SIZE,
         TARFS_MAX_LAYERS, WAPP_MAX_ARGS, WAPP_MAX_ENVS, CONFIG_WANTED_LOG_SLOTS,
-        PlatformRegistrySlots(),
-        WantedImageVerifyEnforced() ? "enforcing" : "reporting",
+        (size_t)0, WantedImageVerifyEnforced() ? "enforcing" : "reporting",
         WantedImageVerifyFloor() ? "enforcing" : "reporting", resetReason());
 
     if (w < 0)
@@ -485,6 +485,21 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
             if (w < (int)bufLen)
                 w += snprintf((char *)buf + w, (size_t)((int)bufLen - w), "\n");
         }
+    }
+
+    /* One line for each registry store, last so a short reader loses these
+     * before any other field. */
+    registry_capacity_t cap[REGISTRY_MAX_STORES];
+    int stores = RegistryCapacity(cap, REGISTRY_MAX_STORES);
+    for (int i = 0; i < stores && w < (int)bufLen; i++) {
+        int n = snprintf((char *)buf + w, (size_t)((int)bufLen - w),
+                         "reg_store:\t%s %s unit=%u total=%u free=%u "
+                         "largest_free=%u\n",
+                         cap[i].name, cap[i].kind, (unsigned)cap[i].unit,
+                         (unsigned)cap[i].total, (unsigned)cap[i].freeBytes,
+                         (unsigned)cap[i].largestFree);
+        if (n > 0 && w + n < (int)bufLen)
+            w += n;
     }
 
     return w < (int)bufLen ? w : (int)bufLen;
@@ -598,6 +613,11 @@ int WantedWappRun(wapp_data_t *ctx) {
         return -1;
     }
 
+    if (TarFsSkipped(tarfs) > 0)
+        LOG_ERROR("wapp '%s': the image holds %u entries that cannot be served"
+                  " (links, devices, fifos)",
+                  wapp->name, (unsigned)TarFsSkipped(tarfs));
+
     wasm = TarFsEntrypointWasm(tarfs, &wasmLen);
     if (!wasm) {
         LOG_ERROR("wapp '%s': app.wasm absent from the image", wapp->name);
@@ -622,7 +642,7 @@ int WantedWappRun(wapp_data_t *ctx) {
         ret = -1;
         goto _freeWamr;
     }
-    memcpy(ctx->wamr->wasm_bytes, wasm, wasmLen);
+    PlatformMappedCopy(ctx->wamr->wasm_bytes, wasm, wasmLen);
 
     DEBUG_TRACE("loading wasm: %p (%zu)", ctx->wamr->wasm_bytes, wasmLen);
     ctx->wamr->module = wasm_runtime_load(
@@ -1075,7 +1095,7 @@ static int loadSupervisorFromRegistry(const char *path, wapp_t *w) {
         e.name[WAPP_MAX_NAME_LEN - 1] = '\0';
     }
 
-    int ret = PlatformRegistryWappLoad(&e, w);
+    int ret = RegistryLoad(&e, w);
     if (ret < 0)
         return ret;
 
@@ -1104,7 +1124,7 @@ static bool installedSupervisorVersion(const char *ref, char *out, size_t len) {
     if (strchr(ref, ':') != NULL) /* pinned by the config; not ours to judge */
         return false;
 
-    int num = PlatformRegistryRead(list, CONFIG_WANTED_MAX_WAPPS);
+    int num = RegistryRead(list, CONFIG_WANTED_MAX_WAPPS);
     if (num < 0)
         return false;
     if (num > CONFIG_WANTED_MAX_WAPPS)
@@ -1360,6 +1380,7 @@ int WantedStart(const char *cfg, size_t cfgLen) {
      * other half. */
     LogStoreUptimeInit();
     LogStorePersistInit(LogStore());
+    RegistryInit();
 
     ret = WantedParseConfig(cfg, cfgLen);
     DEBUG_TRACE("WantedParseConfig -> %d", ret);

@@ -103,9 +103,19 @@ endif()
 add_subdirectory(${CMAKE_SOURCE_DIR}/platform/dummy
                  ${CMAKE_BINARY_DIR}/platform/dummy)
 
-add_executable(tests ${test_src} ${tiny_json_src} ${ed25519_vendor_src}
-                     ${CMAKE_CURRENT_BINARY_DIR}/runner.c)
+add_executable(
+    tests
+    ${test_src}
+    ${tiny_json_src}
+    ${ed25519_vendor_src}
+    ${CMAKE_SOURCE_DIR}/platform/posix/registry-fs.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/file-map.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/registry-files.c
+    ${CMAKE_SOURCE_DIR}/platform/registry/registry-page.c
+    ${CMAKE_CURRENT_BINARY_DIR}/runner.c)
 target_link_libraries(tests unity ${project} platform_dummy)
+target_compile_definitions(
+    tests PRIVATE WANTED_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/test/fixtures")
 
 execute_process(
     COMMAND grep TEST_GROUP ${CMAKE_CURRENT_BINARY_DIR}/runner.c

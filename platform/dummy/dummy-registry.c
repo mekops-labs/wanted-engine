@@ -4,90 +4,140 @@
 #include <string.h>
 
 #include <platform.h>
+#include <registry-mem.h>
+#include <registry.h>
 
 #include "dummy-fs.h"
 
-/* In-memory registry — a dependency-free stand-in backing PlatformRegistryRead
- * and PlatformRegistryRemove. Streaming an image to a host file is out of scope
- * here, so tests populate it through DummyRegistrySeed. */
+/* The dummy registry is the in-memory store behind the registry core. Tests
+ * fill it with DummyRegistrySeed, which stores a canned image under each ref.
+ */
 
 #define DUMMY_REG_MAX_ENTRIES 8
+#define TAR_BLOCK 512
+#define TAR_SIZE_OFFSET 124
+#define TAR_TYPE_OFFSET 156
+#define TAR_MAGIC_OFFSET 257
+#define OCTAL_DIGITS 11
 
-typedef struct {
-    int used;
-    char name[WAPP_MAX_NAME_LEN];
-    char version[WAPP_MAX_VERSION_LEN];
-    size_t size;
-    registry_meta_t meta;
-} dummy_reg_entry_t;
+/* The module is `(memory 1 4)`. */
+static const uint8_t cannedWasm[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00,
+                                     0x00, 0x05, 0x04, 0x01, 0x01, 0x01, 0x04};
 
-static dummy_reg_entry_t g_registry[DUMMY_REG_MAX_ENTRIES];
+/* One app.wasm member, then the two zero blocks that end the archive. */
+#define CANNED_IMAGE_LEN (4 * TAR_BLOCK)
 
-static int reg_find(const char *name) {
-    for (int i = 0; i < DUMMY_REG_MAX_ENTRIES; i++) {
-        if (g_registry[i].used &&
-            strncmp(g_registry[i].name, name, WAPP_MAX_NAME_LEN) == 0)
-            return i;
+static void buildCannedImage(uint8_t image[CANNED_IMAGE_LEN]) {
+    size_t size = sizeof(cannedWasm);
+
+    memset(image, 0, CANNED_IMAGE_LEN);
+    memcpy(image, "app.wasm", 8);
+    for (int i = OCTAL_DIGITS - 1; i >= 0; i--) {
+        image[TAR_SIZE_OFFSET + i] = (uint8_t)('0' + (size & 7));
+        size >>= 3;
     }
-    return -1;
+    image[TAR_TYPE_OFFSET] = '0';
+    memcpy(image + TAR_MAGIC_OFFSET, "ustar", 5);
+    memcpy(image + TAR_BLOCK, cannedWasm, sizeof(cannedWasm));
 }
 
-static int reg_alloc(void) {
-    for (int i = 0; i < DUMMY_REG_MAX_ENTRIES; i++) {
-        if (!g_registry[i].used)
-            return i;
-    }
-    return -1;
+static uint32_t seedSeq;
+
+static void keyOf(registry_key_t *key, const char *name, const char *version) {
+    memset(key, 0, sizeof(*key));
+    strncpy(key->name, name, REGISTRY_KEY_NAME_LEN - 1);
+    strncpy(key->version, version, REGISTRY_KEY_NAME_LEN - 1);
 }
 
-int PlatformRegistryReadImage(const reg_entry_t *entry, uint8_t *buf,
-                              size_t maxLen) {
-    (void)entry;
-    if (buf == NULL || maxLen == 0)
-        return -EINVAL;
+static int findByName(const char *name, registry_key_t *out) {
+    registry_store_t *s = RegistryMemStore();
+    registry_key_t keys[REGISTRY_MAX_ENTRIES];
+    int n = s->ops->recList(s, keys, REGISTRY_MAX_ENTRIES);
 
-    /* A canned ustar-headed image: the "app.wasm" member name at offset 0 and a
-     * minimal wasm declaring (memory 1 4) at the 512-byte content boundary, so
-     * the descriptor render path is exercisable without real image storage. */
-    static const uint8_t wasm[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00,
-                                   0x00, 0x05, 0x04, 0x01, 0x01, 0x01, 0x04};
-    size_t total = 512 + sizeof(wasm);
-    size_t copy = total < maxLen ? total : maxLen;
-    memset(buf, 0, copy);
-    if (copy >= 8)
-        memcpy(buf, "app.wasm", 8);
-    if (copy > 512)
-        memcpy(buf + 512, wasm, copy - 512);
-    return (int)copy;
+    for (int i = 0; i < n && i < REGISTRY_MAX_ENTRIES; i++) {
+        if (strncmp(keys[i].name, name, REGISTRY_KEY_NAME_LEN) == 0) {
+            *out = keys[i];
+            return 0;
+        }
+    }
+    return -ENOENT;
+}
+
+static int putRecord(const registry_key_t *key, const registry_meta_t *meta) {
+    registry_store_t *s = RegistryMemStore();
+    uint8_t rec[REGISTRY_RECORD_MAX];
+    size_t n = RegistryRecordEncode(meta, rec, sizeof(rec));
+
+    return n == 0 ? -EINVAL : s->ops->recPut(s, key, rec, n);
+}
+
+/* Stores the canned image and returns its digest. */
+static int storeImage(uint8_t digest[REGISTRY_DIGEST_LEN]) {
+    registry_store_t *s = RegistryMemStore();
+    uint8_t image[CANNED_IMAGE_LEN];
+    void *stage = NULL;
+    void *sha = PlatformSha256New();
+    int rc;
+
+    if (sha == NULL)
+        return -ENOMEM;
+    buildCannedImage(image);
+    PlatformSha256Update(sha, image, sizeof(image));
+    PlatformSha256Final(sha, digest);
+    PlatformSha256Free(sha);
+
+    rc = s->ops->stageBegin(s, &stage);
+    if (rc < 0)
+        return rc;
+    rc = s->ops->stageWrite(s, stage, image, sizeof(image));
+    if (rc < 0) {
+        s->ops->stageAbort(s, stage);
+        return rc;
+    }
+    return s->ops->stageEnd(s, stage, digest, sizeof(image));
 }
 
 /* ── Test control ───────────────────────────────────────────────────────── */
 
-void DummyRegistryReset(void) { memset(g_registry, 0, sizeof(g_registry)); }
+void DummyRegistryReset(void) {
+    RegistryDeinit();
+    RegistryClearResident();
+    RegistryMemReset();
+    seedSeq = 0;
+}
 
 int DummyRegistrySeed(const reg_entry_t *entries, size_t count) {
+    registry_store_t *s = RegistryMemStore();
+    int stored = 0;
+
     if (!entries)
         return -EINVAL;
 
-    int stored = 0;
     for (size_t i = 0; i < count; i++) {
-        int idx = reg_find(entries[i].name);
-        if (idx < 0) {
-            idx = reg_alloc();
-            if (idx < 0)
-                return -ENOSPC;
-            g_registry[idx].used = 1;
-        }
-        strncpy(g_registry[idx].name, entries[i].name, WAPP_MAX_NAME_LEN - 1);
-        g_registry[idx].name[WAPP_MAX_NAME_LEN - 1] = '\0';
-        strncpy(g_registry[idx].version, entries[i].version,
-                WAPP_MAX_VERSION_LEN - 1);
-        g_registry[idx].version[WAPP_MAX_VERSION_LEN - 1] = '\0';
-        g_registry[idx].size = entries[i].size;
-        g_registry[idx].meta = (registry_meta_t){
-            .magic = REGISTRY_META_MAGIC,
-            .size = (uint32_t)entries[i].size,
-        };
+        registry_key_t key;
+        registry_key_t old;
+        registry_meta_t meta;
+        bool upsert = findByName(entries[i].name, &old) == 0;
+        int rc;
+
+        if (!upsert && s->ops->recList(s, &old, 0) >= DUMMY_REG_MAX_ENTRIES)
+            return -ENOSPC;
+        if (upsert)
+            s->ops->recDel(s, &old);
+
+        memset(&meta, 0, sizeof(meta));
+        meta.magic = REGISTRY_META_MAGIC;
+        meta.layerCount = 1;
+        meta.size = (uint32_t)entries[i].size;
+        meta.layerLen[0] = CANNED_IMAGE_LEN;
+        meta.installSeq = ++seedSeq;
+        rc = storeImage(meta.layerDigest[0]);
+        if (rc < 0)
+            return rc;
+        keyOf(&key, entries[i].name, entries[i].version);
+        rc = putRecord(&key, &meta);
+        if (rc < 0)
+            return rc;
         stored++;
     }
     return stored;
@@ -97,89 +147,37 @@ int DummyRegistrySeed(const reg_entry_t *entries, size_t count) {
  * hashing to something other than its bytes. */
 int DummyRegistrySetMeta(const reg_entry_t *entry,
                          const registry_meta_t *meta) {
+    registry_key_t key;
+
     if (!entry || !meta)
         return -EINVAL;
-    int idx = reg_find(entry->name);
-    if (idx < 0)
+    if (findByName(entry->name, &key) < 0)
         return -ENOENT;
-    g_registry[idx].meta = *meta;
-    return 0;
+    return putRecord(&key, meta);
 }
 
-/* Drop an entry's record, standing in for an install interrupted before its
- * record landed. */
+/* Drop an entry's record, which removes the entry the record describes. */
 int DummyRegistryDropMeta(const reg_entry_t *entry) {
+    registry_store_t *s = RegistryMemStore();
+    registry_key_t key;
+
     if (!entry)
         return -EINVAL;
-    int idx = reg_find(entry->name);
-    if (idx < 0)
+    if (findByName(entry->name, &key) < 0)
         return -ENOENT;
-    memset(&g_registry[idx].meta, 0, sizeof(g_registry[idx].meta));
-    return 0;
+    return s->ops->recDel(s, &key);
 }
 
-/* ── Platform registry API ──────────────────────────────────────────────── */
+static registry_store_t *override;
 
-int PlatformRegistryRead(reg_entry_t *registryList, size_t len) {
-    int n = 0;
-    for (int i = 0; i < DUMMY_REG_MAX_ENTRIES; i++) {
-        if (!g_registry[i].used)
-            continue;
-        if (registryList != NULL && (size_t)n < len) {
-            memset(&registryList[n], 0, sizeof(registryList[n]));
-            strncpy(registryList[n].name, g_registry[i].name,
-                    WAPP_MAX_NAME_LEN - 1);
-            strncpy(registryList[n].version, g_registry[i].version,
-                    WAPP_MAX_VERSION_LEN - 1);
-            registryList[n].size = g_registry[i].size;
-        }
-        n++;
-    }
-    return n;
+void DummyRegistryUseStore(registry_store_t *store) {
+    RegistryDeinit();
+    override = store;
 }
 
-int PlatformRegistryRemove(const reg_entry_t *entry) {
-    if (!entry)
-        return -EINVAL;
-    int idx = reg_find(entry->name);
-    if (idx < 0)
-        return -ENOENT;
-    memset(&g_registry[idx], 0, sizeof(g_registry[idx]));
-    return 0;
+size_t PlatformRegistryStores(registry_store_t **out, size_t max) {
+    if (max == 0)
+        return 0;
+    out[0] = override != NULL ? override : RegistryMemStore();
+    return 1;
 }
-
-/* Held in RAM beside the entry, so the record survives exactly as long as the
- * image it describes. */
-int PlatformRegistryMetaRead(const reg_entry_t *entry, registry_meta_t *out) {
-    if (entry == NULL || out == NULL)
-        return -EINVAL;
-    int idx = reg_find(entry->name);
-    if (idx < 0)
-        return -ENOENT;
-    /* A record that does not parse is no record, the same answer the stored
-     * backings give for one an interrupted install left behind. */
-    if (!RegistryMetaValid(&g_registry[idx].meta, sizeof(g_registry[idx].meta)))
-        return -ENOENT;
-    *out = g_registry[idx].meta;
-    return 0;
-}
-
-int PlatformRegistryMetaSetSignature(const reg_entry_t *entry, uint32_t keyId,
-                                     const uint8_t sig[REGISTRY_META_SIG_LEN]) {
-    if (entry == NULL || sig == NULL)
-        return -EINVAL;
-    int idx = reg_find(entry->name);
-    if (idx < 0)
-        return -ENOENT;
-    g_registry[idx].meta.keyId = keyId;
-    memcpy(g_registry[idx].meta.signature, sig, REGISTRY_META_SIG_LEN);
-    g_registry[idx].meta.flags |= REGISTRY_META_SIGNED;
-    return 0;
-}
-
-/* The dummy registry is an in-memory array bounded only by its own cap,
- * which is not a device ceiling worth reporting. */
-size_t PlatformRegistrySlots(void) { return 0; }
-
-/* This backing seeds nothing, so nothing is protected from removal. */
-void PlatformRegistryMarkSeeded(const char *ref) { (void)ref; }

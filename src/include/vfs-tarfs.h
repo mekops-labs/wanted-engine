@@ -36,6 +36,10 @@ const uint8_t *TarFsEntrypointWasm(const vfs_tarfs_ctx_t *ctx, size_t *len);
 /* Indexed entry count — exposed for tests and diagnostics. */
 uint16_t TarFsIndexLen(const vfs_tarfs_ctx_t *ctx);
 
+/* Entries the layers hold that TarFS does not serve: hard links, symbolic
+ * links, device nodes and fifos. Directories are implicit and not counted. */
+uint16_t TarFsSkipped(const vfs_tarfs_ctx_t *ctx);
+
 /* File/directory operations. TarFs is read-only; Open returns a heap-owned
  * opaque handle or NULL. Directories are implicit: the sorted index encodes
  * the tree by path prefix, so typeflag '5' entries are dropped when indexed. */

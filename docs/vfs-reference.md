@@ -59,7 +59,7 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/uptime` | r | no | `uptime_ms` — milliseconds since the engine started, the origin captured log lines are stamped from. |
 | `/proc/net` | r (dir) | no | A directory: one flat file per `sockets[]` entry *this wapp* holds, named after the entry (`readdir` enumerates them). Reads the wapp's own per-wapp socket table, so a wapp can never see another wapp's sockets. |
 | `/proc/net/<name>` | r | no | `connected` (`0`/`1`), `type` (the socket's scheme — known from config alone, always present), and `local` (the connected local endpoint, `<scheme>://<host>:<port>` or a bare path for `serial://`/`unix://` — present only once connected). |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `max_layers`, `max_args`, `max_envs`, `reg_slots` (images the registry can hold; `0` where it is bounded only by the filesystem), `image_verify` and `image_verify_floor` (`enforcing` or `reporting` — the effective posture and the compiled-in floor a configuration cannot lower), `drivers` (the drivers available on this build), `digest` (present where the platform stamps a build-time image digest), and `serial` (present where the platform has a hardware serial to report). |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `max_layers`, `max_args`, `max_envs`, `reg_slots` (always `0`: the registry is bounded by the room in its stores, not by a count of images), `image_verify` and `image_verify_floor` (`enforcing` or `reporting` — the effective posture and the compiled-in floor a configuration cannot lower), `drivers` (the drivers available on this build), `digest` (present where the platform stamps a build-time image digest), and `serial` (present where the platform has a hardware serial to report). |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
@@ -68,7 +68,7 @@ Each entry reads its value in one shot; a second read on the same fd returns EOF
 ```text
 platform:	linux
 version:	0.8.0+gf0d012c.20260713121818
-supervisor_abi:	3
+supervisor_abi:	2
 max_wapps:	3
 max_wapp_name:	15 B
 max_path:	256 B
@@ -85,7 +85,10 @@ log_slots:	3
 reg_slots:	0
 drivers:	null log 9p config platform socket sha256 ed25519 inflate wanted
 serial:	0123456789abcdef
+reg_store:	files file unit=0 total=0 free=0 largest_free=0
 ```
+
+`reg_store` has one line for each registry store, after the `drivers` line. It carries the same figures as `/dev/wanted/reg/capacity`, for a wapp that holds no registry grant.
 
 `serial` is the unit's own hardware identity, stable across reflashes: the SPI
 flash chip's factory id on ESP-IDF, the OTP device id on RP2350, and a
@@ -144,7 +147,7 @@ exact bytes that booted, thus a control plane confirming a firmware update
 compares it rather than `version`, which two builds of one source tree can
 share. The line is absent on a platform that stamps no digest.
 
-`supervisor_abi` is the version of the contract between the engine and a supervisor wapp: the shape of the `/dev/wanted` control plane, its verbs, and the wapp states it reports. It is bumped only when a supervisor built against an earlier value would misread this engine — never for an ordinary release, and never for an addition an older supervisor can ignore. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value; an engine reporting no ABI line at all is assumed compatible.
+`supervisor_abi` is the version of the contract between the engine and a supervisor wapp: the shape of the `/dev/wanted` control plane, its verbs, and the wapp states it reports. It is bumped only when a supervisor built against an earlier value would misread this engine — never for an ordinary release, and never for an addition an older supervisor can ignore. A supervisor reads it before acting on anything else and writes `rollback-supervisor` when it cannot support the value; an engine reporting no ABI line at all is assumed compatible. Version 2 moved the registry into one tree, `reg/images`, `reg/blobs` and `reg/capacity`.
 
 `platform` is the build target (`linux`, `nuttx`, `esp-idf`, `dummy`); `version` is the git-derived SemVer baked in at compile time. The remaining fields are the fixed resource ceilings — any wapp can read them unprivileged to size itself to the host.
 
@@ -153,7 +156,9 @@ share. The line is absent on a platform that stamps no digest.
 The wapp's root filesystem is **TarFS**: a read-only merge of the image's OCI layers (up to 4), newest-shadows-oldest. Any file packaged into the image appears here at its archived path.
 
 - **Layer merge** — a path resolved in the newest layer that defines it; an O(log N) sorted index avoids linear scans.
-- **Whiteouts** — a `.wh.<name>` entry in a newer layer logically deletes `<name>` from older layers.
+- **Whiteouts** — a `.wh.<name>` entry in a newer layer deletes `<name>` from older layers, and when `<name>` is a directory, everything under it. A whiteout hides nothing of its own layer, and a file of that layer wins over a whiteout of the same name.
+- **Opaque directories** — a `.wh..wh..opq` entry in a directory hides every older entry under that directory, at any depth. The entries of its own layer stay.
+- **Skipped entries** — hard links, symbolic links, device nodes and fifos are not served. The engine counts them when it loads the image and logs the count once. A directory holding only whiteouts or opaque markers does not exist.
 - **Format** — POSIX ustar, including PAX and GNU long-name entries.
 - **Read-only** — writes are rejected with `EROFS`. A wapp's writable storage is a **preopen** (a host directory bound into the namespace), not TarFS.
 

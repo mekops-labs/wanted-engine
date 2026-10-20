@@ -11,6 +11,7 @@
 #include <vfs.h>
 
 #include <platform.h>
+#include <registry.h>
 #include <wanted-api.h>
 #include <wanted-image-verify.h>
 #include <wanted-vfs-api.h>
@@ -253,7 +254,7 @@ static int startWapp(struct vfs_driver_ctx_t *d, const char *name,
         e.version[0] = '\0';
     }
 
-    ret = PlatformRegistryWappLoad(&e, wapp);
+    ret = RegistryLoad(&e, wapp);
     if (ret < 0)
         goto FREE; /* nothing mapped yet */
 

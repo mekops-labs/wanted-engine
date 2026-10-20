@@ -18,7 +18,7 @@ the same code can mean different things than it would on a native filesystem.
 |-------|----------------|---------------|
 | `ENOENT` | The named node does not exist. Namespaces are **existence-gated**: any node of a wapp the engine has not `create`d returns `ENOENT` — there is no default-for-a-guessed-path. | Opening `/dev/wanted/wapps/<name>/…` before `create <name>`; a typo in a control path. |
 | `EINVAL` | A malformed control write: a bad verb, a config that fails validation, or an argument where none is allowed. | A `start` with inline args; invalid launch-config JSON; a mount under a reserved namespace (`/dev`, `/net`, `/proc`). |
-| `EBUSY` | The target is not in a state that accepts the verb. | `create` of a name that already exists; a lifecycle verb against a slot mid-transition. |
+| `EBUSY` | The target is not in a state that accepts the verb. | `create` of a name that already exists; a lifecycle verb against a slot mid-transition; a registry install while another is open. |
 | `EROFS` | A write to a read-only control/state node. | Writing a `/proc/wapps/*` observability leaf, or a state node that is read-only by contract. |
 | `EPERM` | The wapp lacks the capability for this action. | A non-supervisor wapp writing the root `ctl`; reaching the control plane without the `wanted` mount; creating a link or setting file times, which the VFS has none of. |
 
@@ -35,7 +35,8 @@ the same code can mean different things than it would on a native filesystem.
 | `EXDEV` | A rename that crosses drivers/mounts. | `rename` between two different VFS namespaces (renames are within one driver only). |
 | `ENOTSUP` | The driver does not implement this operation. | `OpenAt`/`readdir` on a driver that is a flat leaf; an op a virtual driver does not provide; `fcntl` changing the sync flags or the host console's mode; `fd_renumber` on a console slot or a preopen; `fd_fdstat_set_rights`; `proc_raise`. |
 | `ENOSYS` | The platform provides no backing for this call. | A filesystem op stubbed out on a constrained target (e.g. rename on a registry-only store). |
-| `EFBIG` / `ENOSPC` | The write exceeds a size or capacity bound. | A store or ring buffer at capacity; a write past a fixed region. |
+| `EFBIG` / `ENOSPC` | The write exceeds a size or capacity bound. | A store or ring buffer at capacity; a write past a fixed region; a registry install with no room in the store, or no contiguous extent long enough; a registry commit of a new ref once the registry holds 50 entries. |
+| `E2BIG` | A registry commit names more layers than the build holds. | A `reg/images/<ref>#layers` write with a count above `max_layers`. |
 | `EIO` | A backing I/O operation failed. | A host/flash read or write error under a driver. |
 
 ## Sockets (`/net`)

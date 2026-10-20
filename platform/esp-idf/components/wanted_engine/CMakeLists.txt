@@ -10,6 +10,8 @@ set(core_srcs
     ${ENGINE}/src/wanted_wasm_api.c
     ${ENGINE}/src/wanted-vfs-api.c
     ${ENGINE}/src/wanted-image-verify.c
+    ${ENGINE}/src/registry.c
+    ${ENGINE}/src/registry-record.c
     ${ENGINE}/src/wanted_hmac.c
     ${ENGINE}/src/log-store.c
     ${ENGINE}/src/version.c)
@@ -71,8 +73,10 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/persist-mem.c
     ${ENGINE}/platform/esp-idf/reset-reason.c
     ${ENGINE}/platform/esp-idf/platform.c
-    ${ENGINE}/platform/esp-idf/registry.c
     ${ENGINE}/platform/esp-idf/registry_flash.c
+    ${ENGINE}/platform/esp-idf/flash-guard.c
+    ${ENGINE}/platform/registry/registry-page.c
+    ${ENGINE}/platform/posix/registry-files.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-wifi.c
     # Shared POSIX primitives (also compiled by Linux/NuttX). vfs-esp-idf.c

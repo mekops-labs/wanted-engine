@@ -7,11 +7,13 @@
 
 #include <debug_trace.h>
 #include <platform.h>
+#include <registry.h>
 #include <vfs-devfs.h>
 #include <vfs-drivers.h>
 #include <vfs-fb.h>
 #include <vfs-input.h>
 #include <vfs-netfs.h>
+#include <vfs-tarfs.h>
 #include <wanted-api.h>
 #include <wanted-autoconf.h>
 #include <wanted-image-verify.h>
@@ -335,25 +337,62 @@ int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
      * ignored thereafter. Only a started write may continue — arming
      * it on a failed start would mask the real error with -EBADF. */
     if (*cont == false) {
-        int ret = PlatformRegistryWrite(START_WRITE, ref, buf, bufLen);
+        int ret = RegistryWrite(START_WRITE, ref, buf, bufLen);
         if (ret < 0)
             return ret;
         *cont = true;
         return ret;
     }
 
-    return PlatformRegistryWrite(CONTINUE_WRITE, ref, buf, bufLen);
+    return RegistryWrite(CONTINUE_WRITE, ref, buf, bufLen);
+}
+
+int WantedWriteRegistryLayer(bool *cont, const char *ref, unsigned layer,
+                             const uint8_t *buf, size_t bufLen) {
+    if (buf == NULL)
+        return -EINVAL;
+    if (*cont == false) {
+        int ret = RegistryWriteLayer(START_WRITE, ref, layer, buf, bufLen);
+        if (ret < 0)
+            return ret;
+        *cont = true;
+        return ret;
+    }
+
+    return RegistryWriteLayer(CONTINUE_WRITE, ref, layer, buf, bufLen);
+}
+
+int WantedCloseRegistryLayer(void) {
+    return RegistryWriteLayer(FINISH_WRITE, NULL, 0, NULL, 0);
+}
+
+#define COMMIT_COUNT_ONLY 1
+#define COMMIT_WITH_CREATED 9
+
+int WantedCommitRegistry(const char *ref, const uint8_t *payload,
+                         size_t payloadLen) {
+    uint64_t created = 0;
+
+    if (ref == NULL || payload == NULL)
+        return -EINVAL;
+    if (payloadLen != COMMIT_COUNT_ONLY && payloadLen != COMMIT_WITH_CREATED)
+        return -EINVAL;
+    for (size_t i = 1; i < payloadLen; i++)
+        created = (created << 8) | payload[i];
+
+    return RegistryCommit(ref, payload[0], payloadLen == COMMIT_WITH_CREATED,
+                          (int64_t)created);
 }
 
 int WantedRegistryRemove(const reg_entry_t *entry) {
     if (entry == NULL)
         return -EINVAL;
 
-    return PlatformRegistryRemove(entry);
+    return RegistryRemove(entry);
 }
 
 int WantedCloseRegistry(void) {
-    return PlatformRegistryWrite(FINISH_WRITE, NULL, NULL, 0);
+    return RegistryWrite(FINISH_WRITE, NULL, NULL, 0);
 }
 
 int WantedRegistrySetSignature(const char *ref, const uint8_t *payload,
@@ -384,7 +423,7 @@ int WantedRegistrySetSignature(const char *ref, const uint8_t *payload,
     keyId = ((uint32_t)payload[0] << 24) | ((uint32_t)payload[1] << 16) |
             ((uint32_t)payload[2] << 8) | (uint32_t)payload[3];
 
-    return PlatformRegistryMetaSetSignature(&entry, keyId, payload + 4);
+    return RegistryMetaSetSignature(&entry, keyId, payload + 4);
 }
 
 /* Read a uLEB128-encoded u32 at *p (bounded by end), advancing *p. Returns 0,
@@ -457,59 +496,145 @@ int WantedWasmMemoryProfile(const uint8_t *buf, size_t len, uint32_t *init,
     return -ENOENT; /* no memory section (e.g. an imported memory) */
 }
 
-/* Leading bytes of an image to peek for the wasm memory section. The section
- * precedes the (bulky) code section, so a small window reaches it for real
- * wapps; a too-short window just yields no memory metadata. */
-#define REG_IMAGE_PEEK 8192
-#define TAR_BLOCK 512
-
 /* Append the image's declared linear-memory profile to the descriptor JSON at
- * *n (which currently ends just before the closing brace). Best effort: on any
- * failure the descriptor is left unchanged, so the fields are simply absent. */
-static void appendMemoryProfile(const reg_entry_t *entry, char *buf, int *n,
+ * *n (which currently ends just before the closing brace), read from app.wasm
+ * in the merged layers. False when the layers cannot be mapped; the profile is
+ * left out when the module declares none. */
+static bool appendMemoryProfile(const reg_entry_t *entry, char *buf, int *n,
                                 size_t bufLen) {
-    uint8_t *peek = WantedMalloc(REG_IMAGE_PEEK);
-    if (peek == NULL)
-        return;
+    uint8_t *layers[REGISTRY_META_MAX_LAYERS];
+    size_t lens[REGISTRY_META_MAX_LAYERS];
+    uint8_t count = 0;
+    vfs_tarfs_ctx_t *fs;
+    const uint8_t *wasm;
+    size_t wasmLen = 0;
+    uint32_t init = 0, max = 0;
+    bool has_max = false;
+    bool profiled;
 
-    int got = PlatformRegistryReadImage(entry, peek, REG_IMAGE_PEEK);
-    /* The .wapp is a ustar archive whose first member is app.wasm; its content
-     * begins at the 512-byte block boundary after the header. */
-    if (got > TAR_BLOCK && memcmp(peek, "app.wasm", sizeof("app.wasm")) == 0) {
-        uint32_t init = 0, max = 0;
-        bool has_max = false;
-        if (WantedWasmMemoryProfile(peek + TAR_BLOCK, (size_t)got - TAR_BLOCK,
-                                    &init, &has_max, &max) == 0) {
-            bool can_grow = !has_max || max > init;
-            int w = snprintf(buf + *n, bufLen - (size_t)*n,
-                             ",\"init_pages\":%u,\"can_grow\":%s",
-                             (unsigned)init, can_grow ? "true" : "false");
-            if (w > 0 && *n + w < (int)bufLen)
-                *n += w;
+    if (RegistryMapLayers(entry, layers, lens, &count) < 0)
+        return false;
+    fs = TarFsInit(layers, lens, count);
+    wasm = fs != NULL ? TarFsEntrypointWasm(fs, &wasmLen) : NULL;
 
-            if (has_max)
-                w = snprintf(buf + *n, bufLen - (size_t)*n, ",\"max_pages\":%u",
-                             (unsigned)max);
-            else
-                w = snprintf(buf + *n, bufLen - (size_t)*n,
-                             ",\"max_pages\":null");
-            if (w > 0 && *n + w < (int)bufLen)
-                *n += w;
+    PlatformFlashReadBegin();
+    profiled = wasm != NULL && WantedWasmMemoryProfile(wasm, wasmLen, &init,
+                                                       &has_max, &max) == 0;
+    PlatformFlashReadEnd();
+    if (profiled) {
+        bool can_grow = !has_max || max > init;
+        int w = snprintf(buf + *n, bufLen - (size_t)*n,
+                         ",\"init_pages\":%u,\"can_grow\":%s", (unsigned)init,
+                         can_grow ? "true" : "false");
+        if (w > 0 && *n + w < (int)bufLen)
+            *n += w;
+
+        if (has_max)
+            w = snprintf(buf + *n, bufLen - (size_t)*n, ",\"max_pages\":%u",
+                         (unsigned)max);
+        else
+            w = snprintf(buf + *n, bufLen - (size_t)*n, ",\"max_pages\":null");
+        if (w > 0 && *n + w < (int)bufLen)
+            *n += w;
 
 #if CONFIG_WANTED_WASM_MAX_MEMORY_PAGES > 0
-            /* The build caps per-wapp linear memory; flag an image whose
-             * declared initial memory already exceeds the cap — it would be
-             * refused at load. */
-            w = snprintf(buf + *n, bufLen - (size_t)*n, ",\"over_cap\":%s",
-                         init > CONFIG_WANTED_WASM_MAX_MEMORY_PAGES ? "true"
-                                                                    : "false");
-            if (w > 0 && *n + w < (int)bufLen)
-                *n += w;
+        /* The build caps per-wapp linear memory; flag an image whose declared
+         * initial memory already exceeds the cap, which load would refuse. */
+        w = snprintf(buf + *n, bufLen - (size_t)*n, ",\"over_cap\":%s",
+                     init > CONFIG_WANTED_WASM_MAX_MEMORY_PAGES ? "true"
+                                                                : "false");
+        if (w > 0 && *n + w < (int)bufLen)
+            *n += w;
 #endif
-        }
     }
 
-    WantedFree(peek);
+    TarFsDestroy(fs);
+    RegistryUnmapLayers(layers, count);
+    return true;
+}
+
+int WantedRenderRegistryBlob(const uint8_t digest[REGISTRY_META_DIGEST_LEN],
+                             char *buf, size_t bufLen) {
+    registry_blob_info_t info;
+    int rc = RegistryBlobInfo(digest, &info);
+    int n;
+
+    if (rc < 0)
+        return rc;
+    n = snprintf(buf, bufLen,
+                 "{\"size\":%u,\"entries\":%u,\"mapped\":%s,"
+                 "\"resident\":%s,\"store\":\"%s\"}\n",
+                 (unsigned)info.size, (unsigned)info.entries,
+                 info.mapped ? "true" : "false",
+                 info.resident ? "true" : "false", info.store);
+    if (n < 0 || (size_t)n >= bufLen)
+        return -EMSGSIZE;
+    return n;
+}
+
+int WantedLinkRegistryLayer(const char *ref, unsigned layer,
+                            const uint8_t *payload, size_t payloadLen) {
+    uint8_t digest[REGISTRY_META_DIGEST_LEN];
+    size_t hexLen = REGISTRY_META_DIGEST_HEX_LEN;
+    int rc;
+
+    if (ref == NULL || payload == NULL)
+        return -EINVAL;
+    if (payloadLen == hexLen + 1 && payload[hexLen] == '\n')
+        payloadLen = hexLen;
+    rc = RegistryDigestFromHex((const char *)payload, payloadLen, digest);
+    if (rc < 0)
+        return rc;
+    return RegistryLinkLayer(ref, layer, digest);
+}
+
+int WantedRenderRegistryCapacity(char *buf, size_t bufLen) {
+    registry_capacity_t cap[REGISTRY_MAX_STORES];
+    int n = RegistryCapacity(cap, REGISTRY_MAX_STORES);
+    size_t used = 0;
+    int w;
+
+    if (buf == NULL || bufLen == 0)
+        return -EINVAL;
+    w = snprintf(buf, bufLen, "[");
+    if (w < 0 || (size_t)w >= bufLen)
+        return -EMSGSIZE;
+    used = (size_t)w;
+    for (int i = 0; i < n; i++) {
+        w = snprintf(
+            buf + used, bufLen - used,
+            "%s{\"name\":\"%s\",\"kind\":\"%s\",\"unit\":%u,\"total\":%u,"
+            "\"free\":%u,\"largest_free\":%u,\"mappable\":%s,"
+            "\"scattered\":%s,\"removable\":%s,\"present\":%s}",
+            i > 0 ? "," : "", cap[i].name, cap[i].kind, (unsigned)cap[i].unit,
+            (unsigned)cap[i].total, (unsigned)cap[i].freeBytes,
+            (unsigned)cap[i].largestFree,
+            (cap[i].caps & REGISTRY_CAP_MAPPABLE) ? "true" : "false",
+            (cap[i].caps & REGISTRY_CAP_SCATTERED) ? "true" : "false",
+            (cap[i].caps & REGISTRY_CAP_REMOVABLE) ? "true" : "false",
+            cap[i].present ? "true" : "false");
+        if (w < 0 || used + (size_t)w >= bufLen)
+            return -EMSGSIZE;
+        used += (size_t)w;
+    }
+    w = snprintf(buf + used, bufLen - used, "]\n");
+    if (w < 0 || used + (size_t)w >= bufLen)
+        return -EMSGSIZE;
+    return (int)(used + (size_t)w);
+}
+
+/* A time field: Unix seconds, or null when the record holds none. */
+static void appendTime(char *buf, int *n, size_t bufLen, const char *key,
+                       int64_t t) {
+    int w;
+
+    if (t > 0)
+        w = snprintf(buf + *n, bufLen - (size_t)*n, ",\"%s\":%lld", key,
+                     (long long)t);
+    else
+        w = snprintf(buf + *n, bufLen - (size_t)*n, ",\"%s\":null", key);
+    if (w > 0 && *n + w < (int)bufLen)
+        *n += w;
 }
 
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
@@ -517,14 +642,13 @@ int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
     if (entry == NULL || buf == NULL)
         return -EINVAL;
 
-    /* Inspecting a registry entry returns a small descriptor synthesized from
-     * the entry (name/version/size), plus the image's declared linear-memory
-     * profile when it can be read from the image header. */
     /* The entry's verification state — see docs/control-plane-reference.md's
      * reg descriptor entry for what "none"/"unsigned"/"signed" each mean. */
     registry_meta_t meta;
+    bool haveMeta = RegistryMetaRead(entry, &meta) == 0;
+    bool mapped = haveMeta && RegistryIsMapped(entry);
     const char *verify = "none";
-    if (PlatformRegistryMetaRead(entry, &meta) == 0) {
+    if (haveMeta) {
         verify = (meta.flags & (REGISTRY_META_SIGNED | REGISTRY_META_SEEDED))
                      ? "signed"
                      : "unsigned";
@@ -539,7 +663,23 @@ int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
     if (n >= (int)bufLen)
         return (int)bufLen;
 
-    appendMemoryProfile(entry, (char *)buf, &n, bufLen);
+    bool available = appendMemoryProfile(entry, (char *)buf, &n, bufLen);
+
+    if (haveMeta) {
+        int w = snprintf((char *)buf + n, bufLen - (size_t)n,
+                         ",\"layers\":%u,\"clock_set\":%s", meta.layerCount,
+                         (meta.flags & REGISTRY_META_CLOCK_UNSET) ? "false"
+                                                                  : "true");
+        if (w > 0 && n + w < (int)bufLen)
+            n += w;
+        appendTime((char *)buf, &n, bufLen, "installed", meta.installed);
+        appendTime((char *)buf, &n, bufLen, "created", meta.created);
+        w = snprintf((char *)buf + n, bufLen - (size_t)n,
+                     ",\"mapped\":%s,\"available\":%s",
+                     mapped ? "true" : "false", available ? "true" : "false");
+        if (w > 0 && n + w < (int)bufLen)
+            n += w;
+    }
 
     int w = snprintf((char *)buf + n, bufLen - (size_t)n, "}");
     if (w > 0 && n + w < (int)bufLen)

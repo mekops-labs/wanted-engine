@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include <platform.h>
+#include <registry.h>
 #include <wanted-api.h>
 #include <wanted-vfs-api.h>
 
@@ -25,7 +26,7 @@ TEST_TEAR_DOWN(platform_registry) {}
 
 TEST(platform_registry, ReadEmpty_ReturnsZero) {
     reg_entry_t list[4];
-    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryRead(list, 4));
+    TEST_ASSERT_EQUAL_INT(0, RegistryRead(list, 4));
 }
 
 TEST(platform_registry, ReadCountQuery_NullListReturnsCount) {
@@ -34,7 +35,7 @@ TEST(platform_registry, ReadCountQuery_NullListReturnsCount) {
         MakeEntry("app2", "2.1.0", 20),
     };
     TEST_ASSERT_EQUAL_INT(2, DummyRegistrySeed(seed, 2));
-    TEST_ASSERT_EQUAL_INT(2, PlatformRegistryRead(NULL, 0));
+    TEST_ASSERT_EQUAL_INT(2, RegistryRead(NULL, 0));
 }
 
 TEST(platform_registry, SeedThenRead_RoundTrip) {
@@ -45,16 +46,16 @@ TEST(platform_registry, SeedThenRead_RoundTrip) {
     TEST_ASSERT_EQUAL_INT(2, DummyRegistrySeed(seed, 2));
 
     reg_entry_t list[4];
-    int n = PlatformRegistryRead(list, 4);
+    int n = RegistryRead(list, 4);
     TEST_ASSERT_EQUAL_INT(2, n);
 
-    /* Insertion order is preserved by the linear scan. */
-    TEST_ASSERT_EQUAL_STRING("sensor", list[0].name);
-    TEST_ASSERT_EQUAL_STRING("0.3.1", list[0].version);
-    TEST_ASSERT_EQUAL_UINT32(128, list[0].size);
-    TEST_ASSERT_EQUAL_STRING("relay", list[1].name);
-    TEST_ASSERT_EQUAL_STRING("1.2.0", list[1].version);
-    TEST_ASSERT_EQUAL_UINT32(256, list[1].size);
+    /* The list is sorted by name, then version. */
+    TEST_ASSERT_EQUAL_STRING("relay", list[0].name);
+    TEST_ASSERT_EQUAL_STRING("1.2.0", list[0].version);
+    TEST_ASSERT_EQUAL_UINT32(256, list[0].size);
+    TEST_ASSERT_EQUAL_STRING("sensor", list[1].name);
+    TEST_ASSERT_EQUAL_STRING("0.3.1", list[1].version);
+    TEST_ASSERT_EQUAL_UINT32(128, list[1].size);
 }
 
 TEST(platform_registry, UpsertByName_ReplacesVersion) {
@@ -64,7 +65,7 @@ TEST(platform_registry, UpsertByName_ReplacesVersion) {
     TEST_ASSERT_EQUAL_INT(1, DummyRegistrySeed(&second, 1));
 
     reg_entry_t list[4];
-    int n = PlatformRegistryRead(list, 4);
+    int n = RegistryRead(list, 4);
     TEST_ASSERT_EQUAL_INT(1, n);
     TEST_ASSERT_EQUAL_STRING("app", list[0].name);
     TEST_ASSERT_EQUAL_STRING("1.1.0", list[0].version);
@@ -81,7 +82,7 @@ TEST(platform_registry, Read_CapsFillButReturnsTotal) {
 
     reg_entry_t list[2];
     /* len smaller than total: fills 2, still reports the full count of 3. */
-    TEST_ASSERT_EQUAL_INT(3, PlatformRegistryRead(list, 2));
+    TEST_ASSERT_EQUAL_INT(3, RegistryRead(list, 2));
     TEST_ASSERT_EQUAL_STRING("a", list[0].name);
     TEST_ASSERT_EQUAL_STRING("b", list[1].name);
 }
@@ -94,17 +95,17 @@ TEST(platform_registry, Remove_DeletesEntry) {
     DummyRegistrySeed(seed, 2);
 
     reg_entry_t target = MakeEntry("drop", "", 0);
-    TEST_ASSERT_EQUAL_INT(0, PlatformRegistryRemove(&target));
+    TEST_ASSERT_EQUAL_INT(0, RegistryRemove(&target));
 
     reg_entry_t list[4];
-    int n = PlatformRegistryRead(list, 4);
+    int n = RegistryRead(list, 4);
     TEST_ASSERT_EQUAL_INT(1, n);
     TEST_ASSERT_EQUAL_STRING("keep", list[0].name);
 }
 
 TEST(platform_registry, Remove_Nonexistent_ReturnsEnoent) {
     reg_entry_t target = MakeEntry("ghost", "", 0);
-    TEST_ASSERT_EQUAL_INT(-ENOENT, PlatformRegistryRemove(&target));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, RegistryRemove(&target));
 }
 
 TEST(platform_registry, Overfill_ReturnsEnospc) {

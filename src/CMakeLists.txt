@@ -4,6 +4,8 @@ set(sources
     "wanted_wasm_api.c"
     "wanted-vfs-api.c"
     "wanted-image-verify.c"
+    "registry.c"
+    "registry-record.c"
     "wanted_hmac.c"
     "log-store.c"
     "version.c"

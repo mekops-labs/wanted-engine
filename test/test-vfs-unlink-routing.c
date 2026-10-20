@@ -61,12 +61,12 @@ TEST(vfs_unlink_routing, RemovesARegistryEntryThroughTheTarfsPreopen) {
     TEST_ASSERT_TRUE(root >= 0);
 
     TEST_ASSERT_EQUAL_INT(
-        0, VfsUnlink(vfs, root, "/dev/wanted/reg/flasher:0.4.1"));
+        0, VfsUnlink(vfs, root, "/dev/wanted/reg/images/flasher:0.4.1"));
 
     /* Gone, not just reported gone: a second unlink of the same ref finds
      * nothing left to remove. */
     TEST_ASSERT_EQUAL_INT(
-        -ENOENT, VfsUnlink(vfs, root, "/dev/wanted/reg/flasher:0.4.1"));
+        -ENOENT, VfsUnlink(vfs, root, "/dev/wanted/reg/images/flasher:0.4.1"));
 
     VfsClose(vfs, root);
 }
@@ -76,7 +76,7 @@ TEST(vfs_unlink_routing, UnknownEntryReportsEnoentNotErofs) {
     TEST_ASSERT_TRUE(root >= 0);
 
     TEST_ASSERT_EQUAL_INT(
-        -ENOENT, VfsUnlink(vfs, root, "/dev/wanted/reg/nothere:1.0.0"));
+        -ENOENT, VfsUnlink(vfs, root, "/dev/wanted/reg/images/nothere:1.0.0"));
 
     VfsClose(vfs, root);
 }

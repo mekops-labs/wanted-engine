@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <registry-meta.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -24,16 +25,38 @@ const wantedConfig_t *WantedGetConfig(void);
 int WantedWriteRegistry(bool *cont, const char *ref, const uint8_t *buf,
                         size_t bufLen);
 int WantedCloseRegistry(void);
+/* Stage layer `layer` of the image `ref` names. A write that starts fails with
+ * the error the store gave; WantedCloseRegistryLayer ends it. */
+int WantedWriteRegistryLayer(bool *cont, const char *ref, unsigned layer,
+                             const uint8_t *buf, size_t bufLen);
+int WantedCloseRegistryLayer(void);
+/* Publish `ref` from its staged layers. `payload` is 1 byte, the layer count,
+ * or 9 bytes, the count then the image build time as a big-endian int64. */
+int WantedCommitRegistry(const char *ref, const uint8_t *payload,
+                         size_t payloadLen);
 int WantedRegistryRemove(const reg_entry_t *entry);
 /* Attach a signature to the installed image `ref` ("<name>[:<version>]")
  * names. `payload` is REGISTRY_SIG_PAYLOAD_LEN bytes: a big-endian key id
  * then the raw signature. -ENOENT when no such image is installed. */
 int WantedRegistrySetSignature(const char *ref, const uint8_t *payload,
                                size_t payloadLen);
-/* Synthesize a small JSON descriptor (name/version/size) for a registry entry
- * into buf — the entry alone is the source, with no image load. */
+/* Synthesize a small JSON descriptor for a registry entry into buf: its record
+ * and the linear-memory profile read from the merged image. */
 int WantedRenderRegistryDescriptor(const reg_entry_t *entry, uint8_t *buf,
                                    size_t bufLen);
+
+/* Describe the blob `digest` names as a JSON object, or -ENOENT. */
+int WantedRenderRegistryBlob(const uint8_t digest[REGISTRY_META_DIGEST_LEN],
+                             char *buf, size_t bufLen);
+/* Stage layer `layer` of `ref` as the blob named by `payload`: 64 hex digits,
+ * then an optional newline. -EINVAL for any other payload. */
+int WantedLinkRegistryLayer(const char *ref, unsigned layer,
+                            const uint8_t *payload, size_t payloadLen);
+
+/* Render the capacity of each registry store as a JSON array of objects, with
+ * sizes in bytes. Returns the length, or -EMSGSIZE when `bufLen` is too small.
+ */
+int WantedRenderRegistryCapacity(char *buf, size_t bufLen);
 
 /* Parse a wasm module's declared linear-memory limits from the leading `len`
  * bytes of its app.wasm, filling *init, *has_max and *max. -ENOENT when those

@@ -17,7 +17,7 @@ Every platform implements the contract in `platform/include/platform.h`. A confo
 | Area | Symbols |
 |------|---------|
 | Wapp lifecycle | `PlatformWappLoad` / `Unload` / `Start` / `Stop` / `Release` / `Loop` / `GetState`, `PlatformWorkerStackSize` |
-| Registry backend | `PlatformRegistryRead` / `Write` / `Remove` / `WappLoad` / `ReadImage` |
+| Registry store | `PlatformRegistryStores` — the blob and record stores the registry core in `src/registry.c` runs on |
 | Filesystem | `PlatformOpenStateDir`, `PlatformFsRename`, `PlatformFsMkdir`, `PlatformFsRmdir`, `PlatformVolumeRoot` |
 | Network | `PlatformNetOpen` / `Connect` / `Recv` / `Send` / `Accept` / `Shutdown` / `Close` / `Free`; `PlatformNetWaitReadable` and `PlatformNetPoll`, the blocking and non-blocking readiness checks behind blocking reads and `poll_oneoff` |
 | Readiness | `PlatformFdReady` — non-blocking readiness of a host descriptor (the platform console, host files); the shared body is `posix/ready.c`, over `select` |
@@ -77,7 +77,9 @@ Linux and the NuttX simulator are both POSIX environments, so most of the seam h
 | `posix/mutex.c` | `PlatformMutex*` |
 | `posix/clock.c` | `PlatformClockGetRes` / `GetTime` / `SetTime` |
 | `posix/fs.c` | `PlatformOpenStateDir`, `PlatformFsRename`, `PlatformFsMkdir` |
-| `posix/registry-store.c` | the filesystem registry store behind `PlatformRegistry*` |
+| `posix/registry-fs.c` | the filesystem registry store: one file for each blob, named by its digest, and one for each entry record |
+| `posix/registry-stores.c` | `PlatformRegistryStores`, naming the filesystem store |
+| `posix/file-map.c` | `PlatformFileMap` / `Unmap` — mapping a file, or copying it where mapping is not available |
 | `posix/wapps-image.c` | image load/unload behind `PlatformWappLoad` / `Unload` |
 | `posix/sha256.c` | the software SHA-256 body behind `PlatformSha256*` |
 
@@ -89,7 +91,6 @@ The ESP-IDF port also reuses `posix/socket.c` (over lwIP). A target layer (`plat
 | Sleep (`PlatformNanoSleep`) | `api/clock-sleep.c` | `api/clock-sleep.c` (signal-EINTR quirk) |
 | Secure sockets | OpenSSL (`api/ssocket.c`) | mbedTLS — the shared `posix/ssocket-mbedtls.c`, gated by `CONFIG_SYSTEM_WANTED_TLS` |
 | Memory stats | `mallinfo2` | NuttX heap walk |
-| Registry backend glue | host directory (`api/registry.c`) | hostfs (`api/registry.c`) |
 | Entry point | `wanted-cli` `main` | `wanted_sim_main` (NuttX init task) |
 
 `platform/dummy/` is the exception: a unit-test stub that implements the whole seam **in memory** and shares none of the POSIX sources — the model for a target that is not POSIX at all.
@@ -218,9 +219,9 @@ Inside the devcontainer or CI (already in a build environment, no host container
 `just build` for esp-idf produces `dist/esp-idf/wanted-<chip>-merged.bin` (flashable at offset 0). Runs in the ESP-IDF toolchain image (`docker/Containerfile.esp-idf`), built locally rather than published. `just` must be the container *command*, not an `--entrypoint` override — the base image's entrypoint sources `export.sh`.
 
 - **Threads / stop** — FreeRTOS via the ESP-IDF pthread wrapper; cooperative stop (the WAMR terminate flag aborts the in-flight call).
-- **Registry / PSRAM** — flash-backed LittleFS registry (`registry_flash.c`); PSRAM via `extram.c` (8-byte-aligned allocations — WAMR's GC heap requires it).
+- **Registry / PSRAM** — the page store over the raw `wapps` partition, with LittleFS records (`registry_flash.c`); the images linked into the app binary are listed in place and hold no registry space; PSRAM via `extram.c` (8-byte-aligned allocations — WAMR's GC heap requires it).
 - **Flash layout** — derived from chip by `platform/esp-idf/board-defconfig.cmake`: S3 gets A/B (`ota_0`/`ota_1`) on 8 MB, classic ESP32 a single `factory` app slot on 4 MB, no A/B. An out-of-tree board may set its own flash and app-slot sizes (see below). The board defconfig (`DEFCONFIG=<name>`, e.g. `xiao_esp32s3-sheriff`) fixes `CONFIG_WANTED_MAX_WAPPS`, which sizes the generated partitions.
-- **Registry slot geometry is an on-flash format.** Image bytes sit at `slot * WAPP_IMAGE_SLOT_SIZE` in the raw `wapps` partition, while the record naming that slot lives in a LittleFS index on `persist` — a different partition, which a firmware update does not touch. `CONFIG_WANTED_MAX_WAPPS` and `CONFIG_WANTED_MAX_WAPP_IMAGE_KB` therefore cannot be changed freely: their product can hold the partition size constant while the stride moves, leaving every surviving record pointing at the wrong offset with nothing about the partition table to show for it. Each record stamps the stride it was written under and one naming another reads as absent, so a layout change re-seeds rather than resolving to the wrong bytes. The supervisor is not among the firmware's factory seeds, so a board loading it with `registry:supervisor` falls back to the built-in image after the launch failures instead.
+- **Registry layout is an on-flash format.** Image bytes sit in whole MMU pages (64 KiB) of the raw `wapps` partition, while the records that name their byte ranges live in LittleFS on `persist` — a different partition, which a firmware update does not touch. A blob takes as many pages as it needs, and is mapped from flash as one range even when its pages are not adjacent, so an image is not bound to a slot size. The allocation is rebuilt from the records at every boot, and a record that names bytes outside the partition, or pages another blob holds, is discarded. A blob's bytes are written before its record, so a reset leaves a whole blob or pages no record names. The first boot of this layout adopts every image the fixed-slot layout placed, where it lies, and drops the seeds it held. `CONFIG_WANTED_MAX_WAPPS` and `CONFIG_WANTED_MAX_WAPP_IMAGE_KB` now only size the partition, as their product. The supervisor is not among the firmware's factory seeds, so a board loading it with `registry:supervisor` falls back to the built-in image after the launch failures instead.
 - **Worker stacks** — S3: PSRAM. Classic ESP32: internal DRAM only — a flash op fully disables the classic part's cache, so a PSRAM stack is unreachable during it.
 - **OTA** — A/B firmware update through `esp_ota_ops` (`ota.c`) on the S3, with a pending-verify / rollback seam. The classic part's single-factory layout has no A/B slot to roll back to.
 - **Secure sockets** — raw mbedTLS with ESP32-S3 hardware AES/SHA/ECC acceleration. No CA bundle is provisioned (`MBEDTLS_SSL_VERIFY_NONE`), so `tcps://` here is encrypted but **unauthenticated** — a demo transport, not production TLS.
@@ -609,7 +610,7 @@ Neither the OpenSSL nor the mbedTLS body branches on direction: both uncondition
 
 1. Create `platform/<name>/`. If the target is POSIX-like, link `platform/posix/` and implement only the deltas (thread/stop model, memory stats, secure sockets if any, registry-backend glue, entry point); otherwise implement every `Platform*` symbol from `platform.h` yourself, with `platform/dummy/` as the model for a from-scratch port. Either way, no stubs.
 2. Provide a stop mechanism that **interrupts a blocked host syscall**, not just a cooperative flag.
-3. Implement a registry backend (filesystem, flash blob, or in-memory) behind `PlatformRegistry*`.
+3. Implement a registry store (filesystem, flash, or in-memory) behind `registry_store_t` in `platform/include/registry-store.h`, and return it from `PlatformRegistryStores`. Every rule above the store lives in `src/registry.c`.
 4. Wire the build (`WANTED_PLATFORM=<name>`) and a board/app entry point.
 
 The NuttX port is the reference for a constrained target. Its findings carry over: keep `wamrData_t` opaque and reach it through the `WantedWappTerminate` accessor; avoid VLAs; avoid `scandir` and GNU extensions (use `opendir`/`readdir`/`qsort`); confirm `CONFIG_INTERPRETERS_WAMR_THREAD_MGR` so `wasm_runtime_terminate` takes effect, and that thread cleanup does not rely on `pthread_cleanup_push`.
