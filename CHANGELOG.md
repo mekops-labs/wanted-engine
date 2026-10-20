@@ -20,6 +20,8 @@ Unreleased
   `reg_capacity` are gone.
 - `supervisor_abi` is 2. A supervisor built for 1 rolls back to the
   supervisor compiled into the firmware.
+- A registry commit of a new ref fails with `-ENOSPC` once the registry holds
+  50 entries.
 
 ### Fixed
 
