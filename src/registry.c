@@ -988,6 +988,134 @@ int RegistryCapacity(registry_capacity_t *out, size_t max) {
     return (int)n;
 }
 
+static bool blobPresent(const uint8_t digest[REGISTRY_DIGEST_LEN]) {
+    return residentByDigest(digest) != NULL || storeHolding(digest) != NULL;
+}
+
+static int blobIndex(const uint8_t digest[REGISTRY_DIGEST_LEN], int count) {
+    for (int i = 0; i < count; i++) {
+        if (digestEq(g.blobs[i], digest))
+            return i;
+    }
+    return -1;
+}
+
+/* Fills g.blobs with each distinct digest a listed entry names and something
+ * holds, and returns how many. */
+static int visibleBlobs(void) {
+    registry_meta_t meta;
+    int n = listKeys(g.keys);
+    int count = 0;
+
+    for (int i = 0; i < n; i++) {
+        if (readMeta(&g.keys[i], &meta) < 0)
+            continue;
+        for (size_t l = 0; l < meta.layerCount; l++) {
+            const uint8_t *d = meta.layerDigest[l];
+
+            if (blobIndex(d, count) >= 0 || !blobPresent(d))
+                continue;
+            if (count == MAX_BLOBS)
+                return count;
+            memcpy(g.blobs[count++], d, REGISTRY_DIGEST_LEN);
+        }
+    }
+    return count;
+}
+
+/* The length and the entry count of a blob that is listed and held. */
+static bool blobLookup(const uint8_t digest[REGISTRY_DIGEST_LEN], uint32_t *len,
+                       unsigned *entries) {
+    registry_meta_t meta;
+    int n = listKeys(g.keys);
+
+    *entries = 0;
+    for (int i = 0; i < n; i++) {
+        if (readMeta(&g.keys[i], &meta) < 0)
+            continue;
+        for (size_t l = 0; l < meta.layerCount; l++) {
+            if (!digestEq(meta.layerDigest[l], digest))
+                continue;
+            *len = meta.layerLen[l];
+            (*entries)++;
+            break;
+        }
+    }
+    return *entries > 0 && blobPresent(digest);
+}
+
+int RegistryBlobAt(size_t n, uint8_t digest[REGISTRY_DIGEST_LEN]) {
+    int count;
+    int rc = 0;
+
+    ensureReady();
+    lock();
+    count = visibleBlobs();
+    if (n >= (size_t)count)
+        rc = -ENOENT;
+    else
+        memcpy(digest, g.blobs[n], REGISTRY_DIGEST_LEN);
+    unlock();
+    return rc;
+}
+
+int RegistryBlobInfo(const uint8_t digest[REGISTRY_DIGEST_LEN],
+                     registry_blob_info_t *out) {
+    registry_store_t *s;
+    registry_capacity_t cap;
+    uint32_t len = 0;
+    unsigned entries;
+    int rc = 0;
+
+    if (digest == NULL || out == NULL)
+        return -EINVAL;
+    ensureReady();
+    lock();
+    if (!blobLookup(digest, &len, &entries)) {
+        unlock();
+        return -ENOENT;
+    }
+    memset(out, 0, sizeof(*out));
+    out->size = len;
+    out->entries = (uint16_t)entries;
+    out->resident = residentByDigest(digest) != NULL;
+    for (size_t m = 0; m < MAX_MAPS; m++) {
+        if (g.maps[m].used && digestEq(g.maps[m].digest, digest))
+            out->mapped = true;
+    }
+    s = out->resident ? NULL : storeHolding(digest);
+    if (s != NULL && s->ops->capacity != NULL && s->ops->capacity(s, &cap) == 0)
+        strncpy(out->store, cap.name, sizeof(out->store) - 1);
+    else if (out->resident)
+        strncpy(out->store, "resident", sizeof(out->store) - 1);
+    unlock();
+    return rc;
+}
+
+int RegistryLinkLayer(const char *ref, unsigned layer,
+                      const uint8_t digest[REGISTRY_DIGEST_LEN]) {
+    registry_key_t key;
+    uint32_t len = 0;
+    unsigned entries;
+    int rc = parseRef(ref, &key);
+
+    if (rc < 0)
+        return rc;
+    if (layer >= REGISTRY_META_MAX_LAYERS) {
+        LOG_ERROR("%s layer %u is past the limit of %u", ref, layer,
+                  REGISTRY_META_MAX_LAYERS);
+        return -EINVAL;
+    }
+    ensureReady();
+    lock();
+    if (!blobLookup(digest, &len, &entries))
+        rc = -ENOENT;
+    else
+        pendingAdd(&key, (uint8_t)layer, digest, len);
+    unlock();
+    return rc;
+}
+
 void RegistryClearResident(void) { memset(g.resident, 0, sizeof(g.resident)); }
 
 void RegistryDeinit(void) {

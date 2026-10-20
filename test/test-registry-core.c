@@ -576,6 +576,168 @@ TEST(registry_core, Resident_RefusesBadInput_AndAFullTable) {
     TEST_ASSERT_EQUAL_INT(0, RegistryAddResident("s3:1", seedImage, 8, 0));
 }
 
+static int blobAt(size_t n, const char *bytes) {
+    uint8_t want[REGISTRY_DIGEST_LEN];
+    uint8_t got[REGISTRY_DIGEST_LEN];
+    int rc = RegistryBlobAt(n, got);
+
+    sha(bytes, want);
+    if (rc < 0)
+        return rc;
+    return memcmp(want, got, sizeof(want)) == 0 ? 0 : -EIO;
+}
+
+TEST(registry_core, Blobs_ListsEachHeldBlobOnce) {
+    uint8_t digest[REGISTRY_DIGEST_LEN];
+
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("a:1", 0, "base"));
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("a:1", 1, "top"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("a:1", 2, false, 0));
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("b:1", 0, "base"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("b:1", 1, false, 0));
+
+    TEST_ASSERT_EQUAL_INT(0, blobAt(0, "base"));
+    TEST_ASSERT_EQUAL_INT(0, blobAt(1, "top"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, RegistryBlobAt(2, digest));
+}
+
+TEST(registry_core, Blobs_DoesNotShowABlobOnlyStaged) {
+    uint8_t digest[REGISTRY_DIGEST_LEN];
+    registry_blob_info_t info;
+
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("a:1", 0, "staged"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, RegistryBlobAt(0, digest));
+    sha("staged", digest);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, RegistryBlobInfo(digest, &info));
+}
+
+TEST(registry_core, BlobInfo_ReportsSizeEntriesAndTheStore) {
+    uint8_t digest[REGISTRY_DIGEST_LEN];
+    registry_blob_info_t info;
+
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("a:1", 0, "shared"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("a:1", 1, false, 0));
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("b:1", 0, "shared"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("b:1", 1, false, 0));
+    sha("shared", digest);
+
+    TEST_ASSERT_EQUAL_INT(0, RegistryBlobInfo(digest, &info));
+    TEST_ASSERT_EQUAL_UINT32(6, info.size);
+    TEST_ASSERT_EQUAL_UINT16(2, info.entries);
+    TEST_ASSERT_FALSE(info.mapped);
+    TEST_ASSERT_FALSE(info.resident);
+    TEST_ASSERT_TRUE(info.store[0] != '\0');
+}
+
+TEST(registry_core, BlobInfo_AResidentBlobIsMarkedResident) {
+    uint8_t digest[REGISTRY_DIGEST_LEN];
+    registry_blob_info_t info;
+
+    TEST_ASSERT_EQUAL_INT(
+        0, RegistryAddResident("seed:1.0.0", seedImage, sizeof(seedImage), 0));
+    void *ctx = PlatformSha256New();
+
+    PlatformSha256Update(ctx, seedImage, sizeof(seedImage));
+    PlatformSha256Final(ctx, digest);
+    PlatformSha256Free(ctx);
+    TEST_ASSERT_EQUAL_INT(0, RegistryBlobInfo(digest, &info));
+    TEST_ASSERT_TRUE(info.resident);
+    TEST_ASSERT_EQUAL_UINT32(sizeof(seedImage), info.size);
+    TEST_ASSERT_EQUAL_STRING("resident", info.store);
+}
+
+TEST(registry_core, BlobInfo_ReportsAMappedBlob) {
+    reg_entry_t e = entryOf("app", "1.0.0");
+    uint8_t digest[REGISTRY_DIGEST_LEN];
+    registry_blob_info_t info;
+
+    TEST_ASSERT_EQUAL_INT(0, installPlain("app:1.0.0", "running"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&e, &wapp));
+    sha("running", digest);
+    TEST_ASSERT_EQUAL_INT(0, RegistryBlobInfo(digest, &info));
+    TEST_ASSERT_TRUE(info.mapped);
+    TEST_ASSERT_TRUE(RegistryUnload(&wapp));
+}
+
+TEST(registry_core, LinkLayer_StagesAHeldBlobWithoutWritingBytes) {
+    reg_entry_t e = entryOf("app", "1.0.1");
+    registry_meta_t meta;
+    uint8_t base[REGISTRY_DIGEST_LEN];
+
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("app:1.0.0", 0, "base"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("app:1.0.0", 1, false, 0));
+    sha("base", base);
+
+    TEST_ASSERT_EQUAL_INT(0, RegistryLinkLayer("app:1.0.1", 0, base));
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("app:1.0.1", 1, "top"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("app:1.0.1", 2, false, 0));
+
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&e, &meta));
+    TEST_ASSERT_EQUAL_UINT8(2, meta.layerCount);
+    TEST_ASSERT_EQUAL_UINT32(4, meta.layerLen[0]);
+    TEST_ASSERT_EQUAL_MEMORY(base, meta.layerDigest[0], sizeof(base));
+    TEST_ASSERT_EQUAL_UINT32(7, meta.size);
+    TEST_ASSERT_EQUAL_INT(2, blobCount());
+}
+
+TEST(registry_core, LinkLayer_AnAbsentBlobIsRefused) {
+    uint8_t none[REGISTRY_DIGEST_LEN] = {0};
+
+    TEST_ASSERT_EQUAL_INT(-ENOENT, RegistryLinkLayer("app:1", 0, none));
+}
+
+TEST(registry_core, LinkLayer_ABlobOnlyStagedForAnotherRefIsRefused) {
+    uint8_t digest[REGISTRY_DIGEST_LEN];
+
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("a:1", 0, "staged"));
+    sha("staged", digest);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, RegistryLinkLayer("b:1", 0, digest));
+}
+
+TEST(registry_core, LinkLayer_IndexPastTheLimitIsRefused) {
+    uint8_t digest[REGISTRY_DIGEST_LEN];
+
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("a:1", 0, "base"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("a:1", 1, false, 0));
+    sha("base", digest);
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, RegistryLinkLayer("b:1", REGISTRY_META_MAX_LAYERS, digest));
+}
+
+TEST(registry_core, LinkLayer_KeepsTheBlobWhenTheOldEntryIsReplaced) {
+    reg_entry_t e = entryOf("app", "1.0.1");
+    uint8_t base[REGISTRY_DIGEST_LEN];
+
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("app:1.0.0", 0, "base"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("app:1.0.0", 1, false, 0));
+    sha("base", base);
+    TEST_ASSERT_EQUAL_INT(0, RegistryLinkLayer("app:1.0.1", 0, base));
+
+    /* The only entry that listed the blob goes before the commit. */
+    TEST_ASSERT_EQUAL_INT(0, installPlain("app:1.0.0", "other"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("app:1.0.1", 1, false, 0));
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&e, &wapp));
+    TEST_ASSERT_TRUE(RegistryUnload(&wapp));
+}
+
+TEST(registry_core,
+     LinkLayer_ACommittedLinkedImageRemovedFreesTheSharedBlobOnce) {
+    reg_entry_t a = entryOf("a", "1");
+    reg_entry_t b = entryOf("b", "1");
+    uint8_t base[REGISTRY_DIGEST_LEN];
+
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("a:1", 0, "base"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("a:1", 1, false, 0));
+    sha("base", base);
+    TEST_ASSERT_EQUAL_INT(0, RegistryLinkLayer("b:1", 0, base));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("b:1", 1, false, 0));
+
+    TEST_ASSERT_EQUAL_INT(0, RegistryRemove(&a));
+    TEST_ASSERT_EQUAL_INT(1, blobCount());
+    TEST_ASSERT_EQUAL_INT(0, RegistryRemove(&b));
+    TEST_ASSERT_EQUAL_INT(0, blobCount());
+}
+
 TEST_GROUP_RUNNER(registry_core) {
     RUN_TEST_CASE(registry_core, PlainInstall_ListsOneLayerEntry);
     RUN_TEST_CASE(registry_core, PlainInstall_Replaces_FreesTheOldBlob);
@@ -625,4 +787,18 @@ TEST_GROUP_RUNNER(registry_core) {
     RUN_TEST_CASE(registry_core, BareName_PrefersAnInstallOverAResident);
     RUN_TEST_CASE(registry_core, Resident_SurvivesARestartOfTheRegistry);
     RUN_TEST_CASE(registry_core, Resident_RefusesBadInput_AndAFullTable);
+    RUN_TEST_CASE(registry_core, Blobs_ListsEachHeldBlobOnce);
+    RUN_TEST_CASE(registry_core, Blobs_DoesNotShowABlobOnlyStaged);
+    RUN_TEST_CASE(registry_core, BlobInfo_ReportsSizeEntriesAndTheStore);
+    RUN_TEST_CASE(registry_core, BlobInfo_AResidentBlobIsMarkedResident);
+    RUN_TEST_CASE(registry_core, BlobInfo_ReportsAMappedBlob);
+    RUN_TEST_CASE(registry_core, LinkLayer_StagesAHeldBlobWithoutWritingBytes);
+    RUN_TEST_CASE(registry_core, LinkLayer_AnAbsentBlobIsRefused);
+    RUN_TEST_CASE(registry_core,
+                  LinkLayer_ABlobOnlyStagedForAnotherRefIsRefused);
+    RUN_TEST_CASE(registry_core, LinkLayer_IndexPastTheLimitIsRefused);
+    RUN_TEST_CASE(registry_core,
+                  LinkLayer_KeepsTheBlobWhenTheOldEntryIsReplaced);
+    RUN_TEST_CASE(registry_core,
+                  LinkLayer_ACommittedLinkedImageRemovedFreesTheSharedBlobOnce);
 }

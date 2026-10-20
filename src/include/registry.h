@@ -78,6 +78,27 @@ void RegistryClearResident(void);
 /* One object for each store, up to `max`. Returns the store count. */
 int RegistryCapacity(registry_capacity_t *out, size_t max);
 
+/* A blob that a committed or resident entry lists and a store holds. */
+typedef struct {
+    uint32_t size;
+    uint16_t entries; /* committed or resident entries that list it */
+    bool mapped;
+    bool resident;
+    char store[REGISTRY_STORE_NAME_LEN];
+} registry_blob_info_t;
+
+/* The `n`th held blob, counted from 0, or -ENOENT past the last. The order
+ * follows the entries and is stable while none is installed or removed. */
+int RegistryBlobAt(size_t n, uint8_t digest[REGISTRY_DIGEST_LEN]);
+/* Describes the blob, or -ENOENT when no entry lists it or no store holds it.
+ */
+int RegistryBlobInfo(const uint8_t digest[REGISTRY_DIGEST_LEN],
+                     registry_blob_info_t *out);
+/* Stages layer `layer` of `ref` as the blob, with no bytes written. -ENOENT
+ * where RegistryBlobInfo finds none, -EINVAL for an index past the limit. */
+int RegistryLinkLayer(const char *ref, unsigned layer,
+                      const uint8_t digest[REGISTRY_DIGEST_LEN]);
+
 /* Drops the stage, the staged layers and the mappings, and runs the store
  * discovery again at the next call. */
 void RegistryDeinit(void);
