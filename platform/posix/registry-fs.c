@@ -17,6 +17,7 @@
 #endif
 
 #include <platform.h>
+#include <registry-files.h>
 #include <registry-fs.h>
 #include <wanted-api.h>
 
@@ -24,57 +25,29 @@
 #define BLOBS_DIR REGISTRY_ROOT "/blobs"
 #define STAGE_PATH REGISTRY_ROOT "/_stage"
 #define REC_TEMP REGISTRY_ROOT "/_rec"
-#define REC_EXT ".rec"
-#define HEX_LEN (2 * REGISTRY_DIGEST_LEN)
+#define HEX_LEN REGISTRY_META_DIGEST_HEX_LEN
+#define SCAN_MAX 64
 #define READ_CHUNK 512
 
 static registry_store_t store;
-
-static void toHex(const uint8_t *digest, char *out) {
-    static const char digits[] = "0123456789abcdef";
-
-    for (size_t i = 0; i < REGISTRY_DIGEST_LEN; i++) {
-        out[2 * i] = digits[digest[i] >> 4];
-        out[2 * i + 1] = digits[digest[i] & 0x0f];
-    }
-    out[HEX_LEN] = '\0';
-}
-
-static int hexVal(char c) {
-    if (c >= '0' && c <= '9')
-        return c - '0';
-    if (c >= 'a' && c <= 'f')
-        return c - 'a' + 10;
-    return -1;
-}
-
-static bool fromHex(const char *s, uint8_t *digest) {
-    if (strlen(s) != HEX_LEN)
-        return false;
-    for (size_t i = 0; i < REGISTRY_DIGEST_LEN; i++) {
-        int hi = hexVal(s[2 * i]);
-        int lo = hexVal(s[2 * i + 1]);
-
-        if (hi < 0 || lo < 0)
-            return false;
-        digest[i] = (uint8_t)(hi << 4 | lo);
-    }
-    return true;
-}
 
 static int blobPath(char *out, size_t cap, const uint8_t *digest) {
     char hex[HEX_LEN + 1];
     int n;
 
-    toHex(digest, hex);
+    RegistryDigestToHex(digest, hex);
     n = snprintf(out, cap, "%s/%s", BLOBS_DIR, hex);
     return n < 0 || (size_t)n >= cap ? -ENAMETOOLONG : 0;
 }
 
 static int recPath(char *out, size_t cap, const registry_key_t *key) {
-    int n = snprintf(out, cap, "%s/%s%c%s%s", ENTRIES_DIR, key->name,
-                     REGISTRY_VERSION_SEPARATOR, key->version, REC_EXT);
+    char file[NAME_MAX + 1];
+    int rc = RegFilesKeyName(file, sizeof(file), key);
+    int n;
 
+    if (rc < 0)
+        return rc;
+    n = snprintf(out, cap, "%s/%s", ENTRIES_DIR, file);
     return n < 0 || (size_t)n >= cap ? -ENAMETOOLONG : 0;
 }
 
@@ -145,31 +118,6 @@ static int _RecDel(registry_store_t *s, const registry_key_t *key) {
     return remove(path) == 0 ? 0 : -errno;
 }
 
-/* "<name><sep><version>.rec" into a key; false for any other file. */
-static bool parseRecName(const char *file, registry_key_t *key) {
-    size_t len = strlen(file);
-    size_t extLen = sizeof(REC_EXT) - 1;
-    const char *sep;
-    size_t nameLen;
-    size_t verLen;
-
-    if (len <= extLen || strcmp(file + len - extLen, REC_EXT) != 0)
-        return false;
-    sep = strchr(file, REGISTRY_VERSION_SEPARATOR);
-    if (sep == NULL)
-        return false;
-    nameLen = (size_t)(sep - file);
-    verLen = len - extLen - nameLen - 1;
-    if (nameLen == 0 || nameLen >= REGISTRY_KEY_NAME_LEN ||
-        verLen >= REGISTRY_KEY_NAME_LEN)
-        return false;
-
-    memset(key, 0, sizeof(*key));
-    memcpy(key->name, file, nameLen);
-    memcpy(key->version, sep + 1, verLen);
-    return true;
-}
-
 static int listRaw(registry_key_t *keys, size_t max) {
     DIR *dir = opendir(ENTRIES_DIR);
     const struct dirent *de;
@@ -179,7 +127,7 @@ static int listRaw(registry_key_t *keys, size_t max) {
     if (dir == NULL)
         return errno == ENOENT ? 0 : -errno;
     while ((de = readdir(dir)) != NULL) {
-        if (!parseRecName(de->d_name, &key))
+        if (!RegFilesParseKey(de->d_name, &key))
             continue;
         if ((size_t)n < max)
             keys[n] = key;
@@ -297,7 +245,7 @@ static int _BlobList(registry_store_t *s,
     if (dir == NULL)
         return errno == ENOENT ? 0 : -errno;
     while ((de = readdir(dir)) != NULL) {
-        if (!fromHex(de->d_name, digest))
+        if (RegistryDigestFromHex(de->d_name, strlen(de->d_name), digest) < 0)
             continue;
         if ((size_t)n < max)
             memcpy(digests[n], digest, REGISTRY_DIGEST_LEN);
@@ -430,35 +378,22 @@ static bool convertOld(const char *file, uint32_t seq) {
 
 /* The highest install sequence any entry record carries. */
 static uint32_t maxSeq(void) {
-    DIR *dir = opendir(ENTRIES_DIR);
-    const struct dirent *de;
+    /* Static: conversion runs at init or under the registry lock. */
+    static registry_key_t keys[SCAN_MAX];
+    uint8_t rec[REGISTRY_RECORD_MAX];
+    registry_meta_t meta;
     uint32_t top = 0;
+    int n = listRaw(keys, SCAN_MAX);
 
-    if (dir == NULL)
-        return 0;
-    while ((de = readdir(dir)) != NULL) {
-        char path[PATH_MAX];
-        uint8_t head[REGISTRY_RECORD_HEADER_LEN];
-        registry_key_t key;
-        FILE *f;
+    if (n > SCAN_MAX)
+        n = SCAN_MAX;
+    for (int i = 0; i < n; i++) {
+        int got = _RecGet(&store, &keys[i], rec, sizeof(rec));
 
-        if (!parseRecName(de->d_name, &key))
-            continue;
-        snprintf(path, sizeof(path), "%s/%s", ENTRIES_DIR, de->d_name);
-        f = fopen(path, "rb");
-        if (f == NULL)
-            continue;
-        if (fread(head, 1, sizeof(head), f) == sizeof(head) &&
-            memcmp(head, "4PAW", 4) == 0) {
-            uint32_t seq = (uint32_t)head[12] | (uint32_t)head[13] << 8 |
-                           (uint32_t)head[14] << 16 | (uint32_t)head[15] << 24;
-
-            if (seq > top)
-                top = seq;
-        }
-        fclose(f);
+        if (got > 0 && RegistryRecordDecode(rec, (size_t)got, &meta) &&
+            meta.installSeq > top)
+            top = meta.installSeq;
     }
-    closedir(dir);
     return top;
 }
 

@@ -346,7 +346,7 @@ static int openBlob(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
         return -EROFS;
     if (path[0] == '\0')
         return allocFd(d, REG_FD_BLOBS);
-    ret = WantedDigestFromHex(path, strlen(path), digest);
+    ret = RegistryDigestFromHex(path, strlen(path), digest);
     if (ret < 0)
         return ret;
     ret = RegistryBlobInfo(digest, &info);
@@ -635,7 +635,7 @@ static int readBlobsDir(void *buf, size_t bufLen, uint64_t *cookie,
     /* A blob that goes between two calls shifts the ones after it, so a walk
      * that races an install can skip or repeat a name. */
     for (size_t i = next; RegistryBlobAt(i, digest) == 0; i++) {
-        WantedDigestToHex(digest, hex);
+        RegistryDigestToHex(digest, hex);
         if (!putDirent(buf, bufLen, &used, hex, REGISTRY_META_DIGEST_HEX_LEN,
                        i))
             break;

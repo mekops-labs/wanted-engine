@@ -91,36 +91,3 @@ int RegFilesList(const char *dir, int (*visit)(const char *name, void *arg),
     closedir(d);
     return n;
 }
-
-#define REC_EXT ".rec"
-
-int RegFilesKeyName(char *out, size_t cap, const registry_key_t *key) {
-    int n = snprintf(out, cap, "%s%c%s%s", key->name,
-                     REGISTRY_VERSION_SEPARATOR, key->version, REC_EXT);
-
-    return n < 0 || (size_t)n >= cap ? -ENAMETOOLONG : 0;
-}
-
-bool RegFilesParseKey(const char *file, registry_key_t *key) {
-    size_t len = strlen(file);
-    size_t extLen = sizeof(REC_EXT) - 1;
-    const char *sep;
-    size_t nameLen;
-    size_t verLen;
-
-    if (len <= extLen || strcmp(file + len - extLen, REC_EXT) != 0)
-        return false;
-    sep = strchr(file, REGISTRY_VERSION_SEPARATOR);
-    if (sep == NULL)
-        return false;
-    nameLen = (size_t)(sep - file);
-    verLen = len - extLen - nameLen - 1;
-    if (nameLen == 0 || nameLen >= REGISTRY_KEY_NAME_LEN ||
-        verLen >= REGISTRY_KEY_NAME_LEN)
-        return false;
-
-    memset(key, 0, sizeof(*key));
-    memcpy(key->name, file, nameLen);
-    memcpy(key->version, sep + 1, verLen);
-    return true;
-}

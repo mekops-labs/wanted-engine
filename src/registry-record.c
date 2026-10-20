@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#include <errno.h>
 #include <string.h>
 
 #include <registry-meta.h>
@@ -128,4 +129,38 @@ bool RegistryRecordDecode(const uint8_t *in, size_t len,
     }
     memcpy(meta->signature, in + off, REGISTRY_META_SIG_LEN);
     return true;
+}
+
+void RegistryDigestToHex(const uint8_t digest[REGISTRY_META_DIGEST_LEN],
+                         char *hex) {
+    static const char digits[] = "0123456789abcdef";
+
+    for (size_t i = 0; i < REGISTRY_META_DIGEST_LEN; i++) {
+        *hex++ = digits[digest[i] >> 4];
+        *hex++ = digits[digest[i] & 0x0f];
+    }
+    *hex = '\0';
+}
+
+static int hexValue(char c) {
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    return -1;
+}
+
+int RegistryDigestFromHex(const char *hex, size_t n,
+                          uint8_t digest[REGISTRY_META_DIGEST_LEN]) {
+    if (hex == NULL || n != REGISTRY_META_DIGEST_HEX_LEN)
+        return -EINVAL;
+    for (size_t i = 0; i < REGISTRY_META_DIGEST_LEN; i++) {
+        int hi = hexValue(*hex++);
+        int lo = hexValue(*hex++);
+
+        if (hi < 0 || lo < 0)
+            return -EINVAL;
+        digest[i] = (uint8_t)((hi << 4) | lo);
+    }
+    return 0;
 }

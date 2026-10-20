@@ -43,7 +43,7 @@ static void sha(const char *bytes, char hex[65]) {
     PlatformSha256Update(ctx, (const uint8_t *)bytes, strlen(bytes));
     PlatformSha256Final(ctx, digest);
     PlatformSha256Free(ctx);
-    WantedDigestToHex(digest, hex);
+    RegistryDigestToHex(digest, hex);
 }
 
 static void install(const char *ref, unsigned layer, const char *bytes) {

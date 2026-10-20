@@ -14,7 +14,7 @@
 #define BLOB_EXTENT_LEN 8
 #define BLOB_REC_MAX                                                           \
     (BLOB_HEADER_LEN + (REGISTRY_PAGE_MAX_EXTENTS * BLOB_EXTENT_LEN))
-#define HEX_LEN (2 * REGISTRY_DIGEST_LEN)
+#define HEX_LEN REGISTRY_META_DIGEST_HEX_LEN
 #define STAGE_NAME "_stage"
 #define DIR_PATH_MAX 128
 
@@ -97,38 +97,6 @@ static bool decodeBlob(const uint8_t *in, size_t len, blob_rec_t *b) {
         b->ext[i].offset = get32(in + BLOB_HEADER_LEN + (i * BLOB_EXTENT_LEN));
         b->ext[i].length =
             get32(in + BLOB_HEADER_LEN + (i * BLOB_EXTENT_LEN) + 4);
-    }
-    return true;
-}
-
-static void toHex(const uint8_t *digest, char *out) {
-    static const char digits[] = "0123456789abcdef";
-
-    for (size_t i = 0; i < REGISTRY_DIGEST_LEN; i++) {
-        out[2 * i] = digits[digest[i] >> 4];
-        out[(2 * i) + 1] = digits[digest[i] & 0x0f];
-    }
-    out[HEX_LEN] = '\0';
-}
-
-static int hexVal(char c) {
-    if (c >= '0' && c <= '9')
-        return c - '0';
-    if (c >= 'a' && c <= 'f')
-        return c - 'a' + 10;
-    return -1;
-}
-
-static bool fromHex(const char *s, uint8_t *digest) {
-    if (strlen(s) != HEX_LEN)
-        return false;
-    for (size_t i = 0; i < REGISTRY_DIGEST_LEN; i++) {
-        int hi = hexVal(s[2 * i]);
-        int lo = hexVal(s[(2 * i) + 1]);
-
-        if (hi < 0 || lo < 0)
-            return false;
-        digest[i] = (uint8_t)((hi << 4) | lo);
     }
     return true;
 }
@@ -324,7 +292,7 @@ static int _StageEnd(registry_store_t *s, void *stage,
 
     (void)s;
     (void)stage;
-    toHex(digest, name);
+    RegistryDigestToHex(digest, name);
     if (RegFilesGet(g.cfg->blobDir, name, rec, sizeof(rec)) > 0) {
         freeStageUnits();
         return 0;
@@ -361,7 +329,7 @@ static int loadBlob(const uint8_t digest[REGISTRY_DIGEST_LEN], blob_rec_t *b) {
     uint8_t rec[BLOB_REC_MAX];
     int n;
 
-    toHex(digest, name);
+    RegistryDigestToHex(digest, name);
     n = RegFilesGet(g.cfg->blobDir, name, rec, sizeof(rec));
     if (n < 0)
         return n;
@@ -414,7 +382,7 @@ static int _BlobDrop(registry_store_t *s,
     (void)s;
     if (rc < 0)
         return rc;
-    toHex(digest, name);
+    RegistryDigestToHex(digest, name);
     rc = RegFilesDel(g.cfg->blobDir, name);
     if (rc < 0)
         return rc;
@@ -434,7 +402,7 @@ static int visitBlob(const char *name, void *arg) {
     list_ctx_t *c = arg;
     uint8_t digest[REGISTRY_DIGEST_LEN];
 
-    if (!fromHex(name, digest))
+    if (RegistryDigestFromHex(name, strlen(name), digest) < 0)
         return 0;
     if ((size_t)c->n < c->max)
         memcpy(c->digests[c->n], digest, REGISTRY_DIGEST_LEN);
@@ -558,7 +526,7 @@ static int visitRebuild(const char *name, void *arg) {
     blob_rec_t b;
 
     (void)arg;
-    if (!fromHex(name, digest))
+    if (RegistryDigestFromHex(name, strlen(name), digest) < 0)
         return 0;
     if (loadBlob(digest, &b) < 0 || memcmp(b.digest, digest, sizeof(digest)) ||
         !claimBlob(&b)) {
@@ -654,7 +622,7 @@ int RegistryPageAdopt(registry_store_t *s,
     if (!claimBlob(&b))
         return -EEXIST;
 
-    toHex(digest, name);
+    RegistryDigestToHex(digest, name);
     n = encodeBlob(&b, rec);
     rc = barrier();
     if (rc == 0)
@@ -675,7 +643,8 @@ static int visitCheck(const char *name, void *arg) {
     check_ctx_t *c = arg;
     uint64_t end = (uint64_t)g.cfg->units * g.cfg->unit;
 
-    if (!fromHex(name, digest) || loadBlob(digest, &b) < 0)
+    if (RegistryDigestFromHex(name, strlen(name), digest) < 0 ||
+        loadBlob(digest, &b) < 0)
         return 0;
     for (size_t i = 0; i < b.nExt; i++) {
         uint32_t first;

@@ -7,11 +7,17 @@
 #ifndef REGISTRY_FILES_H
 #define REGISTRY_FILES_H
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
+#include <platform-config.h>
 #include <registry-store.h>
+
+#define REGISTRY_REC_EXT ".rec"
 
 int RegFilesPut(const char *dir, const char *name, const uint8_t *data,
                 size_t len);
@@ -24,7 +30,34 @@ int RegFilesList(const char *dir, int (*visit)(const char *name, void *arg),
                  void *arg);
 
 /* The file name of an entry record, "<name><sep><version>.rec", and back. */
-int RegFilesKeyName(char *out, size_t cap, const registry_key_t *key);
-bool RegFilesParseKey(const char *file, registry_key_t *key);
+static inline int RegFilesKeyName(char *out, size_t cap,
+                                  const registry_key_t *key) {
+    int n =
+        snprintf(out, cap, "%s%c%s%s", key->name, REGISTRY_VERSION_SEPARATOR,
+                 key->version, REGISTRY_REC_EXT);
+
+    return n < 0 || (size_t)n >= cap ? -ENAMETOOLONG : 0;
+}
+
+static inline bool RegFilesParseKey(const char *file, registry_key_t *key) {
+    size_t len = strlen(file);
+    size_t extLen = sizeof(REGISTRY_REC_EXT) - 1;
+    const char *sep = strchr(file, REGISTRY_VERSION_SEPARATOR);
+    size_t nameLen;
+    size_t verLen;
+
+    if (len <= extLen || strcmp(file + len - extLen, REGISTRY_REC_EXT) != 0 ||
+        sep == NULL)
+        return false;
+    nameLen = (size_t)(sep - file);
+    verLen = len - extLen - nameLen - 1;
+    if (nameLen == 0 || nameLen >= REGISTRY_KEY_NAME_LEN ||
+        verLen >= REGISTRY_KEY_NAME_LEN)
+        return false;
+    memset(key, 0, sizeof(*key));
+    memcpy(key->name, file, nameLen);
+    memcpy(key->version, sep + 1, verLen);
+    return true;
+}
 
 #endif /* REGISTRY_FILES_H */

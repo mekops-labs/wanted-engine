@@ -63,6 +63,14 @@ size_t RegistryRecordEncode(const registry_meta_t *meta, uint8_t *out,
  * holds. A WAP3 record reads as one layer with no times. */
 bool RegistryRecordDecode(const uint8_t *in, size_t len, registry_meta_t *meta);
 
+/* A digest as 64 lowercase hex digits and a NUL, into `hex`. */
+void RegistryDigestToHex(const uint8_t digest[REGISTRY_META_DIGEST_LEN],
+                         char *hex);
+/* The reverse. -EINVAL unless `n` is 64 and every character is a lowercase hex
+ * digit. */
+int RegistryDigestFromHex(const char *hex, size_t n,
+                          uint8_t digest[REGISTRY_META_DIGEST_LEN]);
+
 /* Payload the `.sig` route accepts: a big-endian key id then the raw
  * signature. Fixed-width, so the engine parses no wire encoding. */
 #define REGISTRY_SIG_PAYLOAD_LEN (4 + REGISTRY_META_SIG_LEN)
