@@ -157,6 +157,58 @@ TEST(vfs_registry_tree, Blobs_ListsAndDescribesEachHeldBlob) {
     TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
 }
 
+TEST(vfs_registry_tree, Blob_AReadServesTheBodyOfTheOpen) {
+    reg_entry_t e = MakeEntry("app", "1", 0);
+    wapp_t w;
+    char hex[65];
+    char path[96];
+    char body[160];
+    int fd;
+    int got;
+    int n;
+
+    memset(&w, 0, sizeof(w));
+    install("app:1", 0, "base");
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("app:1", 1, false, 0));
+    sha("base", hex);
+    snprintf(path, sizeof(path), "blobs/%s", hex);
+    fd = drv->Open(drv->ctx, path, VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+
+    got = drv->Read(drv->ctx, fd, body, 10);
+    TEST_ASSERT_EQUAL_INT(10, got);
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&e, &w));
+    n = drv->Read(drv->ctx, fd, body + got, sizeof(body) - 1 - (size_t)got);
+    TEST_ASSERT_TRUE(n > 0);
+    body[got + n] = '\0';
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"mapped\":false"));
+    TEST_ASSERT_EQUAL_INT(0, drv->Read(drv->ctx, fd, body, sizeof(body)));
+    TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
+    RegistryUnload(&w);
+}
+
+TEST(vfs_registry_tree, Blob_AReadPastTheEndOfAShorterBodyReturnsNothing) {
+    reg_entry_t e = MakeEntry("app", "1", 0);
+    wapp_t w;
+    char hex[65];
+    char path[96];
+    char body[160];
+    int fd;
+
+    memset(&w, 0, sizeof(w));
+    install("app:1", 0, "base");
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("app:1", 1, false, 0));
+    sha("base", hex);
+    snprintf(path, sizeof(path), "blobs/%s", hex);
+    fd = drv->Open(drv->ctx, path, VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    TEST_ASSERT_TRUE(drv->Read(drv->ctx, fd, body, sizeof(body)) > 0);
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&e, &w));
+    TEST_ASSERT_EQUAL_INT(0, drv->Read(drv->ctx, fd, body, sizeof(body)));
+    TEST_ASSERT_EQUAL_INT(0, drv->Close(drv->ctx, fd));
+    RegistryUnload(&w);
+}
+
 TEST(vfs_registry_tree, Blobs_RefuseAnAbsentOrMalformedName) {
     char path[96];
     char hex[65];
@@ -246,6 +298,9 @@ TEST_GROUP_RUNNER(vfs_registry_tree) {
     RUN_TEST_CASE(vfs_registry_tree, TheFlatPathsAreGone);
     RUN_TEST_CASE(vfs_registry_tree, TheRootAndTheDirectoriesRefuseWrites);
     RUN_TEST_CASE(vfs_registry_tree, Blobs_ListsAndDescribesEachHeldBlob);
+    RUN_TEST_CASE(vfs_registry_tree, Blob_AReadServesTheBodyOfTheOpen);
+    RUN_TEST_CASE(vfs_registry_tree,
+                  Blob_AReadPastTheEndOfAShorterBodyReturnsNothing);
     RUN_TEST_CASE(vfs_registry_tree, Blobs_RefuseAnAbsentOrMalformedName);
     RUN_TEST_CASE(vfs_registry_tree, Link_StagesAHeldBlobAndTheImageCommits);
     RUN_TEST_CASE(vfs_registry_tree, Link_TakesTheDigestWithoutANewline);

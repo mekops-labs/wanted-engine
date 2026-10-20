@@ -85,9 +85,9 @@ typedef struct {
      * A link payload is a digest in hex and an optional newline. */
     uint8_t sig[REGISTRY_SIG_PAYLOAD_LEN];
     size_t sigLen;
-    /* BLOB: the digest the open named. CAPACITY and BLOB: bytes already read.
-     */
-    uint8_t blob[REGISTRY_DIGEST_LEN];
+    /* BLOB: the descriptor, rendered at open. CAPACITY and BLOB: bytes read. */
+    char blob[REG_BLOB_BODY_MAX];
+    size_t blobLen;
     size_t readOff;
     /* LAYER: the layer index. COMMIT: the payload buffered until close. */
     unsigned layer;
@@ -339,8 +339,9 @@ static int openImage(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
 /* Opens "blobs/<rest>": the directory, or one blob named by its digest. */
 static int openBlob(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     uint8_t digest[REGISTRY_DIGEST_LEN];
-    registry_blob_info_t info;
+    char body[REG_BLOB_BODY_MAX];
     int ret;
+    int n;
 
     if (flags & (VFS_O_WRONLY | VFS_O_RDWR))
         return -EROFS;
@@ -349,13 +350,15 @@ static int openBlob(vfs_driver_ctx_t d, const char *path, vfs_oflags_t flags) {
     ret = RegistryDigestFromHex(path, strlen(path), digest);
     if (ret < 0)
         return ret;
-    ret = RegistryBlobInfo(digest, &info);
+    ret = WantedRenderRegistryBlob(digest, body, sizeof(body));
     if (ret < 0)
         return ret;
+    n = ret;
     ret = allocFd(d, REG_FD_BLOB);
     if (ret < 0)
         return ret;
-    memcpy(d->fds[ret].blob, digest, sizeof(digest));
+    memcpy(d->fds[ret].blob, body, (size_t)n);
+    d->fds[ret].blobLen = (size_t)n;
     return ret;
 }
 
@@ -511,7 +514,7 @@ static int _Stat(vfs_driver_ctx_t d, int fd, vfs_stat_t *stat) {
 /* Serves `body` from where the descriptor stopped. */
 static int readBody(reg_fd_t *f, const char *body, size_t len, void *buf,
                     size_t nbyte) {
-    size_t n = len - f->readOff;
+    size_t n = f->readOff < len ? len - f->readOff : 0;
 
     if (n > nbyte)
         n = nbyte;
@@ -532,14 +535,8 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
         return -EISDIR; /* enumerate a directory with ReadDir */
     if (f->kind == REG_FD_CAPACITY)
         return readBody(f, d->capacity, d->capacityLen, buf, nbyte);
-    if (f->kind == REG_FD_BLOB) {
-        char body[REG_BLOB_BODY_MAX];
-        int n = WantedRenderRegistryBlob(f->blob, body, sizeof(body));
-
-        if (n < 0)
-            return n;
-        return readBody(f, body, (size_t)n, buf, nbyte);
-    }
+    if (f->kind == REG_FD_BLOB)
+        return readBody(f, f->blob, f->blobLen, buf, nbyte);
     if (f->kind != REG_FD_ENTRY)
         return -EBADF; /* an install is not open for reading */
     if (f->readDone)
