@@ -322,27 +322,26 @@ static bool hashFile(const char *path, uint8_t digest[REGISTRY_DIGEST_LEN],
     return true;
 }
 
-static void oldMeta(const char *base, registry_meta_t *meta) {
-    char path[PATH_MAX];
+/* The old record beside an image, at `path`; zeroed where there is none. */
+static void oldMeta(const char *path, registry_meta_t *meta) {
     uint8_t rec[REGISTRY_RECORD_MAX];
-    FILE *f;
+    FILE *f = fopen(path, "rb");
     size_t r;
 
     memset(meta, 0, sizeof(*meta));
-    snprintf(path, sizeof(path), "%s%s", base, REGISTRY_META_EXT);
-    f = fopen(path, "rb");
     if (f == NULL)
         return;
     r = fread(rec, 1, sizeof(rec), f);
     fclose(f);
     if (!RegistryRecordDecode(rec, r, meta))
         memset(meta, 0, sizeof(*meta));
-    remove(path);
 }
 
+/* The record goes down first and the old files go last, so a reset at any
+ * step leaves the image to convert again with its signature. */
 static bool convertOld(const char *file, uint32_t seq) {
     char path[PATH_MAX];
-    char base[PATH_MAX];
+    char metaPath[PATH_MAX];
     char dest[PATH_MAX];
     uint8_t rec[REGISTRY_RECORD_MAX];
     registry_meta_t meta;
@@ -353,17 +352,14 @@ static bool convertOld(const char *file, uint32_t seq) {
     if (!oldImageKey(file, &key))
         return false;
     snprintf(path, sizeof(path), "%s/%s", REGISTRY_ROOT, file);
-    snprintf(base, sizeof(base), "%s/%.*s", REGISTRY_ROOT,
-             (int)(strlen(file) - (sizeof(REGISTRY_EXT) - 1)), file);
+    snprintf(metaPath, sizeof(metaPath), "%s/%.*s%s", REGISTRY_ROOT,
+             (int)(strlen(file) - (sizeof(REGISTRY_EXT) - 1)), file,
+             REGISTRY_META_EXT);
 
-    oldMeta(base, &meta);
+    oldMeta(metaPath, &meta);
     if (!hashFile(path, meta.layerDigest[0], &size) || size == 0)
         return false;
     if (blobPath(dest, sizeof(dest), meta.layerDigest[0]) < 0)
-        return false;
-    if (exists(dest))
-        remove(path);
-    else if (rename(path, dest) < 0)
         return false;
 
     meta.magic = REGISTRY_META_MAGIC;
@@ -373,7 +369,15 @@ static bool convertOld(const char *file, uint32_t seq) {
     meta.installSeq = seq;
     meta.flags |= REGISTRY_META_CLOCK_UNSET;
     n = RegistryRecordEncode(&meta, rec, sizeof(rec));
-    return n > 0 && _RecPut(&store, &key, rec, n) == 0;
+    if (n == 0 || _RecPut(&store, &key, rec, n) != 0)
+        return false;
+
+    if (exists(dest))
+        remove(path);
+    else if (rename(path, dest) < 0)
+        return false;
+    remove(metaPath);
+    return true;
 }
 
 /* The highest install sequence any entry record carries. */

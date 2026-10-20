@@ -256,6 +256,31 @@ TEST(registry_fs, DroppedInImage_AppearsAndIsTheNewest) {
     RegistryUnload(&wapp);
 }
 
+TEST(registry_fs, OldLayout_ARecordThatCannotLand_KeepsTheImageAndItsMeta) {
+    uint8_t rec[REGISTRY_RECORD_MAX];
+    reg_entry_t e = MakeEntry("app", "1.0.0", 0);
+    registry_meta_t meta;
+
+    TEST_ASSERT_EQUAL_INT(0, mkdir("registry", 0755));
+    TEST_ASSERT_EQUAL_INT(0, mkdir("registry/entries", 0755));
+    /* A directory where the record goes makes its rename fail. */
+    TEST_ASSERT_EQUAL_INT(0, mkdir("registry/entries/app@1.0.0.rec", 0755));
+    writeFile("registry/app@1.0.0.wapp", "old-image", 9);
+    writeFile("registry/app@1.0.0.meta", rec,
+              oldRecord(rec, 9, REGISTRY_META_SIGNED, 3));
+
+    RegistryRead(NULL, 0);
+    TEST_ASSERT_TRUE(fileExists("registry/app@1.0.0.wapp"));
+    TEST_ASSERT_TRUE(fileExists("registry/app@1.0.0.meta"));
+
+    TEST_ASSERT_EQUAL_INT(0, rmdir("registry/entries/app@1.0.0.rec"));
+    RegistryDeinit();
+    TEST_ASSERT_EQUAL_INT(0, RegistryMetaRead(&e, &meta));
+    TEST_ASSERT_EQUAL_UINT32(3, meta.keyId);
+    TEST_ASSERT_TRUE((meta.flags & REGISTRY_META_SIGNED) != 0);
+    TEST_ASSERT_FALSE(fileExists("registry/app@1.0.0.meta"));
+}
+
 TEST(registry_fs, Capacity_ReportsTheFileStore) {
     registry_capacity_t cap[2];
 
@@ -275,5 +300,7 @@ TEST_GROUP_RUNNER(registry_fs) {
     RUN_TEST_CASE(registry_fs, OldLayout_WithNoRecord_ReadsAsUnsigned);
     RUN_TEST_CASE(registry_fs, OldLayout_ManyImages_AreAllConverted);
     RUN_TEST_CASE(registry_fs, DroppedInImage_AppearsAndIsTheNewest);
+    RUN_TEST_CASE(registry_fs,
+                  OldLayout_ARecordThatCannotLand_KeepsTheImageAndItsMeta);
     RUN_TEST_CASE(registry_fs, Capacity_ReportsTheFileStore);
 }
