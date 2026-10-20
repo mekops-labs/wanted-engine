@@ -1380,6 +1380,7 @@ int WantedStart(const char *cfg, size_t cfgLen) {
      * other half. */
     LogStoreUptimeInit();
     LogStorePersistInit(LogStore());
+    RegistryInit();
 
     ret = WantedParseConfig(cfg, cfgLen);
     DEBUG_TRACE("WantedParseConfig -> %d", ret);

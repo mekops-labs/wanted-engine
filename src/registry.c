@@ -71,7 +71,13 @@ static struct {
     uint8_t refs[MAX_BLOBS][REGISTRY_DIGEST_LEN];
 } g;
 
-static void lock(void) { PlatformMutexLock(g.lock); }
+/* RegistryInit creates the lock before a second thread exists; the fallback
+ * here serves the single-threaded unit tests. */
+static void lock(void) {
+    if (g.lock == NULL)
+        g.lock = PlatformMutexNew();
+    PlatformMutexLock(g.lock);
+}
 static void unlock(void) { PlatformMutexUnlock(g.lock); }
 
 static registry_store_t *primary(void) {
@@ -361,14 +367,13 @@ static void reclaim(void) {
     }
 }
 
+/* Call with the lock held. */
 static void ensureReady(void) {
     registry_meta_t meta;
     int n;
 
     if (g.ready)
         return;
-    if (g.lock == NULL)
-        g.lock = PlatformMutexNew();
     g.nStores = PlatformRegistryStores(g.stores, MAX_STORES);
     for (size_t i = 0; i < g.nStores; i++) {
         int rc = g.stores[i]->ops->init != NULL
@@ -667,8 +672,8 @@ int RegistryWriteLayer(write_state_t s, const char *ref, unsigned layer,
                        const uint8_t *buf, size_t nbytes) {
     int rc;
 
-    ensureReady();
     lock();
+    ensureReady();
     rc = writeLayerLocked(s, ref, layer, false, buf, nbytes);
     unlock();
     return rc;
@@ -678,8 +683,8 @@ int RegistryWrite(write_state_t s, const char *ref, const uint8_t *buf,
                   size_t nbytes) {
     int rc;
 
-    ensureReady();
     lock();
+    ensureReady();
     rc = writeLayerLocked(s, ref, 0, true, buf, nbytes);
     unlock();
     return rc;
@@ -692,8 +697,8 @@ int RegistryCommit(const char *ref, unsigned count, bool hasCreated,
 
     if (rc < 0)
         return rc;
-    ensureReady();
     lock();
+    ensureReady();
     rc = commitLocked(&key, count, hasCreated, created);
     unlock();
     return rc;
@@ -705,8 +710,8 @@ int RegistryRead(reg_entry_t *list, size_t len) {
     int total = 0;
     int n;
 
-    ensureReady();
     lock();
+    ensureReady();
     n = listKeys(g.keys);
     for (int i = 0; n > 0 && i < n; i++) {
         if (readMeta(&g.keys[i], &meta) < 0)
@@ -734,8 +739,8 @@ int RegistryRemove(const reg_entry_t *entry) {
 
     if (entry == NULL)
         return -EINVAL;
-    ensureReady();
     lock();
+    ensureReady();
     p = primary();
     keyFromEntry(entry, &want);
     rc = p == NULL || p->ops->recDel == NULL ? -ENODEV
@@ -857,8 +862,8 @@ int RegistryMapLayers(const reg_entry_t *entry,
 
     if (entry == NULL || layers == NULL || lens == NULL || count == NULL)
         return -EINVAL;
-    ensureReady();
     lock();
+    ensureReady();
     rc = mapLayersLocked(entry, layers, lens, count, &resolved);
     unlock();
     return rc;
@@ -880,8 +885,8 @@ int RegistryLoad(const reg_entry_t *entry, wapp_t *w) {
 
     if (entry == NULL || w == NULL)
         return -EINVAL;
-    ensureReady();
     lock();
+    ensureReady();
     rc = mapLayersLocked(entry, layers, lens, &count, &resolved);
     unlock();
     if (rc < 0)
@@ -925,8 +930,8 @@ int RegistryMetaRead(const reg_entry_t *entry, registry_meta_t *out) {
 
     if (entry == NULL || out == NULL)
         return -EINVAL;
-    ensureReady();
     lock();
+    ensureReady();
     keyFromEntry(entry, &want);
     rc = resolve(&want, &key, out);
     unlock();
@@ -942,8 +947,8 @@ int RegistryMetaSetSignature(const reg_entry_t *entry, uint32_t keyId,
 
     if (entry == NULL || sig == NULL)
         return -EINVAL;
-    ensureReady();
     lock();
+    ensureReady();
     keyFromEntry(entry, &want);
     rc = resolve(&want, &key, &meta);
     if (rc == 0 && residentOnly(&key))
@@ -966,8 +971,8 @@ bool RegistryIsMapped(const reg_entry_t *entry) {
 
     if (entry == NULL)
         return false;
-    ensureReady();
     lock();
+    ensureReady();
     keyFromEntry(entry, &want);
     if (resolve(&want, &key, &meta) == 0) {
         for (size_t i = 0; i < meta.layerCount && !mapped; i++) {
@@ -989,8 +994,8 @@ void RegistryMarkSeeded(const char *ref) {
 
     if (parseRef(ref, &want) < 0)
         return;
-    ensureReady();
     lock();
+    ensureReady();
     if (resolve(&want, &key, &meta) == 0 && !residentOnly(&key) &&
         !(meta.flags & REGISTRY_META_SEEDED)) {
         meta.flags |= REGISTRY_META_SEEDED;
@@ -1001,8 +1006,9 @@ void RegistryMarkSeeded(const char *ref) {
 
 int RegistryAddResident(const char *ref, const uint8_t *data, size_t len,
                         int64_t created) {
+    uint8_t digest[REGISTRY_DIGEST_LEN];
     registry_key_t key;
-    resident_t *slot = NULL;
+    resident_t *slot;
     void *sha;
     int rc;
 
@@ -1014,32 +1020,33 @@ int RegistryAddResident(const char *ref, const uint8_t *data, size_t len,
     sha = PlatformSha256New();
     if (sha == NULL)
         return -ENOMEM;
+    PlatformSha256Update(sha, data, len);
+    PlatformSha256Final(sha, digest);
+    PlatformSha256Free(sha);
 
+    lock();
     slot = residentFind(&key);
     for (size_t i = 0; i < MAX_RESIDENT && slot == NULL; i++) {
         if (!g.resident[i].used)
             slot = &g.resident[i];
     }
-    if (slot == NULL) {
-        PlatformSha256Free(sha);
-        return -ENOSPC;
+    if (slot != NULL) {
+        memcpy(slot->digest, digest, REGISTRY_DIGEST_LEN);
+        slot->used = true;
+        slot->key = key;
+        slot->data = data;
+        slot->len = len;
+        slot->created = created;
     }
-    PlatformSha256Update(sha, data, len);
-    PlatformSha256Final(sha, slot->digest);
-    PlatformSha256Free(sha);
-    slot->used = true;
-    slot->key = key;
-    slot->data = data;
-    slot->len = len;
-    slot->created = created;
-    return 0;
+    unlock();
+    return slot != NULL ? 0 : -ENOSPC;
 }
 
 int RegistryCapacity(registry_capacity_t *out, size_t max) {
     size_t n = 0;
 
-    ensureReady();
     lock();
+    ensureReady();
     for (size_t i = 0; i < g.nStores && out != NULL && n < max; i++) {
         registry_store_t *s = g.stores[i];
 
@@ -1113,8 +1120,8 @@ int RegistryBlobAt(size_t n, uint8_t digest[REGISTRY_DIGEST_LEN]) {
     int count;
     int rc = 0;
 
-    ensureReady();
     lock();
+    ensureReady();
     count = visibleBlobs();
     if (n >= (size_t)count)
         rc = -ENOENT;
@@ -1134,8 +1141,8 @@ int RegistryBlobInfo(const uint8_t digest[REGISTRY_DIGEST_LEN],
 
     if (digest == NULL || out == NULL)
         return -EINVAL;
-    ensureReady();
     lock();
+    ensureReady();
     if (!blobLookup(digest, &len, &entries)) {
         unlock();
         return -ENOENT;
@@ -1171,8 +1178,8 @@ int RegistryLinkLayer(const char *ref, unsigned layer,
                   REGISTRY_META_MAX_LAYERS);
         return -EINVAL;
     }
-    ensureReady();
     lock();
+    ensureReady();
     if (!blobLookup(digest, &len, &entries))
         rc = -ENOENT;
     else
@@ -1181,7 +1188,17 @@ int RegistryLinkLayer(const char *ref, unsigned layer,
     return rc;
 }
 
-void RegistryClearResident(void) { memset(g.resident, 0, sizeof(g.resident)); }
+void RegistryClearResident(void) {
+    lock();
+    memset(g.resident, 0, sizeof(g.resident));
+    unlock();
+}
+
+void RegistryInit(void) {
+    lock();
+    ensureReady();
+    unlock();
+}
 
 void RegistryDeinit(void) {
     if (!g.ready)

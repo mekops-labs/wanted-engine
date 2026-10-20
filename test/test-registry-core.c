@@ -824,7 +824,7 @@ TEST(registry_core, Restart_WithMoreRecordsThanTheLimit_ReclaimsNothing) {
     }
     TEST_ASSERT_EQUAL_INT(0, stageLayer("orphan:1", 0, "orphan"));
     RegistryDeinit();
-    RegistryRead(NULL, 0);
+    RegistryInit();
     TEST_ASSERT_TRUE(storeHas("orphan"));
     snprintf(bytes, sizeof(bytes), "image-%d", REGISTRY_MAX_ENTRIES);
     TEST_ASSERT_TRUE(storeHas(bytes));
@@ -834,7 +834,7 @@ TEST(registry_core, Restart_WhenTheListFails_ReclaimsNothing) {
     TEST_ASSERT_EQUAL_INT(0, installPlain("app:1.0.0", "kept"));
     RegistryDeinit();
     RegistryMemFailList(true);
-    RegistryRead(NULL, 0);
+    RegistryInit();
     RegistryMemFailList(false);
     TEST_ASSERT_TRUE(storeHas("kept"));
     TEST_ASSERT_EQUAL_INT(1, RegistryRead(NULL, 0));
@@ -851,6 +851,14 @@ TEST(registry_core, Remove_WhenTheListFails_KeepsTheBlob) {
     TEST_ASSERT_TRUE(storeHas("kept"));
 }
 
+TEST(registry_core, Init_TwiceStartsTheStoresOnce) {
+    TEST_ASSERT_EQUAL_INT(0, installPlain("app:1.0.0", "x"));
+    RegistryInit();
+    RegistryInit();
+    TEST_ASSERT_EQUAL_INT(1, RegistryRead(NULL, 0));
+    TEST_ASSERT_EQUAL_INT(1, blobCount());
+}
+
 TEST_GROUP_RUNNER(registry_core) {
     RUN_TEST_CASE(registry_core, Resend_OfTheSameBytes_KeepsTheBlob);
     RUN_TEST_CASE(registry_core, LinkLayer_Twice_KeepsTheBlob);
@@ -859,6 +867,7 @@ TEST_GROUP_RUNNER(registry_core) {
                   Restart_WithMoreRecordsThanTheLimit_ReclaimsNothing);
     RUN_TEST_CASE(registry_core, Restart_WhenTheListFails_ReclaimsNothing);
     RUN_TEST_CASE(registry_core, Remove_WhenTheListFails_KeepsTheBlob);
+    RUN_TEST_CASE(registry_core, Init_TwiceStartsTheStoresOnce);
     RUN_TEST_CASE(registry_core, PlainInstall_ListsOneLayerEntry);
     RUN_TEST_CASE(registry_core, PlainInstall_Replaces_FreesTheOldBlob);
     RUN_TEST_CASE(registry_core, StagedLayers_AreHiddenUntilCommit);

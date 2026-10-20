@@ -99,6 +99,10 @@ int RegistryBlobInfo(const uint8_t digest[REGISTRY_DIGEST_LEN],
 int RegistryLinkLayer(const char *ref, unsigned layer,
                       const uint8_t digest[REGISTRY_DIGEST_LEN]);
 
+/* Starts the stores and reclaims what a reset left. Call it before a second
+ * thread can reach the registry; a later call does nothing. */
+void RegistryInit(void);
+
 /* Drops the stage, the staged layers and the mappings, and runs the store
  * discovery again at the next call. */
 void RegistryDeinit(void);
