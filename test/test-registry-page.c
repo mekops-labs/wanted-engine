@@ -297,6 +297,17 @@ TEST(registry_page, SmallBlob_TakesOneUnit) {
     checkInvariants();
 }
 
+TEST(registry_page, Init_CreatesTheDirectoriesUnderAMissingParent) {
+    static const size_t sizes[] = {100};
+
+    boot(true);
+    snprintf(entryDir, sizeof(entryDir), "%s/root/data/entries", scratch);
+    snprintf(blobDir, sizeof(blobDir), "%s/root/data/blobs", scratch);
+    TEST_ASSERT_EQUAL_INT(0, installImage("app:1", 1, sizes, 1));
+    verifyEntry("app", "1", 1, sizes, 1);
+    checkInvariants();
+}
+
 TEST(registry_page, LargeBlob_SpansUnitsAndReadsBackWhole) {
     static const size_t sizes[] = {(3 * SIM_UNIT) + 123};
 
@@ -774,6 +785,7 @@ TEST(registry_page, Restart_KeepsAdoptedBlobsThatShareAUnit) {
 
 TEST_GROUP_RUNNER(registry_page) {
     RUN_TEST_CASE(registry_page, SmallBlob_TakesOneUnit);
+    RUN_TEST_CASE(registry_page, Init_CreatesTheDirectoriesUnderAMissingParent);
     RUN_TEST_CASE(registry_page, LargeBlob_SpansUnitsAndReadsBackWhole);
     RUN_TEST_CASE(registry_page, MultiLayerImage_KeepsEachLayerSeparate);
     RUN_TEST_CASE(registry_page, Remove_FreesTheUnitsWithoutErasing);

@@ -16,6 +16,7 @@
     (BLOB_HEADER_LEN + (REGISTRY_PAGE_MAX_EXTENTS * BLOB_EXTENT_LEN))
 #define HEX_LEN (2 * REGISTRY_DIGEST_LEN)
 #define STAGE_NAME "_stage"
+#define DIR_PATH_MAX 128
 
 typedef struct {
     uint32_t first;
@@ -567,12 +568,34 @@ static int visitRebuild(const char *name, void *arg) {
     return 0;
 }
 
+/* Creates `path` and the directories above it that are missing. */
+static int makeDirs(const char *path) {
+    char buf[DIR_PATH_MAX];
+    size_t n = strlen(path);
+
+    if (n == 0 || n >= sizeof(buf))
+        return -ENAMETOOLONG;
+    memcpy(buf, path, n + 1);
+    for (size_t i = 1; i <= n; i++) {
+        if (buf[i] != '/' && buf[i] != '\0')
+            continue;
+        buf[i] = '\0';
+        if (mkdir(buf, 0755) < 0 && errno != EEXIST)
+            return -errno;
+        buf[i] = i < n ? '/' : '\0';
+    }
+    return 0;
+}
+
 static int _Init(registry_store_t *s) {
+    int rc;
+
     (void)s;
-    if (mkdir(g.cfg->entryDir, 0755) < 0 && errno != EEXIST)
-        return -errno;
-    if (mkdir(g.cfg->blobDir, 0755) < 0 && errno != EEXIST)
-        return -errno;
+    rc = makeDirs(g.cfg->entryDir);
+    if (rc == 0)
+        rc = makeDirs(g.cfg->blobDir);
+    if (rc < 0)
+        return rc;
     RegFilesDel(g.cfg->entryDir, STAGE_NAME);
     RegFilesDel(g.cfg->blobDir, STAGE_NAME);
     memset(g.refs, 0, sizeof(g.refs));
