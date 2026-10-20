@@ -7,7 +7,8 @@
 #include <wanted_malloc.h>
 
 #define MAX_BLOBS 64
-#define MAX_RECS 50
+/* Past the registry limit, so tests can hold more records than it lists. */
+#define MAX_RECS 64
 #define STAGE_MIN 1024
 
 typedef struct {
@@ -36,6 +37,7 @@ static struct {
     rec_t recs[MAX_RECS];
     size_t used;
     size_t limit;
+    bool failList;
 } g;
 
 static registry_store_t store;
@@ -254,6 +256,8 @@ static int _RecList(registry_store_t *s, registry_key_t *keys, size_t max) {
     int n = 0;
 
     (void)s;
+    if (g.failList)
+        return -EIO;
     for (size_t i = 0; i < MAX_RECS; i++) {
         if (!g.recs[i].used)
             continue;
@@ -307,3 +311,5 @@ void RegistryMemReset(void) {
 }
 
 void RegistryMemSetLimit(size_t bytes) { g.limit = bytes; }
+
+void RegistryMemFailList(bool fail) { g.failList = fail; }

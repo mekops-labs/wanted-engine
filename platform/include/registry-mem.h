@@ -6,6 +6,7 @@
 #ifndef REGISTRY_MEM_H
 #define REGISTRY_MEM_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include <registry-store.h>
@@ -18,5 +19,8 @@ void RegistryMemReset(void);
 /* Refuses a stage that would take the blob bytes past `bytes`; 0 lifts the
  * limit. */
 void RegistryMemSetLimit(size_t bytes);
+
+/* Makes every record listing fail with -EIO until called with false. */
+void RegistryMemFailList(bool fail);
 
 #endif /* REGISTRY_MEM_H */

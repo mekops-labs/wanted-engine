@@ -64,10 +64,11 @@ static struct {
     map_t maps[MAX_MAPS];
     resident_t resident[MAX_RESIDENT];
     /* Scratch the lock serialises; kept out of the stack on small targets. */
-    registry_key_t keys[REGISTRY_MAX_ENTRIES];
+    registry_key_t keys[REGISTRY_MAX_ENTRIES + MAX_RESIDENT];
     registry_key_t scanKeys[REGISTRY_MAX_ENTRIES];
     uint8_t rec[REGISTRY_RECORD_MAX];
     uint8_t blobs[MAX_BLOBS][REGISTRY_DIGEST_LEN];
+    uint8_t refs[MAX_BLOBS][REGISTRY_DIGEST_LEN];
 } g;
 
 static void lock(void) { PlatformMutexLock(g.lock); }
@@ -206,7 +207,7 @@ static int listKeys(registry_key_t *keys) {
         return n;
     if (n > REGISTRY_MAX_ENTRIES)
         n = REGISTRY_MAX_ENTRIES;
-    for (size_t i = 0; i < MAX_RESIDENT && n < REGISTRY_MAX_ENTRIES; i++) {
+    for (size_t i = 0; i < MAX_RESIDENT; i++) {
         bool listed = false;
 
         if (!g.resident[i].used)
@@ -253,19 +254,49 @@ static bool digestEq(const uint8_t *a, const uint8_t *b) {
     return memcmp(a, b, REGISTRY_DIGEST_LEN) == 0;
 }
 
-static bool referenced(const uint8_t digest[REGISTRY_DIGEST_LEN]) {
-    registry_meta_t meta;
-    int n = listKeys(g.scanKeys);
-
-    for (int i = 0; i < n; i++) {
-        if (readMeta(&g.scanKeys[i], &meta) < 0)
-            continue;
-        for (size_t l = 0; l < meta.layerCount; l++) {
-            if (digestEq(meta.layerDigest[l], digest))
-                return true;
-        }
+static bool digestIn(uint8_t (*set)[REGISTRY_DIGEST_LEN], size_t n,
+                     const uint8_t *digest) {
+    for (size_t i = 0; i < n; i++) {
+        if (digestEq(set[i], digest))
+            return true;
     }
     return false;
+}
+
+/* Fills g.refs with every digest a store record lists. False when the set may
+ * be short: a list that failed or ran past the limit, or too many digests. */
+static bool listedDigests(size_t *count) {
+    registry_store_t *p = primary();
+    registry_meta_t meta;
+    int n;
+
+    *count = 0;
+    if (p == NULL)
+        return true;
+    if (p->ops->recList == NULL || p->ops->recGet == NULL)
+        return false;
+    n = p->ops->recList(p, g.scanKeys, REGISTRY_MAX_ENTRIES);
+    if (n < 0 || n > REGISTRY_MAX_ENTRIES)
+        return false;
+    for (int i = 0; i < n; i++) {
+        int got = p->ops->recGet(p, &g.scanKeys[i], g.rec, sizeof(g.rec));
+
+        if (got == -ENOENT)
+            continue;
+        if (got < 0)
+            return false;
+        if (!RegistryRecordDecode(g.rec, (size_t)got, &meta))
+            continue;
+        for (size_t l = 0; l < meta.layerCount; l++) {
+            if (digestIn(g.refs, *count, meta.layerDigest[l]))
+                continue;
+            if (*count == MAX_BLOBS)
+                return false;
+            memcpy(g.refs[(*count)++], meta.layerDigest[l],
+                   REGISTRY_DIGEST_LEN);
+        }
+    }
+    return true;
 }
 
 static bool held(const uint8_t digest[REGISTRY_DIGEST_LEN]) {
@@ -280,20 +311,40 @@ static bool held(const uint8_t digest[REGISTRY_DIGEST_LEN]) {
     return false;
 }
 
-/* Frees a blob nothing lists, stages, or maps. */
-static void dropIfFree(const uint8_t digest[REGISTRY_DIGEST_LEN]) {
-    if (referenced(digest) || held(digest))
-        return;
-    for (size_t i = 0; i < g.nStores; i++) {
-        registry_store_t *s = g.stores[i];
+/* Frees each of `digests` that nothing lists, stages, or maps. A listing that
+ * may be short frees nothing. */
+static void dropAllIfFree(uint8_t (*digests)[REGISTRY_DIGEST_LEN], size_t n) {
+    size_t nRefs;
 
-        if (s->ops->blobHas != NULL && s->ops->blobHas(s, digest))
-            s->ops->blobDrop(s, digest);
+    if (n == 0 || !listedDigests(&nRefs))
+        return;
+    for (size_t d = 0; d < n; d++) {
+        if (digestIn(g.refs, nRefs, digests[d]) || held(digests[d]))
+            continue;
+        for (size_t i = 0; i < g.nStores; i++) {
+            registry_store_t *s = g.stores[i];
+
+            if (s->ops->blobHas != NULL && s->ops->blobHas(s, digests[d]))
+                s->ops->blobDrop(s, digests[d]);
+        }
     }
+}
+
+static void dropIfFree(const uint8_t digest[REGISTRY_DIGEST_LEN]) {
+    uint8_t one[1][REGISTRY_DIGEST_LEN];
+
+    memcpy(one[0], digest, REGISTRY_DIGEST_LEN);
+    dropAllIfFree(one, 1);
 }
 
 /* Frees every blob no entry lists, after a reset cut an install. */
 static void reclaim(void) {
+    size_t nRefs;
+
+    if (!listedDigests(&nRefs)) {
+        LOG_ERROR("registry entries could not all be read; nothing reclaimed");
+        return;
+    }
     for (size_t i = 0; i < g.nStores; i++) {
         registry_store_t *s = g.stores[i];
         int n;
@@ -304,7 +355,7 @@ static void reclaim(void) {
         if (n > MAX_BLOBS)
             n = MAX_BLOBS;
         for (int b = 0; b < n; b++) {
-            if (!referenced(g.blobs[b]))
+            if (!digestIn(g.refs, nRefs, g.blobs[b]))
                 s->ops->blobDrop(s, g.blobs[b]);
         }
     }
@@ -398,13 +449,28 @@ static pending_t *pendingFind(const registry_key_t *key, uint8_t index) {
 /* A store can gain an entry the registry did not commit, so the next sequence
  * follows every record there is. */
 static void syncSeq(void) {
+    registry_store_t *p = primary();
     registry_meta_t meta;
-    int n = listKeys(g.scanKeys);
+    int n;
 
+    if (p == NULL || p->ops->recList == NULL)
+        return;
+    n = p->ops->recList(p, g.scanKeys, REGISTRY_MAX_ENTRIES);
+    if (n > REGISTRY_MAX_ENTRIES)
+        n = REGISTRY_MAX_ENTRIES;
     for (int i = 0; i < n; i++) {
         if (readMeta(&g.scanKeys[i], &meta) == 0 && meta.installSeq > g.seq)
             g.seq = meta.installSeq;
     }
+}
+
+/* Records in the primary store; past REGISTRY_MAX_ENTRIES a listing is cut. */
+static int recordCount(void) {
+    registry_store_t *p = primary();
+
+    if (p == NULL || p->ops->recList == NULL)
+        return 0;
+    return p->ops->recList(p, g.scanKeys, REGISTRY_MAX_ENTRIES);
 }
 
 static int commitLocked(const registry_key_t *key, unsigned count,
@@ -448,10 +514,15 @@ static int commitLocked(const registry_key_t *key, unsigned count,
         meta.flags |= REGISTRY_META_CLOCK_UNSET;
     if (hasCreated)
         meta.created = created;
+    hadOld = readMeta(key, &old) == 0;
+    if (!hadOld && recordCount() >= REGISTRY_MAX_ENTRIES) {
+        LOG_ERROR("%s:%s commit refused: the registry holds %u entries",
+                  key->name, key->version, REGISTRY_MAX_ENTRIES);
+        return -ENOSPC;
+    }
     syncSeq();
     meta.installSeq = g.seq + 1;
 
-    hadOld = readMeta(key, &old) == 0;
     rc = writeMeta(key, &meta);
     if (rc < 0)
         return rc;
@@ -470,8 +541,7 @@ static int commitLocked(const registry_key_t *key, unsigned count,
             memcpy(freed[nFreed++], p->digest, REGISTRY_DIGEST_LEN);
         memset(p, 0, sizeof(*p));
     }
-    for (size_t i = 0; i < nFreed; i++)
-        dropIfFree(freed[i]);
+    dropAllIfFree(freed, nFreed);
     return 0;
 }
 
@@ -674,10 +744,8 @@ int RegistryRemove(const reg_entry_t *entry) {
         rc = -EPERM;
     if (rc == 0)
         rc = p->ops->recDel(p, &key);
-    if (rc == 0) {
-        for (size_t i = 0; i < meta.layerCount; i++)
-            dropIfFree(meta.layerDigest[i]);
-    }
+    if (rc == 0)
+        dropAllIfFree(meta.layerDigest, meta.layerCount);
     unlock();
     return rc;
 }
