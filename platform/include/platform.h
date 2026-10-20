@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <registry-meta.h>
 #include <vfs-drivers.h>
@@ -133,6 +134,35 @@ void PlatformStorageStats(size_t *free_b, size_t *total_b);
 /* External-RAM (PSRAM) allocator for large engine buffers, leaving internal RAM
  * for task stacks. Falls back to the ordinary heap. malloc-compatible. */
 void *PlatformExtramMalloc(size_t size);
+
+/* Brackets a read of memory that a registry store maps from flash. Where a
+ * flash write can hand such a read erased bytes, the pair keeps the two apart.
+ * Reads are done in short steps so a write is never held off for long. */
+#ifdef PLATFORM_ESP_IDF
+void PlatformFlashReadBegin(void);
+void PlatformFlashReadEnd(void);
+#else
+static inline void PlatformFlashReadBegin(void) {}
+static inline void PlatformFlashReadEnd(void) {}
+#endif
+
+#define PLATFORM_FLASH_READ_STEP 4096u
+
+/* Copies `n` bytes out of a mapping under the guard. */
+static inline void PlatformMappedCopy(void *dst, const void *src, size_t n) {
+    size_t done = 0;
+
+    while (done < n) {
+        size_t step = n - done < PLATFORM_FLASH_READ_STEP
+                          ? n - done
+                          : PLATFORM_FLASH_READ_STEP;
+
+        PlatformFlashReadBegin();
+        memcpy((uint8_t *)dst + done, (const uint8_t *)src + done, step);
+        PlatformFlashReadEnd();
+        done += step;
+    }
+}
 void *PlatformExtramRealloc(void *ptr, size_t size);
 void PlatformExtramFree(void *ptr);
 

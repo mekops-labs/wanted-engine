@@ -510,14 +510,18 @@ static bool appendMemoryProfile(const reg_entry_t *entry, char *buf, int *n,
     size_t wasmLen = 0;
     uint32_t init = 0, max = 0;
     bool has_max = false;
+    bool profiled;
 
     if (RegistryMapLayers(entry, layers, lens, &count) < 0)
         return false;
     fs = TarFsInit(layers, lens, count);
     wasm = fs != NULL ? TarFsEntrypointWasm(fs, &wasmLen) : NULL;
 
-    if (wasm != NULL &&
-        WantedWasmMemoryProfile(wasm, wasmLen, &init, &has_max, &max) == 0) {
+    PlatformFlashReadBegin();
+    profiled = wasm != NULL && WantedWasmMemoryProfile(wasm, wasmLen, &init,
+                                                       &has_max, &max) == 0;
+    PlatformFlashReadEnd();
+    if (profiled) {
         bool can_grow = !has_max || max > init;
         int w = snprintf(buf + *n, bufLen - (size_t)*n,
                          ",\"init_pages\":%u,\"can_grow\":%s", (unsigned)init,

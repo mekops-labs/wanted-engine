@@ -140,7 +140,15 @@ static bool hashLayer(const uint8_t *bytes, size_t len,
     void *ctx = PlatformSha256New();
     if (ctx == NULL)
         return false;
-    PlatformSha256Update(ctx, bytes, len);
+    for (size_t off = 0; off < len; off += PLATFORM_FLASH_READ_STEP) {
+        size_t n = len - off < PLATFORM_FLASH_READ_STEP
+                       ? len - off
+                       : PLATFORM_FLASH_READ_STEP;
+
+        PlatformFlashReadBegin();
+        PlatformSha256Update(ctx, bytes + off, n);
+        PlatformFlashReadEnd();
+    }
     PlatformSha256Final(ctx, out);
     PlatformSha256Free(ctx);
     return true;

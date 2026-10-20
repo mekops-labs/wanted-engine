@@ -642,7 +642,7 @@ int WantedWappRun(wapp_data_t *ctx) {
         ret = -1;
         goto _freeWamr;
     }
-    memcpy(ctx->wamr->wasm_bytes, wasm, wasmLen);
+    PlatformMappedCopy(ctx->wamr->wasm_bytes, wasm, wasmLen);
 
     DEBUG_TRACE("loading wasm: %p (%zu)", ctx->wamr->wasm_bytes, wasmLen);
     ctx->wamr->module = wasm_runtime_load(

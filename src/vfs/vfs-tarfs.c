@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include <debug_trace.h>
+#include <platform.h>
 #include <vfs-tarfs.h>
 #include <wanted-api.h>
 #include <wanted_malloc.h>
@@ -575,7 +576,12 @@ vfs_tarfs_ctx_t *TarFsInit(uint8_t *const layers[], const size_t layer_lens[],
     for (uint8_t i = 0; i < layer_cnt; i++) {
         /* snapshot of the sorted boundary before this layer's entries land */
         uint16_t sorted_len = ctx->index_len;
-        if (indexLayer(ctx, i, sorted_len) < 0) {
+        int indexed;
+
+        PlatformFlashReadBegin();
+        indexed = indexLayer(ctx, i, sorted_len);
+        PlatformFlashReadEnd();
+        if (indexed < 0) {
             DEBUG_TRACE("tarfs: indexing failed on layer %u", i);
             TarFsDestroy(ctx);
             return NULL;
@@ -698,8 +704,8 @@ static tarfs_file_ctx_t *allocDirHandle(const char *prefix, size_t prefix_len) {
     return h;
 }
 
-void *TarFs_Open(const vfs_tarfs_ctx_t *ctx, const char *path,
-                 vfs_oflags_t flags) {
+static void *openLocked(const vfs_tarfs_ctx_t *ctx, const char *path,
+                        vfs_oflags_t flags) {
     if (!ctx || !path)
         return NULL;
 
@@ -752,6 +758,17 @@ void *TarFs_Open(const vfs_tarfs_ctx_t *ctx, const char *path,
     return allocDirHandle(work, prefix_len);
 }
 
+/* The index names point into the layers, so a lookup reads mapped flash. */
+void *TarFs_Open(const vfs_tarfs_ctx_t *ctx, const char *path,
+                 vfs_oflags_t flags) {
+    void *h;
+
+    PlatformFlashReadBegin();
+    h = openLocked(ctx, path, flags);
+    PlatformFlashReadEnd();
+    return h;
+}
+
 int TarFs_Close(vfs_tarfs_ctx_t *ctx, void *handle) {
     (void)ctx;
     if (!handle)
@@ -779,7 +796,7 @@ int TarFs_Read(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t nbyte) {
         n = (size_t)INT_MAX;
     const uint8_t *data =
         ctx->layers[h->layer_idx] + h->hdr_offset + TAR_BLOCK_SIZE + h->pos;
-    memcpy(buf, data, n);
+    PlatformMappedCopy(buf, data, n);
     h->pos += (uint32_t)n;
     return (int)n;
 }
@@ -833,8 +850,8 @@ int TarFs_Seek(vfs_tarfs_ctx_t *ctx, void *handle, long off,
     return 0;
 }
 
-int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
-                  uint64_t *cookie, size_t *bufUsed) {
+static int readDirLocked(vfs_tarfs_ctx_t *ctx, void *handle, void *buf,
+                         size_t bufLen, uint64_t *cookie, size_t *bufUsed) {
     if (!ctx || !handle || !buf || !cookie || !bufUsed)
         return -EINVAL;
     const tarfs_file_ctx_t *h = handle;
@@ -925,4 +942,14 @@ int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
     *cookie = i;
     *bufUsed = used;
     return 0;
+}
+
+int TarFs_ReadDir(vfs_tarfs_ctx_t *ctx, void *handle, void *buf, size_t bufLen,
+                  uint64_t *cookie, size_t *bufUsed) {
+    int rc;
+
+    PlatformFlashReadBegin();
+    rc = readDirLocked(ctx, handle, buf, bufLen, cookie, bufUsed);
+    PlatformFlashReadEnd();
+    return rc;
 }

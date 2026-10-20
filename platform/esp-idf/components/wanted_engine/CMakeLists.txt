@@ -75,6 +75,7 @@ set(platform_srcs
     ${ENGINE}/platform/esp-idf/reset-reason.c
     ${ENGINE}/platform/esp-idf/platform.c
     ${ENGINE}/platform/esp-idf/registry_flash.c
+    ${ENGINE}/platform/esp-idf/flash-guard.c
     ${ENGINE}/platform/registry/registry-page.c
     ${ENGINE}/platform/posix/registry-files.c
     ${ENGINE}/platform/esp-idf/vfs/vfs-esp-idf.c
