@@ -50,10 +50,9 @@ root = pathlib.Path(reg)
 
 # A ustar member named app.wasm, enough for the loader to map.
 body = b"app.wasm" + b"\0" * 504 + b"\0asm\x01\0\0\0" + b"\0" * 500
-(root / f"{name}@{ver}.wapp").write_bytes(body)
 
 stored = hashlib.sha256(body).digest()
-if state == "digest_mismatch":
+if state == "old_mismatch":
     stored = hashlib.sha256(body + b"tampered").digest()
 
 flags = 0
@@ -71,7 +70,14 @@ record = struct.pack("<IIIBBxx", 0x57415033, len(body), key_id, 1, flags)
 record += digests + sig
 assert len(record) == 208, len(record)
 
-if state != "no_record":
+if state == "digest_mismatch":
+    # The store as the engine keeps it, with the blob's bytes changed after.
+    (root / "blobs").mkdir()
+    (root / "entries").mkdir()
+    (root / "blobs" / stored.hex()).write_bytes(body[:-1] + b"\x01")
+    (root / "entries" / f"{name}@{ver}.rec").write_bytes(record)
+else:
+    (root / f"{name}@{ver}.wapp").write_bytes(body)
     (root / f"{name}@{ver}.meta").write_bytes(record)
 PY
 }
@@ -153,7 +159,20 @@ echo "enforcing: an image that does not verify must not run"
 check "tampered bytes are refused"        digest_mismatch true  yes
 check "an unsigned image is refused"      no_signature    true  yes
 check "an unheld key is refused"          unknown_key     true  yes
-check "an entry with no record is refused" no_record      true  yes
+
+# An old image its record does not match is not converted, so it never loads.
+write_entry old_mismatch
+out=$(run_engine true)
+if echo "$out" | grep -q "does not match its record, not converted" &&
+    ! echo "$out" | grep -q "image verification" &&
+    [ -e "$REG/$NAME@$VER.wapp.unverified" ]; then
+    PASS=$((PASS + 1))
+    printf '  ok    %s\n' "an old image its record does not match is set aside"
+else
+    FAIL=$((FAIL + 1))
+    printf '  FAIL  %s\n' "an old image its record does not match is set aside"
+    echo "$out" | grep -E "registry|verification" | tail -3
+fi
 
 echo "reporting: the same states are reported and the load proceeds"
 check "tampered bytes are reported only"  digest_mismatch false no

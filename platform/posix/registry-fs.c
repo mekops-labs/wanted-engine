@@ -20,6 +20,7 @@
 #include <registry-files.h>
 #include <registry-fs.h>
 #include <wanted-api.h>
+#include <wanted_log.h>
 
 #define ENTRIES_DIR REGISTRY_ROOT "/entries"
 #define BLOBS_DIR REGISTRY_ROOT "/blobs"
@@ -28,6 +29,7 @@
 #define HEX_LEN REGISTRY_META_DIGEST_HEX_LEN
 #define SCAN_MAX 64
 #define READ_CHUNK 512
+#define UNVERIFIED_EXT ".unverified"
 
 static registry_store_t store;
 
@@ -322,19 +324,34 @@ static bool hashFile(const char *path, uint8_t digest[REGISTRY_DIGEST_LEN],
     return true;
 }
 
-/* The old record beside an image, at `path`; zeroed where there is none. */
-static void oldMeta(const char *path, registry_meta_t *meta) {
+/* The old record beside an image, at `path`: 1 when it decodes, 0 when there
+ * is none, -1 when it does not decode. Zeroed unless it decodes. */
+static int oldMeta(const char *path, registry_meta_t *meta) {
     uint8_t rec[REGISTRY_RECORD_MAX];
     FILE *f = fopen(path, "rb");
     size_t r;
 
     memset(meta, 0, sizeof(*meta));
     if (f == NULL)
-        return;
+        return 0;
     r = fread(rec, 1, sizeof(rec), f);
     fclose(f);
-    if (!RegistryRecordDecode(rec, r, meta))
-        memset(meta, 0, sizeof(*meta));
+    if (RegistryRecordDecode(rec, r, meta))
+        return 1;
+    memset(meta, 0, sizeof(*meta));
+    return -1;
+}
+
+/* Moves an image its old record does not vouch for, and the record, out of
+ * the names conversion reads. The image is not listed. */
+static bool setAside(const char *file, const char *path, const char *metaPath) {
+    char aside[PATH_MAX + sizeof(UNVERIFIED_EXT)];
+
+    LOG_ERROR("registry: %s does not match its record, not converted", file);
+    snprintf(aside, sizeof(aside), "%s%s", metaPath, UNVERIFIED_EXT);
+    (void)rename(metaPath, aside);
+    snprintf(aside, sizeof(aside), "%s%s", path, UNVERIFIED_EXT);
+    return rename(path, aside) == 0;
 }
 
 /* The record goes down first and the old files go last, so a reset at any
@@ -344,10 +361,12 @@ static bool convertOld(const char *file, uint32_t seq) {
     char metaPath[PATH_MAX];
     char dest[PATH_MAX];
     uint8_t rec[REGISTRY_RECORD_MAX];
+    uint8_t digest[REGISTRY_DIGEST_LEN];
     registry_meta_t meta;
     registry_key_t key;
     size_t size;
     size_t n;
+    int held;
 
     if (!oldImageKey(file, &key))
         return false;
@@ -356,9 +375,13 @@ static bool convertOld(const char *file, uint32_t seq) {
              (int)(strlen(file) - (sizeof(REGISTRY_EXT) - 1)), file,
              REGISTRY_META_EXT);
 
-    oldMeta(metaPath, &meta);
-    if (!hashFile(path, meta.layerDigest[0], &size) || size == 0)
+    held = oldMeta(metaPath, &meta);
+    if (!hashFile(path, digest, &size) || size == 0)
         return false;
+    if (held < 0 ||
+        (held > 0 && memcmp(digest, meta.layerDigest[0], sizeof(digest)) != 0))
+        return setAside(file, path, metaPath);
+    memcpy(meta.layerDigest[0], digest, sizeof(digest));
     if (blobPath(dest, sizeof(dest), meta.layerDigest[0]) < 0)
         return false;
 

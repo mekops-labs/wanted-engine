@@ -169,12 +169,18 @@ TEST(registry_fs, Restart_ReclaimsAnUncommittedBlob_AndAStaleStage) {
 
 /* A "WAP3" record as the previous layout wrote it: magic, size, key id, layer
  * count, flags, two pad bytes, a digest for each layer slot, the signature. */
-static size_t oldRecord(uint8_t *out, uint32_t size, uint8_t flags,
+static size_t oldRecord(uint8_t *out, const char *image, uint8_t flags,
                         uint32_t keyId) {
     size_t n = 16 + REGISTRY_META_MAX_LAYERS * REGISTRY_META_DIGEST_LEN +
                REGISTRY_META_SIG_LEN;
+    size_t size = strlen(image);
+    void *sha = PlatformSha256New();
 
     memset(out, 0, n);
+    TEST_ASSERT_NOT_NULL(sha);
+    PlatformSha256Update(sha, image, size);
+    PlatformSha256Final(sha, out + 16);
+    PlatformSha256Free(sha);
     out[0] = '3';
     out[1] = 'P';
     out[2] = 'A';
@@ -196,7 +202,7 @@ TEST(registry_fs, OldLayout_IsConvertedInPlace_KeepingTheSignature) {
     TEST_ASSERT_EQUAL_INT(0, mkdir("registry", 0755));
     writeFile("registry/app@1.0.0.wapp", "old-image", 9);
     writeFile("registry/app@1.0.0.meta", rec,
-              oldRecord(rec, 9, REGISTRY_META_SIGNED, 3));
+              oldRecord(rec, "old-image", REGISTRY_META_SIGNED, 3));
 
     TEST_ASSERT_EQUAL_INT(1, RegistryRead(list, 4));
     TEST_ASSERT_EQUAL_STRING("app", list[0].name);
@@ -214,6 +220,41 @@ TEST(registry_fs, OldLayout_IsConvertedInPlace_KeepingTheSignature) {
     TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&e, &wapp));
     TEST_ASSERT_EQUAL_MEMORY("old-image", wapp.layers[0], 9);
     RegistryUnload(&wapp);
+}
+
+TEST(registry_fs, OldLayout_ARecordThatDoesNotMatch_IsSetAside) {
+    uint8_t rec[REGISTRY_RECORD_MAX];
+    reg_entry_t list[4];
+
+    TEST_ASSERT_EQUAL_INT(0, mkdir("registry", 0755));
+    writeFile("registry/bad@1.0.0.wapp", "changed-image", 13);
+    writeFile("registry/bad@1.0.0.meta", rec,
+              oldRecord(rec, "old-image", REGISTRY_META_SIGNED, 3));
+    writeFile("registry/good@1.0.0.wapp", "old-image", 9);
+    writeFile("registry/good@1.0.0.meta", rec,
+              oldRecord(rec, "old-image", REGISTRY_META_SIGNED, 3));
+
+    TEST_ASSERT_EQUAL_INT(1, RegistryRead(list, 4));
+    TEST_ASSERT_EQUAL_STRING("good", list[0].name);
+    TEST_ASSERT_EQUAL_INT(1, countFiles("registry/blobs"));
+    TEST_ASSERT_FALSE(fileExists("registry/bad@1.0.0.wapp"));
+    TEST_ASSERT_TRUE(fileExists("registry/bad@1.0.0.wapp.unverified"));
+    TEST_ASSERT_TRUE(fileExists("registry/bad@1.0.0.meta.unverified"));
+
+    RegistryDeinit();
+    TEST_ASSERT_EQUAL_INT(1, RegistryRead(list, 4));
+}
+
+TEST(registry_fs, OldLayout_ARecordThatDoesNotDecode_IsSetAside) {
+    reg_entry_t list[4];
+
+    TEST_ASSERT_EQUAL_INT(0, mkdir("registry", 0755));
+    writeFile("registry/app@1.0.0.wapp", "old-image", 9);
+    writeFile("registry/app@1.0.0.meta", "torn", 4);
+
+    TEST_ASSERT_EQUAL_INT(0, RegistryRead(list, 4));
+    TEST_ASSERT_TRUE(fileExists("registry/app@1.0.0.wapp.unverified"));
+    TEST_ASSERT_EQUAL_INT(0, countFiles("registry/blobs"));
 }
 
 TEST(registry_fs, OldLayout_WithNoRecord_ReadsAsUnsigned) {
@@ -267,7 +308,7 @@ TEST(registry_fs, OldLayout_ARecordThatCannotLand_KeepsTheImageAndItsMeta) {
     TEST_ASSERT_EQUAL_INT(0, mkdir("registry/entries/app@1.0.0.rec", 0755));
     writeFile("registry/app@1.0.0.wapp", "old-image", 9);
     writeFile("registry/app@1.0.0.meta", rec,
-              oldRecord(rec, 9, REGISTRY_META_SIGNED, 3));
+              oldRecord(rec, "old-image", REGISTRY_META_SIGNED, 3));
 
     RegistryRead(NULL, 0);
     TEST_ASSERT_TRUE(fileExists("registry/app@1.0.0.wapp"));
@@ -316,6 +357,8 @@ TEST_GROUP_RUNNER(registry_fs) {
                   Restart_ReclaimsAnUncommittedBlob_AndAStaleStage);
     RUN_TEST_CASE(registry_fs,
                   OldLayout_IsConvertedInPlace_KeepingTheSignature);
+    RUN_TEST_CASE(registry_fs, OldLayout_ARecordThatDoesNotMatch_IsSetAside);
+    RUN_TEST_CASE(registry_fs, OldLayout_ARecordThatDoesNotDecode_IsSetAside);
     RUN_TEST_CASE(registry_fs, OldLayout_WithNoRecord_ReadsAsUnsigned);
     RUN_TEST_CASE(registry_fs, OldLayout_ManyImages_AreAllConverted);
     RUN_TEST_CASE(registry_fs, DroppedInImage_AppearsAndIsTheNewest);
