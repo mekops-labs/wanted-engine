@@ -27,9 +27,11 @@
 #define SIM_UNIT 4096
 #define SIM_UNITS 16
 #define SIM_SIZE (SIM_UNIT * SIM_UNITS)
+/* Past REGISTRY_PAGE_MAX_EXTENTS free runs, for a partition booted larger. */
+#define SIM_MAX_UNITS 80
 
 typedef struct {
-    uint8_t mem[SIM_SIZE];
+    uint8_t mem[SIM_UNIT * SIM_MAX_UNITS];
     long ops;
     long cutAt; /* the operation that loses power; -1 for never */
     bool dead;
@@ -153,8 +155,9 @@ static void removeTree(const char *path) {
     rmdir(path);
 }
 
-/* A fresh partition and directories, then the store started on them. */
-static void boot(bool scattered) {
+/* A fresh partition of `units` and directories, then the store started on
+ * them. */
+static void bootUnits(bool scattered, uint32_t units) {
     char tmpl[] = "/tmp/registry-page-XXXXXX";
 
     TEST_ASSERT_NOT_NULL(mkdtemp(tmpl));
@@ -169,13 +172,15 @@ static void boot(bool scattered) {
         .entryDir = entryDir,
         .blobDir = blobDir,
         .unit = SIM_UNIT,
-        .units = SIM_UNITS,
+        .units = units,
         .scattered = scattered,
         .flash = &simOps,
     };
     store = RegistryPageStore(&cfg);
     DummyRegistryUseStore(store);
 }
+
+static void boot(bool scattered) { bootUnits(scattered, SIM_UNITS); }
 
 /* A reset: the partition and the records stay, everything in RAM starts over.
  */
@@ -518,6 +523,60 @@ TEST(registry_page, Restart_DiscardsABlobRecordThatOverlapsAnother) {
     checkInvariants();
 }
 
+/* One-unit blobs on every other unit up to unit 66 leave 33 single free units
+ * and a run of 13: 34 runs, 46 units. */
+static void fragment(bool scattered, registry_capacity_t *cap) {
+    char hex[(2 * REGISTRY_DIGEST_LEN) + 1];
+
+    bootUnits(scattered, SIM_MAX_UNITS);
+    TEST_ASSERT_EQUAL_INT(0, mkdir(blobDir, 0755));
+    TEST_ASSERT_EQUAL_INT(0, mkdir(entryDir, 0755));
+    for (uint32_t i = 0; i < 34; i++) {
+        snprintf(hex, sizeof(hex), "cc%062x", (unsigned)i + 1);
+        plantBlobRecord(hex, 2 * i * SIM_UNIT, 100);
+    }
+    reboot();
+    TEST_ASSERT_EQUAL_INT(0, store->ops->init(store));
+    TEST_ASSERT_EQUAL_INT(0, store->ops->capacity(store, cap));
+    TEST_ASSERT_EQUAL_UINT32(46 * SIM_UNIT, cap->freeBytes);
+}
+
+TEST(registry_page, ContiguousStore_LargestFree_IsTheLongestRun) {
+    registry_capacity_t cap;
+
+    fragment(false, &cap);
+    TEST_ASSERT_EQUAL_UINT32(13 * SIM_UNIT, cap.largestFree);
+}
+
+TEST(registry_page, ScatteredStore_LargestFree_TakesTheLongestRunsOneStageCan) {
+    registry_capacity_t cap;
+
+    fragment(true, &cap);
+    TEST_ASSERT_EQUAL_UINT32((13 + 31) * SIM_UNIT, cap.largestFree);
+}
+
+TEST(registry_page,
+     ScatteredStore_LargestFree_IsEveryFreeUnitUnderTheRunLimit) {
+    static const size_t one[] = {1};
+    char ref[16];
+    registry_capacity_t cap;
+
+    boot(true);
+    for (int i = 0; i < SIM_UNITS; i++) {
+        snprintf(ref, sizeof(ref), "g%d:1", i);
+        TEST_ASSERT_EQUAL_INT(0, installImage(ref, 1, one, (uint8_t)i));
+    }
+    for (int i = 0; i < SIM_UNITS; i += 2) {
+        reg_entry_t e;
+
+        snprintf(ref, sizeof(ref), "g%d", i);
+        e = MakeEntry(ref, "1", 0);
+        TEST_ASSERT_EQUAL_INT(0, RegistryRemove(&e));
+    }
+    TEST_ASSERT_EQUAL_INT(1, RegistryCapacity(&cap, 1));
+    TEST_ASSERT_EQUAL_UINT32(SIM_UNITS / 2 * SIM_UNIT, cap.largestFree);
+}
+
 TEST(registry_page, Restart_RemovesAStrayStageFile) {
     uint8_t one = 1;
 
@@ -797,6 +856,11 @@ TEST_GROUP_RUNNER(registry_page) {
     RUN_TEST_CASE(registry_page, ContiguousStore_MapsEachBlobAsOneExtent);
     RUN_TEST_CASE(registry_page, FullPartition_ReturnsEnospcAndFreesTheStage);
     RUN_TEST_CASE(registry_page, Capacity_ReportsUnitsAndKind);
+    RUN_TEST_CASE(registry_page, ContiguousStore_LargestFree_IsTheLongestRun);
+    RUN_TEST_CASE(registry_page,
+                  ScatteredStore_LargestFree_TakesTheLongestRunsOneStageCan);
+    RUN_TEST_CASE(registry_page,
+                  ScatteredStore_LargestFree_IsEveryFreeUnitUnderTheRunLimit);
     RUN_TEST_CASE(registry_page, Restart_DiscardsABlobRecordPastThePartition);
     RUN_TEST_CASE(registry_page,
                   Restart_DiscardsABlobRecordThatOverlapsAnother);
