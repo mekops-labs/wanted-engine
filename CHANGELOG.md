@@ -29,6 +29,11 @@ Unreleased
   not only when CMake configures. Every board directory mounts at `/board`,
   so a build after another board's kept the other board's configuration.
 
+### Build
+
+- Bumped `wapps/sheriff` to v0.14.0, which takes `supervisor_abi` 2.
+  `provisioning.version` and `wifi-mgr.version` read 0.14.0.
+
 0.25.0 (2026-10-15)
 -------------------
 
