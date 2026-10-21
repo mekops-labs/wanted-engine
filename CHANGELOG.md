@@ -1,6 +1,16 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Fixed
+
+- On ESP-IDF, reading the descriptor of a running wapp's image no longer
+  unmaps the flash the wapp runs from, and it reports the image available.
+- On ESP-IDF, a wapp loads while another wapp maps one of its layers, and
+  stopping either leaves the other's layer mapped.
+
 0.26.0 (2026-10-21)
 -------------------
 
