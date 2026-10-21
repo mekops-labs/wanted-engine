@@ -277,6 +277,56 @@ TEST(registry_core, ReplaceWhileRunning_KeepsTheOldBlobMapped) {
     TEST_ASSERT_EQUAL_INT(1, blobCount());
 }
 
+TEST(registry_core, SecondUser_OfAMappedImage_SharesTheStoreMap) {
+    reg_entry_t e = entryOf("app", "1.0.0");
+    uint8_t *layers[REGISTRY_META_MAX_LAYERS];
+    size_t lens[REGISTRY_META_MAX_LAYERS];
+    uint8_t count = 0;
+    uint8_t d[REGISTRY_DIGEST_LEN];
+
+    sha("image", d);
+    TEST_ASSERT_EQUAL_INT(0, installPlain("app:1.0.0", "image"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&e, &wapp));
+    TEST_ASSERT_EQUAL_INT(0, RegistryMapLayers(&e, layers, lens, &count));
+    TEST_ASSERT_EQUAL_UINT(1, RegistryMemMapCount(d));
+    TEST_ASSERT_EQUAL_PTR(wapp.layers[0], layers[0]);
+
+    RegistryUnmapLayers(layers, count);
+    TEST_ASSERT_EQUAL_UINT(1, RegistryMemMapCount(d));
+    TEST_ASSERT_TRUE(RegistryIsMapped(&e));
+
+    TEST_ASSERT_TRUE(RegistryUnload(&wapp));
+    TEST_ASSERT_EQUAL_UINT(0, RegistryMemMapCount(d));
+    TEST_ASSERT_FALSE(RegistryIsMapped(&e));
+}
+
+TEST(registry_core, SharedLayer_StaysMapped_UntilItsLastWappUnloads) {
+    reg_entry_t a = entryOf("one", "1.0.0");
+    reg_entry_t b = entryOf("two", "1.0.0");
+    wapp_t other;
+    uint8_t d[REGISTRY_DIGEST_LEN];
+
+    memset(&other, 0, sizeof(other));
+    sha("shared", d);
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("one:1.0.0", 0, "shared"));
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("one:1.0.0", 1, "one-top"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("one:1.0.0", 2, false, 0));
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("two:1.0.0", 0, "shared"));
+    TEST_ASSERT_EQUAL_INT(0, stageLayer("two:1.0.0", 1, "two-top"));
+    TEST_ASSERT_EQUAL_INT(0, RegistryCommit("two:1.0.0", 2, false, 0));
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&a, &wapp));
+    TEST_ASSERT_EQUAL_INT(0, RegistryLoad(&b, &other));
+    TEST_ASSERT_EQUAL_UINT(1, RegistryMemMapCount(d));
+
+    TEST_ASSERT_TRUE(RegistryUnload(&wapp));
+    TEST_ASSERT_EQUAL_UINT(1, RegistryMemMapCount(d));
+    TEST_ASSERT_TRUE(RegistryIsMapped(&b));
+    TEST_ASSERT_EQUAL_MEMORY("shared", other.layers[1], 6);
+
+    TEST_ASSERT_TRUE(RegistryUnload(&other));
+    TEST_ASSERT_EQUAL_UINT(0, RegistryMemMapCount(d));
+}
+
 TEST(registry_core, Load_MapsLayersTopmostFirst) {
     reg_entry_t e = entryOf("app", "1.0.0");
 
@@ -901,6 +951,9 @@ TEST_GROUP_RUNNER(registry_core) {
     RUN_TEST_CASE(registry_core,
                   MappedBlob_SurvivesRemoval_UntilTheWappUnloads);
     RUN_TEST_CASE(registry_core, ReplaceWhileRunning_KeepsTheOldBlobMapped);
+    RUN_TEST_CASE(registry_core, SecondUser_OfAMappedImage_SharesTheStoreMap);
+    RUN_TEST_CASE(registry_core,
+                  SharedLayer_StaysMapped_UntilItsLastWappUnloads);
     RUN_TEST_CASE(registry_core, Load_MapsLayersTopmostFirst);
     RUN_TEST_CASE(registry_core,
                   BareName_TakesTheNewestInstall_NotTheHighestVersion);

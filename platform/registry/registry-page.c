@@ -169,6 +169,37 @@ static uint32_t largestRun(uint32_t *start) {
     return best;
 }
 
+/* The units of the largest blob one stage can take: the longest run on a
+ * contiguous store, the REGISTRY_PAGE_MAX_EXTENTS longest on a scattered one.
+ */
+static uint32_t largestTake(void) {
+    uint32_t top[REGISTRY_PAGE_MAX_EXTENTS] = {0};
+    uint32_t run = 0;
+    uint32_t sum = 0;
+    uint32_t start;
+
+    if (!g.cfg->scattered)
+        return largestRun(&start);
+    for (uint32_t u = 0; u <= g.cfg->units; u++) {
+        size_t i;
+
+        if (u < g.cfg->units && !unitUsed(u)) {
+            run++;
+            continue;
+        }
+        for (i = REGISTRY_PAGE_MAX_EXTENTS; i > 0 && top[i - 1] < run; i--) {
+            if (i < REGISTRY_PAGE_MAX_EXTENTS)
+                top[i] = top[i - 1];
+        }
+        if (i < REGISTRY_PAGE_MAX_EXTENTS)
+            top[i] = run;
+        run = 0;
+    }
+    for (size_t i = 0; i < REGISTRY_PAGE_MAX_EXTENTS; i++)
+        sum += top[i];
+    return sum;
+}
+
 static bool firstFree(uint32_t *unit) {
     for (uint32_t u = 0; u < g.cfg->units; u++) {
         if (!unitUsed(u)) {
@@ -480,7 +511,6 @@ static int _RecList(registry_store_t *s, registry_key_t *keys, size_t max) {
 }
 
 static int _Capacity(registry_store_t *s, registry_capacity_t *out) {
-    uint32_t start;
     uint32_t unit = g.cfg->unit;
 
     (void)s;
@@ -489,7 +519,7 @@ static int _Capacity(registry_store_t *s, registry_capacity_t *out) {
     out->unit = unit;
     out->total = g.cfg->units * unit;
     out->freeBytes = countFree() * unit;
-    out->largestFree = largestRun(&start) * unit;
+    out->largestFree = largestTake() * unit;
     out->caps =
         REGISTRY_CAP_MAPPABLE | (g.cfg->scattered ? REGISTRY_CAP_SCATTERED : 0);
     out->present = true;
