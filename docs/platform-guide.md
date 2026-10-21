@@ -283,11 +283,13 @@ docker/publish-images.sh -b pimoroni_pico2_plus_w -i dist/nuttx/pimoroni-pico-2-
 
 The reference is `$REGISTRY/wanted-engine:<version>` — `$REGISTRY` defaults to `registry.gitlab.com/mekops/wanted/wanted-engine`, so every board's firmware images share the one `wanted-engine` repository, distinguished by tag. Runners grant no privileged mode, so this runs on a developer machine, not in CI.
 
-`docker/Containerfile.firmware.in` is a template rendered per build, since the version changes every build. Three labels are stamped from the artifact itself:
+`docker/Containerfile.firmware.in` is a template rendered per build, since the version changes every build. It stamps six labels:
 
 | Label | Value |
 |---|---|
-| `version` | The release tag without its leading `v`, which is also the version the engine reports and the tag the image publishes under. |
+| `version` | The tag the image publishes under: the version below, then `-<board>`, then `-<variant>` when `-c` names one. The engine reports the version alone. |
+| `firmware.board` | The board that `-b` names. |
+| `firmware.variant` | The variant that `-c` names, or empty. |
 | `firmware.digest` | `sha256:` plus the hash of the `.bin`. |
 | `firmware.size` | The `.bin`'s length in bytes. |
 | `firmware.config` | SHA-256 of the `.config` the binary was built from. |
