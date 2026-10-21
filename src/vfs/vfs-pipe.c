@@ -260,9 +260,8 @@ int PipeDriver_Close(vfs_ctx_t c, const vfs_driver_t *drv, void *handle) {
     return 0;
 }
 
-int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
+int PipeDriver_Read(int wakeFd, const vfs_driver_t *drv, void *handle,
                     void *buf, size_t nbyte) {
-    (void)c;
     pipe_handle_t *h = handle;
     if (!h || h->is_root || !h->pipe)
         return -EBADF;
@@ -291,17 +290,17 @@ int PipeDriver_Read(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
         if (nonblock || pollExpired(deadline))
             return -EAGAIN;
         /* Sleep UNLOCKED so a worker torn down here cannot strand the shared
-         * mutex. A signalled stop interrupts the sleep (EINTR); where the
-         * platform has no signal the wake descriptor is raised instead. */
+         * mutex. A signalled stop interrupts the sleep (EINTR); a raised wake
+         * descriptor ends the wait at the next check. */
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
             return -EINTR;
-        if (PlatformWakeRaised(VfsWakeFd(c)))
+        if (PlatformWakeRaised(wakeFd))
             return -EINTR;
     }
 }
 
-int PipeDriver_Write(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
+int PipeDriver_Write(int wakeFd, const vfs_driver_t *drv, void *handle,
                      const void *buf, size_t nbyte) {
     pipe_handle_t *h = handle;
     if (!h || h->is_root || !h->pipe)
@@ -325,12 +324,12 @@ int PipeDriver_Write(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
         if (nonblock || pollExpired(deadline))
             return -EAGAIN;
         /* Sleep UNLOCKED so a worker torn down here cannot strand the shared
-         * mutex. A signalled stop interrupts the sleep (EINTR); where the
-         * platform has no signal the wake descriptor is raised instead. */
+         * mutex. A signalled stop interrupts the sleep (EINTR); a raised wake
+         * descriptor ends the wait at the next check. */
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
             return -EINTR;
-        if (PlatformWakeRaised(VfsWakeFd(c)))
+        if (PlatformWakeRaised(wakeFd))
             return -EINTR;
     }
 }
@@ -402,6 +401,7 @@ int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
 typedef struct bridge_state_t {
     pipe_store_t *store; /* shared, engine-owned; NOT freed here */
     void *handles[BRIDGE_MAX_HANDLES];
+    int wakeFd; /* the wapp's wake descriptor; -1 for none */
 } bridge_state_t;
 
 static int allocHandle(bridge_state_t *s, void *h) {
@@ -460,7 +460,7 @@ static int _bRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
         return -EBADF;
     vfs_driver_t tmp;
     buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
-    return PipeDriver_Read(NULL, &tmp, h, buf, nbyte);
+    return PipeDriver_Read(s->wakeFd, &tmp, h, buf, nbyte);
 }
 
 static int _bWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
@@ -471,7 +471,7 @@ static int _bWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
         return -EBADF;
     vfs_driver_t tmp;
     buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
-    return PipeDriver_Write(NULL, &tmp, h, buf, nbyte);
+    return PipeDriver_Write(s->wakeFd, &tmp, h, buf, nbyte);
 }
 
 static int _bStat(vfs_driver_ctx_t dctx, int fd, vfs_stat_t *stat) {
@@ -501,6 +501,10 @@ static int _bSetFlags(vfs_driver_ctx_t dctx, int fd, vfs_oflags_t flags) {
         return -EBADF;
     h->flags = (h->flags & ~VFS_O_NONBLOCK) | (flags & VFS_O_NONBLOCK);
     return 0;
+}
+
+static void _bSetWake(vfs_driver_ctx_t dctx, int fd) {
+    ((bridge_state_t *)dctx)->wakeFd = fd;
 }
 
 static int _bReadDir(vfs_driver_ctx_t dctx, int fd, void *buf, size_t bufLen,
@@ -545,6 +549,7 @@ typedef struct {
     char name[MAX_ENTRY_NAME_LEN];
     bool forRead;
     int flags;
+    int wakeFd; /* the wapp's wake descriptor; -1 for none */
 } pipe_console_t;
 
 static void consoleDetach(pipe_console_t *c) {
@@ -598,6 +603,8 @@ static int _pcWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
             return -EINTR;
+        if (PlatformWakeRaised(c->wakeFd))
+            return -EINTR;
     }
 }
 
@@ -629,7 +636,13 @@ static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
         if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
                                    PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
             return -EINTR;
+        if (PlatformWakeRaised(c->wakeFd))
+            return -EINTR;
     }
+}
+
+static void _pcSetWake(vfs_driver_ctx_t dctx, int fd) {
+    ((pipe_console_t *)dctx)->wakeFd = fd;
 }
 
 static int _pcPoll(vfs_driver_ctx_t dctx, int fd, uint32_t *avail) {
@@ -693,6 +706,7 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
     c->name[MAX_ENTRY_NAME_LEN - 1] = '\0';
     c->forRead = forRead;
     c->flags = flags;
+    c->wakeFd = -1;
 
     /* Attach now so the pipe exists and is discoverable before the wapp's first
      * write, and a peer reader sees writer_seen for clean EOF. */
@@ -716,6 +730,7 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
     drv->filetype = VFS_FILETYPE_CHARACTER_DEVICE;
     drv->ctx = (vfs_driver_ctx_t)c;
     drv->Destroy = _pcDestroy;
+    drv->SetWake = _pcSetWake;
     drv->Close = _pcClose;
     drv->Read = _pcRead;
     drv->Write = _pcWrite;
@@ -740,12 +755,14 @@ vfs_driver_t *PipeDriverCreate(pipe_store_t *store) {
     }
     memset(s, 0, sizeof(*s));
     s->store = store;
+    s->wakeFd = -1;
 
     memset(drv, 0, sizeof(*drv));
     drv->bytesId = 0x65706950; /* 'Pipe' LE */
     drv->filetype = VFS_FILETYPE_DIRECTORY;
     drv->ctx = (vfs_driver_ctx_t)s;
     drv->Destroy = _bDestroy;
+    drv->SetWake = _bSetWake;
     drv->Open = _bOpen;
     drv->Close = _bClose;
     drv->Read = _bRead;

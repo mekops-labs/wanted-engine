@@ -7,6 +7,7 @@
 
 #include "test-utils.h"
 
+#include <platform.h>
 #include <vfs-devfs.h>
 #include <vfs-pipe.h>
 #include <vfs.h>
@@ -542,4 +543,79 @@ TEST_GROUP_RUNNER(pipe_console) {
     RUN_TEST_CASE(pipe_console, KeepsTheOldestBytesWhenTheRingFills);
     RUN_TEST_CASE(pipe_console, WriterLeavingIsNotEndOfStream);
     RUN_TEST_CASE(pipe_console, BufferedBytesSurviveTheWriterLeaving);
+}
+
+/***************************************/
+TEST_GROUP(pipe_wake);
+/***************************************/
+
+/* A stop raises the wapp's wake descriptor, and every blocking pipe wait must
+ * end on it: a signal that lands between two of its sleeps ends none. */
+static pipe_store_t *wstore;
+static vfs_ctx_t wvfs;
+static int wake;
+
+static vfs_driver_t *withWake(vfs_driver_t *drv) {
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_NOT_NULL(drv->SetWake);
+    drv->SetWake(drv->ctx, wake);
+    return drv;
+}
+
+TEST_SETUP(pipe_wake) {
+    wstore = PipeStoreNew();
+    wvfs = VfsInit();
+    wake = PlatformWakeCreate();
+    TEST_ASSERT_TRUE(wake >= 0);
+    VfsSetWakeFd(wvfs, wake);
+}
+
+TEST_TEAR_DOWN(pipe_wake) {
+    VfsDestroy(&wvfs); /* closes the wake descriptor */
+    PipeStoreFree(wstore);
+    wstore = NULL;
+}
+
+TEST(pipe_wake, ReadWithNoWriterEndsOnTheWake) {
+    DevFs_Register(wvfs, "pipe", withWake(PipeDriverCreate(wstore)));
+    int reader = VfsOpen(wvfs, "/dev/pipe/void", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(reader >= 0);
+
+    PlatformWakeRaise(wake);
+    char buf[8];
+    TEST_ASSERT_EQUAL_INT(-EINTR, VfsRead(wvfs, reader, buf, sizeof(buf)));
+    VfsClose(wvfs, reader);
+}
+
+TEST(pipe_wake, WriteToAFullRingEndsOnTheWake) {
+    DevFs_Register(wvfs, "pipe", withWake(PipeDriverCreate(wstore)));
+    int writer = VfsOpen(wvfs, "/dev/pipe/full", VFS_O_WRONLY);
+    int reader = VfsOpen(wvfs, "/dev/pipe/full", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(writer >= 0);
+    TEST_ASSERT_TRUE(reader >= 0);
+    static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
+    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_PIPE_BUF_SIZE,
+                          VfsWrite(wvfs, writer, payload, sizeof(payload)));
+
+    PlatformWakeRaise(wake);
+    uint8_t extra = 0xFF;
+    TEST_ASSERT_EQUAL_INT(-EINTR, VfsWrite(wvfs, writer, &extra, 1));
+    VfsClose(wvfs, writer);
+    VfsClose(wvfs, reader);
+}
+
+TEST(pipe_wake, ConsoleReadEndsOnTheWake) {
+    VfsRegister(
+        wvfs, "<stdin>",
+        withWake(VfsPipeConsoleCreate(wstore, "in", true, VFS_O_RDONLY)));
+
+    PlatformWakeRaise(wake);
+    char buf[8];
+    TEST_ASSERT_EQUAL_INT(-EINTR, VfsRead(wvfs, VFS_STDIN, buf, sizeof(buf)));
+}
+
+TEST_GROUP_RUNNER(pipe_wake) {
+    RUN_TEST_CASE(pipe_wake, ReadWithNoWriterEndsOnTheWake);
+    RUN_TEST_CASE(pipe_wake, WriteToAFullRingEndsOnTheWake);
+    RUN_TEST_CASE(pipe_wake, ConsoleReadEndsOnTheWake);
 }

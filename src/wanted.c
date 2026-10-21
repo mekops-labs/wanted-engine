@@ -120,6 +120,13 @@ static bool consolePipeName(const char *opt, char *out, size_t cap) {
 /* Install one console slot. A `pipe` backing auto-creates a named pipe in the
  * shared store and binds the stream fd to it; every other backing resolves
  * through the driver table. */
+/* A driver that blocks watches the wapp's wake descriptor beside its own. */
+static const vfs_driver_t *withWake(vfs_ctx_t vfs, const vfs_driver_t *drv) {
+    if (drv != NULL && drv->SetWake != NULL)
+        drv->SetWake(drv->ctx, VfsWakeFd(vfs));
+    return drv;
+}
+
 static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
                               const char *fallback, const char *path) {
     const char *name = resolveConsole(wapp->cfg.console[idx].name, fallback);
@@ -134,7 +141,7 @@ static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
                                                        idx == 0, VFS_O_RDONLY);
         if (drv == NULL)
             return -ENOMEM;
-        return VfsRegister(ctx->vfs, path, drv);
+        return VfsRegister(ctx->vfs, path, withWake(ctx->vfs, drv));
     }
 
     int rc = WantedInstallDriver(ctx->vfs, wapp, name, path, options);
@@ -719,14 +726,15 @@ int WantedWappRun(wapp_data_t *ctx) {
     /* Builtin /dev entries — always present regardless of wapp config. The
      * stdin/stdout/stderr aliases are registered after the console is installed
      * (below), so they can forward to the wapp's actual stream backing. */
-    DevFs_Register(ctx->vfs, "null", VfsNullInit(wapp, NULL));
-    DevFs_Register(ctx->vfs, "pipe", PipeDriverCreate(wantedPipeStore()));
-
-    /* Propagate system-level privilege flag, then register /proc entries. */
-    VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
     /* A blocking driver watches this beside its own resource, so a stop reaches
      * a wapp parked in a host call. */
     VfsSetWakeFd(ctx->vfs, PlatformWakeCreate());
+    DevFs_Register(ctx->vfs, "null", VfsNullInit(wapp, NULL));
+    DevFs_Register(ctx->vfs, "pipe",
+                   withWake(ctx->vfs, PipeDriverCreate(wantedPipeStore())));
+
+    /* Propagate system-level privilege flag, then register /proc entries. */
+    VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
     ProcFs_RegisterDir(ctx->vfs, "wapps", &WappsProcDirOps, true);
     ProcFs_Register(ctx->vfs, "memory", procReadMemory, true);
     /* clock_quality is unprivileged — any wapp may read it to decide whether
