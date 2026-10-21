@@ -4,6 +4,12 @@ Changelog
 Unreleased
 ----------
 
+### Changed
+
+- `largest_free` of a scattered store is the sum of its 32 longest free runs,
+  the largest image one install can take there. On a contiguous store it stays
+  the longest free run.
+
 ### Fixed
 
 - On ESP-IDF, reading the descriptor of a running wapp's image no longer
