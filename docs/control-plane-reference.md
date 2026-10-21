@@ -114,8 +114,12 @@ when the wait ends, thus the engine ends the wait as well.
 
 Two mechanisms end it, by platform:
 
-- **Linux and NuttX** signal the worker (`SIGUSR2`, no `SA_RESTART`). The
-  blocked call answers `EINTR`.
+- **Linux** signals the worker (`SIGUSR2`, no `SA_RESTART`) and raises the
+  wapp's wake descriptor, an `eventfd`. The blocked call answers `EINTR`. A
+  polling wait the signal reaches between two sleeps ends at its next check of
+  the descriptor.
+- **NuttX** signals the worker (`SIGUSR2`, no `SA_RESTART`). The blocked call
+  answers `EINTR`.
 - **ESP-IDF** raises the wapp's wake descriptor, an `eventfd` the blocking
   drivers watch. This platform implements no `pthread_kill`.
 
@@ -125,7 +129,7 @@ The waits a wapp can enter:
 |------|-------------|
 | socket accept, socket read | the wake descriptor, watched with `select()` beside the socket |
 | `uart` read, `uart` write | the wake descriptor, checked between poll attempts |
-| pipe read, pipe write | a cap of about 5 s, after which the call answers `-EAGAIN` |
+| pipe read, pipe write | the signal, or the wake descriptor checked between 1 ms sleeps; any wait ends at a cap of about 5 s with `-EAGAIN` |
 | `uart` transmit drain before a line-rate change | a cap of 1 s |
 
 A stopped wapp answers `-EINTR` from the call it was in, unwinds, and the

@@ -105,7 +105,7 @@ just supervisor-variant wsh && just build   # ...with the wsh debug supervisor
 ```
 
 - **Threads** — pthreads.
-- **Stop mechanism** — cooperative: `PlatformWappStop` sets the WAMR terminate flag and sends `SIGUSR2` to the worker, so a wapp spinning in the interpreter and one blocked in a host call are both reaped promptly.
+- **Stop mechanism** — cooperative: `PlatformWappStop` sets the WAMR terminate flag, raises the wapp's wake descriptor (an `eventfd`) and sends `SIGUSR2` to the worker, so a wapp spinning in the interpreter and one blocked in a host call are both reaped promptly.
 - **Registry** — a host-filesystem directory (`./registry/`) scanned for `<name>@<version>.wapp` images.
 - **TLS** — OpenSSL-backed secure sockets (`T`/`U` socket options).
 - **Memory stats** — `mallinfo2`.
@@ -560,7 +560,7 @@ Constraints found on real hardware, each of which a port can otherwise rediscove
 
 No target uses `pthread_cancel` — it is unreliable on NuttX and leaves WAMR state half-torn-down elsewhere. `PlatformWappStop` sets the per-instruction terminate flag (`WantedWappTerminate`) and then signals the worker so any host call it is parked in returns early; the interpreter sees the flag at the next instruction boundary, aborts the in-flight WASM call, and the thread unwinds through `WA_threadEnd` on its own stack. That terminates a wapp spinning in pure compute and one blocked indefinitely in I/O alike.
 
-Two details are not obvious. The signal is **`SIGUSR2`**: WAMR reserves `SIGUSR1` for its own blocking-op wakeup and keeps it masked on every wasm thread, so a `SIGUSR1` sent to a worker is never delivered. And on **NuttX the signal wakes a sleep but the sleep still reports success**, so the timer return alone cannot distinguish an interrupt from an elapsed wait — the handler records the interrupt on the worker's own slot and `PlatformClockNanoSleep` consumes it to report `EINTR`. ESP-IDF wires no signal wakeup at all, so a worker blocked in a host call unwinds once that call returns.
+Two details are not obvious. The signal is **`SIGUSR2`**: WAMR reserves `SIGUSR1` for its own blocking-op wakeup and keeps it masked on every wasm thread, so a `SIGUSR1` sent to a worker is never delivered. And on **NuttX the signal wakes a sleep but the sleep still reports success**, so the timer return alone cannot distinguish an interrupt from an elapsed wait — the handler records the interrupt on the worker's own slot and `PlatformClockNanoSleep` consumes it to report `EINTR`. On **Linux** a signal that lands while the worker is between two sleeps of a polling wait ends no sleep, so the stop also raises the wake descriptor, which those waits check after every sleep. ESP-IDF wires no signal wakeup at all, so a worker blocked in a host call unwinds once that call returns.
 
 ### Worker stacks and scheduling
 

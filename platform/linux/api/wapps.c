@@ -18,6 +18,7 @@
 #include <config-linux.h>
 #include <platform.h>
 #include <vfs-led.h>
+#include <vfs.h>
 #include <wanted-api.h>
 #include <wanted.h>
 #include <wanted_malloc.h>
@@ -229,9 +230,11 @@ int PlatformWappStop(const char *name) {
     }
 
     /* Cooperative stop: set the terminate flag so wasm_runtime_call_wasm
-     * returns false at the next instruction boundary, then signal the worker so
-     * a blocked host call EINTRs and that boundary is reached promptly. */
+     * returns false at the next instruction boundary, then raise the wake and
+     * signal the worker, so a blocked host call ends and reaches it promptly.
+     */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
+    PlatformWakeRaise(VfsWakeFd(state.threads[slot].data.vfs));
     worker = state.threads[slot].t;
 
     pthread_mutex_unlock(&state_mtx);
