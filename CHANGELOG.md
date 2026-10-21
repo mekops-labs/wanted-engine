@@ -17,6 +17,11 @@ Unreleased
 - On ESP-IDF, a wapp loads while another wapp maps one of its layers, and
   stopping either leaves the other's layer mapped.
 
+### Build
+
+- Bumped `wapps/sheriff` to v0.15.0, which reports the registry's free bytes
+  and largest image. `provisioning.version` and `wifi-mgr.version` read 0.15.0.
+
 0.26.0 (2026-10-21)
 -------------------
 
