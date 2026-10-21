@@ -55,6 +55,9 @@ Unreleased
   so a build after another board's kept the other board's configuration.
 - On ESP-IDF, a flash write no longer corrupts a read of a mapped image when
   code runs from PSRAM.
+- A stop ends a wapp blocked on a pipe or a pipe console at the next 1 ms
+  poll. On ESP-IDF, and on Linux when the stop signal fell between two polls,
+  the wait ran on to its 5 s cap.
 
 ### Build
 
