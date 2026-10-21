@@ -43,6 +43,8 @@ Unreleased
   partition, as many as each needs. At first boot it adopts the slot images.
 - The POSIX registry keeps one file for each blob, named by its digest, and one
   record for each entry. It converts the earlier layout at start.
+- An old image whose `.meta` does not match its bytes is not converted. Both
+  files are renamed with the suffix `.unverified`, and nothing is listed.
 - A name with no version resolves to its newest install.
 - `reg_slots` in `/proc/wanted` is always 0.
 
