@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <registry-store.h>
 
@@ -22,5 +23,8 @@ void RegistryMemSetLimit(size_t bytes);
 
 /* Makes every record listing fail with -EIO until called with false. */
 void RegistryMemFailList(bool fail);
+
+/* The maps of the blob `digest` the store holds open; 0 for an unknown blob. */
+unsigned RegistryMemMapCount(const uint8_t *digest);
 
 #endif /* REGISTRY_MEM_H */

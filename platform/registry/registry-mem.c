@@ -54,6 +54,12 @@ static blob_t *findBlob(const uint8_t *digest) {
     return NULL;
 }
 
+unsigned RegistryMemMapCount(const uint8_t *digest) {
+    const blob_t *b = findBlob(digest);
+
+    return b != NULL ? b->maps : 0;
+}
+
 static int _StageBegin(registry_store_t *s, void **stage) {
     stage_t *st = WantedMalloc(sizeof(*st));
 

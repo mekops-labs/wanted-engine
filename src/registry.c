@@ -16,11 +16,14 @@
 #define MAX_RESIDENT 16
 #define NS_PER_SEC 1000000000ULL
 
+/* One per mapped blob. A platform may hand a second map of the same bytes the
+ * same address, so users share the map and the last one to go unmaps it. */
 typedef struct {
     bool used;
     registry_store_t *store; /* NULL for a resident image */
     registry_blob_map_t map;
     uint8_t digest[REGISTRY_DIGEST_LEN];
+    unsigned users;
 } map_t;
 
 typedef struct {
@@ -779,6 +782,7 @@ static int mapResident(const resident_t *r, uint8_t **ptr, size_t *outLen) {
         if (m->used)
             continue;
         m->used = true;
+        m->users = 1;
         m->store = NULL;
         m->map.ptr = r->data;
         m->map.len = r->len;
@@ -795,6 +799,16 @@ static int mapBlob(const uint8_t *digest, size_t len, uint8_t **ptr,
     const resident_t *r = residentByDigest(digest);
     registry_store_t *s;
 
+    for (size_t i = 0; i < MAX_MAPS; i++) {
+        map_t *m = &g.maps[i];
+
+        if (m->used && digestEq(m->digest, digest)) {
+            m->users++;
+            *ptr = (uint8_t *)m->map.ptr;
+            *outLen = m->map.len;
+            return 0;
+        }
+    }
     if (r != NULL)
         return mapResident(r, ptr, outLen);
     s = storeHolding(digest);
@@ -810,6 +824,7 @@ static int mapBlob(const uint8_t *digest, size_t len, uint8_t **ptr,
         if (rc < 0)
             return rc;
         m->used = true;
+        m->users = 1;
         m->store = s;
         memcpy(m->digest, digest, REGISTRY_DIGEST_LEN);
         *ptr = (uint8_t *)m->map.ptr;
@@ -826,6 +841,8 @@ static void unmapPtr(const uint8_t *ptr) {
 
         if (!m->used || m->map.ptr != ptr)
             continue;
+        if (--m->users > 0)
+            return;
         memcpy(digest, m->digest, sizeof(digest));
         if (m->store != NULL)
             m->store->ops->blobUnmap(m->store, &m->map);
