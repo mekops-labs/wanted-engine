@@ -12,6 +12,22 @@ Unreleased
   SHA-256 of their bytes, and `blobs/<hex>` describes one.
 - A write of a blob's digest in hex to `reg/images/<ref>#<n>.link` stages
   layer `n` as that blob without sending its bytes.
+- An image may hold several layers. A write to `reg/images/<ref>#<n>` stages
+  layer `n`, and the layer count written to `<ref>#layers` commits them.
+- A staged layer is not listed or loaded before its commit.
+- A commit may carry the image build time. The descriptor reports it as
+  `created`, with `layers`, `installed`, `clock_set`, `mapped` and `available`.
+- `/dev/wanted/reg/capacity` reports the size, free space and largest free
+  extent of each registry store. `/proc/wanted` has a `reg_store` line for each.
+- A registry store on raw flash keeps blobs in allocation units, and maps a
+  blob as one range from units that are not adjacent.
+- Images linked into the firmware are listed in place and take no registry
+  space. An installed image of the same ref is used until it is removed.
+- TarFS merges `.wh..wh..opq` opaque directories. A whiteout of a directory
+  hides everything under it.
+- TarFS counts the hard links, symbolic links, devices and fifos it does not
+  serve, and logs the count once at load.
+- The registry logs why it refuses a layer, a commit or a store start.
 
 ### Changed
 
@@ -22,12 +38,21 @@ Unreleased
   supervisor compiled into the firmware.
 - A registry commit of a new ref fails with `-ENOSPC` once the registry holds
   50 entries.
+- A registry install while another is open fails with `-EBUSY`.
+- On ESP-IDF, the registry keeps images in whole 64 KiB pages of the `wapps`
+  partition, as many as each needs. At first boot it adopts the slot images.
+- The POSIX registry keeps one file for each blob, named by its digest, and one
+  record for each entry. It converts the earlier layout at start.
+- A name with no version resolves to its newest install.
+- `reg_slots` in `/proc/wanted` is always 0.
 
 ### Fixed
 
 - An ESP-IDF build stages the default launch configuration at every build,
   not only when CMake configures. Every board directory mounts at `/board`,
   so a build after another board's kept the other board's configuration.
+- On ESP-IDF, a flash write no longer corrupts a read of a mapped image when
+  code runs from PSRAM.
 
 ### Build
 
