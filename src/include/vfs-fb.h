@@ -12,6 +12,11 @@
 
 #define FB_NAME_MAX 15
 
+/* Refresh modes of a bistable panel, as a mask in fb_screen_desc_t. */
+#define FB_REFRESH_FULL 0x1    /* whole screen, clearing flash */
+#define FB_REFRESH_PARTIAL 0x2 /* the changed area only */
+#define FB_REFRESH_FAST 0x4    /* fastest waveform, no clearing flash */
+
 /* Panel operations a backing supplies; all are optional. A NULL Flush or
  * Blank is a backing whose writes already reach the panel. */
 typedef struct fb_backing_ops_t {
@@ -24,6 +29,11 @@ typedef struct fb_backing_ops_t {
      * observers, after clamping it to the screen. */
     void (*Widen)(void *backing, uint16_t *x, uint16_t *y, uint16_t *w,
                   uint16_t *h);
+    /* Return once the panel holds the rectangle, refreshed in `mode` (one
+     * FB_REFRESH_* bit). Called in place of Flush for a screen with refresh
+     * modes. `wakeFd` ends the wait. */
+    int (*Refresh)(void *backing, uint8_t mode, uint16_t x, uint16_t y,
+                   uint16_t w, uint16_t h, int wakeFd);
 } fb_backing_ops_t;
 
 typedef struct fb_screen_desc_t {
@@ -33,10 +43,14 @@ typedef struct fb_screen_desc_t {
     uint8_t format; /* FB_FORMAT_* */
     const fb_backing_ops_t *ops;
     void *backing;
+    /* FB_REFRESH_* modes the backing offers, 0 for a screen with none. A
+     * non-zero mask needs ops->Refresh. */
+    uint8_t refreshModes;
 } fb_screen_desc_t;
 
 /* Add a screen and allocate its pixels. Declaring an identical screen again
- * returns 0. Errors: -EEXIST other properties, -EINVAL bad name or geometry,
+ * returns 0. Errors: -EEXIST other properties, -EINVAL bad name, geometry or
+ * refresh modes,
  * -ENOSPC table full, -ENOMEM no room for pixels. */
 int FbScreenRegister(const fb_screen_desc_t *desc);
 

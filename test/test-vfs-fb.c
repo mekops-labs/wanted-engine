@@ -1326,3 +1326,253 @@ TEST_GROUP_RUNNER(fb_config) {
     RUN_TEST_CASE(fb_config, DeclaringTheSameScreenAgainIsAccepted);
     RUN_TEST_CASE(fb_config, DeclaringAScreenDifferentlyFailsTheParse);
 }
+
+TEST_GROUP(fb_refresh);
+/***************************************/
+
+/* A bistable panel: the backing takes a refresh mode with every flush. */
+
+static struct {
+    int calls;
+    int flushCalls;
+    uint8_t mode;
+    uint16_t x, y, w, h;
+    int blanks;
+    int result;
+} ink;
+
+static int inkRefresh(void *backing, uint8_t mode, uint16_t x, uint16_t y,
+                      uint16_t w, uint16_t h, int wakeFd) {
+    (void)backing;
+    (void)wakeFd;
+    ink.calls++;
+    ink.mode = mode;
+    ink.x = x;
+    ink.y = y;
+    ink.w = w;
+    ink.h = h;
+    return ink.result;
+}
+
+static int inkFlush(void *backing, uint16_t x, uint16_t y, uint16_t w,
+                    uint16_t h, int wakeFd) {
+    (void)backing;
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
+    (void)wakeFd;
+    ink.flushCalls++;
+    return 0;
+}
+
+static int inkBlank(void *backing, bool on) {
+    (void)backing;
+    (void)on;
+    ink.blanks++;
+    return 0;
+}
+
+static const fb_backing_ops_t inkOps = {inkFlush, inkBlank, NULL, inkRefresh};
+
+#define INK_W 8
+#define INK_H 4
+
+static void registerInk(uint8_t modes) {
+    fb_screen_desc_t desc = {"ink",   INK_W, INK_H, FB_FORMAT_GRAY4,
+                             &inkOps, NULL,  modes};
+    TEST_ASSERT_EQUAL_INT(0, FbScreenRegister(&desc));
+}
+
+TEST_SETUP(fb_refresh) {
+    memset(&ink, 0, sizeof(ink));
+    registerInk(FB_REFRESH_FULL | FB_REFRESH_PARTIAL | FB_REFRESH_FAST);
+    fb_screen_desc_t plain = {"plain", 4, 2, FB_FORMAT_GRAY4, &panelOps, NULL};
+    TEST_ASSERT_EQUAL_INT(0, FbScreenRegister(&plain));
+}
+
+TEST_TEAR_DOWN(fb_refresh) { teardown(); }
+
+TEST(fb_refresh, ScreenWithModesListsARefreshNode) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    char names[64];
+    TEST_ASSERT_EQUAL_INT(0, listDir("/dev/fb/ink", names, sizeof(names)));
+    TEST_ASSERT_EQUAL_STRING("info,data,ctl,refresh", names);
+}
+
+TEST(fb_refresh, ScreenWithoutModesHasNoRefreshNode) {
+    TEST_ASSERT_TRUE(setupGrant("screens=plain"));
+    char names[64];
+    TEST_ASSERT_EQUAL_INT(0, listDir("/dev/fb/plain", names, sizeof(names)));
+    TEST_ASSERT_EQUAL_STRING("info,data,ctl", names);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, writeNode("/dev/fb/plain/refresh", "full"));
+}
+
+TEST(fb_refresh, RefreshStartsAsPartial) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(8, readNode("/dev/fb/ink/refresh", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING("partial\n", buf);
+}
+
+TEST(fb_refresh, WritingAModeSetsIt) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(4, writeNode("/dev/fb/ink/refresh", "fast"));
+    TEST_ASSERT_EQUAL_INT(5, readNode("/dev/fb/ink/refresh", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING("fast\n", buf);
+    TEST_ASSERT_EQUAL_INT(5, writeNode("/dev/fb/ink/refresh", "full\n"));
+    TEST_ASSERT_EQUAL_INT(5, readNode("/dev/fb/ink/refresh", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING("full\n", buf);
+}
+
+TEST(fb_refresh, UnknownOrUnofferedModeIsEinval) {
+    teardown();
+    memset(&ink, 0, sizeof(ink));
+    registerInk(FB_REFRESH_FULL | FB_REFRESH_PARTIAL);
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, writeNode("/dev/fb/ink/refresh", "fast"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, writeNode("/dev/fb/ink/refresh", "bogus"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, writeNode("/dev/fb/ink/refresh", ""));
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(8, readNode("/dev/fb/ink/refresh", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING("partial\n", buf);
+}
+
+TEST(fb_refresh, FlushUsesTheModeOfTheScreen) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    TEST_ASSERT_EQUAL_INT(5, writeNode("/dev/fb/ink/ctl", "flush"));
+    TEST_ASSERT_EQUAL_INT(1, ink.calls);
+    TEST_ASSERT_EQUAL_UINT8(FB_REFRESH_PARTIAL, ink.mode);
+    TEST_ASSERT_EQUAL_UINT16(INK_W, ink.w);
+    TEST_ASSERT_EQUAL_UINT16(INK_H, ink.h);
+
+    TEST_ASSERT_EQUAL_INT(4, writeNode("/dev/fb/ink/refresh", "fast"));
+    TEST_ASSERT_EQUAL_INT(14, writeNode("/dev/fb/ink/ctl", "flush 2 1 4 2\n"));
+    TEST_ASSERT_EQUAL_INT(2, ink.calls);
+    TEST_ASSERT_EQUAL_UINT8(FB_REFRESH_FAST, ink.mode);
+    TEST_ASSERT_EQUAL_UINT16(2, ink.x);
+    TEST_ASSERT_EQUAL_UINT16(1, ink.y);
+    TEST_ASSERT_EQUAL_UINT16(4, ink.w);
+    TEST_ASSERT_EQUAL_UINT16(2, ink.h);
+
+    TEST_ASSERT_EQUAL_INT(4, writeNode("/dev/fb/ink/refresh", "full"));
+    TEST_ASSERT_EQUAL_INT(5, writeNode("/dev/fb/ink/ctl", "flush"));
+    TEST_ASSERT_EQUAL_UINT8(FB_REFRESH_FULL, ink.mode);
+    TEST_ASSERT_EQUAL_INT(0, ink.flushCalls);
+}
+
+TEST(fb_refresh, FlushFullOverridesTheModeForOneFlush) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    TEST_ASSERT_EQUAL_INT(10, writeNode("/dev/fb/ink/ctl", "flush full"));
+    TEST_ASSERT_EQUAL_INT(1, ink.calls);
+    TEST_ASSERT_EQUAL_UINT8(FB_REFRESH_FULL, ink.mode);
+    TEST_ASSERT_EQUAL_UINT16(0, ink.x);
+    TEST_ASSERT_EQUAL_UINT16(0, ink.y);
+    TEST_ASSERT_EQUAL_UINT16(INK_W, ink.w);
+    TEST_ASSERT_EQUAL_UINT16(INK_H, ink.h);
+
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(8, readNode("/dev/fb/ink/refresh", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING("partial\n", buf);
+    TEST_ASSERT_EQUAL_INT(5, writeNode("/dev/fb/ink/ctl", "flush"));
+    TEST_ASSERT_EQUAL_UINT8(FB_REFRESH_PARTIAL, ink.mode);
+}
+
+TEST(fb_refresh, FlushFullOnAScreenWithoutModesIsEinval) {
+    TEST_ASSERT_TRUE(setupGrant("screens=plain"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          writeNode("/dev/fb/plain/ctl", "flush full"));
+    TEST_ASSERT_EQUAL_INT(0, panel.flushes);
+}
+
+TEST(fb_refresh, FlushFullTakesNoRectangle) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          writeNode("/dev/fb/ink/ctl", "flush full 0 0 1 1"));
+    TEST_ASSERT_EQUAL_INT(0, ink.calls);
+}
+
+TEST(fb_refresh, RefreshFailureReachesTheWriter) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    ink.result = -EIO;
+    TEST_ASSERT_EQUAL_INT(-EIO, writeNode("/dev/fb/ink/ctl", "flush"));
+    TEST_ASSERT_EQUAL_INT(-EIO, writeNode("/dev/fb/ink/ctl", "flush full"));
+}
+
+TEST(fb_refresh, BlankChangesNothingOnAScreenWithModes) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    TEST_ASSERT_EQUAL_INT(8, writeNode("/dev/fb/ink/ctl", "blank on"));
+    TEST_ASSERT_EQUAL_INT(9, writeNode("/dev/fb/ink/ctl", "blank off"));
+    TEST_ASSERT_EQUAL_INT(0, ink.blanks);
+    TEST_ASSERT_EQUAL_INT(-EINVAL, writeNode("/dev/fb/ink/ctl", "blank maybe"));
+}
+
+TEST(fb_refresh, GrantOptionSetsTheInitialMode) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink,refresh=fast"));
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(5, readNode("/dev/fb/ink/refresh", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING("fast\n", buf);
+}
+
+TEST(fb_refresh, GrantOptionWithAnUnknownModeFailsLaunch) {
+    TEST_ASSERT_FALSE(setupGrant("screens=ink,refresh=bogus"));
+    TEST_ASSERT_FALSE(setupGrant("screens=ink,refresh="));
+}
+
+TEST(fb_refresh, GrantOptionOnAScreenWithoutModesFailsLaunch) {
+    TEST_ASSERT_FALSE(setupGrant("screens=plain,refresh=full"));
+    TEST_ASSERT_FALSE(setupGrant("screens=ink,plain,refresh=full"));
+}
+
+TEST(fb_refresh, FailedGrantClaimsNothing) {
+    TEST_ASSERT_FALSE(setupGrant("screens=ink,refresh=bogus"));
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+}
+
+#ifdef CONFIG_WANTED_VFS_FB_OBSERVE
+TEST(fb_refresh, ObserverHasNoRefreshNodeOrOption) {
+    TEST_ASSERT_FALSE(attach(&watcher, "screens=ink,observe,refresh=fast"));
+    TEST_ASSERT_TRUE(attach(&watcher, "screens=ink,observe"));
+    int fd = VfsOpen(watcher.vfs, "/dev/fb/ink/refresh", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(-ENOENT, fd);
+    detach(&watcher);
+}
+
+TEST(fb_refresh, FlushFullReportsTheWholeScreenToAnObserver) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    TEST_ASSERT_TRUE(attach(&watcher, "screens=ink,observe"));
+    TEST_ASSERT_EQUAL_INT(14, writeNode("/dev/fb/ink/ctl", "flush 1 1 2 2\n"));
+    TEST_ASSERT_EQUAL_INT(10, writeNode("/dev/fb/ink/ctl", "flush full"));
+    uint8_t rec[DAMAGE_REC * 2];
+    int fd = openNode(&watcher, "/dev/fb/ink/damage", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(sizeof(rec),
+                          VfsRead(watcher.vfs, fd, rec, sizeof(rec)));
+    expectRecord(rec, 0, 1, 4, 2);
+    expectRecord(rec + DAMAGE_REC, 0, 0, INK_W, INK_H);
+    VfsClose(watcher.vfs, fd);
+    detach(&watcher);
+}
+#endif
+
+TEST_GROUP_RUNNER(fb_refresh) {
+    RUN_TEST_CASE(fb_refresh, ScreenWithModesListsARefreshNode);
+    RUN_TEST_CASE(fb_refresh, ScreenWithoutModesHasNoRefreshNode);
+    RUN_TEST_CASE(fb_refresh, RefreshStartsAsPartial);
+    RUN_TEST_CASE(fb_refresh, WritingAModeSetsIt);
+    RUN_TEST_CASE(fb_refresh, UnknownOrUnofferedModeIsEinval);
+    RUN_TEST_CASE(fb_refresh, FlushUsesTheModeOfTheScreen);
+    RUN_TEST_CASE(fb_refresh, FlushFullOverridesTheModeForOneFlush);
+    RUN_TEST_CASE(fb_refresh, FlushFullOnAScreenWithoutModesIsEinval);
+    RUN_TEST_CASE(fb_refresh, FlushFullTakesNoRectangle);
+    RUN_TEST_CASE(fb_refresh, RefreshFailureReachesTheWriter);
+    RUN_TEST_CASE(fb_refresh, BlankChangesNothingOnAScreenWithModes);
+    RUN_TEST_CASE(fb_refresh, GrantOptionSetsTheInitialMode);
+    RUN_TEST_CASE(fb_refresh, GrantOptionWithAnUnknownModeFailsLaunch);
+    RUN_TEST_CASE(fb_refresh, GrantOptionOnAScreenWithoutModesFailsLaunch);
+    RUN_TEST_CASE(fb_refresh, FailedGrantClaimsNothing);
+#ifdef CONFIG_WANTED_VFS_FB_OBSERVE
+    RUN_TEST_CASE(fb_refresh, ObserverHasNoRefreshNodeOrOption);
+    RUN_TEST_CASE(fb_refresh, FlushFullReportsTheWholeScreenToAnObserver);
+#endif
+}
