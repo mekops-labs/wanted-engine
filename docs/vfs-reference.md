@@ -411,7 +411,9 @@ An `fb` grant hands one or more screens to one wapp as its writer:
   <screen>/
     info    (r)   "<width> <height> <format> <stride>\n"
     data    (rw)  pixels; the file offset is the byte offset
-    ctl     (w)   "flush" | "flush <x> <y> <w> <h>" | "blank on" | "blank off"
+    ctl     (w)   "flush" | "flush <x> <y> <w> <h>" | "flush full" |
+                  "blank on" | "blank off"
+    refresh (rw)  "full" | "partial" | "fast"; only on a screen with refresh modes
 ```
 
 ```json
@@ -436,12 +438,32 @@ engine does not know, a repeated name, and an empty entry fail the launch.
 - **A write changes the framebuffer, not the panel.** `flush` makes it visible
   and returns once the backing has handed the frame to the panel. A backing
   whose writes already reach the panel accepts `flush` and returns at once.
-- A `ctl` line that is not one of the four forms, or a rectangle that is empty
+- A `ctl` line that is not one of the five forms, or a rectangle that is empty
   or leaves the screen, returns `-EINVAL`.
 - One writer holds a screen; a second grant naming it fails the launch. A grant
   naming several screens takes all of them or fails.
 - The engine converts, scales and draws nothing. Drawing is a library compiled
   into the wapp.
+
+A bistable panel such as e-paper has refresh modes, and its screen has a
+`refresh` node:
+
+- A read returns the current mode and a newline. A write sets it, with or
+  without a trailing newline, and returns `-EINVAL` for a name the backing does
+  not offer. The initial mode is `partial`, or the first mode the backing
+  offers when it has no `partial`.
+- `full` refreshes the whole screen with a clearing flash on every flush.
+  `partial` refreshes the flushed rectangle, or with no rectangle the pixels
+  that changed. `fast` uses the fastest waveform with no clearing flash.
+- `flush full` refreshes the whole screen in the `full` mode for that flush
+  and leaves the mode alone. It returns `-EINVAL` on a screen without refresh
+  modes.
+- `blank on` and `blank off` are accepted and change nothing.
+- The grant option `refresh=<mode>` sets the initial mode, as in
+  `screens=ink,refresh=fast`. A mode the screen does not offer, a screen
+  without refresh modes, and an `observe` grant fail the launch.
+- `flush` returns once the backing has finished the refresh. A backing may
+  widen the rectangle to its own unit, as for `Widen`.
 
 With `CONFIG_WANTED_VFS_FB_OBSERVE` an `observe` grant gets a read-only view:
 
