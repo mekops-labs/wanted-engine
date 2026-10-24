@@ -149,6 +149,10 @@ if(CONFIG_WANTED_VFS_HAPTIC)
     list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-haptic.c)
     list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/motor.c)
 endif()
+if(CONFIG_WANTED_VFS_POWER)
+    list(APPEND vfs_srcs ${ENGINE}/src/vfs/vfs-power.c)
+    list(APPEND platform_srcs ${ENGINE}/platform/esp-idf/power.c)
+endif()
 if(CONFIG_WANTED_VFS_RTC)
     list(
         APPEND
