@@ -183,6 +183,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `fb` | `drivers[]` | `/dev/fb/<screen>/` | A screen as a framebuffer: pixels written to `data`, made visible by `ctl` `flush`; see below. Screens are the headless in-memory buffers declared in `system.screens`. Built with `CONFIG_WANTED_VFS_FB`. |
 | `input` | `drivers[]` | `/dev/input/<device>/` | Keyboard, encoder and text events as 8-byte records, one subtree per granted device; see below. Devices are the virtual ones declared in `system.inputs`, fed only through `inject`. Built with `CONFIG_WANTED_VFS_INPUT`. |
 | `led` | `drivers[]` | `/dev/led/<name>/` | LEDs and backlights: brightness, fades and the `heartbeat` and `activity` triggers, one subtree per granted LED; see below. Pin LEDs are backed by ESP-IDF (LEDC PWM, GPIO) and by a state-only backing on Linux. Built with `CONFIG_WANTED_VFS_LED`. |
+| `power` | `drivers[]` | `/dev/power/<name>/` | The power-mode ladder: a wapp declares which of five modes it uses and when to enter them, the engine runs the timers and the two-phase transitions, and the board supplies the hooks and the safety limits; see below. Built with `CONFIG_WANTED_VFS_POWER`. |
 | `haptic` | `drivers[]` | `/dev/haptic/<name>/` | Vibration motors: named effects and timed pulses, one subtree per granted motor; see below. Pin motors are backed by ESP-IDF (GPIO) and by a state-only backing on Linux. Built with `CONFIG_WANTED_VFS_HAPTIC`. |
 | `rtc` | `drivers[]` | `/dev/rtc/<name>/` | A wall-clock device: `time`, `status` and `source`; see below. The device named `main` is the engine's system clock. Built with `CONFIG_WANTED_VFS_RTC`. |
 | `wifi` | `drivers[]` | `/dev/wifi/` | Wi-Fi station and access-point control; see below. Backed by ESP-IDF and NuttX; `-ENODEV` elsewhere. |
@@ -595,6 +596,94 @@ refuses and an unknown input device fail the launch.
 
 The engine loop calls `LedTick()` about once a second, so idle and heartbeat
 timing has that resolution. Input events reach the activity trigger at once.
+
+### `power` — power-mode ladder
+
+A `power` grant hands one power device to a wapp. Every board provides `main`.
+
+```
+/dev/power/
+  <name>/
+    mode    (r)   <mode> <seconds since it began>
+    event   (r)   enter <mode> | exit <mode> <cause>, whole lines, blocking
+    wake    (r)   the cause of the last boot or wake
+    caps    (r)   the modes, wake sources and power-off capability of the board
+    rails   (r)   one line per switchable rail the board reports
+    policy  (rw)  the declared policy, one line per mode (control only)
+    ctl     (w)   activity | ready | mode <name> | alarm <s> (control only)
+```
+
+```json
+{ "name": "power", "options": "devices=main" }
+{ "name": "power", "options": "devices=main,control" }
+```
+
+`devices=` names exactly one device the board registered with
+`PowerDeviceRegister` (`src/include/vfs-power.h`). The clause `control` adds
+`policy` and `ctl`; without it those nodes are absent. Any number of wapps may
+read, and one wapp holds `control` at a time: a second `control` grant fails
+the launch with `-EBUSY`. A device that was not granted answers `-ENOENT`.
+
+**Modes.** `active`, `standby`, `suspend`, `sleep`, `off`, from most to least
+awake. `active` and `off` always exist; `caps` lists the others. `standby`
+stops nothing. `suspend` stops Wi-Fi, calls each client's suspend callback in
+reverse registration order, then the board's hook, then halts the CPU in a
+light sleep that keeps memory; the wapps continue where they stopped on wake.
+`sleep` does the same and ends in a deep sleep that resets the CPU. `off` calls
+the board's power-off hook. When the board cannot cut power with external power
+present, or the hook returns, `off` enters `sleep` with no timer and only the
+power key as a wake source. A platform that cannot sleep deeply sleeps lightly.
+
+**Policy.** One line per mode in ladder order, `active` excluded:
+
+```
+standby idle=60
+sleep after=1800 battery wake=key alarm=1800 resume=active
+off idle=86400 battery
+```
+
+| Term | Meaning |
+|---|---|
+| `idle=<s>` | Enter the mode after `<s>` seconds without `activity`. |
+| `after=<s>` | Enter the mode after `<s>` seconds in the previous mode on the ladder. |
+| `battery` | A timer enters the mode only without external power. A `mode` request is not affected. |
+| `wake=<list>` | Wake sources armed in the mode, comma separated, from `caps`. |
+| `alarm=<s>` | In `suspend` or `sleep`, wake after `<s>` seconds, prepare the wapp, and return to the mode. |
+| `resume=<mode>` | `active` or `standby`: where a key wake goes. The default is `active`. |
+| `grace=<s>` | How long the engine waits for `ready`. The default is 10. |
+
+A write replaces the whole policy at once. A mode out of order, repeated,
+unknown or not in `caps`, an unknown or repeated term, a number of zero or more
+than nine digits, `alarm` outside `suspend` and `sleep`, a wake source the
+board cannot arm in that mode, and a write of 256 bytes or more return
+`-EINVAL` and leave the previous policy. A write of a newline alone clears it.
+A mode with neither `idle` nor `after` is entered only by `mode`. Writing the
+policy in force keeps the running deadlines.
+
+**Transitions.** When a timer expires or a wapp writes `mode <name>`, the
+engine queues `enter <mode>` on `event`. The wapp prepares and writes `ready`;
+the engine enters the mode then, or when the grace ends, within 100 ms. A hung
+wapp delays a transition and cannot stop it. A request toward `active` takes
+effect at once and queues `exit <mode> request`. A wake from a key enters the
+`resume` mode and queues `exit <mode> <word>`. `activity` restarts the idle
+count and returns from `standby` to `active`.
+
+**Event.** `event` returns whole lines and blocks until one is queued. With
+`O_NONBLOCK` it returns `-EAGAIN` when empty. It supports `poll`, a stop ends
+the wait, and the read buffer holds at least 40 bytes. The queue holds 8 lines
+and drops the oldest.
+
+**Wake.** `wake` reads `cold`, `timer`, `alarm`, `key`, or a word the board
+names. After a deep sleep it reads the cause of that wake.
+
+**Board safety.** The board reports `key held` and `battery low` with
+`PowerNotify`. The engine then queues `enter off` and powers off after the
+grace, at most 3 s, with or without a policy and a responsive wapp. No policy
+can turn this off.
+
+**Persistence.** The mode, the policy and the deadlines live in the engine, so
+a restarted wapp reads them again. Across a `sleep` they are kept in RTC memory
+on ESP-IDF, and a wake lands in the saved ladder.
 
 ### `haptic` — vibration motors
 

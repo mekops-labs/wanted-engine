@@ -39,6 +39,7 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/posix/sha256.c
     api/crypto.c
     api/random.c
+    api/power.c
     api/wapps.c)
 
 if(SECURE_SOCKETS)

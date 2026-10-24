@@ -182,6 +182,15 @@ config WANTED_VFS_LED
 	  triggers. LEDs on a pin are named in the grant; a board registers the
 	  others by name.
 
+config WANTED_VFS_POWER
+	bool "power — power-mode ladder"
+	default n
+	help
+	  /dev/power/<name>/{policy,mode,event,wake,caps,rails,ctl}: a wapp
+	  declares which of five modes it uses and when to enter them; the engine
+	  runs the timers, the two-phase transitions, and the board's safety
+	  rules. A board registers its device and hooks.
+
 config WANTED_VFS_HAPTIC
 	bool "haptic — vibration motors"
 	default n
@@ -303,6 +312,22 @@ config WANTED_LED_MAX_DEVICES
 	help
 	  Size of the engine-wide LED table, shared by board devices and the
 	  pin LEDs of live grants.
+
+config WANTED_POWER_MAX_DEVICES
+	int "Devices the power driver can hold"
+	depends on WANTED_VFS_POWER
+	default 1
+	range 1 2
+	help
+	  Size of the engine-wide power device table.
+
+config WANTED_POWER_MAX_CLIENTS
+	int "Suspend and resume clients"
+	depends on WANTED_VFS_POWER
+	default 8
+	range 1 16
+	help
+	  Drivers and boards that take part in suspend and resume.
 
 config WANTED_HAPTIC_MAX_DEVICES
 	int "Motors the haptic driver can hold"

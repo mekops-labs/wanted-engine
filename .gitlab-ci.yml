@@ -46,6 +46,7 @@ stages:
     - just setconfig WANTED_VFS_INPUT_INJECT=y
     - just setconfig WANTED_VFS_LED=y
     - just setconfig WANTED_VFS_HAPTIC=y
+    - just setconfig WANTED_VFS_POWER=y
     - just setconfig WANTED_VFS_RTC=y
     - just setconfig WANTED_VFS_LORA=y
     - just build
@@ -139,6 +140,7 @@ coverage:
     - just setconfig WANTED_VFS_INPUT_INJECT=y
     - just setconfig WANTED_VFS_LED=y
     - just setconfig WANTED_VFS_HAPTIC=y
+    - just setconfig WANTED_VFS_POWER=y
     - just setconfig WANTED_VFS_RTC=y
     - just setconfig WANTED_VFS_LORA=y
     - just build

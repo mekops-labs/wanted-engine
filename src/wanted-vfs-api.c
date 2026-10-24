@@ -737,6 +737,9 @@ static const vfs_driver_table_t core_driver_table[] = {
 #ifdef CONFIG_WANTED_VFS_HAPTIC
     {"haptic", VfsHapticInit},
 #endif
+#ifdef CONFIG_WANTED_VFS_POWER
+    {"power", VfsPowerInit},
+#endif
 #ifdef CONFIG_WANTED_VFS_RTC
     {"rtc", VfsRtcInit},
 #endif

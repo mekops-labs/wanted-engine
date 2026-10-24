@@ -9,6 +9,7 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/registry/registry-mem.c
     dummy-wake.c
     dummy-persist-mem.c
+    dummy-power.c
     dummy-reset-reason.c
     dummy-wapps.c
     dummy-net.c
