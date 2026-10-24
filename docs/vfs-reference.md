@@ -183,6 +183,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `fb` | `drivers[]` | `/dev/fb/<screen>/` | A screen as a framebuffer: pixels written to `data`, made visible by `ctl` `flush`; see below. Screens are the headless in-memory buffers declared in `system.screens`. Built with `CONFIG_WANTED_VFS_FB`. |
 | `input` | `drivers[]` | `/dev/input/<device>/` | Keyboard, encoder and text events as 8-byte records, one subtree per granted device; see below. Devices are the virtual ones declared in `system.inputs`, fed only through `inject`. Built with `CONFIG_WANTED_VFS_INPUT`. |
 | `led` | `drivers[]` | `/dev/led/<name>/` | LEDs and backlights: brightness, fades and the `heartbeat` and `activity` triggers, one subtree per granted LED; see below. Pin LEDs are backed by ESP-IDF (LEDC PWM, GPIO) and by a state-only backing on Linux. Built with `CONFIG_WANTED_VFS_LED`. |
+| `haptic` | `drivers[]` | `/dev/haptic/<name>/` | Vibration motors: named effects and timed pulses, one subtree per granted motor; see below. Pin motors are backed by ESP-IDF (GPIO) and by a state-only backing on Linux. Built with `CONFIG_WANTED_VFS_HAPTIC`. |
 | `rtc` | `drivers[]` | `/dev/rtc/<name>/` | A wall-clock device: `time`, `status` and `source`; see below. The device named `main` is the engine's system clock. Built with `CONFIG_WANTED_VFS_RTC`. |
 | `wifi` | `drivers[]` | `/dev/wifi/` | Wi-Fi station and access-point control; see below. Backed by ESP-IDF and NuttX; `-ENODEV` elsewhere. |
 | `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `abort` / `confirm` / `rollback`), `read` drains a status snapshot (`active_slot`, `status`, `pending_slot`, `last_failed_slot`, `boot_attempts`, and `pending_digest` — the staged image's own build-time digest, the value `/proc/wanted`'s `digest` reports once it boots, so confirming an update compares like with like; the line is absent when nothing is staged or the platform stamps none); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. End every `begin`: `commit` makes the staged image bootable, `abort` discards it. A session left open holds the slot, and every later `begin` answers `-EBUSY` until the board reboots. `rollback` reverts a booted image and reboots the board; it does not end a streaming write. Backed by ESP-IDF (`esp_ota_ops`) and Linux (slot directories under a boot root); `-ENOSYS` on NuttX. |
@@ -594,6 +595,53 @@ refuses and an unknown input device fail the launch.
 
 The engine loop calls `LedTick()` about once a second, so idle and heartbeat
 timing has that resolution. Input events reach the activity trigger at once.
+
+### `haptic` — vibration motors
+
+A `haptic` grant hands one or more motors to one wapp:
+
+```
+/dev/haptic/
+  <name>/
+    ctl      (w)  play <effect> | pulse <ms> | stop
+    effects  (r)  the supported effect names, one per line
+    busy     (r)  1 while an effect or pulse runs, otherwise 0
+```
+
+```json
+{ "name": "haptic", "options": "motors=main" }
+{ "name": "haptic", "options": "motors=buzzer:12:onoff" }
+{ "name": "haptic", "options": "motors=main,observe" }
+```
+
+`motors=` lists the entries, comma separated. An entry with colons,
+`<name>:<address>:onoff`, opens a motor on a pin; the backing interprets
+`address` (on ESP-IDF a decimal GPIO number). A bare `<name>` selects a device
+the board registered with `HapticDeviceRegister` (`src/include/vfs-haptic.h`).
+A trailing `observe` makes the whole grant read-only: it names board devices
+only, has no `ctl`, and does not count against the writer. Names are
+`[A-Za-z0-9_-]`, at most 15 characters. A repeated name, a malformed entry, an
+unknown board device, an address the backing refuses, and an `observe` grant
+that names a pin motor fail the launch.
+
+- `ctl` takes one line. `play <effect>` starts an effect, `pulse <ms>` runs the
+  motor for `<ms>` milliseconds, and `stop` ends whatever runs. A write returns
+  once the command has started, not when it ends. Any other line returns
+  `-EINVAL`.
+- The effects are `click`, `double`, `buzz` and `alert`. `effects` lists the
+  ones the device plays, and `play` of any other name returns `-EINVAL`. A pin
+  motor plays all four as on-times: 25 ms, 25 ms on and 25 ms on with 60 ms
+  between, 150 ms, and 500 ms.
+- `pulse` takes 1 to 2000 milliseconds. A larger value, 0, or anything that is
+  not decimal digits returns `-EINVAL`.
+- A `play` or `pulse` while another runs replaces it. Commands do not queue,
+  and `stop` is never an error.
+- One wapp owns a motor. A second writer grant naming it fails the launch with
+  `-EBUSY`, and a grant naming several motors takes all of them or fails.
+- A motor stops when its writer's grant ends. A pin motor exists while its
+  grant does; a board device stays registered.
+- The driver does not limit how often a wapp plays. A board may take the motor
+  for its own pulses regardless of the grant.
 
 ### `rtc` — wall clock
 
