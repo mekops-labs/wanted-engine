@@ -11,10 +11,9 @@
 
 #include <platform.h>
 
-/* ESP-IDF power backing. A light sleep keeps memory and returns where it
- * stopped; a deep sleep resets the CPU. The saved ladder sits in RTC slow
- * memory, which a deep sleep keeps and a cold start leaves undefined, so a
- * header with a magic and a length guards it. */
+/* ESP-IDF power backing. A light sleep returns where it stopped; a deep sleep
+ * resets the CPU. The saved ladder sits in RTC slow memory, guarded by a magic
+ * and a length because a cold start leaves that memory undefined. */
 
 #define ESP_POWER_MAGIC 0x50575253U
 #define ESP_POWER_STATE_MAX 512

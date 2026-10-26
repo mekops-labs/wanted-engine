@@ -496,10 +496,9 @@ int WantedWasmMemoryProfile(const uint8_t *buf, size_t len, uint32_t *init,
     return -ENOENT; /* no memory section (e.g. an imported memory) */
 }
 
-/* Append the image's declared linear-memory profile to the descriptor JSON at
- * *n (which currently ends just before the closing brace), read from app.wasm
- * in the merged layers. False when the layers cannot be mapped; the profile is
- * left out when the module declares none. */
+/* Append the linear-memory profile app.wasm declares to the descriptor JSON,
+ * whose closing brace is at *n. False when the layers cannot be mapped; a
+ * module that declares none adds nothing. */
 static bool appendMemoryProfile(const reg_entry_t *entry, char *buf, int *n,
                                 size_t bufLen) {
     uint8_t *layers[REGISTRY_META_MAX_LAYERS];

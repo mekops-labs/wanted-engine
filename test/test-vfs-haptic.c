@@ -15,10 +15,9 @@
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
 
-/* /dev/haptic: the per-motor subtree, the grant grammar, the verbs and the
- * board seam. The pin backing is the state-only one, whose pattern stays busy
- * for its length on the monotonic clock, so a test steps time with
- * DummyClockAdvance. */
+/* /dev/haptic: the motor subtree, the grant grammar, the verbs and the board
+ * seam. The state-only pin backing stays busy for a pattern's length on the
+ * monotonic clock, so a test steps time with DummyClockAdvance. */
 
 #define NS_PER_MS 1000000ULL
 #define MAIN_PIN "motors=main:12:onoff"

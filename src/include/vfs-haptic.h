@@ -19,10 +19,9 @@
 /* Longest pulse a wapp can ask for. */
 #define HAPTIC_PULSE_MS_MAX 2000U
 
-/* Operations a board device supplies; every call gets the device's `ctx`.
- * `play` and `pulse` start the effect, replace a running one, and return at
- * once. `stop` ends any effect and is never an error. Errors are negative
- * errno values. */
+/* Operations a board device supplies, each given the device's `ctx`. `play`
+ * and `pulse` start an effect, replace a running one and return at once. `stop`
+ * ends any effect and never fails. Errors are negative errno values. */
 typedef struct haptic_ops_t {
     int (*play)(void *ctx, unsigned effect);
     int (*pulse)(void *ctx, unsigned ms);

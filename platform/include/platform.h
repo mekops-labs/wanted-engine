@@ -187,11 +187,9 @@ int PlatformFirmwareDigest(char *buf, size_t bufLen);
 /* Longest serial number a platform may report, excluding the terminator. */
 #define PLATFORM_SERIAL_MAX_LEN 64
 
-/* The hardware's own serial number, NUL-terminated, into `buf`. Stable across
- * reflashes and reboots, so it identifies the unit rather than the image.
- * Returns the length written, -ENOSYS where the platform has no such source,
- * -ENOSPC if too small. A source that is broadcast over the air is not one:
- * a caller may derive a secret from this value. */
+/* The hardware serial number, NUL-terminated, into `buf`; it survives reflash.
+ * Returns the length, -ENOSYS without a source, or -ENOSPC if too small. Never
+ * a value broadcast over the air: a caller may derive a secret from it. */
 int PlatformSerialNumber(char *buf, size_t bufLen);
 
 /* System control: the only paths that end the engine, since PlatformWappLoop
@@ -213,10 +211,9 @@ int PlatformOpenStateDir(const char *path, bool readonly);
  * Returns a stable, non-NULL absolute path. */
 const char *PlatformVolumeRoot(void);
 
-/* Read a whole host file into `buf`, NUL-terminated. For small documents the
- * engine reads outside any wapp's namespace — the launch-config overlay is the
- * only one today. Returns the length written, -ENOENT when absent, -ENOSPC
- * when the file does not fit, or another negative errno. */
+/* Read a small host file outside any wapp's namespace into `buf`, terminated.
+ * Returns the length, -ENOENT when absent, -ENOSPC when it does not fit, or
+ * another negative errno. The launch-config overlay is read this way. */
 int PlatformReadSmallFile(const char *path, char *buf, size_t bufLen);
 
 /* Thin wrappers over native fs primitives, used by VFS path_rename,
@@ -296,10 +293,9 @@ void PlatformMotorStop(platform_motor_t *m);
 bool PlatformMotorBusy(const platform_motor_t *m);
 void PlatformMotorClose(platform_motor_t *m);
 
-/* Power backing for the core /dev/power driver. A light sleep halts the CPU
- * and returns where it stopped; a deep sleep resets it. `timerUs` is 0 for no
- * timer. The state block survives a deep sleep; a load reports the time since
- * the store. */
+/* Power backing for /dev/power. A light sleep returns where it stopped; a deep
+ * sleep resets the CPU. `timerUs` 0 arms no timer. The state block survives a
+ * deep sleep, and a load reports the time since the store. */
 typedef enum plat_power_wake_t {
     PLAT_POWER_WAKE_TIMER = 0,
     PLAT_POWER_WAKE_EXTERNAL
@@ -368,10 +364,9 @@ int PlatformNetSend(struct netCtx *ctx, const void *buf, size_t nbyte,
 int PlatformNetShutdown(struct netCtx *ctx, int how);
 int PlatformNetFree(struct netCtx *ctx);
 
-/* Local endpoint of an established connection, formatted "<addr>:<port>" into
- * `buf`. Returns the byte count (excluding NUL) or a negative errno —
- * -ENOTCONN when `ctx` has no live connection to report, -ENOTSUP for a
- * transport with no comparable address (serial, AF_UNIX). */
+/* Local endpoint of a connection as "<addr>:<port>" into `buf`. Returns the
+ * byte count without the NUL, or a negative errno: -ENOTCONN with no live
+ * connection, -ENOTSUP for a transport with none (serial, AF_UNIX). */
 int PlatformNetLocalAddr(struct netCtx *ctx, char *buf, size_t buflen);
 
 /* Bind `ctx` to <bindAddr>:<port> and, on a stream transport, listen `backlog`

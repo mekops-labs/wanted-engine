@@ -45,16 +45,16 @@ typedef enum power_cause_t {
     POWER_CAUSE_EXTERNAL
 } power_cause_t;
 
-/* Operations a board supplies; every call gets the device's `ctx`. A mode the
- * board does not list needs no hook. Errors are negative errno values.
- * `suspend` switches rails and arms the sources. `resume` restores them and
- * returns the wake word the cause maps to, or NULL for the default (`timer`,
- * or `key`). `sleep` prepares a deep sleep and returns 0 when the engine may
- * sleep. `poweroff` cuts power and returns only when it could not. */
+/* Operations a board supplies, each given the device's `ctx`. A mode the board
+ * does not list needs no hook. Errors are negative errno values. */
 typedef struct power_ops_t {
+    /* Switches the rails and arms the wake sources. */
     int (*suspend)(void *ctx, const power_arm_t *arm);
+    /* Restores them; returns the cause's wake word, or NULL for the default. */
     const char *(*resume)(void *ctx, power_cause_t cause);
+    /* Prepares a deep sleep; 0 lets the engine sleep. */
     int (*sleep)(void *ctx, const power_arm_t *arm);
+    /* Cuts power, and returns only when it could not. */
     int (*poweroff)(void *ctx);
     bool (*externalPower)(void *ctx);
     size_t (*rails)(void *ctx, char *buf, size_t len);
