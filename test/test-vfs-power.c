@@ -1000,6 +1000,14 @@ static int notifyOnSuspend(void *ctx) {
     return 0;
 }
 
+static int busyWriteRc;
+
+static int writeOnSuspend(void *ctx) {
+    (void)ctx;
+    busyWriteRc = writeVia(&owner, "main/ctl", "mode active");
+    return 0;
+}
+
 TEST(power_safety, AWappCannotCancelASafetyOff) {
     sendCtl("mode standby");
     sendCtl("ready");
@@ -1039,6 +1047,18 @@ TEST(power_safety, ANoticeDuringASleepSurvivesAnAlarmWake) {
     notifyDuringSleep("suspend wake=key alarm=60", PLAT_POWER_WAKE_TIMER);
 }
 
+TEST(power_safety, AWriteDuringATransitionIsRefused) {
+    power_client_t c = {"w", writeOnSuspend, NULL, NULL};
+    TEST_ASSERT_EQUAL_INT(0, PowerClientRegister(&c));
+    setPolicy("suspend wake=key");
+    busyWriteRc = 0;
+    sendCtl("mode suspend");
+    sendCtl("ready");
+    runMs(150);
+    TEST_ASSERT_EQUAL_INT(-EBUSY, busyWriteRc);
+    TEST_ASSERT_EQUAL_STRING("suspend", modeName());
+}
+
 TEST_GROUP_RUNNER(power_safety) {
     RUN_TEST_CASE(power_safety, AHeldKeyEntersOffWithNoPolicyAndNoReady);
     RUN_TEST_CASE(power_safety, AReadyShortensTheGrace);
@@ -1058,6 +1078,7 @@ TEST_GROUP_RUNNER(power_safety) {
     RUN_TEST_CASE(power_safety, ANoticeDuringASleepSurvivesAKeyWake);
     RUN_TEST_CASE(power_safety, ANoticeDuringASleepSurvivesATimerWake);
     RUN_TEST_CASE(power_safety, ANoticeDuringASleepSurvivesAnAlarmWake);
+    RUN_TEST_CASE(power_safety, AWriteDuringATransitionIsRefused);
 }
 
 /***************************************/

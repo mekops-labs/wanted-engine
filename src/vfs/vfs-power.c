@@ -1255,7 +1255,9 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
     PlatformMutexLock(table.lock);
     power_dev_t *dev = d->devs[f->dev];
     int rc;
-    if (f->node == POWER_NODE_POLICY) {
+    if (dev->busy) {
+        rc = -EBUSY;
+    } else if (f->node == POWER_NODE_POLICY) {
         rc = applyPolicy(dev, text, nbyte);
     } else {
         if (text[nbyte - 1] == '\n')

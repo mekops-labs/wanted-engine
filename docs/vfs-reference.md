@@ -666,7 +666,8 @@ the engine enters the mode then, or when the grace ends, within 100 ms. A hung
 wapp delays a transition and cannot stop it. A request toward `active` takes
 effect at once and queues `exit <mode> request`. A wake from a key enters the
 `resume` mode and queues `exit <mode> <word>`. `activity` restarts the idle
-count and returns from `standby` to `active`.
+count and returns from `standby` to `active`. While a transition runs its
+hooks, a write to `policy` or `ctl` returns `-EBUSY`.
 
 **Event.** `event` returns whole lines and blocks until one is queued. With
 `O_NONBLOCK` it returns `-EAGAIN` when empty. It supports `poll`, a stop ends
