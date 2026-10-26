@@ -577,8 +577,10 @@ static void persistLadder(const power_dev_t *d, uint64_t now) {
     PlatformPowerStateStore(&p, sizeof(p));
 }
 
-/* Enter a light or a deep sleep; the lock is dropped across the hooks. */
-static void sleepIn(power_dev_t *d, unsigned target, bool deep, bool keyOnly) {
+/* Enter a light or a deep sleep; the lock is dropped across the hooks.
+ * `clientsDown` skips the client suspend a failed power-off already ran. */
+static void sleepIn(power_dev_t *d, unsigned target, bool deep, bool keyOnly,
+                    bool clientsDown) {
     power_arm_t arm;
     computeArm(d, target, &arm);
     arm.powerKeyOnly = keyOnly;
@@ -597,7 +599,8 @@ static void sleepIn(power_dev_t *d, unsigned target, bool deep, bool keyOnly) {
     int rc = 0;
 
     PlatformMutexUnlock(table.lock);
-    suspendClients();
+    if (!clientsDown)
+        suspendClients();
     const power_ops_t *ops = d->desc.ops;
     if (deep && ops->sleep != NULL)
         rc = ops->sleep(d->desc.ctx, &arm);
@@ -626,9 +629,9 @@ static void sleepIn(power_dev_t *d, unsigned target, bool deep, bool keyOnly) {
 }
 
 /* The device could not be cut off: sleep deeply with only the power key. */
-static void offFallback(power_dev_t *d) {
+static void offFallback(power_dev_t *d, bool clientsDown) {
     d->mode = POWER_SLEEP;
-    sleepIn(d, POWER_SLEEP, true, true);
+    sleepIn(d, POWER_SLEEP, true, true, clientsDown);
 }
 
 static void powerOff(power_dev_t *d) {
@@ -641,7 +644,7 @@ static void powerOff(power_dev_t *d) {
     d->sinceMs = nowMs();
     d->pending = false;
     if ((!cuts && ext) || d->desc.ops->poweroff == NULL) {
-        offFallback(d);
+        offFallback(d, false);
         return;
     }
     d->busy = true;
@@ -650,7 +653,7 @@ static void powerOff(power_dev_t *d) {
     d->desc.ops->poweroff(d->desc.ctx);
     PlatformMutexLock(table.lock);
     d->busy = false;
-    offFallback(d);
+    offFallback(d, true);
 }
 
 /* Run the pending transition. Caller holds the lock. */
@@ -668,10 +671,10 @@ static void runPending(power_dev_t *d) {
         d->sinceMs = nowMs();
         break;
     case POWER_SUSPEND:
-        sleepIn(d, POWER_SUSPEND, false, false);
+        sleepIn(d, POWER_SUSPEND, false, false, false);
         break;
     case POWER_SLEEP:
-        sleepIn(d, POWER_SLEEP, true, false);
+        sleepIn(d, POWER_SLEEP, true, false, false);
         break;
     default:
         powerOff(d);

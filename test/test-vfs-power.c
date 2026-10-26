@@ -914,6 +914,16 @@ TEST(power_safety, APowerOffThatReturnsFallsBackToDeepSleep) {
     TEST_ASSERT_TRUE(fake.arm.powerKeyOnly);
 }
 
+/* A board client that holds a lock across a sleep must see one suspend. */
+TEST(power_safety, APowerOffThatReturnsSuspendsTheClientsOnce) {
+    power_client_t a = {"a", clientA, clientB, NULL};
+    TEST_ASSERT_EQUAL_INT(0, PowerClientRegister(&a));
+    trace[0] = '\0';
+    PowerNotify("main", POWER_NOTICE_KEY_HELD);
+    run(4);
+    TEST_ASSERT_EQUAL_STRING("AodrB", trace);
+}
+
 TEST_GROUP_RUNNER(power_safety) {
     RUN_TEST_CASE(power_safety, AHeldKeyEntersOffWithNoPolicyAndNoReady);
     RUN_TEST_CASE(power_safety, AReadyShortensTheGrace);
@@ -928,6 +938,7 @@ TEST_GROUP_RUNNER(power_safety) {
     RUN_TEST_CASE(power_safety, TheFallbackDropsThePolicysWakeSourcesAndTimer);
     RUN_TEST_CASE(power_safety, OffThatCutsPowerEvenWithExternalPowerPowersOff);
     RUN_TEST_CASE(power_safety, APowerOffThatReturnsFallsBackToDeepSleep);
+    RUN_TEST_CASE(power_safety, APowerOffThatReturnsSuspendsTheClientsOnce);
 }
 
 /***************************************/
