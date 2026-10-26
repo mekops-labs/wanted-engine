@@ -676,6 +676,11 @@ and drops the oldest.
 **Wake.** `wake` reads `cold`, `timer`, `alarm`, `key`, or a word the board
 names. After a deep sleep it reads the cause of that wake.
 
+A `timer` wake only moves the device to a deeper mode, so the board and the
+drivers stay suspended through it, and the deeper mode does not suspend them
+again. They resume when the device returns toward `active`, or after 1 s when
+no deeper mode is due. An `alarm` wake resumes them as a key wake does.
+
 **Board safety.** The board reports `key held` and `battery low` with
 `PowerNotify`. The engine then queues `enter off` and powers off after the
 grace, at most 3 s, with or without a policy and a responsive wapp. No policy

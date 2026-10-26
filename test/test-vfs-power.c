@@ -684,10 +684,55 @@ TEST(power_suspend, ATimerWakeAtTheLadderDeadlineGoesOnToTheNextMode) {
     TEST_ASSERT_EQUAL_UINT(1, fake.poweroffs);
 }
 
+/* The board and the clients stay down from the wake to the power-off. */
+TEST(power_suspend, ALadderWakeKeepsTheHardwareDownIntoTheNextMode) {
+    setPolicy("suspend wake=key\noff after=3600");
+    DummyPowerWakeSet(PLAT_POWER_WAKE_TIMER);
+    suspendNow();
+    DummyClockAdvance(3600ULL * NS_PER_S);
+    PowerTick();
+    run(11);
+    TEST_ASSERT_EQUAL_UINT(1, fake.poweroffs);
+    TEST_ASSERT_EQUAL_STRING("BAsodrAB", trace);
+}
+
+TEST(power_suspend, ALadderWakeIntoTheUsbFallbackSuspendsNothingAgain) {
+    setPolicy("suspend wake=key\noff after=3600");
+    DummyPowerWakeSet(PLAT_POWER_WAKE_TIMER);
+    suspendNow();
+    fake.ext = true;
+    DummyClockAdvance(3600ULL * NS_PER_S);
+    PowerTick();
+    run(11);
+    TEST_ASSERT_EQUAL_UINT(0, fake.poweroffs);
+    TEST_ASSERT_EQUAL_STRING("BAsdrAB", trace);
+}
+
+TEST(power_suspend, ALadderWakeWithNothingDueBringsTheHardwareBack) {
+    setPolicy("suspend wake=key\noff after=3600");
+    DummyPowerWakeSet(PLAT_POWER_WAKE_TIMER);
+    suspendNow();
+    runMs(500);
+    TEST_ASSERT_EQUAL_STRING("BAs", trace);
+    run(2);
+    TEST_ASSERT_EQUAL_STRING("BAsrAB", trace);
+    TEST_ASSERT_EQUAL_STRING("suspend", modeName());
+}
+
+TEST(power_suspend, AModeRequestAfterALadderWakeBringsTheHardwareBack) {
+    setPolicy("suspend wake=key\noff after=3600");
+    DummyPowerWakeSet(PLAT_POWER_WAKE_TIMER);
+    suspendNow();
+    sendCtl("mode active");
+    TEST_ASSERT_EQUAL_STRING("BAsrAB", trace);
+    TEST_ASSERT_EQUAL_STRING("active", modeName());
+}
+
 TEST(power_suspend, AnAlarmWakeAsksTheWappToPrepareAndSleepsAgain) {
     setPolicy("suspend wake=key alarm=60");
     DummyPowerWakeSet(PLAT_POWER_WAKE_TIMER);
     suspendNow();
+    TEST_ASSERT_EQUAL_STRING("BAsrAB", trace);
     TEST_ASSERT_EQUAL_UINT64(60ULL * 1000000ULL, fake.arm.timerUs);
     TEST_ASSERT_EQUAL_STRING(
         "enter suspend\nexit suspend alarm\nenter suspend\n", events());
@@ -793,6 +838,14 @@ TEST_GROUP_RUNNER(power_suspend) {
     RUN_TEST_CASE(power_suspend, WithNoLaterModeThereIsNoTimer);
     RUN_TEST_CASE(power_suspend,
                   ATimerWakeAtTheLadderDeadlineGoesOnToTheNextMode);
+    RUN_TEST_CASE(power_suspend,
+                  ALadderWakeKeepsTheHardwareDownIntoTheNextMode);
+    RUN_TEST_CASE(power_suspend,
+                  ALadderWakeIntoTheUsbFallbackSuspendsNothingAgain);
+    RUN_TEST_CASE(power_suspend,
+                  ALadderWakeWithNothingDueBringsTheHardwareBack);
+    RUN_TEST_CASE(power_suspend,
+                  AModeRequestAfterALadderWakeBringsTheHardwareBack);
     RUN_TEST_CASE(power_suspend, AnAlarmWakeAsksTheWappToPrepareAndSleepsAgain);
     RUN_TEST_CASE(power_suspend, TheAlarmCyclesDoNotResetTheLadderClock);
     RUN_TEST_CASE(power_suspend, AKeyWakeRestartsTheIdleCount);

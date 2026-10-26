@@ -48,6 +48,8 @@ static const char id[] = {'P', 'o', 'W', 'r'};
 #define POWER_NS_PER_MS 1000000ULL
 #define POWER_GRACE_DEFAULT_MS 10000ULL
 #define POWER_GRACE_SAFETY_MS 3000ULL
+/* How long a ladder wake keeps the hardware down waiting for the next mode. */
+#define POWER_LADDER_SLACK_MS 1000ULL
 #define POWER_SLEEP_NS 1000000ULL /* 1 ms */
 #define POWER_PERSIST_MAGIC 0x50575231U
 
@@ -92,6 +94,8 @@ typedef struct power_dev_t {
     uint64_t dueMs;
     uint32_t alarmOverrideS;
     uint8_t armed;
+    bool down; /* a ladder wake left the board and the clients suspended */
+    uint64_t downUntilMs;
     char wake[POWER_WORD_MAX + 1];
     char events[POWER_EVENTS][POWER_EVENT_MAX];
     uint8_t evHead;
@@ -485,8 +489,24 @@ static void computeArm(power_dev_t *d, unsigned target, power_arm_t *arm) {
 
 /* ── Transitions ─────────────────────────────────────────────────────────── */
 
+static const char *resumeAll(power_dev_t *d, power_cause_t cause);
+
+/* Resume what a ladder wake left down. Caller holds the lock, which is
+ * dropped across the hooks. */
+static void liftHardware(power_dev_t *d) {
+    if (!d->down)
+        return;
+    d->down = false;
+    d->busy = true;
+    PlatformMutexUnlock(table.lock);
+    (void)resumeAll(d, POWER_CAUSE_TIMER);
+    PlatformMutexLock(table.lock);
+    d->busy = false;
+}
+
 /* Back toward active at once; no wapp is asked. Caller holds the lock. */
 static void returnTo(power_dev_t *d, unsigned target, const char *cause) {
+    liftHardware(d);
     pushEvent(d, "exit", d->mode, cause);
     d->mode = (uint8_t)target;
     d->sinceMs = nowMs();
@@ -597,9 +617,11 @@ static void sleepIn(power_dev_t *d, unsigned target, bool deep, bool keyOnly,
     power_cause_t cause = POWER_CAUSE_TIMER;
     const char *word = NULL;
     int rc = 0;
+    bool skipSuspend = clientsDown || d->down;
+    d->down = false;
 
     PlatformMutexUnlock(table.lock);
-    if (!clientsDown)
+    if (!skipSuspend)
         suspendClients();
     const power_ops_t *ops = d->desc.ops;
     if (deep && ops->sleep != NULL)
@@ -615,8 +637,16 @@ static void sleepIn(power_dev_t *d, unsigned target, bool deep, bool keyOnly,
         }
         cause = causeOf(PlatformPowerLightSleep(arm.timerUs));
     }
-    word = resumeAll(d, cause);
+    /* A ladder timer wakes only to go deeper, so the hardware stays down. */
+    bool stayDown =
+        rc >= 0 && cause == POWER_CAUSE_TIMER && d->armed == POWER_ARMED_LADDER;
+    if (!stayDown)
+        word = resumeAll(d, cause);
     PlatformMutexLock(table.lock);
+    if (stayDown) {
+        d->down = true;
+        d->downUntilMs = nowMs() + POWER_LADDER_SLACK_MS;
+    }
 
     if (rc < 0) {
         d->busy = false;
@@ -647,9 +677,12 @@ static void powerOff(power_dev_t *d) {
         offFallback(d, false);
         return;
     }
+    bool down = d->down;
+    d->down = false;
     d->busy = true;
     PlatformMutexUnlock(table.lock);
-    suspendClients();
+    if (!down)
+        suspendClients();
     d->desc.ops->poweroff(d->desc.ctx);
     PlatformMutexLock(table.lock);
     d->busy = false;
@@ -692,6 +725,8 @@ void PowerTick(void) {
         if (!d->used || d->busy)
             continue;
         evaluate(d, now);
+        if (d->down && !d->pending && now >= d->downUntilMs)
+            liftHardware(d);
         if (d->pending && (d->ready || now >= d->dueMs))
             runPending(d);
     }
