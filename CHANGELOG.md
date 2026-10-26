@@ -1,8 +1,24 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.28.0 (2026-10-26)
+-------------------
+
+### Added
+
+- `/dev/haptic` driver for vibration motors: `ctl` takes `play`, `pulse` and
+  `stop`; `effects` and `busy` are readable, and alone under an observe grant.
+- A haptic grant names a GPIO motor by pin; a board registers its own motors
+  with `HapticDeviceRegister`. Built with `CONFIG_WANTED_VFS_HAPTIC`.
+- `/dev/power` driver: the modes `active`, `standby`, `suspend`, `sleep` and
+  `off`, entered by a `policy` ladder or by `ctl`, with `mode`, `event`, `wake`.
+- A board safety notice powers the device off within 3 s, policy or not.
+- `PowerClientRegister` adds a client suspended before the board's hook, in
+  reverse registration order. Built with `CONFIG_WANTED_VFS_POWER`.
+- On ESP-IDF, `suspend` is a light sleep and `sleep` a deep sleep; the ladder
+  and the `ctl` alarm survive a deep sleep, and Wi-Fi returns on resume.
+- On Linux, the power driver records the mode and the ladder; a sleep returns
+  at once.
 
 ### Build
 
