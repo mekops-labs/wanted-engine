@@ -722,6 +722,19 @@ TEST(power_suspend, ALadderWakeWithNothingDueBringsTheHardwareBack) {
     TEST_ASSERT_EQUAL_STRING("suspend", modeName());
 }
 
+/* After an alarm, the ladder timer arms what is left of `after`. */
+TEST(power_suspend, AnAlarmCycleArmsTheRestOfTheLadderTime) {
+    setPolicy("suspend wake=key alarm=1800\nsleep after=3000");
+    DummyPowerWakeSet(PLAT_POWER_WAKE_TIMER);
+    suspendNow();
+    TEST_ASSERT_EQUAL_UINT64(1800ULL * 1000000ULL, fake.arm.timerUs);
+    DummyClockAdvance(1800ULL * NS_PER_S);
+    sendCtl("ready");
+    runMs(150);
+    TEST_ASSERT_TRUE(fake.arm.timerUs <= 1200ULL * 1000000ULL);
+    TEST_ASSERT_TRUE(fake.arm.timerUs > 1199ULL * 1000000ULL);
+}
+
 TEST(power_suspend, AModeRequestAfterALadderWakeBringsTheHardwareBack) {
     setPolicy("suspend wake=key\noff after=3600");
     DummyPowerWakeSet(PLAT_POWER_WAKE_TIMER);
@@ -847,6 +860,7 @@ TEST_GROUP_RUNNER(power_suspend) {
                   ALadderWakeIntoTheUsbFallbackSuspendsNothingAgain);
     RUN_TEST_CASE(power_suspend,
                   ALadderWakeWithNothingDueBringsTheHardwareBack);
+    RUN_TEST_CASE(power_suspend, AnAlarmCycleArmsTheRestOfTheLadderTime);
     RUN_TEST_CASE(power_suspend,
                   AModeRequestAfterALadderWakeBringsTheHardwareBack);
     RUN_TEST_CASE(power_suspend, AnAlarmWakeAsksTheWappToPrepareAndSleepsAgain);

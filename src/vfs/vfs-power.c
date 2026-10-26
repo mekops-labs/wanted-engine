@@ -450,10 +450,10 @@ static void evaluate(power_dev_t *d, uint64_t now) {
 }
 
 /* The timer a sleeping `target` arms, from the ladder and the alarm. */
-static void computeArm(power_dev_t *d, unsigned target, power_arm_t *arm) {
+static void computeArm(power_dev_t *d, unsigned target, uint64_t now,
+                       power_arm_t *arm) {
     memset(arm, 0, sizeof(*arm));
     arm->wakeMask = d->pol[target].used ? d->pol[target].wake : 0;
-    uint64_t now = nowMs();
     bool ext = externalPower(d);
     uint64_t best = 0;
     uint8_t kind = POWER_ARMED_NONE;
@@ -463,7 +463,8 @@ static void computeArm(power_dev_t *d, unsigned target, power_arm_t *arm) {
         if (!p->used || (p->battery && ext))
             continue;
         if (p->hasAfter && ladderPrev(d, t) == target) {
-            uint64_t ms = p->afterS * POWER_MS_PER_S;
+            uint64_t due = d->sinceMs + p->afterS * POWER_MS_PER_S;
+            uint64_t ms = due > now ? due - now : 1;
             if (kind == POWER_ARMED_NONE || ms < best) {
                 best = ms;
                 kind = POWER_ARMED_LADDER;
@@ -605,17 +606,18 @@ static void persistLadder(const power_dev_t *d, uint64_t now) {
  * `clientsDown` skips the client suspend a failed power-off already ran. */
 static void sleepIn(power_dev_t *d, unsigned target, bool deep, bool keyOnly,
                     bool clientsDown) {
+    uint64_t now = nowMs();
+    if (d->mode != target)
+        d->sinceMs = now;
+    d->mode = (uint8_t)target;
     power_arm_t arm;
-    computeArm(d, target, &arm);
+    computeArm(d, target, now, &arm);
     arm.powerKeyOnly = keyOnly;
     if (keyOnly) {
         arm.wakeMask = 0;
         arm.timerUs = 0;
         d->armed = POWER_ARMED_NONE;
     }
-    if (d->mode != target)
-        d->sinceMs = nowMs();
-    d->mode = (uint8_t)target;
     d->pending = false;
     d->busy = true;
     power_cause_t cause = POWER_CAUSE_TIMER;

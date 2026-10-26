@@ -645,7 +645,7 @@ off idle=86400 battery
 | Term | Meaning |
 |---|---|
 | `idle=<s>` | Enter the mode after `<s>` seconds without `activity`. |
-| `after=<s>` | Enter the mode after `<s>` seconds in the previous mode on the ladder. |
+| `after=<s>` | Enter the mode after `<s>` seconds in the previous mode on the ladder. An `alarm` cycle does not restart the count. |
 | `battery` | A timer enters the mode only without external power. A `mode` request is not affected. |
 | `wake=<list>` | Wake sources armed in the mode, comma separated, from `caps`. |
 | `alarm=<s>` | In `suspend` or `sleep`, wake after `<s>` seconds, prepare the wapp, and return to the mode. |
