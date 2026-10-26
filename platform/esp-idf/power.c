@@ -35,9 +35,15 @@ static void armTimer(uint64_t timerUs) {
         esp_sleep_enable_timer_wakeup(timerUs);
 }
 
+/* A refused sleep reports why: a timer too short to sleep on is a timer wake,
+ * and a wake source that fired before the sleep is an external one. */
 plat_power_wake_t PlatformPowerLightSleep(uint64_t timerUs) {
     armTimer(timerUs);
-    esp_light_sleep_start();
+    esp_err_t err = esp_light_sleep_start();
+    if (err == ESP_ERR_SLEEP_TOO_SHORT_SLEEP_DURATION)
+        return PLAT_POWER_WAKE_TIMER;
+    if (err != ESP_OK)
+        return PLAT_POWER_WAKE_EXTERNAL;
     return esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER
                ? PLAT_POWER_WAKE_TIMER
                : PLAT_POWER_WAKE_EXTERNAL;
