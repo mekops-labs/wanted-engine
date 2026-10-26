@@ -24,6 +24,7 @@
 #include <debug_trace.h>
 #include <platform.h>
 #include <vfs-drivers.h>
+#include <vfs-power.h>
 #include <vfs.h>
 #include <wanted-api.h>
 #include <wanted-hmac.h>
@@ -141,6 +142,39 @@ static void ipEventHandler(void *arg, esp_event_base_t base, int32_t evId,
     }
 }
 
+#ifdef CONFIG_WANTED_VFS_POWER
+/* The radio stops while the device sleeps and comes back with its stored
+ * intent: a station joins again, an AP is raised again. */
+static int wifiSuspend(void *ctx) {
+    (void)ctx;
+    esp_timer_stop(g_reconnectTimer);
+    esp_wifi_stop();
+    g_wifiConnected = false;
+    strncpy(g_wifiIp, "0.0.0.0", sizeof(g_wifiIp) - 1);
+    g_wifiGen++;
+    return 0;
+}
+
+static int wifiResume(void *ctx) {
+    (void)ctx;
+    g_reconnectDelayMs = WIFI_RECONNECT_MIN_DELAY_MS;
+    if (esp_wifi_start() != ESP_OK)
+        return -EIO;
+    if (g_hasIntent && !g_apMode)
+        esp_wifi_connect();
+    g_wifiGen++;
+    return 0;
+}
+
+static void registerPowerClient(void) {
+    static bool registered;
+    static const power_client_t client = {"wifi", wifiSuspend, wifiResume,
+                                          NULL};
+    if (!registered && PowerClientRegister(&client) == 0)
+        registered = true;
+}
+#endif
+
 /* One-time bring-up of NVS, the event loop, both netifs, the driver, the event
  * handlers and the reconnect timer. Idempotent: every wapp finds the radio
  * ready. */
@@ -196,6 +230,9 @@ static bool wifiEnsureStarted(void) {
         return false;
 
     g_wifiStarted = true;
+#ifdef CONFIG_WANTED_VFS_POWER
+    registerPowerClient();
+#endif
     return true;
 }
 

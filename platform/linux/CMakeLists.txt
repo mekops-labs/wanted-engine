@@ -25,6 +25,7 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/posix/clock.c
     ${CMAKE_SOURCE_DIR}/platform/posix/fs.c
     ${CMAKE_SOURCE_DIR}/platform/posix/led-state.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/motor-state.c
     ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
     wake.c
     ${CMAKE_SOURCE_DIR}/platform/posix/ready.c
@@ -38,6 +39,7 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/posix/sha256.c
     api/crypto.c
     api/random.c
+    api/power.c
     api/wapps.c)
 
 if(SECURE_SOCKETS)

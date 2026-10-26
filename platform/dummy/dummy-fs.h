@@ -28,6 +28,23 @@ void DummyResetReasonSet(const char *token);
 /* Advance the monotonic clock by `ns` nanoseconds without sleeping. */
 void DummyClockAdvance(uint64_t ns);
 
+/* ── Power fake control (dummy-power.c) ─────────────────────────────────── */
+
+/* Forget scripted wake causes, counters, and the stored state block. */
+void DummyPowerReset(void);
+
+/* The plat_power_wake_t every later sleep returns with. */
+void DummyPowerWakeSet(int cause);
+
+/* The plat_power_boot_t and elapsed time a state load reports. */
+void DummyPowerBootSet(int cause, uint64_t elapsedUs);
+
+unsigned DummyPowerLightSleeps(void);
+unsigned DummyPowerDeepSleeps(void);
+
+/* The timer the last sleep was asked for, in microseconds. */
+uint64_t DummyPowerLastTimerUs(void);
+
 /* Make PlatformClockSetTime return `rc` and change nothing; 0 restores it. */
 void DummyClockFailSet(int rc);
 

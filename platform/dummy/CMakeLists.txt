@@ -9,11 +9,13 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/registry/registry-mem.c
     dummy-wake.c
     dummy-persist-mem.c
+    dummy-power.c
     dummy-reset-reason.c
     dummy-wapps.c
     dummy-net.c
     dummy-ota.c
     ${CMAKE_SOURCE_DIR}/platform/posix/led-state.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/motor-state.c
     ${CMAKE_SOURCE_DIR}/platform/posix/sha256.c)
 add_library(platform_dummy STATIC ${sources})
 

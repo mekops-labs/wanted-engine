@@ -281,6 +281,44 @@ int PlatformLedFade(platform_led_t *l, unsigned level, unsigned ms);
 unsigned PlatformLedGet(const platform_led_t *l);
 void PlatformLedClose(platform_led_t *l);
 
+/* Motor backing for the core /dev/haptic driver: a motor on one pin.
+ * `address` is the grant's middle field, read only here. Open returns
+ * -ENOSYS, -EINVAL, -EBUSY or -ENOSPC, each of which fails the launch. */
+typedef struct platform_motor_t platform_motor_t;
+
+int PlatformMotorOpen(const char *address, platform_motor_t **out);
+/* Run `n` alternating on and off durations in ms, on first, and return at
+ * once. Replaces a running pattern; the motor ends off. */
+int PlatformMotorPattern(platform_motor_t *m, const uint16_t *ms, size_t n);
+/* Switch the motor off and drop any running pattern. */
+void PlatformMotorStop(platform_motor_t *m);
+/* True while a pattern runs. */
+bool PlatformMotorBusy(const platform_motor_t *m);
+void PlatformMotorClose(platform_motor_t *m);
+
+/* Power backing for the core /dev/power driver. A light sleep halts the CPU
+ * and returns where it stopped; a deep sleep resets it. `timerUs` is 0 for no
+ * timer. The state block survives a deep sleep; a load reports the time since
+ * the store. */
+typedef enum plat_power_wake_t {
+    PLAT_POWER_WAKE_TIMER = 0,
+    PLAT_POWER_WAKE_EXTERNAL
+} plat_power_wake_t;
+
+typedef enum plat_power_boot_t {
+    PLAT_POWER_BOOT_COLD = 0,
+    PLAT_POWER_BOOT_TIMER,
+    PLAT_POWER_BOOT_EXTERNAL
+} plat_power_boot_t;
+
+plat_power_wake_t PlatformPowerLightSleep(uint64_t timerUs);
+/* Returns only on a platform that cannot sleep deeply. */
+void PlatformPowerDeepSleep(uint64_t timerUs);
+/* Why this boot happened: a cold start, or a wake from deep sleep. */
+plat_power_boot_t PlatformPowerBootCause(void);
+bool PlatformPowerStateStore(const void *buf, size_t len);
+bool PlatformPowerStateLoad(void *buf, size_t len, uint64_t *elapsedUs);
+
 /* UART backing for the core /dev/uart driver: the platform owns the port, the
  * driver everything above it. `options` carries the grant keys the driver left
  * unconsumed; reject an unknown one. The port must be made exclusive here. */
