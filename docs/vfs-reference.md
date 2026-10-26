@@ -505,7 +505,8 @@ An `input` grant hands one or more devices to one wapp as their owner:
 /dev/input/
   <device>/
     events  (r)   event records, whole records per read
-    info    (r)   "<types> keymap=<keymap>\n", e.g. "key text rel keymap=us"
+    info    (r)   "<types> keymap=<keymap>[ axis=...]\n", e.g.
+                  "key text rel keymap=us"
 ```
 
 ```json
@@ -521,9 +522,9 @@ Each record is 8 bytes, little-endian:
 | Offset | Field | Meaning |
 |---|---|---|
 | 0 | `sync` | `1` on the last record of a batch |
-| 1 | `type` | `EV_SYN` `0x00`, `EV_KEY` `0x01`, `EV_REL` `0x02`, `EV_TEXT` `0xF0` |
-| 2 | `code` (u16) | `SYN_DROPPED` `3`; a Linux key code; a Linux relative axis; `0` |
-| 4 | `value` (i32) | key state `1` down, `0` up, `2` repeat; a signed delta; a Unicode scalar |
+| 1 | `type` | `EV_SYN` `0x00`, `EV_KEY` `0x01`, `EV_REL` `0x02`, `EV_ABS` `0x03`, `EV_TEXT` `0xF0` |
+| 2 | `code` (u16) | `SYN_DROPPED` `3`; a Linux key code; a Linux relative axis; `ABS_X` `0` or `ABS_Y` `1`; `0` |
+| 4 | `value` (i32) | key state `1` down, `0` up, `2` repeat; a signed delta; a position in screen pixels; a Unicode scalar |
 
 - `events` returns whole records and needs a buffer of at least 8 bytes
   (`-EINVAL` otherwise). It blocks until a record is queued. `O_NONBLOCK`
@@ -535,6 +536,11 @@ Each record is 8 bytes, little-endian:
 - `EV_TEXT` carries the Unicode character the backing composed, with layers and
   Shift applied. A wapp reads `EV_TEXT` for what types and `EV_KEY` for keys
   that produce no character, and skips any `type` it does not know.
+- A device with absolute axes lists `abs` after its other types and one
+  `axis=<x|y>:<min>:<max>` word per axis in `info`, for example
+  `key abs keymap=touch axis=x:0:539 axis=y:0:959`. A device without them has
+  neither. A touch is a batch of `BTN_TOUCH` (`0x14a`) and the axes, and the
+  device reports one finger at a time.
 - One wapp owns a device. A second grant naming it fails the launch, and a grant
   naming several devices takes all of them or fails. Records queued before the
   owner launched are dropped.
