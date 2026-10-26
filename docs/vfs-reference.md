@@ -691,7 +691,8 @@ is kept through the wake.
 
 **Persistence.** The mode, the policy and the deadlines live in the engine, so
 a restarted wapp reads them again. Across a `sleep` they are kept in RTC memory
-on ESP-IDF with the `ctl` alarm, and a wake lands in the saved ladder.
+on ESP-IDF with the `ctl` alarm, and a wake lands in the saved ladder. The
+Linux backing records state only: its sleeps return at once.
 
 ### `haptic` — vibration motors
 

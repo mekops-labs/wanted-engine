@@ -18,6 +18,7 @@
 #include <config-linux.h>
 #include <platform.h>
 #include <vfs-led.h>
+#include <vfs-power.h>
 #include <vfs.h>
 #include <wanted-api.h>
 #include <wanted.h>
@@ -312,9 +313,19 @@ void PlatformRequestReboot(void) {
     pthread_mutex_unlock(&state_mtx);
 }
 
+/* The ladder timers and a pending transition run at this rate. */
+#define POWER_TICKS_PER_SECOND 10
+
 void PlatformWappLoop(void) {
     for (;;) {
+#ifdef CONFIG_WANTED_VFS_POWER
+        for (int i = 0; i < POWER_TICKS_PER_SECOND; i++) {
+            usleep(1000000 / POWER_TICKS_PER_SECOND);
+            PowerTick();
+        }
+#else
         sleep(1);
+#endif
 #ifdef CONFIG_WANTED_VFS_LED
         LedTick();
 #endif
