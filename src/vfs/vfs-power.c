@@ -736,7 +736,7 @@ void PowerTick(void) {
             continue;
         evaluate(d, now);
         if (d->down && !d->pending && now >= d->downUntilMs)
-            liftHardware(d);
+            sleepIn(d, d->mode, d->mode == POWER_SLEEP, false, false);
         if (d->pending && (d->ready || now >= d->dueMs))
             runPending(d);
     }

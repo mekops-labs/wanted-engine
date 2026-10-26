@@ -679,8 +679,9 @@ names. After a deep sleep it reads the cause of that wake.
 
 A `timer` wake only moves the device to a deeper mode, so the board and the
 drivers stay suspended through it, and the deeper mode does not suspend them
-again. They resume when the device returns toward `active`, or after 1 s when
-no deeper mode is due. An `alarm` wake resumes them as a key wake does.
+again. When no deeper mode is due 1 s after the wake, the device sleeps again
+in the same mode with the next deadline armed. An `alarm` wake resumes them as
+a key wake does.
 
 **Board safety.** The board reports `key held` and `battery low` with
 `PowerNotify`. The engine then queues `enter off` and powers off after the

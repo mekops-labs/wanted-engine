@@ -711,15 +711,18 @@ TEST(power_suspend, ALadderWakeIntoTheUsbFallbackSuspendsNothingAgain) {
     TEST_ASSERT_EQUAL_STRING("BAsdrAB", trace);
 }
 
-TEST(power_suspend, ALadderWakeWithNothingDueBringsTheHardwareBack) {
+/* A deeper mode that stopped being due, such as a battery line once USB is
+ * plugged in, leaves the device asleep, not awake in a sleeping mode. */
+TEST(power_suspend, ALadderWakeWithNothingDueSleepsAgain) {
     setPolicy("suspend wake=key\noff after=3600");
     DummyPowerWakeSet(PLAT_POWER_WAKE_TIMER);
     suspendNow();
+    DummyPowerWakeSet(PLAT_POWER_WAKE_EXTERNAL);
     runMs(500);
     TEST_ASSERT_EQUAL_STRING("BAs", trace);
-    run(2);
-    TEST_ASSERT_EQUAL_STRING("BAsrAB", trace);
-    TEST_ASSERT_EQUAL_STRING("suspend", modeName());
+    run(1);
+    TEST_ASSERT_EQUAL_STRING("BAssrAB", trace);
+    TEST_ASSERT_EQUAL_STRING("active", modeName());
 }
 
 /* After an alarm, the ladder timer arms what is left of `after`. */
@@ -858,8 +861,7 @@ TEST_GROUP_RUNNER(power_suspend) {
                   ALadderWakeKeepsTheHardwareDownIntoTheNextMode);
     RUN_TEST_CASE(power_suspend,
                   ALadderWakeIntoTheUsbFallbackSuspendsNothingAgain);
-    RUN_TEST_CASE(power_suspend,
-                  ALadderWakeWithNothingDueBringsTheHardwareBack);
+    RUN_TEST_CASE(power_suspend, ALadderWakeWithNothingDueSleepsAgain);
     RUN_TEST_CASE(power_suspend, AnAlarmCycleArmsTheRestOfTheLadderTime);
     RUN_TEST_CASE(power_suspend,
                   AModeRequestAfterALadderWakeBringsTheHardwareBack);
