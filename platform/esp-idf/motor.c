@@ -44,26 +44,26 @@ static int parsePin(const char *address) {
     return n;
 }
 
-/* Starts the next segment, or ends the pattern with the motor off. */
+/* Starts the next segment, or ends the pattern with the motor off. The pin
+ * and the timer change under the lock, so a stop or a close that takes it
+ * after this step sees the motor off and the timer to cancel. */
 static void step(void *arg) {
     struct platform_motor_t *m = arg;
-    bool more;
-    int level = 0;
-    unsigned ms = 0;
 
     portENTER_CRITICAL(&m->mux);
-    more = m->next < m->count;
-    if (more) {
-        level = (m->next % 2 == 0) ? 1 : 0;
-        ms = m->seg[m->next++];
-    } else {
-        m->busy = false;
+    if (m->used) {
+        bool more = m->next < m->count;
+        int level = 0;
+        if (more) {
+            level = (m->next % 2 == 0) ? 1 : 0;
+            unsigned ms = m->seg[m->next++];
+            esp_timer_start_once(m->timer, ms * ESP_MOTOR_US_PER_MS);
+        } else {
+            m->busy = false;
+        }
+        gpio_set_level(m->pin, level);
     }
     portEXIT_CRITICAL(&m->mux);
-
-    gpio_set_level(m->pin, level);
-    if (more)
-        esp_timer_start_once(m->timer, ms * ESP_MOTOR_US_PER_MS);
 }
 
 int PlatformMotorOpen(const char *address, platform_motor_t **out) {
@@ -124,26 +124,30 @@ int PlatformMotorPattern(platform_motor_t *m, const uint16_t *ms, size_t n) {
 void PlatformMotorStop(platform_motor_t *m) {
     if (m == NULL || !m->used)
         return;
-    esp_timer_stop(m->timer);
     portENTER_CRITICAL(&m->mux);
     m->count = 0;
     m->next = 0;
     m->busy = false;
-    portEXIT_CRITICAL(&m->mux);
     gpio_set_level(m->pin, 0);
+    portEXIT_CRITICAL(&m->mux);
+    esp_timer_stop(m->timer);
 }
 
 bool PlatformMotorBusy(const platform_motor_t *m) {
     return m != NULL && m->used && m->busy;
 }
 
+/* A step already running sees the slot unused and leaves the pin alone. */
 void PlatformMotorClose(platform_motor_t *m) {
     if (m == NULL || !m->used)
         return;
     PlatformMotorStop(m);
+    portENTER_CRITICAL(&m->mux);
+    m->used = false;
+    portEXIT_CRITICAL(&m->mux);
+    esp_timer_stop(m->timer);
     esp_timer_delete(m->timer);
     gpio_reset_pin(m->pin);
     gpio_set_direction(m->pin, GPIO_MODE_OUTPUT);
     gpio_set_level(m->pin, 0);
-    memset(m, 0, sizeof(*m));
 }
