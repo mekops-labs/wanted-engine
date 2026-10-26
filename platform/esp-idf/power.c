@@ -6,7 +6,7 @@
 #include <string.h>
 
 #include "esp_attr.h"
-#include "esp_rtc_time.h"
+#include "esp_private/esp_clk.h"
 #include "esp_sleep.h"
 
 #include <platform.h>
@@ -64,7 +64,7 @@ bool PlatformPowerStateStore(const void *buf, size_t len) {
         return false;
     memcpy(block.data, buf, len);
     block.len = (uint32_t)len;
-    block.storedUs = esp_rtc_get_time_us();
+    block.storedUs = esp_clk_rtc_time();
     block.magic = ESP_POWER_MAGIC;
     return true;
 }
@@ -74,7 +74,7 @@ bool PlatformPowerStateLoad(void *buf, size_t len, uint64_t *elapsedUs) {
         return false;
     memcpy(buf, block.data, len);
     if (elapsedUs != NULL)
-        *elapsedUs = esp_rtc_get_time_us() - block.storedUs;
+        *elapsedUs = esp_clk_rtc_time() - block.storedUs;
     block.magic = 0;
     return true;
 }
