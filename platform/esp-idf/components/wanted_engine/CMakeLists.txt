@@ -243,6 +243,10 @@ configure_file(${_partition_template}
 string(REGEX REPLACE "^\\./" "" _supervisor_rel
                      "${CONFIG_WANTED_SUPERVISOR_IMAGE}")
 set(_supervisor_tar "${ENGINE}/${_supervisor_rel}")
+# A board may supply its own supervisor image, a tar holding app.wasm.
+if(WANTED_BOARD_SUPERVISOR_TAR)
+    set(_supervisor_tar "${WANTED_BOARD_SUPERVISOR_TAR}")
+endif()
 if(NOT EXISTS "${_supervisor_tar}")
     message(
         FATAL_ERROR
