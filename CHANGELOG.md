@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Build
+
+- Bumped `wapps/sheriff` to v0.15.1, which restarts a wapp from its desired
+  image and config. `provisioning.version` and `wifi-mgr.version` read 0.15.1.
+
 0.27.0 (2026-10-21)
 -------------------
 
