@@ -66,6 +66,7 @@ typedef struct policy_line_t {
     bool hasAfter;
     bool hasAlarm;
     bool hasGrace;
+    bool hasResume;
     bool battery;
     uint8_t resume;
     unsigned wake;
@@ -306,8 +307,9 @@ static int parseTerm(const power_dev_t *d, unsigned mode, policy_line_t *p,
                    : parseWakeList(d, mode, value, &p->wake);
     if (strcmp(term, "resume") == 0) {
         int m = findMode(value, strlen(value));
-        if (m != POWER_ACTIVE && m != POWER_STANDBY)
+        if (p->hasResume || (m != POWER_ACTIVE && m != POWER_STANDBY))
             return -EINVAL;
+        p->hasResume = true;
         p->resume = (uint8_t)m;
         return 0;
     }
@@ -323,7 +325,7 @@ static int parseTerm(const power_dev_t *d, unsigned mode, policy_line_t *p,
                (mode == POWER_SUSPEND || mode == POWER_SLEEP)) {
         p->hasAlarm = true;
         p->alarmS = n;
-    } else if (strcmp(term, "grace") == 0 && !p->hasGrace) {
+    } else if (strcmp(term, "grace") == 0 && !p->hasGrace && n > 0) {
         p->hasGrace = true;
         p->graceS = n;
     } else {

@@ -395,6 +395,9 @@ TEST(power_policy, TermsAreValidated) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, policy("standby resume=suspend"));
     TEST_ASSERT_EQUAL_INT(-EINVAL, policy("standby wake="));
     TEST_ASSERT_EQUAL_INT(-EINVAL, policy("standby after=1234567890"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, policy("standby grace=0"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          policy("suspend resume=active resume=standby"));
 }
 
 TEST(power_policy, AWakeSourceTheBoardCannotArmInThatModeIsRejected) {
