@@ -250,6 +250,7 @@ static size_t popEvents(power_dev_t *d, char *buf, size_t nbyte) {
         size_t len = strlen(line);
         if (used + len > nbyte)
             break;
+        /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
         memcpy(buf + used, line, len);
         used += len;
         d->evHead = (uint8_t)((d->evHead + 1) % POWER_EVENTS);
@@ -463,7 +464,7 @@ static void computeArm(power_dev_t *d, unsigned target, uint64_t now,
         if (!p->used || (p->battery && ext))
             continue;
         if (p->hasAfter && ladderPrev(d, t) == target) {
-            uint64_t due = d->sinceMs + p->afterS * POWER_MS_PER_S;
+            uint64_t due = d->sinceMs + (p->afterS * POWER_MS_PER_S);
             uint64_t ms = due > now ? due - now : 1;
             if (kind == POWER_ARMED_NONE || ms < best) {
                 best = ms;
@@ -471,7 +472,7 @@ static void computeArm(power_dev_t *d, unsigned target, uint64_t now,
             }
         }
         if (p->hasIdle) {
-            uint64_t due = d->activityMs + p->idleS * POWER_MS_PER_S;
+            uint64_t due = d->activityMs + (p->idleS * POWER_MS_PER_S);
             uint64_t ms = due > now ? due - now : 1;
             if (kind == POWER_ARMED_NONE || ms < best) {
                 best = ms;
