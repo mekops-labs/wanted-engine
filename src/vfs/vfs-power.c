@@ -515,7 +515,8 @@ static void returnTo(power_dev_t *d, unsigned target, const char *cause) {
     d->mode = (uint8_t)target;
     d->sinceMs = nowMs();
     d->activityMs = d->sinceMs;
-    d->pending = false;
+    if (!d->forced)
+        d->pending = false;
 }
 
 static int requestMode(power_dev_t *d, unsigned target) {
@@ -568,11 +569,14 @@ static power_cause_t causeOf(plat_power_wake_t wake) {
 static void afterWake(power_dev_t *d, unsigned slept, power_cause_t cause,
                       const char *fromBoard) {
     bool alarm = cause == POWER_CAUSE_TIMER && d->armed == POWER_ARMED_ALARM;
+    bool safety = d->pending && d->forced;
     setWake(d, wakeWord(cause, fromBoard, alarm));
     d->busy = false;
 
     if (cause == POWER_CAUSE_TIMER) {
         d->mode = (uint8_t)slept;
+        if (safety)
+            return;
         if (alarm) {
             pushEvent(d, "exit", slept, "alarm");
             beginTransition(d, slept, true, graceMs(d, slept));

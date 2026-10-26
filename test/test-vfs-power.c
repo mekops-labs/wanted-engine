@@ -994,6 +994,51 @@ TEST(power_safety, APowerOffThatReturnsSuspendsTheClientsOnce) {
     TEST_ASSERT_EQUAL_STRING("AodrB", trace);
 }
 
+static int notifyOnSuspend(void *ctx) {
+    (void)ctx;
+    PowerNotify("main", POWER_NOTICE_KEY_HELD);
+    return 0;
+}
+
+TEST(power_safety, AWappCannotCancelASafetyOff) {
+    sendCtl("mode standby");
+    sendCtl("ready");
+    runMs(150);
+    TEST_ASSERT_EQUAL_STRING("standby", modeName());
+    PowerNotify("main", POWER_NOTICE_LOW_BATTERY);
+    sendCtl("activity");
+    sendCtl("mode active");
+    run(4);
+    TEST_ASSERT_EQUAL_UINT(1, fake.poweroffs);
+}
+
+/* A notice that lands while a sleep's hooks run survives the wake. */
+static void notifyDuringSleep(const char *policyText, int wake) {
+    power_client_t c = {"n", notifyOnSuspend, NULL, NULL};
+    TEST_ASSERT_EQUAL_INT(0, PowerClientRegister(&c));
+    setPolicy(policyText);
+    DummyPowerWakeSet(wake);
+    sendCtl("mode suspend");
+    sendCtl("ready");
+    runMs(150);
+    DummyPowerWakeSet(PLAT_POWER_WAKE_EXTERNAL);
+    run(4);
+    TEST_ASSERT_EQUAL_UINT(1, fake.poweroffs);
+}
+
+TEST(power_safety, ANoticeDuringASleepSurvivesAKeyWake) {
+    notifyDuringSleep("suspend wake=key", PLAT_POWER_WAKE_EXTERNAL);
+}
+
+TEST(power_safety, ANoticeDuringASleepSurvivesATimerWake) {
+    notifyDuringSleep("suspend wake=key\noff after=3600",
+                      PLAT_POWER_WAKE_TIMER);
+}
+
+TEST(power_safety, ANoticeDuringASleepSurvivesAnAlarmWake) {
+    notifyDuringSleep("suspend wake=key alarm=60", PLAT_POWER_WAKE_TIMER);
+}
+
 TEST_GROUP_RUNNER(power_safety) {
     RUN_TEST_CASE(power_safety, AHeldKeyEntersOffWithNoPolicyAndNoReady);
     RUN_TEST_CASE(power_safety, AReadyShortensTheGrace);
@@ -1009,6 +1054,10 @@ TEST_GROUP_RUNNER(power_safety) {
     RUN_TEST_CASE(power_safety, OffThatCutsPowerEvenWithExternalPowerPowersOff);
     RUN_TEST_CASE(power_safety, APowerOffThatReturnsFallsBackToDeepSleep);
     RUN_TEST_CASE(power_safety, APowerOffThatReturnsSuspendsTheClientsOnce);
+    RUN_TEST_CASE(power_safety, AWappCannotCancelASafetyOff);
+    RUN_TEST_CASE(power_safety, ANoticeDuringASleepSurvivesAKeyWake);
+    RUN_TEST_CASE(power_safety, ANoticeDuringASleepSurvivesATimerWake);
+    RUN_TEST_CASE(power_safety, ANoticeDuringASleepSurvivesAnAlarmWake);
 }
 
 /***************************************/
