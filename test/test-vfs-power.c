@@ -1076,6 +1076,25 @@ TEST(power_register, TheLadderComesBackAfterADeepSleep) {
     TEST_ASSERT_NOT_NULL(strstr(events(), "enter off"));
 }
 
+TEST(power_register, TheCtlAlarmComesBackAfterADeepSleep) {
+    power_device_desc_t d = mainDesc();
+    TEST_ASSERT_EQUAL_INT(0, PowerDeviceRegister(&d));
+    TEST_ASSERT_TRUE(attach(&owner, CONTROL));
+    setPolicy("sleep wake=key alarm=1800");
+    sendCtl("alarm 300");
+    sendCtl("mode sleep");
+    sendCtl("ready");
+    runMs(150);
+    detach(&owner);
+    PowerDevicesReset();
+    DummyPowerBootSet(PLAT_POWER_BOOT_TIMER, 300ULL * 1000000ULL);
+    TEST_ASSERT_EQUAL_INT(0, PowerDeviceRegister(&d));
+    TEST_ASSERT_TRUE(attach(&owner, CONTROL));
+    sendCtl("ready");
+    runMs(150);
+    TEST_ASSERT_EQUAL_UINT64(300ULL * 1000000ULL, fake.arm.timerUs);
+}
+
 TEST(power_register, AColdBootIgnoresTheSavedLadder) {
     power_device_desc_t d = mainDesc();
     TEST_ASSERT_EQUAL_INT(0, PowerDeviceRegister(&d));
@@ -1101,5 +1120,6 @@ TEST_GROUP_RUNNER(power_register) {
     RUN_TEST_CASE(power_register, ClientRegistrationRejectsNothingAndFillsUp);
     RUN_TEST_CASE(power_register, ATickWithNoDeviceIsHarmless);
     RUN_TEST_CASE(power_register, TheLadderComesBackAfterADeepSleep);
+    RUN_TEST_CASE(power_register, TheCtlAlarmComesBackAfterADeepSleep);
     RUN_TEST_CASE(power_register, AColdBootIgnoresTheSavedLadder);
 }

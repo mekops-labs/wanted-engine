@@ -688,7 +688,7 @@ can turn this off.
 
 **Persistence.** The mode, the policy and the deadlines live in the engine, so
 a restarted wapp reads them again. Across a `sleep` they are kept in RTC memory
-on ESP-IDF, and a wake lands in the saved ladder.
+on ESP-IDF with the `ctl` alarm, and a wake lands in the saved ladder.
 
 ### `haptic` — vibration motors
 

@@ -51,7 +51,7 @@ static const char id[] = {'P', 'o', 'W', 'r'};
 /* How long a ladder wake keeps the hardware down waiting for the next mode. */
 #define POWER_LADDER_SLACK_MS 1000ULL
 #define POWER_SLEEP_NS 1000000ULL /* 1 ms */
-#define POWER_PERSIST_MAGIC 0x50575231U
+#define POWER_PERSIST_MAGIC 0x50575232U
 
 #define POWER_ARMED_NONE 0
 #define POWER_ARMED_LADDER 1
@@ -117,6 +117,7 @@ typedef struct persist_t {
     uint8_t armed;
     uint32_t sinceAgeS;
     uint32_t activityAgeS;
+    uint32_t alarmOverrideS;
     char policyText[POWER_POLICY_MAX];
 } persist_t;
 
@@ -595,6 +596,7 @@ static void persistLadder(const power_dev_t *d, uint64_t now) {
     p.armed = d->armed;
     p.sinceAgeS = (uint32_t)((now - d->sinceMs) / POWER_MS_PER_S);
     p.activityAgeS = (uint32_t)((now - d->activityMs) / POWER_MS_PER_S);
+    p.alarmOverrideS = d->alarmOverrideS;
     memcpy(p.policyText, d->policyText, sizeof(p.policyText));
     PlatformPowerStateStore(&p, sizeof(p));
 }
@@ -806,6 +808,7 @@ static void restoreLadder(power_dev_t *d) {
     d->sinceMs = now - (p.sinceAgeS * POWER_MS_PER_S + gone);
     d->activityMs = now - (p.activityAgeS * POWER_MS_PER_S + gone);
     d->armed = p.armed;
+    d->alarmOverrideS = p.alarmOverrideS;
     d->mode = p.mode;
     power_cause_t cause = boot == PLAT_POWER_BOOT_TIMER ? POWER_CAUSE_TIMER
                                                         : POWER_CAUSE_EXTERNAL;
