@@ -1206,6 +1206,12 @@ static int loadSupervisorImage(wapp_t *w, const wantedConfig_t *cfg) {
         ret = PlatformWappLoad(path, w);
     }
     supervisorRanBuiltin = (strcmp(path, SUPERVISOR_IMAGE_PATH) == 0);
+    /* The compiled-in image has no registry entry; its version is the stamp. */
+    if (ret >= 0 && supervisorRanBuiltin && w->version[0] == '\0') {
+        strncpy(w->version, WANTED_SUPERVISOR_BUNDLED_VERSION,
+                WAPP_MAX_VERSION_LEN - 1);
+        w->version[WAPP_MAX_VERSION_LEN - 1] = '\0';
+    }
 
     if (ret < 0) {
         DEBUG_TRACE("failed to load supervisor image from %s: %d", path, ret);
