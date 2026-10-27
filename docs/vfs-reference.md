@@ -43,7 +43,7 @@ close(fd);                                    /* signals EOF to the reader */
 
 ## `/proc/` — process namespace
 
-A read-only namespace exposing system state. Privileged entries are visible only when the engine config sets `system.privileged: true`; otherwise they are hidden from both reads and directory enumeration.
+A read-only namespace exposing system state. Privileged entries are visible only to a wapp whose launch config sets `"privileged": true`; otherwise they are hidden from both reads and directory enumeration.
 
 | Path | Access | Privileged | Content |
 |------|--------|:----------:|---------|

@@ -27,12 +27,11 @@ A minimal `{"system": {}}` is a valid config.
 
 ```json
 {
-  "system": {
-    "privileged": false
-  },
+  "system": {},
   "supervisor": {
     "imagePath": "./wasm/supervisor/sheriff/supervisor.tar",
     "params": {
+      "privileged": true,
       "console": { "in": {...}, "out": {...}, "err": {...} },
       "drivers": [ { "name": "...", "options": "..." } ],
       "mounts":  [ { "name": "...", "path": "...", "options": "..." } ],
@@ -44,7 +43,6 @@ A minimal `{"system": {}}` is a valid config.
 
 | Field | Type | Default | Effect |
 |-------|------|---------|--------|
-| `system.privileged` | boolean | `false` | Enables the privileged `/proc` entries (`wapps`, `memory`). When false they are hidden from reads and enumeration. |
 | `system.screens` | array | none | Headless in-memory screens for the `fb` driver. Each entry needs `name`, `width`, `height` (1–65535) and `format` (`rgb565`, `rgb888`, `mono1` or `gray4`). A malformed entry, a name already declared with other properties, or a build without `CONFIG_WANTED_VFS_FB` fails the config. |
 | `system.inputs` | array | none | Virtual input devices for the `input` driver, fed only through `inject`. Each entry needs `name`, `types` (a non-empty array of `key`, `text`, `rel`, `abs`) and `keymap`; `name` and `keymap` are `[A-Za-z0-9_-]`, at most 15 characters. A device with `abs` needs `key` and `axes`, one or two `{name, min, max}` entries with `name` `x` or `y` and integer `min` below `max`; `axes` on a device without `abs` fails the config. A malformed entry, a name already declared with other properties, or a build without `CONFIG_WANTED_VFS_INPUT` fails the config. |
 | `system.enforceImageVerify` | boolean | `false` | Refuses a registry image that fails verification. Monotonic: it raises enforcement and can never clear it, and the compiled-in `CONFIG_WANTED_WAPP_IMAGE_VERIFY_ENFORCE` is a floor this cannot go below. Verification runs and reports whatever this is set to. |
@@ -102,6 +100,7 @@ The launch config addresses resources through three purpose-specific sections, e
 
 | Field | Type | Notes |
 |-------|------|-------|
+| `privileged` | boolean | `false`. Lets the wapp read the privileged `/proc` entries (`wapps`, `memory`); they are hidden from its reads and directory listings otherwise. It is per wapp: granting one wapp does not grant any other. A value that is not a boolean refuses the config. |
 | `console` | object | Slots `in` / `out` / `err`, each a driver spec backing the wapp's stdio. |
 | `drivers` | array | Up to `MAX_DRIVERS_CNT` (default 6, profile-tunable) device singletons. Each mounts at `/dev/<name>` — the name determines the mount, so no `path`. |
 | `mounts` | array | Up to `MAX_DRIVERS_CNT` file/backend drivers, each bound at an arbitrary absolute `path` outside `/dev` and `/net`. |
@@ -207,16 +206,15 @@ A relative/empty `src` or an unrecognised token is rejected at install.
 
 ## Annotated example
 
-`configs/example_config.json` — a privileged engine booting the production sheriff supervisor with the control plane granted:
+`configs/example_config.json` — an engine booting the production sheriff supervisor with the control plane granted and the privileged `/proc` entries:
 
 ```json
 {
-    "system": {
-        "privileged": true               // expose /proc/wapps and /proc/memory
-    },
+    "system": {},
     "supervisor": {
         "imagePath": "./wasm/supervisor/sheriff/supervisor.tar",
         "params": {
+            "privileged": true,           // expose /proc/wapps and /proc/memory
             "console": {                  // supervisor stdio → engine console
                 "in":  {"name": "platform"},
                 "out": {"name": "platform"},

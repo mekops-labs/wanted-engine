@@ -62,7 +62,7 @@ graph LR
 
 - **`/dev/`** — device capability namespace; prefix-routes to registered sub-drivers (`null`, named pipes, stdio stubs, the `wanted` control plane, offload devices like `sha256`/`ed25519`/`inflate`, and any wapp-configured drivers).
 - **`/net/`** — network namespace; the socket driver for TCP/UDP, plain and TLS.
-- **`/proc/`** — read-only system state; privileged entries are hidden unless `system.privileged` is set.
+- **`/proc/`** — read-only system state; privileged entries are hidden from a wapp unless its launch config sets `privileged`.
 - **`/`** — TarFS, the merged read-only OCI layer stack — the wapp's root filesystem.
 
 **`/proc/wanted` carries static, informational values only** — what this engine *is*: its platform, version, ABI, the hardware's serial number, and the compile-time ceilings a supervisor checks a launch config against. Each is fixed for the life of the process, so a reader may render it once and cache it. A value that moves while the engine runs — an uptime, a counter, a link state — gets its own node instead (`/proc/uptime`, `/proc/memory`, `/proc/clock_quality`). Every ProcFS entry renders in one shot, so a moving value here would force a reader that wants only that number to re-render the whole report, and would make every cached copy of the report wrong.
@@ -121,7 +121,7 @@ The WebAssembly core is [WAMR](https://github.com/bytecodealliance/wasm-micro-ru
 
 ## Boot sequence
 
-1. `WantedStart(config)` parses `system.privileged` and the `supervisor` block.
+1. `WantedStart(config)` parses the `system` and `supervisor` blocks.
 2. The supervisor image is loaded and its TAR layers indexed (TarFS).
 3. The supervisor wapp is instantiated; the engine mounts `/`, `/dev`, `/net`, `/proc`, registers the built-in devices, applies the configured console, drivers, mounts, and sockets, and registers the WASI + WANTED natives.
 4. Control transfers to the supervisor's entrypoint. It reads the registry and drives the control plane to launch further wapps.

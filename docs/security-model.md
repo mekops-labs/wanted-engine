@@ -127,7 +127,7 @@ The VFS router is the **only** I/O path, and it doubles as the capability system
 - The four namespaces (`/dev/`, `/net/`, `/proc/`, `/` TarFS) are routed independently; a driver in one cannot shadow another.
 - Path normalisation (via `cwalk`) collapses `.`, `..`, double slashes, and trailing slashes, and denies parent-traversal past root — a wapp cannot escape a mount by path tricks.
 - A `platform` bind mount confines resolution to its host directory: an absolute symlink, a `..` escape, or an in-directory symlink pointing outside cannot resolve through the mount. This holds for read-only and read-write mounts alike (it closes a read escape that `ro` alone cannot).
-- Privileged `/proc` entries (`wapps`, `memory`) are hidden unless `system.privileged` is set in the engine config — an observability wapp can watch the fleet without the authority to command it.
+- Privileged `/proc` entries (`wapps`, `memory`) are hidden from a wapp unless its launch config sets `privileged`. Only the supervisor writes a wapp's launch config, so it grants the privilege one wapp at a time — an observability wapp can watch the fleet without the authority to command it.
 - The `wanted` control-plane driver is a device singleton: it mounts at `/dev/wanted` only when `drivers[]` grants it, and only the supervisor's launch config does.
 
 What this layer guarantees: a wapp's reach is exactly its granted paths — no more, no less. What it does not: it does not police *what* a wapp does with a granted path (a `rw` volume can be filled, a socket can be abused) — that is policy, enforced by the supervisor, not by the engine.

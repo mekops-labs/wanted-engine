@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Build
+
+- Bumped `wapps/sheriff` to v0.16.0, which maps `policy.privileged` to the
+  launch config. `provisioning.version` and `wifi-mgr.version` read 0.16.0.
+
 0.28.0 (2026-10-26)
 -------------------
 

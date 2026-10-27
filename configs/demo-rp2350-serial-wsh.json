@@ -1,9 +1,8 @@
 {
-    "system": {
-        "privileged": true
-    },
+    "system": {},
     "supervisor": {
         "params": {
+            "privileged": true,
             "console": {
                 "in":  {"name": "null"},
                 "out": {"name": "null"},

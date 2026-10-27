@@ -68,6 +68,8 @@ typedef struct wapp_config_t {
      * is a first-match. Empty means the instance name, so N instances share one
      * image while a single-instance wapp need never set it. */
     char image[WAPP_MAX_IMAGE_REF_LEN];
+    /* Reads the privileged /proc entries (`wapps`, `memory`). */
+    bool privileged;
     wapp_driver_t console[3];
     /* Device singletons, mounted at "/dev/<name>". */
     size_t driversCnt;
@@ -160,7 +162,6 @@ typedef struct wantedConfig_t {
      * one a versionless registry reference resolves to. Cleared by
      * `.supervisor.keepInstalled`, which holds the installed one. */
     bool supervisorPreferBundled;
-    bool privileged; /* enables privileged /proc entries when true */
 } wantedConfig_t;
 
 /**

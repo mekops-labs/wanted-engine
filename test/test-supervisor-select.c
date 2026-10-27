@@ -22,7 +22,7 @@ static const wantedConfig_t *parse(const char *json) {
 }
 
 #define SUPERVISOR_CFG(body)                                                   \
-    "{\"system\":{\"privileged\":true},"                                       \
+    "{\"system\":{},"                                                          \
     "\"supervisor\":{\"imagePath\":\"registry:supervisor\"" body "}}"
 
 /* The firmware's own supervisor takes over by default, so a board flashed with
@@ -44,8 +44,7 @@ TEST(supervisor_select, KeepInstalledFalseIsTheDefaultSpeltOut) {
 /* A config naming no supervisor at all still carries the default, so the field
  * is never left reading as "keep installed" by omission. */
 TEST(supervisor_select, ADefaultSurvivesAConfigWithNoSupervisorBlock) {
-    TEST_ASSERT_TRUE(
-        parse("{\"system\":{\"privileged\":false}}")->supervisorPreferBundled);
+    TEST_ASSERT_TRUE(parse("{\"system\":{}}")->supervisorPreferBundled);
 }
 
 /* A non-boolean is not an opt-out: only `true` holds the installed image. */
