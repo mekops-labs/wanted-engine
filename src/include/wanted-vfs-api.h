@@ -115,5 +115,10 @@ int WantedProcReadClockQuality(vfs_ctx_t c, void *buf, size_t bufLen);
  * supervisor checks a launch config against. */
 int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen);
 
+/* Appends the firmware lines at offset `w` and returns the new offset; an
+ * empty `board` or `variant` has no line. */
+int WantedProcAppendFirmware(char *buf, size_t bufLen, int w, const char *board,
+                             const char *variant);
+
 /* Renders /proc/uptime: milliseconds since the engine started. */
 int WantedProcReadUptime(vfs_ctx_t c, void *buf, size_t bufLen);

@@ -4,6 +4,12 @@ Changelog
 Unreleased
 ----------
 
+### Added
+
+- `/proc/wanted` reports `firmware_board` and `firmware_variant` where the
+  build names its firmware, through `WANTED_FIRMWARE_BOARD` and
+  `WANTED_FIRMWARE_VARIANT_FILE` in `board.cmake` or as CMake cache variables.
+
 ### Fixed
 
 - An ESP-IDF build that embeds the engine's own supervisor image builds again;

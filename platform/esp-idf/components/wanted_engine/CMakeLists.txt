@@ -344,3 +344,6 @@ idf_build_set_property(COMPILE_DEFINITIONS "SECURE_SOCKETS=${_secure_sockets}"
 target_compile_definitions(
     ${COMPONENT_LIB} PRIVATE WANTED_VERSION="${SEMVER}" PLATFORM_ESP_IDF=1
                              SUPERVISOR_IMAGE_PATH="embedded:supervisor.tar")
+# A board names its firmware in board.cmake, relative to the board directory.
+include(${ENGINE}/cmake/FirmwareStamp.cmake)
+wanted_firmware_stamp(${COMPONENT_LIB} "${WANTED_BOARD_DIR}")

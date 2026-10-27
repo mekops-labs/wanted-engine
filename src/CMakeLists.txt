@@ -217,6 +217,8 @@ target_compile_definitions(
 
 # Engine version string (git-derived SemVer), surfaced at /proc/wanted.
 target_compile_definitions(${project} PRIVATE WANTED_VERSION="${SEMVER}")
+include(${CMAKE_SOURCE_DIR}/cmake/FirmwareStamp.cmake)
+wanted_firmware_stamp(${project} ${CMAKE_SOURCE_DIR})
 
 # Local (AF_UNIX) transport for the 9P driver, letting an on-box driver server
 # be reached over a filesystem socket. Hosted targets only — the lwIP-based MCU

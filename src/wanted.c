@@ -383,6 +383,27 @@ static int procReadMemory(vfs_ctx_t c, void *buf, size_t bufLen) {
 #ifndef WANTED_VERSION
 #define WANTED_VERSION "unknown"
 #endif
+#ifndef WANTED_FIRMWARE_BOARD
+#define WANTED_FIRMWARE_BOARD ""
+#endif
+#ifndef WANTED_FIRMWARE_VARIANT
+#define WANTED_FIRMWARE_VARIANT ""
+#endif
+
+int WantedProcAppendFirmware(char *buf, size_t bufLen, int w, const char *board,
+                             const char *variant) {
+    const char *keys[] = {"firmware_board", "firmware_variant"};
+    const char *values[] = {board, variant};
+    for (size_t i = 0; i < 2; i++) {
+        if (values[i] == NULL || values[i][0] == '\0' || w >= (int)bufLen)
+            continue;
+        int n = snprintf(buf + w, bufLen - (size_t)w, "%s:\t%s\n", keys[i],
+                         values[i]);
+        if (n > 0 && w + n < (int)bufLen)
+            w += n;
+    }
+    return w;
+}
 
 /* /proc/wanted — engine identity and compile-time resource ceilings. One
  * key:\tvalue line per field: human-readable, trivially split on the tab. */
@@ -464,6 +485,9 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
         if (n > 0 && w + n < (int)bufLen)
             w += n;
     }
+
+    w = WantedProcAppendFirmware((char *)buf, bufLen, w, WANTED_FIRMWARE_BOARD,
+                                 WANTED_FIRMWARE_VARIANT);
 
     /* Available drivers: the merged core + platform table a launch config can
      * request on this build, so a supervisor can discover capability before

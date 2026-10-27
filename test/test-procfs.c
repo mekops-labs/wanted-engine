@@ -710,6 +710,40 @@ TEST(procfs_wanted_info, SerialRejectsABufferItCannotFill) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, PlatformSerialNumber(NULL, 64));
 }
 
+/* A build that names no firmware reports no firmware lines. */
+TEST(procfs_wanted_info, UnnamedFirmwareHasNoLines) {
+    _ReadWantedInfo();
+    TEST_ASSERT_NULL(strstr(info_buf, "firmware_"));
+}
+
+TEST(procfs_wanted_info, NamedFirmwareHasBothLines) {
+    char buf[128] = "";
+    int w = WantedProcAppendFirmware(buf, sizeof(buf), 0, "tender",
+                                     "0.1.0.dev.g44a4b55");
+    TEST_ASSERT_EQUAL_STRING(
+        "firmware_board:\ttender\nfirmware_variant:\t0.1.0.dev.g44a4b55\n",
+        buf);
+    TEST_ASSERT_EQUAL_INT((int)strlen(buf), w);
+}
+
+TEST(procfs_wanted_info, EmptyFirmwareFieldHasNoLine) {
+    char buf[128] = "";
+    int w = WantedProcAppendFirmware(buf, sizeof(buf), 0, "tender", "");
+    TEST_ASSERT_EQUAL_STRING("firmware_board:\ttender\n", buf);
+    TEST_ASSERT_EQUAL_INT((int)strlen(buf), w);
+    TEST_ASSERT_EQUAL_INT(
+        5, WantedProcAppendFirmware(buf, sizeof(buf), 5, NULL, NULL));
+}
+
+/* A line that does not fit is not counted, and nothing passes the end. */
+TEST(procfs_wanted_info, FirmwareLineThatDoesNotFitIsNotCounted) {
+    char buf[24];
+    memset(buf, 0x7f, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT(
+        0, WantedProcAppendFirmware(buf, 20, 0, "tender", "0.1.0"));
+    TEST_ASSERT_EQUAL_HEX8(0x7f, (unsigned char)buf[20]);
+}
+
 /* A short buffer truncates; it must not run past the caller's end. */
 TEST(procfs_wanted_info, ShortReadDoesNotOverrun) {
     char small[32];
@@ -728,6 +762,10 @@ TEST_GROUP_RUNNER(procfs_wanted_info) {
     RUN_TEST_CASE(procfs_wanted_info, ReportsThePlatformSerial);
     RUN_TEST_CASE(procfs_wanted_info, CarriesNoUptime);
     RUN_TEST_CASE(procfs_wanted_info, SerialRejectsABufferItCannotFill);
+    RUN_TEST_CASE(procfs_wanted_info, UnnamedFirmwareHasNoLines);
+    RUN_TEST_CASE(procfs_wanted_info, NamedFirmwareHasBothLines);
+    RUN_TEST_CASE(procfs_wanted_info, EmptyFirmwareFieldHasNoLine);
+    RUN_TEST_CASE(procfs_wanted_info, FirmwareLineThatDoesNotFitIsNotCounted);
     RUN_TEST_CASE(procfs_wanted_info, ShortReadDoesNotOverrun);
 }
 
