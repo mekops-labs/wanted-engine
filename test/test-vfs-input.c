@@ -233,7 +233,7 @@ TEST(input_table, BadNamesTypesAndKeymapsAreEinval) {
     d.name = "main";
     d.types = 0;
     TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
-    d.types = 0x8;
+    d.types = 0x10;
     TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
 
     d.types = INPUT_TYPE_KEY;
@@ -243,6 +243,64 @@ TEST(input_table, BadNamesTypesAndKeymapsAreEinval) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
     d.keymap = "bad,map";
     TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+}
+
+static const input_axis_t TOUCH_AXES[] = {{ABS_X, 0, 539}, {ABS_Y, 0, 959}};
+
+TEST(input_table, AbsDeviceRegistersWithItsAxes) {
+    input_device_desc_t d = {"touch", INPUT_TYPE_KEY | INPUT_TYPE_ABS, "touch",
+                             TOUCH_AXES, 2};
+    TEST_ASSERT_EQUAL_INT(0, InputDeviceRegister(&d, NULL));
+    TEST_ASSERT_EQUAL_INT(0, InputDeviceRegister(&d, NULL));
+}
+
+TEST(input_table, AbsDeviceNeedsValidAxes) {
+    input_device_desc_t d = {"touch", INPUT_TYPE_KEY | INPUT_TYPE_ABS, "touch",
+                             TOUCH_AXES, 2};
+    const input_axis_t flat[] = {{ABS_X, 5, 5}};
+    const input_axis_t inverted[] = {{ABS_X, 9, 1}};
+    const input_axis_t badCode[] = {{7, 0, 9}};
+    const input_axis_t twice[] = {{ABS_X, 0, 9}, {ABS_X, 0, 9}};
+
+    d.axes = NULL;
+    TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+    d.axes = TOUCH_AXES;
+    d.axisCount = 0;
+    TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+    d.axisCount = INPUT_AXES_MAX + 1;
+    TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+    d.axes = flat;
+    d.axisCount = 1;
+    TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+    d.axes = inverted;
+    TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+    d.axes = badCode;
+    TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+    d.axes = twice;
+    d.axisCount = 2;
+    TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+}
+
+TEST(input_table, AbsDeviceWithoutTheKeyTypeIsEinval) {
+    input_device_desc_t d = {"touch", INPUT_TYPE_ABS, "touch", TOUCH_AXES, 2};
+    TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+}
+
+TEST(input_table, AxesWithoutTheAbsTypeAreEinval) {
+    input_device_desc_t d = {"main", INPUT_TYPE_KEY, "default", TOUCH_AXES, 2};
+    TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+}
+
+TEST(input_table, SameAbsDeviceWithOtherAxesIsEexist) {
+    input_device_desc_t d = {"touch", INPUT_TYPE_KEY | INPUT_TYPE_ABS, "touch",
+                             TOUCH_AXES, 2};
+    const input_axis_t other[] = {{ABS_X, 0, 539}, {ABS_Y, 0, 799}};
+    TEST_ASSERT_EQUAL_INT(0, InputDeviceRegister(&d, NULL));
+    d.axes = other;
+    TEST_ASSERT_EQUAL_INT(-EEXIST, InputDeviceRegister(&d, NULL));
+    d.axes = TOUCH_AXES;
+    d.axisCount = 1;
+    TEST_ASSERT_EQUAL_INT(-EEXIST, InputDeviceRegister(&d, NULL));
 }
 
 TEST(input_table, TableFullIsEnospc) {
@@ -261,6 +319,11 @@ TEST_GROUP_RUNNER(input_table) {
     RUN_TEST_CASE(input_table, IdenticalDeviceRegistersAgain);
     RUN_TEST_CASE(input_table, SameNameWithOtherPropertiesIsEexist);
     RUN_TEST_CASE(input_table, BadNamesTypesAndKeymapsAreEinval);
+    RUN_TEST_CASE(input_table, AbsDeviceRegistersWithItsAxes);
+    RUN_TEST_CASE(input_table, AbsDeviceNeedsValidAxes);
+    RUN_TEST_CASE(input_table, AbsDeviceWithoutTheKeyTypeIsEinval);
+    RUN_TEST_CASE(input_table, AxesWithoutTheAbsTypeAreEinval);
+    RUN_TEST_CASE(input_table, SameAbsDeviceWithOtherAxesIsEexist);
     RUN_TEST_CASE(input_table, TableFullIsEnospc);
 }
 
@@ -287,6 +350,20 @@ TEST(input_tree, InfoOfAKeyOnlyDeviceListsKeyOnly) {
     char buf[64];
     TEST_ASSERT_TRUE(readNode("/dev/input/aux/info", buf, sizeof(buf)) > 0);
     TEST_ASSERT_EQUAL_STRING("key keymap=default\n", buf);
+}
+
+TEST(input_tree, InfoOfAnAbsDeviceListsItsAxes) {
+    const input_axis_t axes[] = {{ABS_X, 0, 539}, {ABS_Y, -10, 959}};
+    input_device_desc_t d = {"touch", INPUT_TYPE_KEY | INPUT_TYPE_ABS, "touch",
+                             axes, 2};
+    detach(&owner);
+    InputDevicesReset();
+    TEST_ASSERT_EQUAL_INT(0, InputDeviceRegister(&d, NULL));
+    TEST_ASSERT_TRUE(attach(&owner, "devices=touch,keymap=touch"));
+    char buf[128];
+    TEST_ASSERT_TRUE(readNode("/dev/input/touch/info", buf, sizeof(buf)) > 0);
+    TEST_ASSERT_EQUAL_STRING(
+        "key abs keymap=touch axis=x:0:539 axis=y:-10:959\n", buf);
 }
 
 TEST(input_tree, UngrantedDeviceIsEnoent) {
@@ -338,6 +415,7 @@ TEST(input_tree, DirectoriesRefuseReadsAndWrites) {
 TEST_GROUP_RUNNER(input_tree) {
     RUN_TEST_CASE(input_tree, InfoListsTheTypesAndTheKeymap);
     RUN_TEST_CASE(input_tree, InfoOfAKeyOnlyDeviceListsKeyOnly);
+    RUN_TEST_CASE(input_tree, InfoOfAnAbsDeviceListsItsAxes);
     RUN_TEST_CASE(input_tree, UngrantedDeviceIsEnoent);
     RUN_TEST_CASE(input_tree, UnknownNodeIsEnoent);
     RUN_TEST_CASE(input_tree, RootListsExactlyTheGrantedDevices);
@@ -368,6 +446,15 @@ TEST(input_events, RecordIsEightBytesLittleEndian) {
 
     TEST_ASSERT_EQUAL_INT(8, VfsRead(owner.vfs, eventsFd, rec, sizeof(rec)));
     const uint8_t want[8] = {0x01, 0x01, 0x61, 0x01, 0xFE, 0xFF, 0xFF, 0xFF};
+    TEST_ASSERT_EQUAL_MEMORY(want, rec, 8);
+}
+
+TEST(input_events, AbsRecordCarriesTheAxisAndPosition) {
+    uint8_t rec[INPUT_EVENT_BYTES];
+    push(mainDev, 1, EV_ABS, ABS_Y, 959);
+
+    TEST_ASSERT_EQUAL_INT(8, VfsRead(owner.vfs, eventsFd, rec, sizeof(rec)));
+    const uint8_t want[8] = {0x01, 0x03, 0x01, 0x00, 0xBF, 0x03, 0x00, 0x00};
     TEST_ASSERT_EQUAL_MEMORY(want, rec, 8);
 }
 
@@ -426,6 +513,7 @@ TEST(input_events, EventsAreNotSeekable) {
 
 TEST_GROUP_RUNNER(input_events) {
     RUN_TEST_CASE(input_events, RecordIsEightBytesLittleEndian);
+    RUN_TEST_CASE(input_events, AbsRecordCarriesTheAxisAndPosition);
     RUN_TEST_CASE(input_events, SmallBufferIsEinval);
     RUN_TEST_CASE(input_events, ReadNeverReturnsPartOfARecord);
     RUN_TEST_CASE(input_events, RecordsArriveInOrderWithTheirBatchMarker);
@@ -625,6 +713,20 @@ TEST(input_inject, InjectedRecordsReachTheOwnerByteForByte) {
     TEST_ASSERT_EQUAL_MEMORY(batch, got, 24);
 }
 
+TEST(input_inject, InjectedTouchBatchReachesTheOwner) {
+    const uint8_t batch[24] = {
+        0x00, 0x01, 0x4A, 0x01, 0x01, 0x00, 0x00, 0x00, /* BTN_TOUCH down */
+        0x00, 0x03, 0x00, 0x00, 0x1C, 0x02, 0x00, 0x00, /* ABS_X 540 */
+        0x01, 0x03, 0x01, 0x00, 0xBF, 0x03, 0x00, 0x00, /* ABS_Y 959 */
+    };
+    uint8_t got[32];
+
+    TEST_ASSERT_EQUAL_INT(24, writeVia(&injector, "/dev/input/main/inject",
+                                       batch, sizeof(batch)));
+    TEST_ASSERT_EQUAL_INT(24, VfsRead(owner.vfs, ownerFd, got, sizeof(got)));
+    TEST_ASSERT_EQUAL_MEMORY(batch, got, 24);
+}
+
 TEST(input_inject, PartialRecordIsEinvalAndQueuesNothing) {
     uint8_t bytes[16] = {0};
     uint8_t got[16];
@@ -687,6 +789,7 @@ TEST_GROUP_RUNNER(input_inject) {
     RUN_TEST_CASE(input_inject, InjectGrantListsInfoAndInjectOnly);
     RUN_TEST_CASE(input_inject, OwnerGrantHasNoInjectNode);
     RUN_TEST_CASE(input_inject, InjectedRecordsReachTheOwnerByteForByte);
+    RUN_TEST_CASE(input_inject, InjectedTouchBatchReachesTheOwner);
     RUN_TEST_CASE(input_inject, PartialRecordIsEinvalAndQueuesNothing);
     RUN_TEST_CASE(input_inject, InjectOverflowYieldsSynDropped);
     RUN_TEST_CASE(input_inject, InjectNodeRefusesReads);
@@ -856,6 +959,54 @@ TEST(input_config, TypesAreAMaskWhateverTheirOrder) {
     TEST_ASSERT_EQUAL_STRING("key rel keymap=us\n", buf);
 }
 
+#define TOUCH_DECL                                                             \
+    "{\"name\":\"touch\",\"types\":[\"key\",\"abs\"],\"keymap\":\"touch\","    \
+    "\"axes\":[{\"name\":\"x\",\"min\":0,\"max\":539},"                        \
+    "{\"name\":\"y\",\"min\":0,\"max\":959}]}"
+
+TEST(input_config, SystemConfigDeclaresATouchDevice) {
+    TEST_ASSERT_EQUAL_INT(0, parseInputs(INPUT_CFG("[" TOUCH_DECL "]")));
+    TEST_ASSERT_TRUE(attach(&owner, "devices=touch,keymap=touch"));
+    char buf[128];
+    TEST_ASSERT_GREATER_THAN_INT(
+        0, readNode("/dev/input/touch/info", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING("key abs keymap=touch axis=x:0:539 axis=y:0:959\n",
+                             buf);
+}
+
+TEST(input_config, MalformedAxesFailTheParse) {
+#define ABS_DECL(axes)                                                         \
+    INPUT_CFG("[{\"name\":\"t\",\"types\":[\"key\",\"abs\"],"                  \
+              "\"keymap\":\"touch\"" axes "}]")
+    const char *bad[] = {
+        ABS_DECL(""),
+        ABS_DECL(",\"axes\":[]"),
+        ABS_DECL(",\"axes\":{}"),
+        ABS_DECL(",\"axes\":[{\"name\":\"z\",\"min\":0,\"max\":9}]"),
+        ABS_DECL(",\"axes\":[{\"min\":0,\"max\":9}]"),
+        ABS_DECL(",\"axes\":[{\"name\":\"x\",\"max\":9}]"),
+        ABS_DECL(",\"axes\":[{\"name\":\"x\",\"min\":\"0\",\"max\":9}]"),
+        ABS_DECL(",\"axes\":[{\"name\":\"x\",\"min\":9,\"max\":0}]"),
+        ABS_DECL(",\"axes\":[{\"name\":\"x\",\"min\":0,\"max\":99999999999}]"),
+        ABS_DECL(",\"axes\":[{\"name\":\"x\",\"min\":0,\"max\":9},"
+                 "{\"name\":\"x\",\"min\":0,\"max\":9}]"),
+        ABS_DECL(",\"axes\":[{\"name\":\"x\",\"min\":0,\"max\":9},"
+                 "{\"name\":\"y\",\"min\":0,\"max\":9},"
+                 "{\"name\":\"x\",\"min\":0,\"max\":9}]"),
+        INPUT_CFG("[{\"name\":\"k\",\"types\":[\"key\"],\"keymap\":\"us\","
+                  "\"axes\":[{\"name\":\"x\",\"min\":0,\"max\":9}]}]"),
+        INPUT_CFG("[{\"name\":\"k\",\"types\":[\"key\"],\"keymap\":\"us\","
+                  "\"axes\":[]}]"),
+        INPUT_CFG("[{\"name\":\"t\",\"types\":[\"abs\"],\"keymap\":\"touch\","
+                  "\"axes\":[{\"name\":\"x\",\"min\":0,\"max\":9}]}]"),
+    };
+#undef ABS_DECL
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        TEST_ASSERT_TRUE_MESSAGE(parseInputs(bad[i]) != 0, bad[i]);
+        InputDevicesReset();
+    }
+}
+
 /* A declaration the engine cannot honour fails the parse; nothing is skipped.
  */
 TEST(input_config, MalformedDeclarationFailsTheParse) {
@@ -906,6 +1057,8 @@ TEST_GROUP_RUNNER(input_config) {
     RUN_TEST_CASE(input_config, DriverIsListedAmongTheGrantableDrivers);
     RUN_TEST_CASE(input_config, SystemConfigDeclaresADevice);
     RUN_TEST_CASE(input_config, TypesAreAMaskWhateverTheirOrder);
+    RUN_TEST_CASE(input_config, SystemConfigDeclaresATouchDevice);
+    RUN_TEST_CASE(input_config, MalformedAxesFailTheParse);
     RUN_TEST_CASE(input_config, MalformedDeclarationFailsTheParse);
     RUN_TEST_CASE(input_config, DeclaringTheSameDeviceAgainIsAccepted);
     RUN_TEST_CASE(input_config, DeclaringADeviceDifferentlyFailsTheParse);

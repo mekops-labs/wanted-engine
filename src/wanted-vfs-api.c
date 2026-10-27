@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -179,13 +180,43 @@ static int inputTypeBit(const char *name) {
         return INPUT_TYPE_TEXT;
     if (strcmp(name, "rel") == 0)
         return INPUT_TYPE_REL;
+    if (strcmp(name, "abs") == 0)
+        return INPUT_TYPE_ABS;
+    return 0;
+}
+
+/* One `axes` entry: {name: "x" | "y", min, max}, every field required. */
+static int parseAxis(json_t const *e, input_axis_t *out) {
+    if (JSON_OBJ != json_getType(e))
+        return -EINVAL;
+
+    const char *name = json_getPropertyValue(e, "name");
+    json_t const *min = json_getProperty(e, "min");
+    json_t const *max = json_getProperty(e, "max");
+    if (!name || !min || !max || JSON_INTEGER != json_getType(min) ||
+        JSON_INTEGER != json_getType(max))
+        return -EINVAL;
+
+    if (strcmp(name, "x") == 0)
+        out->code = ABS_X;
+    else if (strcmp(name, "y") == 0)
+        out->code = ABS_Y;
+    else
+        return -EINVAL;
+
+    int64_t lo = json_getInteger(min);
+    int64_t hi = json_getInteger(max);
+    if (lo < INT32_MIN || lo > INT32_MAX || hi < INT32_MIN || hi > INT32_MAX)
+        return -EINVAL;
+    out->min = (int32_t)lo;
+    out->max = (int32_t)hi;
     return 0;
 }
 #endif
 
 /* system.inputs: each entry declares one virtual input device fed only through
- * inject. Every field is required, and an entry the engine cannot honour fails
- * the parse. */
+ * inject. Every field is required, `axes` exactly when `types` has abs, and an
+ * entry the engine cannot honour fails the parse. */
 static int declareInputs(json_t const *list) {
 #ifdef CONFIG_WANTED_VFS_INPUT
     if (JSON_ARRAY != json_getType(list))
@@ -212,6 +243,22 @@ static int declareInputs(json_t const *list) {
             if (bit == 0)
                 return -EINVAL;
             desc.types |= (uint8_t)bit;
+        }
+
+        input_axis_t axes[INPUT_AXES_MAX];
+        json_t const *axesList = json_getProperty(e, "axes");
+        if (axesList) {
+            if (JSON_ARRAY != json_getType(axesList) ||
+                (desc.types & INPUT_TYPE_ABS) == 0)
+                return -EINVAL;
+            for (json_t const *a = json_getChild(axesList); a;
+                 a = json_getSibling(a)) {
+                if (desc.axisCount >= INPUT_AXES_MAX ||
+                    parseAxis(a, &axes[desc.axisCount]) < 0)
+                    return -EINVAL;
+                desc.axisCount++;
+            }
+            desc.axes = axes;
         }
 
         int rc = InputDeviceRegister(&desc, NULL);

@@ -36,15 +36,18 @@ static const char id[] = {'I', 'n', 'D', 'v'};
 #define INPUT_NODE_INFO 3
 #define INPUT_NODE_INJECT 4
 
-#define INPUT_INFO_MAX 48
+#define INPUT_INFO_MAX 128
 #define INPUT_BYTE_BITS 8
 #define INPUT_BYTE_MASK 0xFFU
-#define INPUT_TYPE_ALL (INPUT_TYPE_KEY | INPUT_TYPE_TEXT | INPUT_TYPE_REL)
+#define INPUT_TYPE_ALL                                                         \
+    (INPUT_TYPE_KEY | INPUT_TYPE_TEXT | INPUT_TYPE_REL | INPUT_TYPE_ABS)
 
 struct input_device_t {
     char name[INPUT_NAME_MAX + 1];
     char keymap[INPUT_NAME_MAX + 1];
     uint8_t types;
+    input_axis_t axes[INPUT_AXES_MAX];
+    uint8_t axisCount;
     bool owned;
     wanted_input_event_t q[INPUT_QUEUE_LEN];
     uint8_t head;
@@ -101,16 +104,51 @@ input_device_t *InputDeviceFind(const char *name) {
     return name != NULL ? findDevice(name, strlen(name)) : NULL;
 }
 
+/* Axes are present exactly when the device has the ABS type, which needs KEY
+ * for BTN_TOUCH; each is ABS_X or ABS_Y at most once, with min below max. */
+static bool validAxes(const input_device_desc_t *desc) {
+    if ((desc->types & INPUT_TYPE_ABS) == 0)
+        return desc->axisCount == 0;
+    if ((desc->types & INPUT_TYPE_KEY) == 0 || desc->axes == NULL ||
+        desc->axisCount == 0 || desc->axisCount > INPUT_AXES_MAX)
+        return false;
+    for (uint8_t i = 0; i < desc->axisCount; i++) {
+        const input_axis_t *a = &desc->axes[i];
+        if ((a->code != ABS_X && a->code != ABS_Y) || a->min >= a->max)
+            return false;
+        for (uint8_t j = 0; j < i; j++) {
+            if (desc->axes[j].code == a->code)
+                return false;
+        }
+    }
+    return true;
+}
+
+static bool sameAxes(const input_device_t *dev,
+                     const input_device_desc_t *desc) {
+    if (dev->axisCount != desc->axisCount)
+        return false;
+    for (uint8_t i = 0; i < dev->axisCount; i++) {
+        if (dev->axes[i].code != desc->axes[i].code ||
+            dev->axes[i].min != desc->axes[i].min ||
+            dev->axes[i].max != desc->axes[i].max)
+            return false;
+    }
+    return true;
+}
+
 int InputDeviceRegister(const input_device_desc_t *desc, input_device_t **out) {
     if (desc == NULL || desc->name == NULL || desc->keymap == NULL ||
         !validToken(desc->name) || !validToken(desc->keymap) ||
-        desc->types == 0 || (desc->types & ~INPUT_TYPE_ALL) != 0)
+        desc->types == 0 || (desc->types & ~INPUT_TYPE_ALL) != 0 ||
+        !validAxes(desc))
         return -EINVAL;
 
     input_device_t *dev = findDevice(desc->name, strlen(desc->name));
     if (dev != NULL) {
-        bool same =
-            dev->types == desc->types && strcmp(dev->keymap, desc->keymap) == 0;
+        bool same = dev->types == desc->types &&
+                    strcmp(dev->keymap, desc->keymap) == 0 &&
+                    sameAxes(dev, desc);
         if (!same)
             return -EEXIST;
     } else {
@@ -121,6 +159,9 @@ int InputDeviceRegister(const input_device_desc_t *desc, input_device_t **out) {
         strncpy(dev->name, desc->name, INPUT_NAME_MAX);
         strncpy(dev->keymap, desc->keymap, INPUT_NAME_MAX);
         dev->types = desc->types;
+        dev->axisCount = desc->axisCount;
+        for (uint8_t i = 0; i < desc->axisCount; i++)
+            dev->axes[i] = desc->axes[i];
         if (table.lock == NULL)
             table.lock = PlatformMutexNew();
         table.count++;
@@ -438,7 +479,8 @@ static int _Poll(vfs_driver_ctx_t d, int fd, uint32_t *avail) {
     return VFS_POLL_IN | VFS_POLL_OUT;
 }
 
-/* "<types> keymap=<keymap>\n", types in the order key, text, rel. */
+/* "<types> keymap=<keymap>[ axis=<x|y>:<min>:<max>...]\n", types in the order
+ * key, text, rel, abs. */
 static int readInfo(vfs_driver_ctx_t d, struct input_fd_t *f, void *buf,
                     size_t nbyte) {
     const input_device_t *dev = d->devices[f->device];
@@ -451,8 +493,17 @@ static int readInfo(vfs_driver_ctx_t d, struct input_fd_t *f, void *buf,
         len += (size_t)snprintf(line + len, sizeof(line) - len, "text ");
     if (dev->types & INPUT_TYPE_REL)
         len += (size_t)snprintf(line + len, sizeof(line) - len, "rel ");
-    len += (size_t)snprintf(line + len, sizeof(line) - len, "keymap=%s\n",
+    if (dev->types & INPUT_TYPE_ABS)
+        len += (size_t)snprintf(line + len, sizeof(line) - len, "abs ");
+    len += (size_t)snprintf(line + len, sizeof(line) - len, "keymap=%s",
                             dev->keymap);
+    for (uint8_t i = 0; i < dev->axisCount; i++) {
+        len +=
+            (size_t)snprintf(line + len, sizeof(line) - len, " axis=%c:%ld:%ld",
+                             dev->axes[i].code == ABS_X ? 'x' : 'y',
+                             (long)dev->axes[i].min, (long)dev->axes[i].max);
+    }
+    len += (size_t)snprintf(line + len, sizeof(line) - len, "\n");
     if (len >= sizeof(line) || f->offset >= len)
         return 0;
 
