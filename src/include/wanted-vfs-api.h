@@ -80,10 +80,8 @@ extern const proc_dir_ops_t NetProcDirOps;
  * copies to parse, which sizes the parse buffer. */
 #define WANTED_CTRL_JSON_MAX 2048
 
-/* Nodes in the parse table. tiny-json allocates nothing itself: every object,
- * array and member takes one node, and the densest payload WANTED_CTRL_JSON_MAX
- * admits is array entries of about 20 bytes for two nodes, so this tracks the
- * cap. A payload under the cap that exhausts the table is rejected. */
+/* Parse-table nodes, sized for the densest payload WANTED_CTRL_JSON_MAX admits
+ * (about 20 bytes per two nodes); a payload that exhausts it is rejected. */
 #define WANTED_CTRL_JSON_NODES 100
 
 int WantedParseCtrlAction(json_t const *json, char *wappName,
@@ -96,12 +94,9 @@ int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
 int WantedParseWappConfigJson(const char *buf, size_t bufLen,
                               wapp_config_t *cfg);
 
-/* Merge the launch-config overlay in `dir` — the socket addresses a supervisor
- * wrote from a provisioning blob — into `cfg`. An address the launch config
- * already names is kept, so a hand-pinned one outranks the blob's. An absent
- * overlay succeeds and changes nothing. A malformed one returns negative, and
- * `cfg` must then be discarded rather than instantiated from — which is why
- * the caller merges into a copy before tearing the running instance down. */
+/* Merge the overlay's socket addresses in `dir` into `cfg`, keeping any the
+ * config already names; an absent overlay succeeds. On a malformed one it
+ * returns negative and `cfg` must be discarded, so merge into a copy. */
 int WantedMergeConfigOverlay(wapp_config_t *cfg, const char *dir);
 
 /* Engine clock-quality state, exposed as text at /proc/clock_quality and read
