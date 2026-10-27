@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.29.1 (2026-10-27)
+-------------------
 
 ### Added
 
@@ -14,6 +14,8 @@ Unreleased
 
 - An ESP-IDF build that embeds the engine's own supervisor image builds again;
   Ninja refused it with two rules for one file.
+- `/proc/wapps` reports the version of a supervisor compiled into the firmware;
+  it read empty.
 
 0.29.0 (2026-10-27)
 -------------------
