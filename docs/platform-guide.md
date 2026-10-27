@@ -251,7 +251,7 @@ The host `Makefile` mounts the directory at `/board` in every build container. I
 - `WANTED_BOARD_INCLUDE_DIRS` — include directories for those sources.
 - `WANTED_BOARD_REQUIRES` — extra ESP-IDF components, for example `esp_driver_i2c`.
 - `WANTED_EXTRA_SEEDS` — factory seeds, as described in the next section.
-- `WANTED_BOARD_SUPERVISOR_TAR` — path of a supervisor image, a tar holding `app.wasm`, that replaces the one `CONFIG_WANTED_SUPERVISOR_IMAGE` selects. The launch configuration's `supervisor` entry then grants and configures that wapp.
+- `WANTED_BOARD_SUPERVISOR_TAR` — path of a supervisor image, a tar holding `app.wasm`, absolute or relative to the board directory, that replaces the one `CONFIG_WANTED_SUPERVISOR_IMAGE` selects. The launch configuration's `supervisor` entry then grants and configures that wapp.
 
 `app_main` calls `BoardInit()` before it mounts storage or starts the engine. Use it for power rails and shared buses that drivers probe later. A non-zero return is logged, and the engine starts anyway.
 

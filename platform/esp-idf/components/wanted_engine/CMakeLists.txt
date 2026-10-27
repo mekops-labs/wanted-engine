@@ -243,9 +243,10 @@ configure_file(${_partition_template}
 string(REGEX REPLACE "^\\./" "" _supervisor_rel
                      "${CONFIG_WANTED_SUPERVISOR_IMAGE}")
 set(_supervisor_tar "${ENGINE}/${_supervisor_rel}")
-# A board may supply its own supervisor image, a tar holding app.wasm.
+# A board may supply its own supervisor image, relative to the board directory.
 if(WANTED_BOARD_SUPERVISOR_TAR)
-    set(_supervisor_tar "${WANTED_BOARD_SUPERVISOR_TAR}")
+    get_filename_component(_supervisor_tar "${WANTED_BOARD_SUPERVISOR_TAR}"
+                           ABSOLUTE BASE_DIR "${WANTED_BOARD_DIR}")
 endif()
 if(NOT EXISTS "${_supervisor_tar}")
     message(
@@ -255,6 +256,9 @@ if(NOT EXISTS "${_supervisor_tar}")
     )
 endif()
 message(STATUS "Supervisor image: ${_supervisor_tar}")
+# EMBED_FILES names symbols after the file; platform.c needs supervisor.tar.
+set(_supervisor_embed "${CMAKE_CURRENT_BINARY_DIR}/supervisor.tar")
+configure_file("${_supervisor_tar}" "${_supervisor_embed}" COPYONLY)
 
 # app.version sits beside the image, written by the rule that built it. Absent
 # for a supervisor whose build does not stamp one, which compares as unordered
@@ -312,7 +316,7 @@ idf_component_register(
     joltwallet__littlefs
     ${driver_requires}
     EMBED_FILES
-    ${_supervisor_tar})
+    ${_supervisor_embed})
 
 target_compile_definitions(
     ${COMPONENT_LIB}
