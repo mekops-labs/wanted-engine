@@ -110,9 +110,6 @@ TEST(wanted_vfs_api, WantedParseWappConfigImagePinnedTag) {
     TEST_ASSERT_EQUAL_STRING("duplex:stable", cfg.image);
 }
 
-/* A launch config naming a driver no table offers fails the install with
- * -ENODEV. The engine rejects the launch rather than silently no-op'ing, and
- * survives. */
 TEST(wanted_vfs_api, WappPrivilegeIsOffUnlessTheLaunchConfigGrantsIt) {
     wapp_config_t cfg;
     const char *absent = "{\"image\":\"app\"}";
@@ -149,6 +146,12 @@ TEST(wanted_vfs_api, SupervisorPrivilegeComesFromItsLaunchParams) {
     TEST_ASSERT_FALSE(WantedGetConfig()->supervisorCfg.privileged);
 }
 
+TEST(wanted_vfs_api, SupervisorPrivilegeThatIsNotABooleanRefusesTheConfig) {
+    const char *cfg =
+        "{\"system\":{},\"supervisor\":{\"params\":{\"privileged\":\"true\"}}}";
+    TEST_ASSERT_EQUAL(-EINVAL, WantedParseConfig(cfg, strlen(cfg)));
+}
+
 TEST(wanted_vfs_api, SystemPrivilegedIsRefused) {
     const char *cfg = "{\"system\":{\"privileged\":true}}";
     TEST_ASSERT_EQUAL(-EINVAL, WantedParseConfig(cfg, strlen(cfg)));
@@ -156,6 +159,9 @@ TEST(wanted_vfs_api, SystemPrivilegedIsRefused) {
     TEST_ASSERT_EQUAL(-EINVAL, WantedParseConfig(cfg, strlen(cfg)));
 }
 
+/* A launch config naming a driver no table offers fails the install with
+ * -ENODEV. The engine rejects the launch rather than silently no-op'ing, and
+ * survives. */
 TEST(wanted_vfs_api, InstallUnavailableDriverReturnsEnodev) {
     vfs_ctx_t c = VfsInit();
     TEST_ASSERT_NOT_NULL(c);
@@ -286,6 +292,8 @@ TEST_GROUP_RUNNER(wanted_vfs_api) {
                   WappPrivilegeIsOffUnlessTheLaunchConfigGrantsIt);
     RUN_TEST_CASE(wanted_vfs_api, WappPrivilegeThatIsNotABooleanIsRefused);
     RUN_TEST_CASE(wanted_vfs_api, SupervisorPrivilegeComesFromItsLaunchParams);
+    RUN_TEST_CASE(wanted_vfs_api,
+                  SupervisorPrivilegeThatIsNotABooleanRefusesTheConfig);
     RUN_TEST_CASE(wanted_vfs_api, SystemPrivilegedIsRefused);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseCtrlActionTest);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigArgsEnvs);

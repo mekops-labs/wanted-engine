@@ -450,8 +450,11 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
         if (p == NULL)
             return -ENOSPC;
         int ret = WantedParseWappConfigJson(buf, nbyte, &p->cfg);
-        if (ret < 0)
+        if (ret < 0) {
+            /* The parse cleared the slot, so no config stays applied. */
+            p->configured = false;
             return ret;
+        }
         p->valid = true;
         p->configured = true; /* config applied → state not_started */
         strncpy(p->name, name, WAPP_MAX_NAME_LEN - 1);

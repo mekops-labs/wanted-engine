@@ -298,6 +298,25 @@ TEST(vfs_wanted_wapps, ConfigWriteAfterCreate_TransitionsToNotStarted) {
     TEST_ASSERT_EQUAL_STRING("not_started", buf);
 }
 
+/* A refused config write leaves the wapp unconfigured, not running on a
+ * half-cleared one. */
+TEST(vfs_wanted_wapps, RefusedConfigWrite_LeavesTheWappCreated) {
+    int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create ghost", 12) > 0);
+
+    const char *good = "{\"args\":[\"x\"]}";
+    int c = OpenLeaf("ghost/config");
+    TEST_ASSERT_TRUE(drv->Write(drv->ctx, c, good, strlen(good)) > 0);
+
+    const char *bad = "{\"privileged\":1}";
+    c = OpenLeaf("ghost/config");
+    TEST_ASSERT_EQUAL_INT(-EINVAL, drv->Write(drv->ctx, c, bad, strlen(bad)));
+
+    char buf[32] = {0};
+    drv->Read(drv->ctx, OpenLeaf("ghost/state"), buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("created", buf);
+}
+
 /* A bare `create` reservation has no config, so starting it is rejected and
  * config must be written first. A name with no reservation is unaffected: it
  * reaches the loader and fails on the missing image instead. */
@@ -472,6 +491,7 @@ TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, CtlOversizedWrite_ReturnsEmsgsize);
     RUN_TEST_CASE(vfs_wanted_wapps, ConfigWrite_ParsesJson);
     RUN_TEST_CASE(vfs_wanted_wapps, ConfigWrite_MalformedJsonRejected);
+    RUN_TEST_CASE(vfs_wanted_wapps, RefusedConfigWrite_LeavesTheWappCreated);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlStartRejected_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlGarbage_ReturnsEinval);
     RUN_TEST_CASE(vfs_wanted_wapps, RootCtlRead_ReturnsEinval);

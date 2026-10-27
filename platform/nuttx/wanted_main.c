@@ -21,8 +21,7 @@
 
 #define STR(...) #__VA_ARGS__
 
-/* The compiled-in supervisor launch config carries the supervisor's privilege.
- */
+/* The compiled-in supervisor launch config is privileged. */
 static char *defCfg = STR({"system" : {}});
 
 int wanted_main(int argc, FAR char *argv[]) {

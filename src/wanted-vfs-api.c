@@ -347,6 +347,11 @@ static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
         if (WantedParseCtrlAction(supervisor, NULL, NULL,
                                   &out->supervisorCfg) == 0) {
             out->supervisorCfg.valid = true;
+        } else if (json_getProperty(supervisor, "params")) {
+            /* A launch config that is present and refused fails the config,
+             * rather than booting the compiled-in one. */
+            jsonScratchRelease(&scratch);
+            return -EINVAL;
         } else {
             DEBUG_TRACE(".supervisor property parsing error");
         }
