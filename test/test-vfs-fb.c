@@ -1486,6 +1486,32 @@ TEST(fb_refresh, FlushFullOnAScreenWithoutModesIsEinval) {
     TEST_ASSERT_EQUAL_INT(0, panel.flushes);
 }
 
+TEST(fb_refresh, FlushFullWithoutTheFullModeIsEinval) {
+    teardown();
+    memset(&ink, 0, sizeof(ink));
+    registerInk(FB_REFRESH_PARTIAL | FB_REFRESH_FAST);
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, writeNode("/dev/fb/ink/ctl", "flush full"));
+    TEST_ASSERT_EQUAL_INT(0, ink.calls);
+}
+
+TEST(fb_refresh, NextWriterStartsFromTheInitialMode) {
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    TEST_ASSERT_EQUAL_INT(4, writeNode("/dev/fb/ink/refresh", "fast"));
+    VfsDestroy(&vfs);
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(8, readNode("/dev/fb/ink/refresh", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING("partial\n", buf);
+
+    VfsDestroy(&vfs);
+    TEST_ASSERT_TRUE(setupGrant("screens=ink,refresh=full"));
+    VfsDestroy(&vfs);
+    TEST_ASSERT_TRUE(setupGrant("screens=ink"));
+    TEST_ASSERT_EQUAL_INT(8, readNode("/dev/fb/ink/refresh", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING("partial\n", buf);
+}
+
 TEST(fb_refresh, FlushFullTakesNoRectangle) {
     TEST_ASSERT_TRUE(setupGrant("screens=ink"));
     TEST_ASSERT_EQUAL_INT(-EINVAL,
@@ -1564,6 +1590,8 @@ TEST_GROUP_RUNNER(fb_refresh) {
     RUN_TEST_CASE(fb_refresh, FlushUsesTheModeOfTheScreen);
     RUN_TEST_CASE(fb_refresh, FlushFullOverridesTheModeForOneFlush);
     RUN_TEST_CASE(fb_refresh, FlushFullOnAScreenWithoutModesIsEinval);
+    RUN_TEST_CASE(fb_refresh, FlushFullWithoutTheFullModeIsEinval);
+    RUN_TEST_CASE(fb_refresh, NextWriterStartsFromTheInitialMode);
     RUN_TEST_CASE(fb_refresh, FlushFullTakesNoRectangle);
     RUN_TEST_CASE(fb_refresh, RefreshFailureReachesTheWriter);
     RUN_TEST_CASE(fb_refresh, BlankChangesNothingOnAScreenWithModes);

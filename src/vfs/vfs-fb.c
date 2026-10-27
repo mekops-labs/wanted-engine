@@ -346,9 +346,10 @@ static int claimScreens(struct vfs_driver_ctx_t *ctx) {
     }
     if (rc == 0) {
         for (uint8_t i = 0; i < ctx->count; i++) {
-            ctx->screens[i]->writer = true;
-            if (ctx->refreshOpt != 0)
-                ctx->screens[i]->refresh = ctx->refreshOpt;
+            fb_screen_t *s = ctx->screens[i];
+            s->writer = true;
+            s->refresh = ctx->refreshOpt != 0 ? ctx->refreshOpt
+                                              : initialRefresh(s->refreshModes);
         }
         ctx->claimed = true;
     }
@@ -798,7 +799,7 @@ static int runCtl(vfs_driver_ctx_t d, fb_screen_t *s, char *line) {
     if (n == 1)
         return flushRect(d, s, 0, 0, s->width, s->height, s->refresh);
     if (n == 2 && strcmp(tok[1], "full") == 0) {
-        if (s->refreshModes == 0)
+        if ((s->refreshModes & FB_REFRESH_FULL) == 0)
             return -EINVAL;
         return flushRect(d, s, 0, 0, s->width, s->height, FB_REFRESH_FULL);
     }

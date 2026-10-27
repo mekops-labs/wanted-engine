@@ -450,14 +450,14 @@ A bistable panel such as e-paper has refresh modes, and its screen has a
 
 - A read returns the current mode and a newline. A write sets it, with or
   without a trailing newline, and returns `-EINVAL` for a name the backing does
-  not offer. The initial mode is `partial`, or the first mode the backing
-  offers when it has no `partial`.
+  not offer. Each writer grant starts in `partial`, or the first mode the
+  backing offers when it has no `partial`.
 - `full` refreshes the whole screen with a clearing flash on every flush.
   `partial` refreshes the flushed rectangle, or with no rectangle the pixels
   that changed. `fast` uses the fastest waveform with no clearing flash.
 - `flush full` refreshes the whole screen in the `full` mode for that flush
-  and leaves the mode alone. It returns `-EINVAL` on a screen without refresh
-  modes.
+  and leaves the mode alone. It returns `-EINVAL` on a screen whose backing
+  does not offer `full`.
 - `blank on` and `blank off` are accepted and change nothing.
 - The grant option `refresh=<mode>` sets the initial mode, as in
   `screens=ink,refresh=fast`. A mode the screen does not offer, a screen
