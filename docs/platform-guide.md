@@ -252,6 +252,7 @@ The host `Makefile` mounts the directory at `/board` in every build container. I
 - `WANTED_BOARD_REQUIRES` — extra ESP-IDF components, for example `esp_driver_i2c`.
 - `WANTED_EXTRA_SEEDS` — factory seeds, as described in the next section.
 - `WANTED_BOARD_SUPERVISOR_TAR` — path of a supervisor image, a tar holding `app.wasm`, absolute or relative to the board directory, that replaces the one `CONFIG_WANTED_SUPERVISOR_IMAGE` selects. The launch configuration's `supervisor` entry then grants and configures that wapp.
+- `WANTED_FIRMWARE_BOARD` and `WANTED_FIRMWARE_VARIANT_FILE` — the firmware's name, and a file whose first line is its variant, absolute or relative to the board directory. `/proc/wanted` reports them as `firmware_board` and `firmware_variant`. Each value matches `[A-Za-z0-9._]+`, the image tag's alphabet. A changed variant file reconfigures the build, so write it before each build.
 
 `app_main` calls `BoardInit()` before it mounts storage or starts the engine. Use it for power rails and shared buses that drivers probe later. A non-zero return is logged, and the engine starts anyway.
 

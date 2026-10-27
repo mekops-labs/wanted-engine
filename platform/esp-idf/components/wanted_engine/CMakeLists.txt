@@ -242,7 +242,10 @@ configure_file(${_partition_template}
 # platform.c's archive — a different one can't see it.
 string(REGEX REPLACE "^\\./" "" _supervisor_rel
                      "${CONFIG_WANTED_SUPERVISOR_IMAGE}")
-set(_supervisor_tar "${ENGINE}/${_supervisor_rel}")
+# Normalized: the path is registered twice as a configure dependency, and Ninja
+# rejects two spellings of one file.
+get_filename_component(_supervisor_tar "${_supervisor_rel}" ABSOLUTE BASE_DIR
+                       "${ENGINE}")
 # A board may supply its own supervisor image, relative to the board directory.
 if(WANTED_BOARD_SUPERVISOR_TAR)
     get_filename_component(_supervisor_tar "${WANTED_BOARD_SUPERVISOR_TAR}"
@@ -341,3 +344,6 @@ idf_build_set_property(COMPILE_DEFINITIONS "SECURE_SOCKETS=${_secure_sockets}"
 target_compile_definitions(
     ${COMPONENT_LIB} PRIVATE WANTED_VERSION="${SEMVER}" PLATFORM_ESP_IDF=1
                              SUPERVISOR_IMAGE_PATH="embedded:supervisor.tar")
+# A board names its firmware in board.cmake, relative to the board directory.
+include(${ENGINE}/cmake/FirmwareStamp.cmake)
+wanted_firmware_stamp(${COMPONENT_LIB} "${WANTED_BOARD_DIR}")
