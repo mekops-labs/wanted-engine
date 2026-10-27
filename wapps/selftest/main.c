@@ -319,11 +319,15 @@ static void positive_checks(void) {
                strstr(buf, "wasm_max_pages:\t1") != NULL,
            "proc: /proc/wanted reports engine identity and limits");
 
-    /* The drivers field lists the resolvable drivers on this build: the core
-     * names plus the platform's own (the NuttX sim contributes gpio/wifi). */
-    tap_ok(read_path("/proc/wanted", buf, sizeof(buf)) > 0 &&
-               strstr(buf, "drivers:\t") != NULL &&
-               strstr(buf, "wanted") != NULL,
+    /* The drivers line lists this build's drivers. The node is read in one
+     * shot and outgrows `buf`, so it gets a buffer that holds all of it. */
+    static char info[2048];
+    const char *drv = read_path("/proc/wanted", info, sizeof(info)) > 0
+                          ? strstr(info, "\ndrivers:\t")
+                          : NULL;
+    const char *eol = drv != NULL ? strchr(drv + 1, '\n') : NULL;
+    const char *core = drv != NULL ? strstr(drv, "wanted") : NULL;
+    tap_ok(core != NULL && (eol == NULL || core < eol),
            "proc: /proc/wanted reports available drivers");
 
     /* Inter-wapp pipe round-trip within our own namespace. */
