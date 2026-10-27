@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Fixed
+
+- An ESP-IDF build that embeds the engine's own supervisor image builds again;
+  Ninja refused it with two rules for one file.
+
 0.29.0 (2026-10-27)
 -------------------
 

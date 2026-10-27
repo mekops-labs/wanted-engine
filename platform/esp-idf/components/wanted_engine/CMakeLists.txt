@@ -242,7 +242,10 @@ configure_file(${_partition_template}
 # platform.c's archive — a different one can't see it.
 string(REGEX REPLACE "^\\./" "" _supervisor_rel
                      "${CONFIG_WANTED_SUPERVISOR_IMAGE}")
-set(_supervisor_tar "${ENGINE}/${_supervisor_rel}")
+# Normalized: the path is registered twice as a configure dependency, and Ninja
+# rejects two spellings of one file.
+get_filename_component(_supervisor_tar "${_supervisor_rel}" ABSOLUTE BASE_DIR
+                       "${ENGINE}")
 # A board may supply its own supervisor image, relative to the board directory.
 if(WANTED_BOARD_SUPERVISOR_TAR)
     get_filename_component(_supervisor_tar "${WANTED_BOARD_SUPERVISOR_TAR}"
