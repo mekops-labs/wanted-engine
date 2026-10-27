@@ -1,8 +1,43 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.29.0 (2026-10-27)
+-------------------
+
+### Added
+
+- The launch-config field `privileged` lets one wapp read the privileged
+  `/proc` entries (`wapps`, `memory`); they stay hidden from every other wapp.
+- The compiled-in supervisor launch config and the shipped configs set
+  `privileged` for the supervisor.
+- An fb screen with refresh modes has a `refresh` node: `full`, `partial` or
+  `fast`, read and written, with `refresh=<mode>` as a grant option.
+- `flush full` refreshes the whole screen once in `full` mode; on a screen
+  whose backing lacks `full` it returns `-EINVAL`.
+- Each fb writer grant starts in `partial`, or the backing's first mode.
+- The input driver reports absolute axes: `EV_ABS` with `ABS_X` and `ABS_Y`,
+  and an `abs` type with `axis=<x|y>:<min>:<max>` words in `info`.
+- `system.inputs` takes `abs` and an `axes` array; a device with `abs` needs
+  `key`, and `axes` on a device without `abs` fails the config.
+- On ESP-IDF, `WANTED_BOARD_SUPERVISOR_TAR` in a board's `board.cmake`
+  embeds that board's supervisor image, by absolute or board-relative path.
+
+### Removed
+
+- **Breaking:** `system.privileged` is gone, and a config that sets it fails
+  to parse. Set `privileged` in the supervisor's launch config instead.
+
+### Changed
+
+- A `privileged` value that is not a boolean refuses the launch config.
+- A `supervisor.params` the engine refuses fails the engine config; the
+  engine no longer boots the compiled-in supervisor launch config instead.
+- An fb screen with refresh modes accepts `blank on` and `blank off` and
+  changes nothing.
+
+### Fixed
+
+- A refused write to a wapp's `config` node leaves the wapp unconfigured.
 
 ### Build
 
