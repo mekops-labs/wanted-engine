@@ -76,10 +76,9 @@ typedef struct vfs_entry_t {
  * without pulling vfs-tarfs.h into every translation unit. */
 struct vfs_tarfs_ctx_t;
 
-/* Direct DevFs/NetFs registration tables, filled by WantedInstallDriver. The
- * prefix router resolves an open by exact-matching a suffix against `name`.
- * /dev holds the built-ins (null, pipe, stdin, stdout, stderr) and a full
- * drivers[] section. */
+/* DevFs/NetFs tables filled by WantedInstallDriver; an open exact-matches a
+ * suffix against `name`. /dev holds the five built-ins (null, pipe, stdin,
+ * stdout, stderr) and a full drivers[] section. */
 #define VFS_DEVFS_BUILTINS 5
 #define VFS_DEVFS_MAX_ENTRIES                                                  \
     (VFS_DEVFS_BUILTINS + CONFIG_WANTED_MAX_DRIVERS_CNT)

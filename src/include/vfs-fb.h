@@ -48,9 +48,8 @@ typedef struct fb_screen_desc_t {
     uint8_t refreshModes;
 } fb_screen_desc_t;
 
-/* Add a screen and allocate its pixels. Declaring an identical screen again
- * returns 0. Errors: -EEXIST other properties, -EINVAL bad name, geometry or
- * refresh modes,
+/* Add a screen and allocate its pixels; an identical redeclaration returns 0.
+ * -EEXIST other properties, -EINVAL bad name, geometry or refresh modes,
  * -ENOSPC table full, -ENOMEM no room for pixels. */
 int FbScreenRegister(const fb_screen_desc_t *desc);
 

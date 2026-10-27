@@ -172,12 +172,9 @@ static bool isReservedNamespace(const char *path, const char *ns) {
     return strncmp(path, ns, n) == 0 && (path[n] == '\0' || path[n] == '/');
 }
 
-/* Parse a `platform` mount's options: `src=<hostpath>` and `ro`/`rw`. An
- * absolute src is used as-is; a relative one resolves against this
- * platform's PlatformVolumeRoot(), so a launch config never spells out a
- * platform-specific absolute path. `hostBuf` receives the resolved src
- * (empty when unset), `*readonly` the access mode. An empty or oversized
- * src, or an unknown token, gives -EINVAL. */
+/* Parse `src=<hostpath>` and `ro`/`rw`; a relative src resolves against
+ * PlatformVolumeRoot(). An empty or oversized src, or an unknown token, gives
+ * -EINVAL. */
 static int parsePlatformMountOptions(const char *options, char *hostBuf,
                                      size_t hostBufLen, bool *readonly) {
     *readonly = false;
@@ -480,10 +477,8 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
                 WantedListDrivers((char *)buf + w, (size_t)((int)bufLen - w));
             if (d > 0)
                 w += d;
-/* Not a driver — a build-time capability of the socket driver, listed
- * alongside driver names so a supervisor can gate a sockets[] `role: listen`
- * grant on it the same way it gates a drivers[] grant on a driver name,
- * without a launch attempt that fails the whole wapp when it is absent. */
+/* A socket-driver capability listed with the driver names, so a supervisor
+ * can gate a `role: listen` grant on it before a launch. */
 #ifdef CONFIG_WANTED_VFS_SOCKET_LISTEN
             if (w < (int)bufLen)
                 w += snprintf((char *)buf + w, (size_t)((int)bufLen - w),
@@ -749,10 +744,8 @@ int WantedWappRun(wapp_data_t *ctx) {
      * unprivileged for the same reason /proc/wanted is. */
     ProcFs_Register(ctx->vfs, "uptime", WantedProcReadUptime, false);
 #ifdef CONFIG_WANTED_VFS_SOCKET
-    /* net reports the wapp's own sockets[] grants (vfs-procfs-net.c reads
-     * c->netfs[] directly — no other wapp's table is reachable from here);
-     * unprivileged since a wapp already has fd-level access to everything it
-     * renders. */
+    /* net shows only the wapp's own sockets[] grants, which it already reaches
+     * by fd, so it is unprivileged. */
     ProcFs_RegisterDir(ctx->vfs, "net", &NetProcDirOps, false);
 #endif
 
@@ -1227,14 +1220,9 @@ static bool supervisorStateRoot(const wapp_config_t *cfg, char *out,
     return false;
 }
 
-/* The grants a reloaded supervisor should run under: the ones in effect now,
- * plus any address the overlay supplies for a socket they leave unset. False
- * leaves the caller on the current grants.
- *
- * Merging from the grants in effect rather than re-reading the launch config
- * makes this idempotent — an address the overlay already supplied is present,
- * so a later reload adds nothing — and the launch config is read once per
- * process, so re-reading it could not differ. */
+/* The grants in effect plus any overlay address for a socket they leave unset;
+ * false keeps the current grants. Merging from the live grants makes a repeat
+ * reload add nothing. */
 static bool supervisorGrantsWithOverlay(const wapp_t *w, wapp_config_t *out) {
     char root[CONFIG_WANTED_MAX_PATH_LEN];
 
@@ -1317,10 +1305,8 @@ wapp_t *WantedGetCurrentSupervisor(void) {
          * dropped only here, while no supervisor is running. */
         if (supervisorReloadArmed) {
             supervisorReloadArmed = 0;
-            /* Re-derive the grants before anything is torn down, so a refused
-             * overlay costs the running instance nothing: it keeps serving on
-             * the grants it has, and a corrected overlay is picked up by the
-             * next reload. */
+            /* Re-derive the grants before teardown, so a refused overlay
+             * leaves the running instance on the grants it has. */
             /* Heap: a wapp_config_t is tens of kilobytes, far past what a
              * task stack can hold. A failed allocation refuses the overlay,
              * which the running grants already tolerate. */
@@ -1364,10 +1350,8 @@ wapp_t *WantedGetCurrentSupervisor(void) {
     if (ret < 0)
         return w;
 
-    /* A persisted overlay outlives the boot that wrote it: merge it into the
-     * very first launch too, not only a later armed reload, or a device loses
-     * its control-plane grants on every reset after the one that enrolled it.
-     */
+    /* Merge a persisted overlay into the first launch too, or a device loses
+     * its control-plane grants on every reset after enrolment. */
     wapp_config_t *merged = WantedMalloc(sizeof(*merged));
     if (merged != NULL) {
         if (supervisorGrantsWithOverlay(w, merged))

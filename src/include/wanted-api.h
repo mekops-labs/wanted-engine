@@ -164,59 +164,32 @@ typedef struct wantedConfig_t {
     bool supervisorPreferBundled;
 } wantedConfig_t;
 
-/**
- * Load and run a wapp to completion on the calling worker thread. Blocks until
- * it exits or traps, writing the WASI exit code to @p ctx->exit_code; teardown
- * is the caller's, through WantedWappStop().
- *
- * @param ctx  Wapp slot to run (image, VFS, and WAMR state). Must be non-NULL.
- * @return 0 on a completed run; negative on a setup failure before it ran.
- */
+/** Run a non-NULL @p ctx to completion on this worker thread, writing its WASI
+ *  exit code to @p ctx->exit_code; WantedWappStop() tears it down. Returns 0
+ *  when it ran, negative on a setup failure. */
 int WantedWappRun(wapp_data_t *ctx);
 
-/**
- * Tear down the instance WantedWappRun() built for @p ctx, then unwind the
- * per-thread WAMR env. Idempotent on the failure path, so every worker-thread
- * exit can call it.
- *
- * @param ctx  Wapp slot previously passed to WantedWappRun().
- */
+/** Tear down what WantedWappRun() built for @p ctx and unwind the per-thread
+ *  WAMR env. Idempotent, so every worker-thread exit may call it. */
 void WantedWappStop(wapp_data_t *ctx);
 
-/**
- * Asynchronously abort a running wapp's in-flight WASM execution, so the worker
- * thread's call returns and unwinds through WantedWappStop(). The cooperative
- * stop path for platforms that cannot force thread cancellation.
- *
- * @param ctx  Wapp slot to terminate; a NULL ctx or dead instance is a no-op.
- */
+/** Abort @p ctx's in-flight WASM so its worker unwinds through
+ *  WantedWappStop(), for platforms without thread cancellation. A NULL ctx or
+ *  a dead instance is a no-op. */
 void WantedWappTerminate(wapp_data_t *ctx);
 
-/**
- * Return the process-wide supervisor wapp descriptor, built on first call from
- * the operator config or the compiled-in default. A reload armed beforehand
- * re-reads the image from the configured path first.
- *
- * @return The cached descriptor, or NULL if the config cannot be parsed.
- */
+/** The supervisor descriptor, built on first call from the config or the
+ *  compiled-in default, and re-read first when a reload is armed. NULL when
+ *  the config cannot be parsed. */
 wapp_t *WantedGetCurrentSupervisor(void);
 
-/**
- * Arm a supervisor image reload, applied at the next respawn; nothing is
- * stopped and child wapps keep running across the swap. Stage the new image by
- * atomic rename, since the engine holds the current one mapped.
- *
- * @return 0.
- */
+/** Arm a supervisor reload for the next respawn; child wapps keep running.
+ *  Stage the new image by atomic rename, since the current one stays mapped.
+ *  Returns 0. */
 int WantedSupervisorReload(void);
 
-/**
- * Fall back to the compiled-in supervisor image after a staged one fails,
- * pinning it for the rest of the run and arming a reload.
- *
- * @return 0 when a fallback is available, -1 when the built-in image already
- *         runs and the caller must report the failure itself.
- */
+/** Pin the compiled-in supervisor image after a staged one fails and arm a
+ *  reload. Returns 0, or -1 when the built-in image already runs. */
 int WantedSupervisorRollback(void);
 
 /* Consecutive bad starts before the engine falls back to the compiled-in
@@ -233,15 +206,8 @@ typedef enum {
                                    configuration is broken. Report and stop. */
 } supervisorHealth_t;
 
-/**
- * Judge supervisor health once per run-loop iteration and count bad starts
- * toward the rollback ceiling, so a platform run loop keeps only the respawn.
- * An exit is judged by how long the supervisor ran first.
- *
- * @param running  a supervisor slot is RUNNING.
- * @param failed   a supervisor slot is in FAILURE.
- * @param exited   a supervisor slot has EXITED.
- * @return what the caller should do next.
- */
+/** Judge supervisor health once per run-loop pass, counting bad starts toward
+ *  the rollback ceiling; an exit is judged by how long it ran. Each flag says
+ *  a supervisor slot is RUNNING, in FAILURE, or EXITED. */
 supervisorHealth_t WantedSupervisorObserve(bool running, bool failed,
                                            bool exited);

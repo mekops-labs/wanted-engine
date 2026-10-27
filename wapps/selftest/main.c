@@ -136,10 +136,9 @@
     "\"mounts\":[{\"name\":\"volume\",\"path\":\"/data\","                     \
     "\"options\":\"name=roonly,shared,ro\"}]}"
 
-/* observer is the reference observability wapp: granted a `log` mount and the
- * privileged /proc entries but no `wanted` driver, so it watches the fleet yet
- * cannot command it. It reports each finding to its log. obsplain runs the same
- * image without the privilege. */
+/* observer has a `log` mount and the privileged /proc entries but no `wanted`
+ * driver, so it watches the fleet and cannot command it; it logs each finding.
+ * obsplain runs the same image without the privilege. */
 #define OBSERVER "observer"
 #define OBSERVER_CFG "/dev/wanted/wapps/" OBSERVER "/config"
 #define OBSERVER_LOG LOG_MOUNT "/" OBSERVER
@@ -718,9 +717,8 @@ static int stop_wapp(const char *name) {
     return write_path(ctl, "stop");
 }
 
-/* Release a terminal wapp's slot via the root ctl, so a later start of a
- * different name finds it empty. Only two child slots exist, so a name this
- * phase no longer needs must be freed before the next distinct name starts. */
+/* Release a terminal wapp's slot via the root ctl. Only two child slots exist,
+ * so a finished name is freed before the next distinct name starts. */
 static int delete_wapp(const char *name) {
     char cmd[64];
     snprintf(cmd, sizeof(cmd), "delete %s", name);
@@ -797,8 +795,8 @@ static void edge_checks(void) {
                strstr(buf, "running") != NULL,
            "edge: stopping an unknown wapp errors cleanly");
 
-    /* blocker's slot (held since blocker_check) is freed here, once this
-     * phase's own already-dead re-stop check no longer needs it present. */
+    /* Free blocker's slot, held since blocker_check, after this phase's
+     * already-dead re-stop check. */
     delete_wapp("blocker");
 }
 
@@ -930,11 +928,9 @@ static void random_check(void) {
  * The version separator is '@' (VFAT-legal), not ':'. */
 #define WRITER_CFG_BODY                                                        \
     "{\"image\":\"duplex:0.0.1-1\",\"envs\":[\"ROLE=writer\"]}"
-/* /dev/ota node wiring: the control node reports every status field, the image
- * sink refuses reads, and both the command grammar and the subpath routing
- * reject what they should. Asserts shape, not values: the backing differs per
- * platform (a real A/B store on Linux, a single-slot stub elsewhere), and
- * nothing here issues a command that would mutate a slot. */
+/* /dev/ota wiring: every status field, a read-refusing image sink, and grammar
+ * and subpath rejection. Asserts shape only, since the backing differs per
+ * platform, and issues no command that mutates a slot. */
 static void ota_check(void) {
     char buf[OTA_STATUS_CAP];
 
@@ -1021,11 +1017,9 @@ static void argenv_check(void) {
     delete_wapp(ARGENV);
 }
 
-/* Capability separation: launch observer with a `log` mount and the privileged
- * /proc entries but no `wanted` control mount, and assert it can read
- * /proc/wapps and tail logs while every attempt to reach the control plane is
- * denied. The same image without the privilege sees no /proc/wapps, and a
- * launch config whose `privileged` is not a boolean is refused. */
+/* observer reads /proc/wapps and tails logs while every control-plane access
+ * is denied; obsplain sees no /proc/wapps; a non-boolean `privileged` is
+ * refused. */
 static void observer_check(void) {
     char buf[1024];
 

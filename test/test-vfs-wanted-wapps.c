@@ -339,10 +339,8 @@ TEST(vfs_wanted_wapps, CtlStartWithImage_CreatedWithoutConfig_ReachesLoader) {
     TEST_ASSERT_EQUAL_INT(-ENOENT, drv->Write(drv->ctx, c, "start duplex", 12));
 }
 
-/* Two distinct instances can be created and bound to a single image via config
- * `image`; each start reaches the loader independently (no such image →
- * -ENOENT). This
- * is the multi-instance path: one image, N instance names. */
+/* Two instances bound to one image through config `image`; each start reaches
+ * the loader on its own, and no such image gives -ENOENT. */
 TEST(vfs_wanted_wapps, MultiInstance_TwoInstancesOneImage) {
     int fd = ctl->Open(ctl->ctx, "", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(ctl->Write(ctl->ctx, fd, "create reader", 13) > 0);
@@ -409,7 +407,7 @@ TEST(vfs_wanted_wapps, RootCtlDelete_RemovesReservation) {
 
     TEST_ASSERT_EQUAL_INT(12, ctl->Write(ctl->ctx, fd, "delete ghost", 12));
 
-    /* Gone: the per-wapp nodes are ENOENT and it no longer enumerates. */
+    /* Deleted: its per-wapp nodes are ENOENT and the listing omits it. */
     TEST_ASSERT_EQUAL_INT(-ENOENT, OpenLeaf("ghost/state"));
     int dd = OpenLeaf("/");
     uint8_t db[256];
