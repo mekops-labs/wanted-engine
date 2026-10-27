@@ -26,6 +26,10 @@ static const char id[] = {'F', 'b', 'D', 'v'};
 #define FB_MAX_FDS 8
 #define FB_OBSERVE_TOKEN "observe"
 #define FB_SCREENS_KEY "screens="
+#define FB_REFRESH_KEY "refresh="
+#define FB_REFRESH_KNOWN                                                       \
+    (FB_REFRESH_FULL | FB_REFRESH_PARTIAL | FB_REFRESH_FAST)
+#define FB_REFRESH_LINE_MAX 16
 
 #define FB_NODE_ROOT 0
 #define FB_NODE_SCREEN 1
@@ -33,6 +37,7 @@ static const char id[] = {'F', 'b', 'D', 'v'};
 #define FB_NODE_DATA 3
 #define FB_NODE_CTL 4
 #define FB_NODE_DAMAGE 5
+#define FB_NODE_REFRESH 6
 
 #define FB_CTL_MAX 48
 #define FB_CTL_FIELDS 6
@@ -70,6 +75,8 @@ typedef struct fb_screen_t {
     uint8_t *pixels;
     const fb_backing_ops_t *ops;
     void *backing;
+    uint8_t refreshModes; /* offered FB_REFRESH_* bits */
+    uint8_t refresh;      /* the mode a flush uses, one bit */
     bool writer;
 #ifdef CONFIG_WANTED_VFS_FB_OBSERVE
     uint8_t *flushed; /* held while an observer exists */
@@ -97,6 +104,7 @@ struct vfs_driver_ctx_t {
     uint8_t count;
     bool observe;
     bool claimed;
+    uint8_t refreshOpt; /* grant refresh= mode, 0 when absent */
     int wakeFd;
 #ifdef CONFIG_WANTED_VFS_FB_OBSERVE
     fb_observer_t queues[CONFIG_WANTED_FB_MAX_SCREENS];
@@ -135,6 +143,38 @@ static const char *formatName(uint8_t format) {
     }
 }
 
+static const char *refreshName(uint8_t mode) {
+    switch (mode) {
+    case FB_REFRESH_FULL:
+        return "full";
+    case FB_REFRESH_FAST:
+        return "fast";
+    default:
+        return "partial";
+    }
+}
+
+/* The FB_REFRESH_* bit named by `s` (`len` bytes), or 0. */
+static uint8_t refreshByName(const char *s, size_t len) {
+    static const uint8_t modes[] = {FB_REFRESH_FULL, FB_REFRESH_PARTIAL,
+                                    FB_REFRESH_FAST};
+    for (size_t i = 0; i < sizeof(modes); i++) {
+        const char *name = refreshName(modes[i]);
+        if (strlen(name) == len && strncmp(name, s, len) == 0)
+            return modes[i];
+    }
+    return 0;
+}
+
+/* Partial when the backing offers it, else the first mode it does. */
+static uint8_t initialRefresh(uint8_t modes) {
+    if (modes & FB_REFRESH_PARTIAL)
+        return FB_REFRESH_PARTIAL;
+    if (modes & FB_REFRESH_FULL)
+        return FB_REFRESH_FULL;
+    return modes & FB_REFRESH_FAST;
+}
+
 /* Bytes of one row that hold `pixels` pixels, rounded up to a whole byte. */
 static uint32_t rowBytes(uint8_t format, uint32_t pixels) {
     return (pixels * pixelBits(format) + 7) / 8;
@@ -165,12 +205,17 @@ int FbScreenRegister(const fb_screen_desc_t *desc) {
     if (desc == NULL || desc->name == NULL || !validName(desc->name) ||
         desc->width == 0 || desc->height == 0 || pixelBits(desc->format) == 0)
         return -EINVAL;
+    if ((desc->refreshModes & ~FB_REFRESH_KNOWN) != 0 ||
+        (desc->refreshModes != 0 &&
+         (desc->ops == NULL || desc->ops->Refresh == NULL)))
+        return -EINVAL;
     const fb_screen_t *have = findScreen(desc->name, strlen(desc->name));
     if (have != NULL) {
         bool same = have->width == desc->width &&
                     have->height == desc->height &&
                     have->format == desc->format && have->ops == desc->ops &&
-                    have->backing == desc->backing;
+                    have->backing == desc->backing &&
+                    have->refreshModes == desc->refreshModes;
         return same ? 0 : -EEXIST;
     }
     if (table.count >= CONFIG_WANTED_FB_MAX_SCREENS)
@@ -186,6 +231,8 @@ int FbScreenRegister(const fb_screen_desc_t *desc) {
     s->size = s->stride * desc->height;
     s->ops = desc->ops;
     s->backing = desc->backing;
+    s->refreshModes = desc->refreshModes;
+    s->refresh = initialRefresh(desc->refreshModes);
     s->pixels = WantedMalloc(s->size);
     if (s->pixels == NULL)
         return -ENOMEM;
@@ -221,8 +268,8 @@ void FbScreensReset(void) {
 
 /* ── Grant parsing ───────────────────────────────────────────────────────── */
 
-/* Parse screens=<name>[,<name>...][,observe] and resolve every name. Returns 0
- * or -EINVAL; the caller frees the context on failure. */
+/* Parse screens=<name>[,<name>...][,observe][,refresh=<mode>] and resolve every
+ * name. Returns 0 or -EINVAL; the caller frees the context on failure. */
 static int parseGrant(struct vfs_driver_ctx_t *ctx, const char *options) {
     const size_t keyLen = sizeof(FB_SCREENS_KEY) - 1;
 
@@ -250,6 +297,13 @@ static int parseGrant(struct vfs_driver_ctx_t *ctx, const char *options) {
 #else
             return -EINVAL;
 #endif
+        } else if (len >= sizeof(FB_REFRESH_KEY) - 1 &&
+                   strncmp(p, FB_REFRESH_KEY, sizeof(FB_REFRESH_KEY) - 1) ==
+                       0) {
+            const size_t optLen = sizeof(FB_REFRESH_KEY) - 1;
+            ctx->refreshOpt = refreshByName(p + optLen, len - optLen);
+            if (ctx->refreshOpt == 0)
+                return -EINVAL;
         } else {
             fb_screen_t *s = findScreen(p, len);
             if (s == NULL || ctx->count >= CONFIG_WANTED_FB_MAX_SCREENS) {
@@ -267,7 +321,18 @@ static int parseGrant(struct vfs_driver_ctx_t *ctx, const char *options) {
             break;
         p = end + 1;
     }
-    return ctx->count > 0 ? 0 : -EINVAL;
+    if (ctx->count == 0)
+        return -EINVAL;
+    if (ctx->refreshOpt == 0)
+        return 0;
+    /* An observer has no refresh node, and every screen must offer the mode. */
+    if (ctx->observe)
+        return -EINVAL;
+    for (uint8_t i = 0; i < ctx->count; i++) {
+        if ((ctx->screens[i]->refreshModes & ctx->refreshOpt) == 0)
+            return -EINVAL;
+    }
+    return 0;
 }
 
 /* Take every granted screen for this writer, or none of them. */
@@ -280,8 +345,12 @@ static int claimScreens(struct vfs_driver_ctx_t *ctx) {
             rc = -EBUSY;
     }
     if (rc == 0) {
-        for (uint8_t i = 0; i < ctx->count; i++)
-            ctx->screens[i]->writer = true;
+        for (uint8_t i = 0; i < ctx->count; i++) {
+            fb_screen_t *s = ctx->screens[i];
+            s->writer = true;
+            s->refresh = ctx->refreshOpt != 0 ? ctx->refreshOpt
+                                              : initialRefresh(s->refreshModes);
+        }
         ctx->claimed = true;
     }
     PlatformMutexUnlock(table.lock);
@@ -399,6 +468,9 @@ static int resolve(const struct vfs_driver_ctx_t *ctx, const char *path,
         *node = FB_NODE_CTL;
     else if (strcmp(slash, "damage") == 0 && ctx->observe)
         *node = FB_NODE_DAMAGE;
+    else if (strcmp(slash, "refresh") == 0 && !ctx->observe &&
+             ctx->screens[idx]->refreshModes != 0)
+        *node = FB_NODE_REFRESH;
     else
         return -ENOENT;
     return 0;
@@ -680,19 +752,23 @@ static void widenByBacking(const fb_screen_t *s, uint16_t *x, uint16_t *y,
     *h = wh;
 }
 
+/* `mode` is the FB_REFRESH_* bit a screen with refresh modes uses. */
 static int flushRect(vfs_driver_ctx_t d, fb_screen_t *s, uint16_t x, uint16_t y,
-                     uint16_t w, uint16_t h) {
+                     uint16_t w, uint16_t h, uint8_t mode) {
     alignToBytes(s, &x, &w);
     widenByBacking(s, &x, &y, &w, &h);
 #ifdef CONFIG_WANTED_VFS_FB_OBSERVE
     publishFlush(s, x, y, w, h);
 #endif
+    if (s->refreshModes != 0)
+        return s->ops->Refresh(s->backing, mode, x, y, w, h, d->wakeFd);
     if (s->ops == NULL || s->ops->Flush == NULL)
         return 0;
     return s->ops->Flush(s->backing, x, y, w, h, d->wakeFd);
 }
 
-/* One ctl line: "flush", "flush <x> <y> <w> <h>", "blank on" or "blank off". */
+/* One ctl line: "flush", "flush full", "flush <x> <y> <w> <h>", "blank on" or
+ * "blank off". */
 static int runCtl(vfs_driver_ctx_t d, fb_screen_t *s, char *line) {
     char *tok[FB_CTL_FIELDS];
     size_t n = 0;
@@ -714,14 +790,19 @@ static int runCtl(vfs_driver_ctx_t d, fb_screen_t *s, char *line) {
         bool on = n == 2 && strcmp(tok[1], "on") == 0;
         if (!on && !(n == 2 && strcmp(tok[1], "off") == 0))
             return -EINVAL;
-        if (s->ops == NULL || s->ops->Blank == NULL)
+        if (s->refreshModes != 0 || s->ops == NULL || s->ops->Blank == NULL)
             return 0;
         return s->ops->Blank(s->backing, on);
     }
     if (strcmp(tok[0], "flush") != 0)
         return -EINVAL;
     if (n == 1)
-        return flushRect(d, s, 0, 0, s->width, s->height);
+        return flushRect(d, s, 0, 0, s->width, s->height, s->refresh);
+    if (n == 2 && strcmp(tok[1], "full") == 0) {
+        if ((s->refreshModes & FB_REFRESH_FULL) == 0)
+            return -EINVAL;
+        return flushRect(d, s, 0, 0, s->width, s->height, FB_REFRESH_FULL);
+    }
     if (n != 5)
         return -EINVAL;
 
@@ -733,15 +814,20 @@ static int runCtl(vfs_driver_ctx_t d, fb_screen_t *s, char *line) {
     if (r[2] == 0 || r[3] == 0 || (uint32_t)r[0] + r[2] > s->width ||
         (uint32_t)r[1] + r[3] > s->height)
         return -EINVAL;
-    return flushRect(d, s, r[0], r[1], r[2], r[3]);
+    return flushRect(d, s, r[0], r[1], r[2], r[3], s->refresh);
+}
+
+/* Bytes of a written line, less one trailing newline. */
+static size_t lineLen(const void *buf, size_t nbyte) {
+    if (nbyte > 0 && ((const char *)buf)[nbyte - 1] == '\n')
+        return nbyte - 1;
+    return nbyte;
 }
 
 static int writeCtl(vfs_driver_ctx_t d, struct fb_fd_t *f, const void *buf,
                     size_t nbyte) {
     char line[FB_CTL_MAX];
-    size_t len = nbyte;
-    if (len > 0 && ((const char *)buf)[len - 1] == '\n')
-        len--;
+    size_t len = lineLen(buf, nbyte);
     if (len >= sizeof(line))
         return -EINVAL;
     memcpy(line, buf, len);
@@ -796,6 +882,31 @@ static int readDamage(vfs_driver_ctx_t d, struct fb_fd_t *f, void *buf,
 }
 #endif
 
+static int readRefresh(vfs_driver_ctx_t d, struct fb_fd_t *f, void *buf,
+                       size_t nbyte) {
+    char line[FB_REFRESH_LINE_MAX];
+    int len = snprintf(line, sizeof(line), "%s\n",
+                       refreshName(d->screens[f->screen]->refresh));
+    if (len < 0 || f->offset >= (uint32_t)len)
+        return 0;
+    size_t n = (size_t)len - f->offset;
+    if (n > nbyte)
+        n = nbyte;
+    memcpy(buf, line + f->offset, n);
+    f->offset += (uint32_t)n;
+    return (int)n;
+}
+
+static int writeRefresh(vfs_driver_ctx_t d, const struct fb_fd_t *f,
+                        const void *buf, size_t nbyte) {
+    fb_screen_t *s = d->screens[f->screen];
+    uint8_t mode = refreshByName(buf, lineLen(buf, nbyte));
+    if (mode == 0 || (s->refreshModes & mode) == 0)
+        return -EINVAL;
+    s->refresh = mode;
+    return (int)nbyte;
+}
+
 static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     struct fb_fd_t *f = fdAt(d, fd);
     if (f == NULL)
@@ -804,6 +915,8 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     switch (f->node) {
     case FB_NODE_INFO:
         return readInfo(d, f, buf, nbyte);
+    case FB_NODE_REFRESH:
+        return readRefresh(d, f, buf, nbyte);
     case FB_NODE_DATA:
         return transferData(d, f, buf, nbyte, false);
     case FB_NODE_ROOT:
@@ -837,6 +950,8 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
         return transferData(d, f, (void *)buf, nbyte, true);
     case FB_NODE_CTL:
         return writeCtl(d, f, buf, nbyte);
+    case FB_NODE_REFRESH:
+        return writeRefresh(d, f, buf, nbyte);
     case FB_NODE_DAMAGE:
         return -EPERM;
     default:
@@ -874,12 +989,16 @@ static int _ReadDir(vfs_driver_ctx_t d, int fd, void *buf, size_t bufLen,
         return -EBADF;
 
     if (f->node == FB_NODE_SCREEN) {
-        vfs_dir_entry_t attrs[3] = {
+        vfs_dir_entry_t attrs[4] = {
             {"info", VFS_FILETYPE_CHARACTER_DEVICE},
             {"data", VFS_FILETYPE_CHARACTER_DEVICE},
             {d->observe ? "damage" : "ctl", VFS_FILETYPE_CHARACTER_DEVICE},
+            {"refresh", VFS_FILETYPE_CHARACTER_DEVICE},
         };
-        return VfsFlatDirReadDir(attrs, 3, buf, bufLen, cookie, bufUsed);
+        size_t count = 3;
+        if (!d->observe && d->screens[f->screen]->refreshModes != 0)
+            count = 4;
+        return VfsFlatDirReadDir(attrs, count, buf, bufLen, cookie, bufUsed);
     }
     if (f->node != FB_NODE_ROOT)
         return -ENOTDIR;
