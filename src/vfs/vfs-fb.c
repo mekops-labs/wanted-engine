@@ -300,8 +300,8 @@ static int parseGrant(struct vfs_driver_ctx_t *ctx, const char *options) {
         } else if (len >= sizeof(FB_REFRESH_KEY) - 1 &&
                    strncmp(p, FB_REFRESH_KEY, sizeof(FB_REFRESH_KEY) - 1) ==
                        0) {
-            const size_t keyLen = sizeof(FB_REFRESH_KEY) - 1;
-            ctx->refreshOpt = refreshByName(p + keyLen, len - keyLen);
+            const size_t optLen = sizeof(FB_REFRESH_KEY) - 1;
+            ctx->refreshOpt = refreshByName(p + optLen, len - optLen);
             if (ctx->refreshOpt == 0)
                 return -EINVAL;
         } else {
@@ -817,12 +817,17 @@ static int runCtl(vfs_driver_ctx_t d, fb_screen_t *s, char *line) {
     return flushRect(d, s, r[0], r[1], r[2], r[3], s->refresh);
 }
 
+/* Bytes of a written line, less one trailing newline. */
+static size_t lineLen(const void *buf, size_t nbyte) {
+    if (nbyte > 0 && ((const char *)buf)[nbyte - 1] == '\n')
+        return nbyte - 1;
+    return nbyte;
+}
+
 static int writeCtl(vfs_driver_ctx_t d, struct fb_fd_t *f, const void *buf,
                     size_t nbyte) {
     char line[FB_CTL_MAX];
-    size_t len = nbyte;
-    if (len > 0 && ((const char *)buf)[len - 1] == '\n')
-        len--;
+    size_t len = lineLen(buf, nbyte);
     if (len >= sizeof(line))
         return -EINVAL;
     memcpy(line, buf, len);
@@ -892,13 +897,10 @@ static int readRefresh(vfs_driver_ctx_t d, struct fb_fd_t *f, void *buf,
     return (int)n;
 }
 
-static int writeRefresh(vfs_driver_ctx_t d, struct fb_fd_t *f, const void *buf,
-                        size_t nbyte) {
+static int writeRefresh(vfs_driver_ctx_t d, const struct fb_fd_t *f,
+                        const void *buf, size_t nbyte) {
     fb_screen_t *s = d->screens[f->screen];
-    size_t len = nbyte;
-    if (len > 0 && ((const char *)buf)[len - 1] == '\n')
-        len--;
-    uint8_t mode = refreshByName(buf, len);
+    uint8_t mode = refreshByName(buf, lineLen(buf, nbyte));
     if (mode == 0 || (s->refreshModes & mode) == 0)
         return -EINVAL;
     s->refresh = mode;
