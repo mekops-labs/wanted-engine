@@ -133,7 +133,8 @@ struct vfs_ctx_t {
     vfs_proc_entry_t procfs[VFS_PROCFS_MAX_ENTRIES];
     uint8_t procfs_cnt;
 
-    /* System-level privilege flag — enables privileged /proc entries. */
+    /* Set per wapp from its launch config — enables privileged /proc entries.
+     */
     bool privileged;
 
     /* Raised to end a blocking wait when the wapp is stopping; -1 when the

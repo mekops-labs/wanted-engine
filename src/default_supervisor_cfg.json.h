@@ -6,6 +6,7 @@ JSON({
     "action" : "start",
     "params" : {
         "name" : "supervisor",
+        "privileged" : true,
         "console" : {
             "in" : {"name" : "platform"},
             "out" : {"name" : "platform"},

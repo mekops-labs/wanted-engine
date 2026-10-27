@@ -733,8 +733,9 @@ int WantedWappRun(wapp_data_t *ctx) {
     DevFs_Register(ctx->vfs, "pipe",
                    withWake(ctx->vfs, PipeDriverCreate(wantedPipeStore())));
 
-    /* Propagate system-level privilege flag, then register /proc entries. */
-    VfsSetPrivileged(ctx->vfs, WantedGetConfig()->privileged);
+    /* The launch config decides whether this wapp reads the privileged /proc
+     * entries. */
+    VfsSetPrivileged(ctx->vfs, wapp->cfg.privileged);
     ProcFs_RegisterDir(ctx->vfs, "wapps", &WappsProcDirOps, true);
     ProcFs_Register(ctx->vfs, "memory", procReadMemory, true);
     /* clock_quality is unprivileged — any wapp may read it to decide whether

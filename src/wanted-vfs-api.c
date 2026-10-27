@@ -297,9 +297,13 @@ static int parseConfig(const char *buf, size_t len, wantedConfig_t *out) {
         return -EINVAL;
     }
 
-    json_t const *priv = json_getProperty(system, "privileged");
-    if (priv && JSON_BOOLEAN == json_getType(priv))
-        out->privileged = json_getBoolean(priv);
+    /* Privilege is granted per wapp, in its launch config. */
+    if (json_getProperty(system, "privileged")) {
+        LOG_ERROR("system.privileged is not a setting; set \"privileged\" in "
+                  "the launch config of the wapp that needs it");
+        jsonScratchRelease(&scratch);
+        return -EINVAL;
+    }
 
     /* Enforcement is monotonic: a configuration may raise it and never lower
      * it, because this file sits on flash any attacker with write access to
@@ -364,8 +368,7 @@ int WantedParseConfig(const char *buf, size_t bufLen) {
 }
 
 /* Always returns a usable config: if nothing has been parsed yet, a zeroed one
- * is allocated so callers (e.g. the privileged-flag check) never see NULL —
- * matching the previous always-present static. */
+ * is allocated so callers never see NULL. */
 const wantedConfig_t *WantedGetConfig(void) {
     if (currentConfig == NULL) {
         currentConfig = WantedMalloc(sizeof(wantedConfig_t));
@@ -971,10 +974,21 @@ static void parseSocketRoles(json_t const *params, wapp_driver_t *arr,
     }
 }
 
-/* Parse the launch-config body — console redirections plus the resource
- * sections — out of `params`. Shared by the bootstrap envelope and the per-wapp
- * config node. Wapp identity is not read here; it travels in the path. */
-static void parseWappParams(json_t const *params, wapp_config_t *cfg) {
+/* Parse the launch-config body out of `params`. Shared by the bootstrap
+ * envelope and the per-wapp config node. Wapp identity is not read here; it
+ * travels in the path. */
+static int parseWappParams(json_t const *params, wapp_config_t *cfg) {
+    /* privileged: whether the wapp reads the privileged /proc entries. A value
+     * that is not a boolean refuses the config. */
+    json_t const *priv = json_getProperty(params, "privileged");
+    if (priv) {
+        if (JSON_BOOLEAN != json_getType(priv)) {
+            LOG_ERROR("launch config: \"privileged\" must be a boolean");
+            return -EINVAL;
+        }
+        cfg->privileged = json_getBoolean(priv);
+    }
+
     /* image: the registry image this instance runs, as "<name>[:<tag>]".
      * Optional — the launch path defaults it to the instance name. A bare name
      * takes the first match, a pinned tag resolves exactly. */
@@ -1068,6 +1082,7 @@ static void parseWappParams(json_t const *params, wapp_config_t *cfg) {
         }
         cfg->envsCnt = (size_t)ei;
     }
+    return 0;
 }
 
 int WantedParseCtrlAction(json_t const *json, char *wappName,
@@ -1106,9 +1121,7 @@ int WantedParseCtrlAction(json_t const *json, char *wappName,
         copyField(wappName, WAPP_MAX_NAME_LEN, json_getValue(name));
     }
 
-    parseWappParams(params, cfg);
-
-    return 0;
+    return parseWappParams(params, cfg);
 }
 
 int WantedParseCtrlActionJson(const char *buf, size_t bufLen, char *wappName,
@@ -1150,10 +1163,10 @@ int WantedParseWappConfigJson(const char *buf, size_t bufLen,
 
     /* The decomposed config node carries the bare launch-config body: the
      * object itself plays the role a wrapping `params` block would. */
-    parseWappParams(json, cfg);
+    ret = parseWappParams(json, cfg);
 
     jsonScratchRelease(&scratch);
-    return 0;
+    return ret;
 }
 
 /* Launch-config overlay: the addresses a provisioning blob carries, written by

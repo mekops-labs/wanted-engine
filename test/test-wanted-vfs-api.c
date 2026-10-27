@@ -113,6 +113,49 @@ TEST(wanted_vfs_api, WantedParseWappConfigImagePinnedTag) {
 /* A launch config naming a driver no table offers fails the install with
  * -ENODEV. The engine rejects the launch rather than silently no-op'ing, and
  * survives. */
+TEST(wanted_vfs_api, WappPrivilegeIsOffUnlessTheLaunchConfigGrantsIt) {
+    wapp_config_t cfg;
+    const char *absent = "{\"image\":\"app\"}";
+    const char *off = "{\"privileged\":false}";
+    const char *on = "{\"privileged\":true}";
+
+    TEST_ASSERT_EQUAL(0,
+                      WantedParseWappConfigJson(absent, strlen(absent), &cfg));
+    TEST_ASSERT_FALSE(cfg.privileged);
+    TEST_ASSERT_EQUAL(0, WantedParseWappConfigJson(off, strlen(off), &cfg));
+    TEST_ASSERT_FALSE(cfg.privileged);
+    TEST_ASSERT_EQUAL(0, WantedParseWappConfigJson(on, strlen(on), &cfg));
+    TEST_ASSERT_TRUE(cfg.privileged);
+}
+
+TEST(wanted_vfs_api, WappPrivilegeThatIsNotABooleanIsRefused) {
+    wapp_config_t cfg;
+    const char *bad[] = {"{\"privileged\":\"true\"}", "{\"privileged\":1}",
+                         "{\"privileged\":null}", "{\"privileged\":{}}"};
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++)
+        TEST_ASSERT_EQUAL_MESSAGE(
+            -EINVAL, WantedParseWappConfigJson(bad[i], strlen(bad[i]), &cfg),
+            bad[i]);
+}
+
+TEST(wanted_vfs_api, SupervisorPrivilegeComesFromItsLaunchParams) {
+    const char *cfg =
+        "{\"system\":{},\"supervisor\":{\"params\":{\"privileged\":true}}}";
+    TEST_ASSERT_EQUAL(0, WantedParseConfig(cfg, strlen(cfg)));
+    TEST_ASSERT_TRUE(WantedGetConfig()->supervisorCfg.privileged);
+
+    cfg = "{\"system\":{},\"supervisor\":{\"params\":{}}}";
+    TEST_ASSERT_EQUAL(0, WantedParseConfig(cfg, strlen(cfg)));
+    TEST_ASSERT_FALSE(WantedGetConfig()->supervisorCfg.privileged);
+}
+
+TEST(wanted_vfs_api, SystemPrivilegedIsRefused) {
+    const char *cfg = "{\"system\":{\"privileged\":true}}";
+    TEST_ASSERT_EQUAL(-EINVAL, WantedParseConfig(cfg, strlen(cfg)));
+    cfg = "{\"system\":{\"privileged\":false}}";
+    TEST_ASSERT_EQUAL(-EINVAL, WantedParseConfig(cfg, strlen(cfg)));
+}
+
 TEST(wanted_vfs_api, InstallUnavailableDriverReturnsEnodev) {
     vfs_ctx_t c = VfsInit();
     TEST_ASSERT_NOT_NULL(c);
@@ -239,6 +282,11 @@ TEST(wanted_vfs_api, OverlayRefusesMalformedDocuments) {
 }
 
 TEST_GROUP_RUNNER(wanted_vfs_api) {
+    RUN_TEST_CASE(wanted_vfs_api,
+                  WappPrivilegeIsOffUnlessTheLaunchConfigGrantsIt);
+    RUN_TEST_CASE(wanted_vfs_api, WappPrivilegeThatIsNotABooleanIsRefused);
+    RUN_TEST_CASE(wanted_vfs_api, SupervisorPrivilegeComesFromItsLaunchParams);
+    RUN_TEST_CASE(wanted_vfs_api, SystemPrivilegedIsRefused);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseCtrlActionTest);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigArgsEnvs);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigImage);

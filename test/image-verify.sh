@@ -120,10 +120,10 @@ run_engine() { # <enforce true|false> -> engine output
     local enforce=$1 cfg="$WORK/config.json"
     cat > "$cfg" <<JSON
 {
-  "system": { "privileged": true, "enforceImageVerify": $enforce },
+  "system": { "enforceImageVerify": $enforce },
   "supervisor": {
     "imagePath": "registry:$NAME:$VER",
-    "params": { "console": { "in": { "name": "platform" }, "out": { "name": "platform" }, "err": { "name": "platform" } } }
+    "params": { "privileged": true, "console": { "in": { "name": "platform" }, "out": { "name": "platform" }, "err": { "name": "platform" } } }
   }
 }
 JSON

@@ -137,15 +137,21 @@
     "\"options\":\"name=roonly,shared,ro\"}]}"
 
 /* observer is the reference observability wapp: granted a `log` mount and the
- * ambient /proc but no `wanted` driver, so it watches the fleet yet cannot
- * command it. It reports each finding to its log. */
+ * privileged /proc entries but no `wanted` driver, so it watches the fleet yet
+ * cannot command it. It reports each finding to its log. obsplain runs the same
+ * image without the privilege. */
 #define OBSERVER "observer"
 #define OBSERVER_CFG "/dev/wanted/wapps/" OBSERVER "/config"
 #define OBSERVER_LOG LOG_MOUNT "/" OBSERVER
-#define OBSERVER_CFG_BODY                                                      \
-    "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
+#define OBSERVER_PLAIN "obsplain"
+#define OBSERVER_PLAIN_CFG "/dev/wanted/wapps/" OBSERVER_PLAIN "/config"
+#define OBSERVER_PLAIN_LOG LOG_MOUNT "/" OBSERVER_PLAIN
+#define OBSERVER_LAUNCH                                                        \
+    "\"console\":{\"in\":{\"name\":\"null\"},"                                 \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
     "\"mounts\":[{\"name\":\"log\",\"path\":\"/log\"}]}"
+#define OBSERVER_CFG_BODY "{\"privileged\":true," OBSERVER_LAUNCH
+#define OBSERVER_PLAIN_CFG_BODY "{\"image\":\"" OBSERVER "\"," OBSERVER_LAUNCH
 
 /* fbcheck runs as a writer and as an observer polling the damage node. The
  * screen comes from `system.screens`, so a build without the fb driver skips
@@ -1015,9 +1021,11 @@ static void argenv_check(void) {
     delete_wapp(ARGENV);
 }
 
-/* Capability separation: launch observer with a `log` mount but no `wanted`
- * control mount, and assert it can read /proc/wapps and tail logs while every
- * attempt to reach the control plane is denied. */
+/* Capability separation: launch observer with a `log` mount and the privileged
+ * /proc entries but no `wanted` control mount, and assert it can read
+ * /proc/wapps and tail logs while every attempt to reach the control plane is
+ * denied. The same image without the privilege sees no /proc/wapps, and a
+ * launch config whose `privileged` is not a boolean is refused. */
 static void observer_check(void) {
     char buf[1024];
 
@@ -1036,6 +1044,24 @@ static void observer_check(void) {
            "observe: the observability wapp ran to completion");
 
     delete_wapp(OBSERVER);
+
+    started = create_wapp(OBSERVER_PLAIN) &&
+              write_path(OBSERVER_PLAIN_CFG, OBSERVER_PLAIN_CFG_BODY) >= 0 &&
+              start_wapp(OBSERVER_PLAIN);
+    wait_dead(OBSERVER_PLAIN);
+
+    got = read_path(OBSERVER_PLAIN_LOG, buf, sizeof(buf)) > 0;
+    tap_ok(started && got && strstr(buf, "obs-proc:unavailable") != NULL &&
+               strstr(buf, "obs-wapp:") == NULL,
+           "observe: a wapp without privileged cannot read /proc/wapps");
+
+    delete_wapp(OBSERVER_PLAIN);
+
+    tap_ok(create_wapp(OBSERVER_PLAIN) &&
+               write_path(OBSERVER_PLAIN_CFG, "{\"privileged\":\"yes\"}") < 0,
+           "observe: a non-boolean privileged is refused");
+
+    delete_wapp(OBSERVER_PLAIN);
 }
 
 /* A `pipe` console is a live stream to a peer. Launch argpipe with stdout
