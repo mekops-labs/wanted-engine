@@ -246,11 +246,12 @@ static int declareInputs(json_t const *list) {
         }
 
         input_axis_t axes[INPUT_AXES_MAX];
-        json_t const *list = json_getProperty(e, "axes");
-        if (list) {
-            if (JSON_ARRAY != json_getType(list))
+        json_t const *axesList = json_getProperty(e, "axes");
+        if (axesList) {
+            if (JSON_ARRAY != json_getType(axesList) ||
+                (desc.types & INPUT_TYPE_ABS) == 0)
                 return -EINVAL;
-            for (json_t const *a = json_getChild(list); a;
+            for (json_t const *a = json_getChild(axesList); a;
                  a = json_getSibling(a)) {
                 if (desc.axisCount >= INPUT_AXES_MAX ||
                     parseAxis(a, &axes[desc.axisCount]) < 0)

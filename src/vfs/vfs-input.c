@@ -104,13 +104,13 @@ input_device_t *InputDeviceFind(const char *name) {
     return name != NULL ? findDevice(name, strlen(name)) : NULL;
 }
 
-/* Axes are present exactly when the device has the ABS type, are ABS_X or
- * ABS_Y at most once each, and have min below max. */
+/* Axes are present exactly when the device has the ABS type, which needs KEY
+ * for BTN_TOUCH; each is ABS_X or ABS_Y at most once, with min below max. */
 static bool validAxes(const input_device_desc_t *desc) {
     if ((desc->types & INPUT_TYPE_ABS) == 0)
         return desc->axisCount == 0;
-    if (desc->axes == NULL || desc->axisCount == 0 ||
-        desc->axisCount > INPUT_AXES_MAX)
+    if ((desc->types & INPUT_TYPE_KEY) == 0 || desc->axes == NULL ||
+        desc->axisCount == 0 || desc->axisCount > INPUT_AXES_MAX)
         return false;
     for (uint8_t i = 0; i < desc->axisCount; i++) {
         const input_axis_t *a = &desc->axes[i];

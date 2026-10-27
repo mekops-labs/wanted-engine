@@ -255,7 +255,8 @@ TEST(input_table, AbsDeviceRegistersWithItsAxes) {
 }
 
 TEST(input_table, AbsDeviceNeedsValidAxes) {
-    input_device_desc_t d = {"touch", INPUT_TYPE_ABS, "touch", TOUCH_AXES, 2};
+    input_device_desc_t d = {"touch", INPUT_TYPE_KEY | INPUT_TYPE_ABS, "touch",
+                             TOUCH_AXES, 2};
     const input_axis_t flat[] = {{ABS_X, 5, 5}};
     const input_axis_t inverted[] = {{ABS_X, 9, 1}};
     const input_axis_t badCode[] = {{7, 0, 9}};
@@ -280,13 +281,19 @@ TEST(input_table, AbsDeviceNeedsValidAxes) {
     TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
 }
 
+TEST(input_table, AbsDeviceWithoutTheKeyTypeIsEinval) {
+    input_device_desc_t d = {"touch", INPUT_TYPE_ABS, "touch", TOUCH_AXES, 2};
+    TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
+}
+
 TEST(input_table, AxesWithoutTheAbsTypeAreEinval) {
     input_device_desc_t d = {"main", INPUT_TYPE_KEY, "default", TOUCH_AXES, 2};
     TEST_ASSERT_EQUAL_INT(-EINVAL, InputDeviceRegister(&d, NULL));
 }
 
 TEST(input_table, SameAbsDeviceWithOtherAxesIsEexist) {
-    input_device_desc_t d = {"touch", INPUT_TYPE_ABS, "touch", TOUCH_AXES, 2};
+    input_device_desc_t d = {"touch", INPUT_TYPE_KEY | INPUT_TYPE_ABS, "touch",
+                             TOUCH_AXES, 2};
     const input_axis_t other[] = {{ABS_X, 0, 539}, {ABS_Y, 0, 799}};
     TEST_ASSERT_EQUAL_INT(0, InputDeviceRegister(&d, NULL));
     d.axes = other;
@@ -314,6 +321,7 @@ TEST_GROUP_RUNNER(input_table) {
     RUN_TEST_CASE(input_table, BadNamesTypesAndKeymapsAreEinval);
     RUN_TEST_CASE(input_table, AbsDeviceRegistersWithItsAxes);
     RUN_TEST_CASE(input_table, AbsDeviceNeedsValidAxes);
+    RUN_TEST_CASE(input_table, AbsDeviceWithoutTheKeyTypeIsEinval);
     RUN_TEST_CASE(input_table, AxesWithoutTheAbsTypeAreEinval);
     RUN_TEST_CASE(input_table, SameAbsDeviceWithOtherAxesIsEexist);
     RUN_TEST_CASE(input_table, TableFullIsEnospc);
@@ -968,8 +976,8 @@ TEST(input_config, SystemConfigDeclaresATouchDevice) {
 
 TEST(input_config, MalformedAxesFailTheParse) {
 #define ABS_DECL(axes)                                                         \
-    INPUT_CFG("[{\"name\":\"t\",\"types\":[\"abs\"],\"keymap\":\"touch\"" axes \
-              "}]")
+    INPUT_CFG("[{\"name\":\"t\",\"types\":[\"key\",\"abs\"],"                  \
+              "\"keymap\":\"touch\"" axes "}]")
     const char *bad[] = {
         ABS_DECL(""),
         ABS_DECL(",\"axes\":[]"),
@@ -986,6 +994,10 @@ TEST(input_config, MalformedAxesFailTheParse) {
                  "{\"name\":\"y\",\"min\":0,\"max\":9},"
                  "{\"name\":\"x\",\"min\":0,\"max\":9}]"),
         INPUT_CFG("[{\"name\":\"k\",\"types\":[\"key\"],\"keymap\":\"us\","
+                  "\"axes\":[{\"name\":\"x\",\"min\":0,\"max\":9}]}]"),
+        INPUT_CFG("[{\"name\":\"k\",\"types\":[\"key\"],\"keymap\":\"us\","
+                  "\"axes\":[]}]"),
+        INPUT_CFG("[{\"name\":\"t\",\"types\":[\"abs\"],\"keymap\":\"touch\","
                   "\"axes\":[{\"name\":\"x\",\"min\":0,\"max\":9}]}]"),
     };
 #undef ABS_DECL

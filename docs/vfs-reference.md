@@ -539,8 +539,9 @@ Each record is 8 bytes, little-endian:
 - A device with absolute axes lists `abs` after its other types and one
   `axis=<x|y>:<min>:<max>` word per axis in `info`, for example
   `key abs keymap=touch axis=x:0:539 axis=y:0:959`. A device without them has
-  neither. A touch is a batch of `BTN_TOUCH` (`0x14a`) and the axes, and the
-  device reports one finger at a time.
+  neither. A device with `abs` also has `key`. A touch is a batch of
+  `BTN_TOUCH` (`0x14a`) and the axes, and the device reports one finger at a
+  time.
 - One wapp owns a device. A second grant naming it fails the launch, and a grant
   naming several devices takes all of them or fails. Records queued before the
   owner launched are dropped.
