@@ -1,6 +1,23 @@
 Changelog
 =========
 
+0.29.2 (2026-10-28)
+-------------------
+
+### Removed
+
+- The defconfigs `xiao_esp32s3-telegraph-sheriff` and
+  `xiao_esp32s3-telegraph-sheriff-trace`, the bring-up config
+  `configs/bringup-esp32s3-telegraph-sheriff.json`, and the board extras file
+  `xiao_esp32s3-telegraph-sheriff_defconfig.cmake` in
+  `platform/esp-idf/board-extras/`. A build with
+  `DEFCONFIG=xiao_esp32s3-telegraph-sheriff` stops working.
+
+### Documentation
+
+- The platform guide places seeds from outside the repository in the
+  `board.cmake` of a board directory.
+
 0.29.1 (2026-10-27)
 -------------------
 
