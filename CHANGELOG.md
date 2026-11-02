@@ -1,6 +1,26 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- `CONFIG_WANTED_WAMR_INTERP_FAST` builds the fast WAMR interpreter on every
+  target. The classic interpreter stays the default.
+- The `wbench` and `wlkload` wapps, `tools/wamr-mode-bench/`, and the
+  `nuttx_poc` and `nuttx_poc_fast` defconfigs measure the two interpreters.
+
+### Changed
+
+- An ESP-IDF build sets the WAMR interpreter in sdkconfig from the board
+  defconfig, and stops when sdkconfig names the other interpreter.
+
+### Fixed
+
+- The NuttX simulator builds the framebuffer driver when the engine
+  configuration enables it.
+
 0.29.2 (2026-10-28)
 -------------------
 
