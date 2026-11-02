@@ -589,15 +589,17 @@ static int start_wapp(const char *name) {
 /* Create the namespace, configure the wapp with the log console, and start it
  * via the control plane (the create → config → start lifecycle). Returns true
  * if every step succeeded. */
-static int launch(const char *name) {
+static int launch_with(const char *name, const char *cfg) {
     char path[96];
     if (!create_wapp(name))
         return 0;
     wapp_node(path, sizeof(path), name, "config");
-    if (write_path(path, LAUNCH_CFG) < 0)
+    if (write_path(path, cfg) < 0)
         return 0;
     return start_wapp(name);
 }
+
+static int launch(const char *name) { return launch_with(name, LAUNCH_CFG); }
 
 /* Poll a wapp's state until it reports a dead state (exited/failure), bounded
  * to ~10 s. Returns true once the engine has reaped it. */
@@ -732,11 +734,11 @@ static int delete_wapp(const char *name) {
 /* Launch a wapp parked in a blocking host call, stop it, and report whether the
  * stop interrupted the call promptly. Promptness is judged in a 2 s window,
  * well under any self-return, so it isolates the interrupt path. */
-static int stop_interrupts(const char *name, int *alive_out) {
+static int stop_interrupts(const char *name, const char *cfg, int *alive_out) {
     char state[96], buf[64];
     wapp_node(state, sizeof(state), name, "state");
 
-    launch(name);
+    launch_with(name, cfg);
     wait_state(state, 1); /* running, inside the blocking call */
     stop_wapp(name);
 
@@ -765,7 +767,7 @@ static int stop_interrupts(const char *name, int *alive_out) {
  * (not wait it out) and the supervisor must survive. */
 static void blocker_check(void) {
     int alive = 0;
-    int prompt = stop_interrupts("blocker", &alive);
+    int prompt = stop_interrupts("blocker", LAUNCH_CFG, &alive);
     tap_ok(prompt && alive, "robustness: stop interrupts a sleep-blocked wapp "
                             "and reaps it promptly");
 }
@@ -773,9 +775,14 @@ static void blocker_check(void) {
 /* pblock parks in a read on an empty pipe that never completes on its own, so
  * it can only be ended by the stop interrupting the host call — the strict form
  * of the blocker check (no self-return to fall back on). */
+#define PBLOCK_CFG                                                             \
+    "{\"console\":{\"in\":{\"name\":\"null\"},"                                \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
+    "\"drivers\":[{\"name\":\"pipe\",\"options\":\"read=void\"}]}"
+
 static void ioblock_check(void) {
     int alive = 0;
-    int prompt = stop_interrupts("pblock", &alive);
+    int prompt = stop_interrupts("pblock", PBLOCK_CFG, &alive);
     tap_ok(prompt && alive, "robustness: stop interrupts an I/O-blocked wapp "
                             "(read on an empty pipe)");
     delete_wapp("pblock");
@@ -926,12 +933,14 @@ static void random_check(void) {
     "{\"image\":\"duplex\","                                                   \
     "\"console\":{\"in\":{\"name\":\"null\"},"                                 \
     "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                  \
+    "\"drivers\":[{\"name\":\"pipe\",\"options\":\"read=duplex\"}],"          \
     "\"envs\":[\"ROLE=reader\"]}"
 /* writer pins the image by tag ("duplex:0.0.1-1") — exact resolution — while
  * reader uses the bare name ("duplex") — first-match. Both run the one image.
  * The version separator is '@' (VFAT-legal), not ':'. */
 #define WRITER_CFG_BODY                                                        \
-    "{\"image\":\"duplex:0.0.1-1\",\"envs\":[\"ROLE=writer\"]}"
+    "{\"image\":\"duplex:0.0.1-1\",\"envs\":[\"ROLE=writer\"],"                  \
+    "\"drivers\":[{\"name\":\"pipe\",\"options\":\"write=duplex\"}]}"
 /* /dev/ota wiring: every status field, a read-refusing image sink, and grammar
  * and subpath rejection. Asserts shape only, since the backing differs per
  * platform, and issues no command that mutates a slot. */
@@ -993,6 +1002,65 @@ static void pipe_duplex_check(void) {
 
     delete_wapp("reader");
     delete_wapp("writer");
+}
+
+/* A `pipe` grant names each pipe and its direction. A reader with the right
+ * name gets the payload; a reader granted another name, and a writer granted
+ * only the read side, cannot open the pipe and exit 1. */
+#define PG_WRITER "pgwriter"
+#define PG_DENIED "pgdenied"
+#define PG_READER "pgreader"
+#define PG_RDONLY "pgrdonly"
+#define PG_CFG(n) "/dev/wanted/wapps/" n "/config"
+#define PG_EXIT(n) "/proc/wapps/" n "/exit_code"
+#define PG_BODY(role, grant)                                                   \
+    "{\"image\":\"duplex\",\"console\":{\"in\":{\"name\":\"null\"},"          \
+    "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"                 \
+    "\"envs\":[\"ROLE=" role "\"],"                                           \
+    "\"drivers\":[{\"name\":\"pipe\",\"options\":\"" grant "\"}]}"
+
+static int pg_run(const char *name, const char *cfg_path, const char *body) {
+    int ok = create_wapp(name) && write_path(cfg_path, body) >= 0 &&
+             start_wapp(name);
+    wait_dead(name);
+    return ok;
+}
+
+static int pg_exit_is(const char *path, const char *code) {
+    char buf[32];
+    return read_path(path, buf, sizeof(buf)) > 0 && strstr(buf, code) != NULL;
+}
+
+static void pipe_grant_check(void) {
+    char buf[128];
+
+    int ok = pg_run(PG_RDONLY, PG_CFG(PG_RDONLY),
+                    PG_BODY("writer", "read=duplex"));
+    tap_ok(ok && pg_exit_is(PG_EXIT(PG_RDONLY), "1"),
+           "pipe grant: a name granted for reading cannot be opened to write");
+    delete_wapp(PG_RDONLY);
+
+    ok = pg_run(PG_WRITER, PG_CFG(PG_WRITER),
+                PG_BODY("writer", "write=duplex"));
+    tap_ok(ok && pg_exit_is(PG_EXIT(PG_WRITER), "0"),
+           "pipe grant: a wapp writes the name it was granted");
+    delete_wapp(PG_WRITER);
+
+    ok = pg_run(PG_DENIED, PG_CFG(PG_DENIED),
+                PG_BODY("reader", "read=elsewhere"));
+    int leaked = read_path(LOG_MOUNT "/" PG_DENIED, buf, sizeof(buf)) > 0 &&
+                 strstr(buf, DUPLEX_PAYLOAD) != NULL;
+    tap_ok(ok && pg_exit_is(PG_EXIT(PG_DENIED), "1") && !leaked,
+           "pipe grant: a wapp cannot open a name it was not granted");
+    delete_wapp(PG_DENIED);
+
+    ok = pg_run(PG_READER, PG_CFG(PG_READER),
+                PG_BODY("reader", "read=duplex"));
+    int got = read_path(LOG_MOUNT "/" PG_READER, buf, sizeof(buf)) > 0 &&
+              strstr(buf, DUPLEX_PAYLOAD) != NULL;
+    tap_ok(ok && got && pg_exit_is(PG_EXIT(PG_READER), "0"),
+           "pipe grant: the granted reader receives what the writer sent");
+    delete_wapp(PG_READER);
 }
 
 /* argv and environ passthrough plus exit-code exposure. argenv prints its known
@@ -1651,6 +1719,7 @@ int main(void) {
         {"fb_check", fb_check},
         {"input_check", input_check},
         {"pipe_duplex_check", pipe_duplex_check},
+        {"pipe_grant_check", pipe_grant_check},
         {"multi_reader_pipe_check", multi_reader_pipe_check},
         {"robustness_checks", robustness_checks},
         {"containment_checks", containment_checks},

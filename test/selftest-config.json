@@ -11,6 +11,10 @@
             },
             "drivers": [
                 {"name": "wanted"},
+                {"name": "pipe", "options": "read=selftest,write=selftest,read=wasipoll,write=wasipoll"},
+                {"name": "pipe", "options": "read=wasiflags,write=wasiflags,read=renuma,write=renuma"},
+                {"name": "pipe", "options": "read=renumb,write=renumb,read=duplex,write=duplex"},
+                {"name": "pipe", "options": "read=argpipe.out"},
                 {"name": "ota"}
             ],
             "mounts": [
