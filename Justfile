@@ -255,6 +255,13 @@ smoke-engine:
 selftest:
     ./test/selftest.sh ./{{ build_dir }}/cmd/wanted-cli
 
+# Build build-fast with the fast WAMR interpreter, then run the selftest suite
+# on it (JUnit report for CI).
+selftest-fast:
+    BUILD_DIR=build-fast just setconfig WANTED_WAMR_INTERP_FAST=y
+    BUILD_DIR=build-fast just build
+    ./test/run-one-junit.sh build-fast/selftest-fast-junit.xml selftest-fast selftest -- ./test/selftest.sh ./build-fast/cmd/wanted-cli
+
 # Run the in-WASM selftest suite against an OpenWRT cross-built engine under qemu (JUnit report for CI). sdk = aarch64 | mipsel | SDK URL | local SDK dir; cached under .openwrt-sdk/
 selftest-openwrt-qemu sdk report="build-openwrt-qemu-junit.xml":
     ./test/run-one-junit.sh {{ report }} selftest-openwrt-qemu {{ sdk }} -- ./test/selftest-qemu.sh "{{ sdk }}"
