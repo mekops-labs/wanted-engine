@@ -12,6 +12,7 @@ The engine has three test tiers, each catching a different class of failure. All
 |-------|---------|-------|
 | Unit (ctest) | `just test` | C unit tests: VFS, TarFS, WASI, registry, API parsing |
 | In-WASM selftest | `just selftest` / `just nuttx-selftest` | The functional + robustness scenario suite, run from inside WASM; TAP |
+| Selftest, fast interpreter | `just selftest-fast` | The same suite on Linux, against an engine in `build-fast` built with `CONFIG_WANTED_WAMR_INTERP_FAST`; emits a JUnit report |
 | Cross-arch selftest | `just selftest-openwrt-qemu aarch64` / `mipsel` | The same suite against an OpenWRT cross-built engine under qemu, plus a packaging/init-script check (below) |
 | Smoke | `just smoke-engine` | The production sheriff supervisor instantiates cleanly |
 | Live update | `just live-update` | The supervisor image is swapped under a running engine |
@@ -132,6 +133,7 @@ GitLab CI (`.gitlab-ci.yml`) runs the same `just` recipes you run locally:
 - **`build-gcc` / `build-clang`** — the engine under both compilers; **`build-wsh`** the debug-supervisor build; **`build-wasm`** every wasm artifact (supervisor TARs, sheriff, and the test wapps) in the wapp SDK image; **`build-nuttx`** the sim build.
 - **`unit-test-gcc` / `unit-test-clang`** — the ctest suite under each; **`coverage`** the instrumented build + report.
 - **`integration-tests`** — `just integration` runs `smoke-engine` + `selftest` + `syscontrol` + `live-update` on Linux as one suite and emits a JUnit report (`$BUILD_DIR/integration-junit.xml`), so pass/fail per check shows in the merge-request widget and pipeline Tests tab, not just the raw job log.
+- **`selftest-fast`** — `just selftest-fast` builds the engine with the fast WAMR interpreter in `build-fast` and runs the selftest suite against it. It emits a single-case JUnit report (`build-fast/selftest-fast-junit.xml`). The other jobs build the classic interpreter.
 - **`nuttx-selftest` / `nuttx-syscontrol`** — the same selftest and system-control suites on the NuttX sim, built in-job from a clean tree; each also emits its own single-case JUnit report (`build-nuttx/{selftest,syscontrol}-junit.xml`).
 - **Static analysis** — `format-check`, `shell-check`, `clang-tidy`, `cppcheck`, `semgrep`, `trivy`.
 

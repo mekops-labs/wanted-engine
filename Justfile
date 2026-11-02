@@ -159,6 +159,20 @@ build:
         ;;
     esp-idf)
         chip=$(just _cfg CONFIG_WANTED_TARGET_ESP_IDF_CHIP)
+        # Board defconfig: DEFCONFIG wins; else this build's own default
+        # (WANTED_TARGET_ESP_IDF_DEFCONFIG); else per chip.
+        board_defconfig="{{ defconfig }}"
+        if [ -z "$board_defconfig" ]; then
+            board_defconfig=$(just _cfg CONFIG_WANTED_TARGET_ESP_IDF_DEFCONFIG)
+        fi
+        if [ -z "$board_defconfig" ]; then
+            case "$chip" in
+                esp32) board_defconfig="esp32-esp-idf" ;;
+                *) board_defconfig="xiao_esp32s3" ;;
+            esac
+        fi
+        board_dc=$(just _defconfig_path "$board_defconfig")
+        case "$board_dc" in /*) ;; *) board_dc="{{ justfile_directory() }}/$board_dc" ;; esac
         cd platform/esp-idf/project
         # Chip-independent + chip-specific sdkconfig fragments (see
         # sdkconfig.defaults.<chip>); export so idf.py set-target picks the
@@ -171,6 +185,13 @@ build:
                 SDKCONFIG_DEFAULTS="$SDKCONFIG_DEFAULTS;{{ board_dir }}/sdkconfig.defaults"
             fi
         fi
+        # WAMR's interpreter follows the board defconfig's engine choice.
+        if grep -qx 'CONFIG_WANTED_WAMR_INTERP_FAST=y' "$board_dc"; then
+            echo 'CONFIG_WAMR_INTERP_FAST=y' >sdkconfig.wamr-interp
+        else
+            echo 'CONFIG_WAMR_INTERP_CLASSIC=y' >sdkconfig.wamr-interp
+        fi
+        SDKCONFIG_DEFAULTS="$SDKCONFIG_DEFAULTS;sdkconfig.wamr-interp"
         # sdkconfig is generated from the defaults only when absent, so drop it
         # when the defaults change — another board, or an edited fragment.
         stamp=$(IFS=';'; cat $SDKCONFIG_DEFAULTS | cksum)
@@ -182,19 +203,8 @@ build:
         # only when the chip actually changed — unconditionally would make every
         # build a cold one and discard any local sdkconfig edits.
         if ! grep -qx "CONFIG_IDF_TARGET=\"$chip\"" sdkconfig 2>/dev/null; then
-            idf.py set-target "$chip"
-        fi
-        # Board defconfig: DEFCONFIG wins; else this build's own default
-        # (WANTED_TARGET_ESP_IDF_DEFCONFIG); else per chip.
-        board_defconfig="{{ defconfig }}"
-        if [ -z "$board_defconfig" ]; then
-            board_defconfig=$(just _cfg CONFIG_WANTED_TARGET_ESP_IDF_DEFCONFIG)
-        fi
-        if [ -z "$board_defconfig" ]; then
-            case "$chip" in
-                esp32) board_defconfig="esp32-esp-idf" ;;
-                *) board_defconfig="xiao_esp32s3" ;;
-            esac
+            idf.py -DWANTED_DEFCONFIG="${board_defconfig}_defconfig" \
+                set-target "$chip"
         fi
         # Passed in: embedded in a host tree the engine's .config is narrowed to
         # the engine half, which carries no build-host paths.
@@ -244,6 +254,13 @@ smoke-engine:
 # Run the in-WASM selftest suite on Linux.
 selftest:
     ./test/selftest.sh ./{{ build_dir }}/cmd/wanted-cli
+
+# Build build-fast with the fast WAMR interpreter, then run the selftest suite
+# on it (JUnit report for CI).
+selftest-fast:
+    BUILD_DIR=build-fast just setconfig WANTED_WAMR_INTERP_FAST=y
+    BUILD_DIR=build-fast just build
+    ./test/run-one-junit.sh build-fast/selftest-fast-junit.xml selftest-fast selftest -- ./test/selftest.sh ./build-fast/cmd/wanted-cli
 
 # Run the in-WASM selftest suite against an OpenWRT cross-built engine under qemu (JUnit report for CI). sdk = aarch64 | mipsel | SDK URL | local SDK dir; cached under .openwrt-sdk/
 selftest-openwrt-qemu sdk report="build-openwrt-qemu-junit.xml":

@@ -1,0 +1,8 @@
+# Measurement envelope for the interpreter-mode benchmark on the NuttX
+# simulator: the framebuffer driver and enough linear memory for the benchmark
+# wapp.
+
+CONFIG_WANTED_VFS_FB=y
+CONFIG_WANTED_VFS_FB_OBSERVE=y
+CONFIG_WANTED_WASM_MAX_MEMORY_PAGES=10
+CONFIG_WANTED_WASM_HEAP_SIZE=65536

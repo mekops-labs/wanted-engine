@@ -193,6 +193,25 @@ integration-tests:
     reports:
       junit: "$BUILD_DIR/integration-junit.xml"
 
+# The selftest suite on an engine built with the fast WAMR interpreter.
+selftest-fast:
+  stage: integration-tests
+  needs:
+    - build-wasm
+  cache:
+    *ccache_cache
+  variables:
+    CC: gcc
+    WAPPS_PREBUILT: "1"
+  script:
+    - just selftest-fast
+  artifacts:
+    when: always
+    paths:
+      - build-fast/selftest-fast-junit.xml
+    reports:
+      junit: build-fast/selftest-fast-junit.xml
+
 selftest-openwrt-qemu:
   stage: integration-tests
   needs:

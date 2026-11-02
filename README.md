@@ -7,7 +7,7 @@
 
 > [CHANGELOG](CHANGELOG.md)
 
-- **Interpreter:** Uses [WAMR 2.4.4](https://github.com/bytecodealliance/wasm-micro-runtime) in classic interpreted mode (`WAMR_BUILD_INTERP=1`, no AOT/JIT).
+- **Interpreter:** Uses [WAMR 2.4.4](https://github.com/bytecodealliance/wasm-micro-runtime) in interpreted mode, with no AOT/JIT. The classic interpreter is the default. `CONFIG_WANTED_WAMR_INTERP_FAST` selects the fast interpreter.
 - **Concurrency:** Runs multiple isolated threads (wapps).
 - **Isolation:** Strict memory isolation via WebAssembly; external interactions mediated exclusively through the VFS.
 - **Mount-table VFS Router:** Plan 9-inspired path routing for devices, network, and process state.

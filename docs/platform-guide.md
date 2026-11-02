@@ -428,6 +428,13 @@ Two menus hold the compilation knobs, split by the same rule as the files:
 | Symbol | Default | Effect |
 |---|---|---|
 | `CONFIG_WANTED_DEBUG_TRACES` | `n` | Compiles in the `DEBUG_TRACE()` call sites — VFS routing, wapp lifecycle, driver open/close. Off, they expand to nothing. A development aid, not an operational log: the traces bypass the per-wapp log capture and are verbose enough to change timing on a constrained target. |
+| `CONFIG_WANTED_WAMR_INTERP_CLASSIC` / `CONFIG_WANTED_WAMR_INTERP_FAST` | classic | The WAMR interpreter, one per firmware image. Fast translates each function at load and runs wapp code about 1 to 3 times faster. Each loaded module then keeps the translated code in RAM, several times its code section. |
+
+Each target applies the interpreter choice in its own build:
+
+- **Linux and OpenWrt:** CMake reads the symbol from the build directory's `.config`.
+- **ESP-IDF:** the symbol comes from the board defconfig. `just build` writes `sdkconfig.wamr-interp` from it, and the component stops the configure step when sdkconfig selects the other interpreter.
+- **NuttX:** the app Makefile reads the engine configuration that `DEFCONFIG` seeds. Without `DEFCONFIG`, the app keeps the previous engine configuration. To change the interpreter, remove the engine objects and `autoconf/.config` in `apps/system/wanted`, then build again.
 
 **Host build options** (`Kconfig.target`, shown for the linux and openwrt targets) drive CMake and never reach a translation unit — NuttX and ESP-IDF run no CMake of ours and could not honour them:
 
