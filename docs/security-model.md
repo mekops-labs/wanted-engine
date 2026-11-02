@@ -138,6 +138,7 @@ Embedded targets have a fixed memory budget, so the engine treats resource exhau
 
 - `MAX_WAPPS` bounds concurrent instances; a `start` past the cap is rejected cleanly with `-ENOSPC` (verified on the ESP32-S3: the supervisor plus 19 wapps fit, the 20th is rejected).
 - Per-wapp stack, heap, and linear-memory caps are compile-time (see [Platform Guide → Resource limits](platform-guide.md#resource-limits)); envelopes (`tiny`/`constrained`/`small`/`big`) tune them per target class, and a board defconfig may narrow them further.
+- A wapp reaches only the pipes its `pipe` grant lists, in the directions it lists. A pipe name is never shortened, so two names cannot reach one pipe. A build that keeps ambient pipes (`CONFIG_WANTED_VFS_PIPE_AMBIENT`, the default) lets a wapp with no grant reach every pipe; deselect it to remove that reach.
 - Console pipes **deliver or throttle**: a full ring short-writes, then holds the writer until the reader drains, and returns `EAGAIN` at the safety cap. An unread peer slows its producer and costs it no bytes. A wapp cannot DoS the engine by spamming stdout — the ring is bounded and the writer waits on it.
 - The launch-config parser uses a bounded token pool and a 2048-byte stack buffer; an oversized config returns `-EMSGSIZE` rather than overflowing.
 

@@ -17,7 +17,7 @@ These five `/dev/` entries are **always present** in every wapp, independent of 
 | Path | Driver | Access | Semantics |
 |------|--------|--------|-----------|
 | `/dev/null` | null | rw | Reads return 0 bytes (EOF); writes are accepted and discarded. |
-| `/dev/pipe/<name>` | pipe | rw | Process-wide named-pipe IPC. See below. |
+| `/dev/pipe/<name>` | pipe | rw | Process-wide named-pipe IPC, limited to the names the wapp's `pipe` grant lists. See below. |
 | `/dev/stdin` | stdio | r | Alias of WASI fd 0 — reads from the same console backing. |
 | `/dev/stdout` | stdio | w | Alias of WASI fd 1 — writes to the same console backing. |
 | `/dev/stderr` | stdio | w | Alias of WASI fd 2 — writes to the same console backing. |
@@ -27,6 +27,12 @@ The stdio entries alias the wapp's standard descriptors: opening `/dev/stdout` a
 ### `/dev/pipe/<name>` — inter-wapp IPC
 
 A named pipe over a single process-wide store: a pipe opened by one wapp is visible to another, so it is a wapp-to-wapp channel. Open `/dev/pipe/<name>` for reading or writing; the name is created on first use.
+
+- **Names** hold 1 to 31 characters of `[A-Za-z0-9._-]`. A longer name returns `ENAMETOOLONG` and any other name returns `EINVAL`; the engine never shortens a name.
+- **A `pipe` grant lists the names a wapp reaches** and in which direction. A grant is a `drivers[]` entry whose `options` is a comma-separated list of `read=<name>` and `write=<name>` clauses; a name may appear in both. A name the grant does not list returns `ENOENT`, whether or not the pipe exists. A listed name opened in the other direction returns `EACCES`. Reading `/dev/pipe` lists only the existing pipes the grant names.
+- **A grant may span several entries.** The entries of one wapp merge, so a wapp whose clauses exceed one `options` string (128 bytes by default) repeats the entry. A wapp lists at most `CONFIG_WANTED_PIPE_GRANTS` distinct names (8 by default).
+- **A wapp with no `pipe` grant reaches every pipe** when the build keeps `CONFIG_WANTED_VFS_PIPE_AMBIENT` (the default), and none otherwise. `/dev/pipe` is present either way.
+- **A wapp reaches its own console pipes** through its console slots without a grant (see [Control Plane Reference](control-plane-reference.md)).
 
 - **Ring buffer** of 4096 bytes; up to 8 concurrent named pipes.
 - **Reads block by default.** With no data and a writer attached (or none yet seen), a read sleeps and retries; `O_NONBLOCK` opts out. A bounded safety cap limits the wait.

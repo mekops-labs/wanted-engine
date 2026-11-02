@@ -235,8 +235,8 @@ Entry shapes per section:
 
 | Section | Keys | Notes |
 |---------|------|-------|
-| `console.*` | `name`, `options` | `name` is one of `null`, `log`, `pipe`, `platform`. For `pipe`, `options` may pin the pipe name (`name=<pipe>`); otherwise it is `<wapp>.<slot>`. |
-| `drivers[]` | `name`, `options` | `name` is a device driver (e.g. `null`, `wanted`); mounted at `/dev/<name>`. |
+| `console.*` | `name`, `options` | `name` is one of `null`, `log`, `pipe`, `platform`. For `pipe`, `options` may pin the pipe name (`name=<pipe>`; otherwise it is `<wapp>.<slot>`) and may add `eof`, which ends the stream when the wapp ends. |
+| `drivers[]` | `name`, `options` | `name` is a device driver (e.g. `null`, `wanted`, `pipe`); mounted at `/dev/<name>`. Several `pipe` entries merge into one `/dev/pipe`. |
 | `mounts[]` | `name`, `path`, `options` | `name` is a file/backend driver (`platform`, `volume`, `config`, `9p`, `log`); `path` is required, absolute, and outside `/dev`/`/net`. |
 | `sockets[]` | `name`, `address`, `role`, `backlog`, `max_conns` | `name` is the `/net` node label; `address` is a URL — `<scheme>://<host>:<port>` with scheme `tcp`/`udp`/`tcps`/`udps`, or `serial://<device-path>`. `role` is `connect` (default, reaches the address) or `listen` (binds it, making the wapp a server); `backlog` and `max_conns` bound a stream listener and are rejected on any other entry. |
 

@@ -6,6 +6,16 @@ Unreleased
 
 ### Added
 
+- The `pipe` grant lists the pipes a wapp reaches at `/dev/pipe`: `read=<name>`
+  and `write=<name>` clauses in the `drivers[]` entry's `options`. Entries of
+  one wapp merge.
+- `CONFIG_WANTED_PIPE_GRANTS` sets how many distinct names one wapp's pipe
+  grant lists (8).
+- `CONFIG_WANTED_VFS_PIPE_AMBIENT` (on) lets a wapp with no pipe grant reach
+  every pipe. Off, such a wapp sees an empty `/dev/pipe`.
+- The `eof` option of a `pipe` console slot ends the stream when the wapp ends.
+  Readers of `out` and `err` get end of stream after the buffered bytes. A
+  peer's write to `in` returns `EPIPE`.
 - `CONFIG_WANTED_WAMR_INTERP_FAST` builds the fast WAMR interpreter on every
   target. The classic interpreter stays the default.
 - The `wbench` and `wlkload` wapps, `tools/wamr-mode-bench/`, and the
@@ -13,6 +23,10 @@ Unreleased
 
 ### Changed
 
+- A pipe name over 31 characters returns `ENAMETOOLONG` and a name with a
+  character outside `[A-Za-z0-9._-]` returns `EINVAL`. The engine no longer
+  truncates a name.
+- A `pipe` console slot refuses an unknown option or a bad `name=` at launch.
 - An ESP-IDF build sets the WAMR interpreter in sdkconfig from the board
   defconfig, and stops when sdkconfig names the other interpreter.
 

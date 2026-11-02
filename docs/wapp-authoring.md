@@ -92,11 +92,11 @@ What a wapp sees under `/` is assembled by the VFS router from three sources:
 2. **Preopens** — host directories bound into the namespace as read-write storage. See below.
 3. **Device, network, and process namespaces** — `/dev/`, `/net/`, `/proc/`, overlaid by the router. The full path list is the [VFS Reference](vfs-reference.md).
 
-Five `/dev/` entries are always present (`/dev/null`, `/dev/pipe/<name>`, and the `stdin`/`stdout`/`stderr` stubs). Everything else — a console, a `platform` mount, a socket at `/net/...`, the `/dev/wanted` control plane — is granted only when the launch config asks for it.
+Five `/dev/` entries are always present (`/dev/null`, `/dev/pipe/<name>`, and the `stdin`/`stdout`/`stderr` stubs); the names `/dev/pipe` reaches depend on the launch config's `pipe` grant. Everything else — a console, a `platform` mount, a socket at `/net/...`, the `/dev/wanted` control plane — is granted only when the launch config asks for it.
 
 ## Inter-wapp IPC
 
-`/dev/pipe/<name>` is a process-wide named pipe: a pipe one wapp opens is visible to another, making it a wapp-to-wapp channel. It is always available (no config needed).
+`/dev/pipe/<name>` is a process-wide named pipe: a pipe one wapp opens is visible to another, making it a wapp-to-wapp channel. A wapp reaches the names its launch config's `pipe` grant lists, for example `{"name": "pipe", "options": "read=smoke"}`; a build that keeps ambient pipes (the default) lets a wapp with no grant reach every name. A name is 1 to 31 characters of `[A-Za-z0-9._-]`.
 
 ```c
 /* writer */
@@ -117,6 +117,7 @@ Semantics to design around:
 
 - **Ring buffer of 4096 bytes**; up to 8 named pipes exist concurrently.
 - **Reads block by default.** With no data buffered and a writer attached (or none seen yet), a read sleeps and retries up to a bounded safety cap. Open with `O_NONBLOCK` to get `EAGAIN` instead.
+- **A name outside the grant** returns `ENOENT`; a granted name opened in the other direction returns `EACCES`.
 - **EOF** is delivered only after a writer has attached and all writers have closed — so a reader that starts first waits for the writer rather than seeing a premature EOF.
 
 ## Preopens
