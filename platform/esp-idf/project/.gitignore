@@ -1,8 +1,9 @@
-# ESP-IDF build output and generated config (regenerated from sdkconfig.defaults).
+# ESP-IDF build output and generated config, regenerated from the defaults.
 build*/
 sdkconfig
 sdkconfig.old
 sdkconfig.stamp
+sdkconfig.wamr-interp
 .cache/
 dependencies.lock
 managed_components/

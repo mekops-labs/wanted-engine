@@ -12,6 +12,28 @@ config WANTED_DEBUG_TRACES
 	  driver open/close). Off, they cost nothing. Raw write() to stderr,
 	  verbose enough to affect timing on a constrained target.
 
+choice WANTED_WAMR_INTERP
+	prompt "WebAssembly interpreter"
+	default WANTED_WAMR_INTERP_CLASSIC
+	help
+	  The WAMR interpreter every wapp runs on, one per firmware image.
+	  Changing it on NuttX needs a clean build.
+
+config WANTED_WAMR_INTERP_CLASSIC
+	bool "classic"
+	help
+	  Interprets the module's own bytecode. The smallest RAM cost per
+	  loaded module.
+
+config WANTED_WAMR_INTERP_FAST
+	bool "fast"
+	help
+	  Translates each function into an internal code at load and runs
+	  that. Wapp code runs about 1 to 3 times faster; each loaded module
+	  keeps the translated code in RAM, several times its code section.
+
+endchoice
+
 endmenu
 
 menu "VFS drivers"

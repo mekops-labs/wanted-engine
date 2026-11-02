@@ -123,6 +123,17 @@ include(${ENGINE}/platform/esp-idf/board-defconfig.cmake)
 # CONFIG_WANTED_MAX_WAPPS below the same number the header carries.
 include(${ENGINE}/cmake/Kconfig.cmake)
 
+# sdkconfig builds WAMR, so its interpreter must be the one the engine names.
+if((CONFIG_WANTED_WAMR_INTERP_FAST AND NOT CONFIG_WAMR_INTERP_FAST)
+   OR (NOT CONFIG_WANTED_WAMR_INTERP_FAST AND CONFIG_WAMR_INTERP_FAST))
+    message(
+        FATAL_ERROR
+            "CONFIG_WANTED_WAMR_INTERP_FAST='${CONFIG_WANTED_WAMR_INTERP_FAST}' "
+            "in the engine configuration, but CONFIG_WAMR_INTERP_FAST="
+            "'${CONFIG_WAMR_INTERP_FAST}' in sdkconfig. Build through "
+            "`make build`, which sets sdkconfig from the board defconfig.")
+endif()
+
 # Configurable drivers, gated like src/CMakeLists.txt. Their component REQUIRES
 # stay unconditional: ESP-IDF resolves REQUIRES before .config exists, so one
 # gated on CONFIG_WANTED_VFS_* never reaches the resolver.
