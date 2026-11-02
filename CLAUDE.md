@@ -1,6 +1,6 @@
 # WANTED Engine — AI Agent Instructions
 
-WANTED (Web Assembly Nanocontainer Technology for Embedded Devices) is a Cloud-Native VFS Router written in C that executes WebAssembly applications ("wapps") in strict memory isolation on Linux and embedded targets (NuttX/ESP32). It uses WAMR 2.4.4 (WebAssembly Micro Runtime) in classic interpreted mode, a stateless prefix-based VFS router, and OCI-compatible TarFS layering.
+WANTED (Web Assembly Nanocontainer Technology for Embedded Devices) is a Cloud-Native VFS Router written in C that executes WebAssembly applications ("wapps") in strict memory isolation on Linux and embedded targets (NuttX/ESP32). It uses WAMR 2.4.4 (WebAssembly Micro Runtime) in interpreted mode (classic by default, fast through `CONFIG_WANTED_WAMR_INTERP_FAST`), a stateless prefix-based VFS router, and OCI-compatible TarFS layering.
 
 Public API surface is a single function: `int WantedStart(const char *cfg, size_t cfgLen)` in `include/wanted.h`.
 

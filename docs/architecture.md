@@ -117,7 +117,7 @@ The [Platform Guide](platform-guide.md) covers each target and the porting check
 
 ## WAMR runtime
 
-The WebAssembly core is [WAMR](https://github.com/bytecodealliance/wasm-micro-runtime) 2.4.4 in **classic interpreter** mode (`WAMR_BUILD_INTERP=1`, `WAMR_BUILD_FAST_INTERP=0`, no AOT/JIT) — no per-target code generation, which is what lets the same engine and the same wapps run on Linux and a microcontroller-class RTOS. Per wapp, the engine loads the pre-fetched module, instantiates it, creates an execution environment, and registers the native symbols: the WASI `snapshot_preview1` bridge (routed to the VFS). Native registration is global-once; each wapp gets its own instance, execution environment, and thread.
+The WebAssembly core is [WAMR](https://github.com/bytecodealliance/wasm-micro-runtime) 2.4.4 in interpreter mode, with no AOT/JIT. The **classic interpreter** is the default. `CONFIG_WANTED_WAMR_INTERP_FAST` selects the fast interpreter for a build (see [General and host-build options](platform-guide.md#general-and-host-build-options)). Both interpreters need no per-target code generation, which is what lets the same engine and the same wapps run on Linux and a microcontroller-class RTOS. Per wapp, the engine loads the pre-fetched module, instantiates it, creates an execution environment, and registers the native symbols: the WASI `snapshot_preview1` bridge (routed to the VFS). Native registration is global-once; each wapp gets its own instance, execution environment, and thread.
 
 ## Boot sequence
 
