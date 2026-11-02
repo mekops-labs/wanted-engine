@@ -275,6 +275,22 @@ config WANTED_PIPE_MAX_PIPES
 	  not any wapp opens /dev/pipe (32 KiB at the defaults). Also sizes
 	  a stack array in the driver's readdir.
 
+config WANTED_PIPE_GRANTS
+	int "Pipe names per pipe grant"
+	default 8
+	range 1 32
+	help
+	  Distinct names one wapp's pipe grant may list. Sizes a per-wapp
+	  table of names, allocated once at launch.
+
+config WANTED_VFS_PIPE_AMBIENT
+	bool "Wapps without a pipe grant reach every pipe"
+	default y
+	help
+	  Without a pipe grant a wapp reaches every named pipe in the engine.
+	  A wapp that holds a grant always reaches only the names it lists.
+	  Deselect to give a wapp with no grant an empty /dev/pipe.
+
 config WANTED_GPIO_MAX_PINS
 	int "Pins per gpio grant"
 	default 8

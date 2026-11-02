@@ -753,6 +753,7 @@ static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
  * first, so no other table can shadow a security-relevant name. */
 static const vfs_driver_table_t core_driver_table[] = {
     {"null", VfsNullInit},
+    {"pipe", VfsPipeInit},
     {"log", VfsLogInit},
     {"platform", platformFsInitRW},
 #ifdef CONFIG_WANTED_VFS_9P

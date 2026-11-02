@@ -3,7 +3,10 @@
 #include "unity_fixture.h"
 
 #include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
+#include <vfs-drivers.h>
 
 #include "test-utils.h"
 
@@ -446,18 +449,18 @@ TEST_TEAR_DOWN(pipe_console) {
 
 static void consoleOut(const char *name) {
     VfsRegister(cvfs, "<stdout>",
-                VfsPipeConsoleCreate(cstore, name, false, VFS_O_WRONLY));
+                VfsPipeConsoleCreate(cstore, name, false, VFS_O_WRONLY, false));
 }
 
 static void consoleOutNonblock(const char *name) {
     VfsRegister(cvfs, "<stdout>",
                 VfsPipeConsoleCreate(cstore, name, false,
-                                     VFS_O_WRONLY | VFS_O_NONBLOCK));
+                                     VFS_O_WRONLY | VFS_O_NONBLOCK, false));
 }
 
 static void consoleIn(const char *name) {
     VfsRegister(cvfs, "<stdin>",
-                VfsPipeConsoleCreate(cstore, name, true, VFS_O_RDONLY));
+                VfsPipeConsoleCreate(cstore, name, true, VFS_O_RDONLY, false));
 }
 
 /* A console writer delivers or waits; it never discards buffered bytes to
@@ -605,9 +608,9 @@ TEST(pipe_wake, WriteToAFullRingEndsOnTheWake) {
 }
 
 TEST(pipe_wake, ConsoleReadEndsOnTheWake) {
-    VfsRegister(
-        wvfs, "<stdin>",
-        withWake(VfsPipeConsoleCreate(wstore, "in", true, VFS_O_RDONLY)));
+    VfsRegister(wvfs, "<stdin>",
+                withWake(VfsPipeConsoleCreate(wstore, "in", true, VFS_O_RDONLY,
+                                              false)));
 
     PlatformWakeRaise(wake);
     char buf[8];
@@ -618,4 +621,576 @@ TEST_GROUP_RUNNER(pipe_wake) {
     RUN_TEST_CASE(pipe_wake, ReadWithNoWriterEndsOnTheWake);
     RUN_TEST_CASE(pipe_wake, WriteToAFullRingEndsOnTheWake);
     RUN_TEST_CASE(pipe_wake, ConsoleReadEndsOnTheWake);
+}
+
+/***************************************/
+TEST_GROUP(pipe_names);
+/***************************************/
+
+TEST_SETUP(pipe_names) { SetupPipeVfs(); }
+
+TEST_TEAR_DOWN(pipe_names) { TeardownPipeVfs(); }
+
+TEST(pipe_names, CheckAcceptsTheCharacterSet) {
+    TEST_ASSERT_EQUAL_INT(0, PipeNameCheck("a"));
+    TEST_ASSERT_EQUAL_INT(0, PipeNameCheck("Az09._-"));
+    TEST_ASSERT_EQUAL_INT(0, PipeNameCheck("t.ssh.out"));
+}
+
+TEST(pipe_names, CheckRefusesEmptyAndOtherCharacters) {
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeNameCheck(NULL));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeNameCheck(""));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeNameCheck("a b"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeNameCheck("a/b"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeNameCheck("a=b"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeNameCheck("caf\xc3\xa9"));
+}
+
+TEST(pipe_names, CheckRefusesAPastTheLimit) {
+    char name[PIPE_NAME_MAX + 3];
+    memset(name, 'a', sizeof(name));
+    name[PIPE_NAME_MAX] = '\0';
+    TEST_ASSERT_EQUAL_INT(0, PipeNameCheck(name));
+    name[PIPE_NAME_MAX] = 'a';
+    name[PIPE_NAME_MAX + 1] = '\0';
+    TEST_ASSERT_EQUAL_INT(-ENAMETOOLONG, PipeNameCheck(name));
+}
+
+TEST(pipe_names, ALongNameIsRefusedAtOpenNotTruncated) {
+    char path[96] = "/dev/pipe/";
+    size_t base = strlen(path);
+    memset(path + base, 'a', 40);
+    path[base + 40] = '\0';
+    TEST_ASSERT_EQUAL_INT(-ENAMETOOLONG, VfsOpen(vfs, path, VFS_O_RDONLY));
+    /* Two names that differ only past the limit never reach one pipe. */
+    memset(path + base, 'a', PIPE_NAME_MAX);
+    path[base + PIPE_NAME_MAX] = 'x';
+    path[base + PIPE_NAME_MAX + 1] = '\0';
+    TEST_ASSERT_EQUAL_INT(-ENAMETOOLONG, VfsOpen(vfs, path, VFS_O_WRONLY));
+}
+
+TEST(pipe_names, ABadCharacterIsRefusedAtOpen) {
+    TEST_ASSERT_EQUAL_INT(-EINVAL, VfsOpen(vfs, "/dev/pipe/a b", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, VfsOpen(vfs, "/dev/pipe/a=b", VFS_O_RDONLY));
+}
+
+TEST(pipe_names, ConsoleRefusesABadName) {
+    TEST_ASSERT_NULL(VfsPipeConsoleCreate(store, "a b", false, 0, false));
+    TEST_ASSERT_NULL(VfsPipeConsoleCreate(store, "", false, 0, false));
+}
+
+TEST(pipe_names, ConsoleOptionsParseNameAndEof) {
+    char name[PIPE_NAME_MAX + 2];
+    bool eof = true;
+    TEST_ASSERT_EQUAL_INT(0,
+                          PipeConsoleOptions(NULL, name, sizeof(name), &eof));
+    TEST_ASSERT_FALSE(eof);
+    TEST_ASSERT_EQUAL_STRING("", name);
+
+    TEST_ASSERT_EQUAL_INT(
+        0, PipeConsoleOptions("name=wire", name, sizeof(name), &eof));
+    TEST_ASSERT_EQUAL_STRING("wire", name);
+    TEST_ASSERT_FALSE(eof);
+
+    TEST_ASSERT_EQUAL_INT(
+        0, PipeConsoleOptions("eof,name=w.1", name, sizeof(name), &eof));
+    TEST_ASSERT_EQUAL_STRING("w.1", name);
+    TEST_ASSERT_TRUE(eof);
+
+    TEST_ASSERT_EQUAL_INT(0,
+                          PipeConsoleOptions("eof", name, sizeof(name), &eof));
+    TEST_ASSERT_EQUAL_STRING("", name);
+    TEST_ASSERT_TRUE(eof);
+}
+
+TEST(pipe_names, ConsoleOptionsRefuseWhatTheyDoNotKnow) {
+    char name[PIPE_NAME_MAX + 2];
+    bool eof;
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, PipeConsoleOptions("bogus", name, sizeof(name), &eof));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, PipeConsoleOptions("name=", name, sizeof(name), &eof));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, PipeConsoleOptions("name=a b", name, sizeof(name), &eof));
+    TEST_ASSERT_EQUAL_INT(
+        -ENAMETOOLONG,
+        PipeConsoleOptions("name=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                           name, sizeof(name), &eof));
+}
+
+TEST_GROUP_RUNNER(pipe_names) {
+    RUN_TEST_CASE(pipe_names, CheckAcceptsTheCharacterSet);
+    RUN_TEST_CASE(pipe_names, CheckRefusesEmptyAndOtherCharacters);
+    RUN_TEST_CASE(pipe_names, CheckRefusesAPastTheLimit);
+    RUN_TEST_CASE(pipe_names, ALongNameIsRefusedAtOpenNotTruncated);
+    RUN_TEST_CASE(pipe_names, ABadCharacterIsRefusedAtOpen);
+    RUN_TEST_CASE(pipe_names, ConsoleRefusesABadName);
+    RUN_TEST_CASE(pipe_names, ConsoleOptionsParseNameAndEof);
+    RUN_TEST_CASE(pipe_names, ConsoleOptionsRefuseWhatTheyDoNotKnow);
+}
+
+/***************************************/
+TEST_GROUP(pipe_scope);
+/***************************************/
+
+/* Two wapps over one store: `other` reaches every pipe and creates them, the
+ * scoped wapp reaches only the names its grant lists. */
+static pipe_store_t *sstore;
+static vfs_ctx_t scoped;
+static vfs_ctx_t other;
+
+static void scopedWith(const char *grant) {
+    DevFs_Register(scoped, "pipe", PipeDriverCreateScoped(sstore, grant));
+}
+
+TEST_SETUP(pipe_scope) {
+    sstore = PipeStoreNew();
+    scoped = VfsInit();
+    other = VfsInit();
+    DevFs_Register(other, "pipe", PipeDriverCreate(sstore));
+}
+
+TEST_TEAR_DOWN(pipe_scope) {
+    VfsDestroy(&scoped);
+    VfsDestroy(&other);
+    PipeStoreFree(sstore);
+    sstore = NULL;
+}
+
+TEST(pipe_scope, AGrantOpensItsNamesInTheirDirections) {
+    scopedWith("read=in,write=out,read=both,write=both");
+    int r = VfsOpen(scoped, "/dev/pipe/in", VFS_O_RDONLY);
+    int w = VfsOpen(scoped, "/dev/pipe/out", VFS_O_WRONLY);
+    int br = VfsOpen(scoped, "/dev/pipe/both", VFS_O_RDONLY);
+    int bw = VfsOpen(scoped, "/dev/pipe/both", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(r >= 0);
+    TEST_ASSERT_TRUE(w >= 0);
+    TEST_ASSERT_TRUE(br >= 0);
+    TEST_ASSERT_TRUE(bw >= 0);
+    VfsClose(scoped, r);
+    VfsClose(scoped, w);
+    VfsClose(scoped, br);
+    VfsClose(scoped, bw);
+}
+
+TEST(pipe_scope, AnUngrantedNameIsAbsentEvenWhenThePipeExists) {
+    scopedWith("read=mine");
+    int theirs = VfsOpen(other, "/dev/pipe/theirs", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(theirs >= 0);
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpen(scoped, "/dev/pipe/theirs", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpen(scoped, "/dev/pipe/never", VFS_O_WRONLY));
+    VfsClose(other, theirs);
+}
+
+TEST(pipe_scope, TheOtherDirectionIsRefused) {
+    scopedWith("read=in,write=out");
+    TEST_ASSERT_EQUAL_INT(-EACCES,
+                          VfsOpen(scoped, "/dev/pipe/in", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(-EACCES,
+                          VfsOpen(scoped, "/dev/pipe/out", VFS_O_RDONLY));
+}
+
+TEST(pipe_scope, ReadWriteIsRefusedBeforeTheScopeIsConsulted) {
+    scopedWith("read=in");
+    TEST_ASSERT_EQUAL_INT(-EINVAL, VfsOpen(scoped, "/dev/pipe/in", VFS_O_RDWR));
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          VfsOpen(scoped, "/dev/pipe/ghost", VFS_O_RDWR));
+}
+
+TEST(pipe_scope, AGrantedPipeCarriesDataToAnotherWapp) {
+    scopedWith("write=wire");
+    int w = VfsOpen(scoped, "/dev/pipe/wire", VFS_O_WRONLY);
+    int r = VfsOpen(other, "/dev/pipe/wire", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(w >= 0);
+    TEST_ASSERT_TRUE(r >= 0);
+    TEST_ASSERT_EQUAL_INT(2, VfsWrite(scoped, w, "ok", 2));
+    char buf[4] = {0};
+    TEST_ASSERT_EQUAL_INT(2, VfsRead(other, r, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("ok", buf, 2);
+    VfsClose(scoped, w);
+    VfsClose(other, r);
+}
+
+TEST(pipe_scope, TheListingHoldsOnlyGrantedNames) {
+    scopedWith("read=mine");
+    int mine = VfsOpen(scoped, "/dev/pipe/mine", VFS_O_RDONLY);
+    int theirs = VfsOpen(other, "/dev/pipe/theirs", VFS_O_RDONLY);
+    int dir = VfsOpen(scoped, "/dev/pipe", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(mine >= 0);
+    TEST_ASSERT_TRUE(theirs >= 0);
+    TEST_ASSERT_TRUE(dir >= 0);
+
+    uint8_t buf[128];
+    uint64_t cookie = 0;
+    size_t used = 0;
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(scoped, dir, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "mine", 4));
+    TEST_ASSERT_FALSE(HasBytes(buf, used, "theirs", 6));
+
+    VfsClose(scoped, dir);
+    VfsClose(scoped, mine);
+    VfsClose(other, theirs);
+}
+
+TEST(pipe_scope, AnEmptyScopeReachesNothingButHasADirectory) {
+    scopedWith(NULL);
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpen(scoped, "/dev/pipe/x", VFS_O_RDONLY));
+    int dir = VfsOpen(scoped, "/dev/pipe", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(dir >= 0);
+    uint8_t buf[64];
+    uint64_t cookie = 0;
+    size_t used = 1;
+    TEST_ASSERT_EQUAL_INT(
+        0, VfsReadDir(scoped, dir, buf, sizeof(buf), &cookie, &used));
+    TEST_ASSERT_EQUAL_size_t(0, used);
+    VfsClose(scoped, dir);
+}
+
+TEST(pipe_scope, AMalformedGrantIsRefused) {
+    TEST_ASSERT_NULL(PipeDriverCreateScoped(sstore, "bogus"));
+    TEST_ASSERT_NULL(PipeDriverCreateScoped(sstore, "read="));
+    TEST_ASSERT_NULL(PipeDriverCreateScoped(sstore, "read=a b"));
+    TEST_ASSERT_NULL(PipeDriverCreateScoped(sstore, "rw=a"));
+    TEST_ASSERT_NULL(PipeDriverCreateScoped(sstore, "read=a,"));
+    TEST_ASSERT_NULL(PipeDriverCreateScoped(sstore, "read=a,,write=b"));
+}
+
+TEST(pipe_scope, AGrantPastItsCapIsRefused) {
+    char grant[CONFIG_WANTED_MAX_OPTIONS_SIZE];
+    size_t used = 0;
+    for (int i = 0; i <= CONFIG_WANTED_PIPE_GRANTS; i++) {
+        int n = snprintf(grant + used, sizeof(grant) - used, "%sread=p%d",
+                         i ? "," : "", i);
+        TEST_ASSERT_TRUE(n > 0 && used + (size_t)n < sizeof(grant));
+        used += (size_t)n;
+    }
+    TEST_ASSERT_NULL(PipeDriverCreateScoped(sstore, grant));
+}
+
+TEST(pipe_scope, GrantsAddUpAcrossCalls) {
+    vfs_driver_t *drv = PipeDriverCreateScoped(sstore, NULL);
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_EQUAL_INT(0, PipeDriverGrant(drv, "read=a"));
+    TEST_ASSERT_EQUAL_INT(0, PipeDriverGrant(drv, "write=a,read=b"));
+    DevFs_Register(scoped, "pipe", drv);
+    int ar = VfsOpen(scoped, "/dev/pipe/a", VFS_O_RDONLY);
+    int aw = VfsOpen(scoped, "/dev/pipe/a", VFS_O_WRONLY);
+    int br = VfsOpen(scoped, "/dev/pipe/b", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(ar >= 0 && aw >= 0 && br >= 0);
+    TEST_ASSERT_EQUAL_INT(-EACCES,
+                          VfsOpen(scoped, "/dev/pipe/b", VFS_O_WRONLY));
+    VfsClose(scoped, ar);
+    VfsClose(scoped, aw);
+    VfsClose(scoped, br);
+}
+
+TEST(pipe_scope, AFailedGrantAddsNothing) {
+    vfs_driver_t *drv = PipeDriverCreateScoped(sstore, "read=keep");
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeDriverGrant(drv, "read=new,bogus"));
+    TEST_ASSERT_EQUAL_INT(-ENAMETOOLONG,
+                          PipeDriverGrant(drv, "read=new,write=aaaaaaaaaaaaaaaa"
+                                               "aaaaaaaaaaaaaaaaaaaa"));
+    DevFs_Register(scoped, "pipe", drv);
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpen(scoped, "/dev/pipe/new", VFS_O_RDONLY));
+    int keep = VfsOpen(scoped, "/dev/pipe/keep", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(keep >= 0);
+    VfsClose(scoped, keep);
+}
+
+TEST(pipe_scope, GrantsAcrossCallsShareTheCap) {
+    vfs_driver_t *drv = PipeDriverCreateScoped(sstore, NULL);
+    TEST_ASSERT_NOT_NULL(drv);
+    for (int i = 0; i < CONFIG_WANTED_PIPE_GRANTS; i++) {
+        char one[32];
+        snprintf(one, sizeof(one), "read=p%d", i);
+        TEST_ASSERT_EQUAL_INT(0, PipeDriverGrant(drv, one));
+    }
+    TEST_ASSERT_EQUAL_INT(-ENOSPC, PipeDriverGrant(drv, "read=one-more"));
+    /* A name already listed adds a direction, not an entry. */
+    TEST_ASSERT_EQUAL_INT(0, PipeDriverGrant(drv, "write=p0"));
+    drv->Destroy(drv);
+}
+
+TEST(pipe_scope, AnUnscopedDriverTakesNoGrant) {
+    vfs_driver_t *drv = PipeDriverCreate(sstore);
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeDriverGrant(drv, "read=a"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeDriverGrant(NULL, "read=a"));
+    drv->Destroy(drv);
+}
+
+TEST(pipe_scope, TheGrantInitDemandsAName) {
+    TEST_ASSERT_NULL(VfsPipeInit(NULL, NULL));
+    TEST_ASSERT_NULL(VfsPipeInit(NULL, ""));
+    TEST_ASSERT_NULL(VfsPipeInit(NULL, "bogus"));
+    vfs_driver_t *drv = VfsPipeInit(NULL, "read=boot.in");
+    TEST_ASSERT_NOT_NULL(drv);
+    drv->Destroy(drv);
+}
+
+TEST_GROUP_RUNNER(pipe_scope) {
+    RUN_TEST_CASE(pipe_scope, AGrantOpensItsNamesInTheirDirections);
+    RUN_TEST_CASE(pipe_scope, AnUngrantedNameIsAbsentEvenWhenThePipeExists);
+    RUN_TEST_CASE(pipe_scope, TheOtherDirectionIsRefused);
+    RUN_TEST_CASE(pipe_scope, ReadWriteIsRefusedBeforeTheScopeIsConsulted);
+    RUN_TEST_CASE(pipe_scope, AGrantedPipeCarriesDataToAnotherWapp);
+    RUN_TEST_CASE(pipe_scope, TheListingHoldsOnlyGrantedNames);
+    RUN_TEST_CASE(pipe_scope, AnEmptyScopeReachesNothingButHasADirectory);
+    RUN_TEST_CASE(pipe_scope, AMalformedGrantIsRefused);
+    RUN_TEST_CASE(pipe_scope, AGrantPastItsCapIsRefused);
+    RUN_TEST_CASE(pipe_scope, GrantsAddUpAcrossCalls);
+    RUN_TEST_CASE(pipe_scope, AFailedGrantAddsNothing);
+    RUN_TEST_CASE(pipe_scope, GrantsAcrossCallsShareTheCap);
+    RUN_TEST_CASE(pipe_scope, AnUnscopedDriverTakesNoGrant);
+    RUN_TEST_CASE(pipe_scope, TheGrantInitDemandsAName);
+}
+
+/***************************************/
+TEST_GROUP(pipe_eof);
+/***************************************/
+
+/* A console with eof ends its stream when the wapp ends, which the tests model
+ * by destroying the wapp's VFS. A peer reaches the pipe by path. */
+static pipe_store_t *estore;
+static vfs_ctx_t wapp;
+static vfs_ctx_t peer;
+
+TEST_SETUP(pipe_eof) {
+    estore = PipeStoreNew();
+    wapp = VfsInit();
+    peer = VfsInit();
+    DevFs_Register(peer, "pipe", PipeDriverCreate(estore));
+}
+
+TEST_TEAR_DOWN(pipe_eof) {
+    VfsDestroy(&wapp);
+    VfsDestroy(&peer);
+    PipeStoreFree(estore);
+    estore = NULL;
+}
+
+static void wappOut(const char *name, bool eof) {
+    VfsRegister(wapp, "<stdout>",
+                VfsPipeConsoleCreate(estore, name, false, VFS_O_WRONLY, eof));
+}
+
+static void wappIn(const char *name, bool eof) {
+    VfsRegister(wapp, "<stdin>",
+                VfsPipeConsoleCreate(estore, name, true, VFS_O_RDONLY, eof));
+}
+
+TEST(pipe_eof, TheReaderGetsTheBufferedBytesThenEndOfStream) {
+    wappOut("job.out", true);
+    TEST_ASSERT_EQUAL_INT(3, VfsWrite(wapp, VFS_STDOUT, "abc", 3));
+    int r = VfsOpen(peer, "/dev/pipe/job.out", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(r >= 0);
+
+    VfsDestroy(&wapp);
+
+    char buf[8] = {0};
+    TEST_ASSERT_EQUAL_INT(3, VfsRead(peer, r, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("abc", buf, 3);
+    TEST_ASSERT_EQUAL_INT(0, VfsRead(peer, r, buf, sizeof(buf)));
+    uint32_t avail = 0;
+    int ready = VfsPoll(peer, r, &avail);
+    TEST_ASSERT_TRUE((ready & VFS_POLL_IN) != 0);
+    TEST_ASSERT_TRUE((ready & VFS_POLL_HUP) != 0);
+    VfsClose(peer, r);
+}
+
+TEST(pipe_eof, WithoutEofTheStreamDoesNotEnd) {
+    wappOut("svc.out", false);
+    int r = VfsOpen(peer, "/dev/pipe/svc.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    TEST_ASSERT_TRUE(r >= 0);
+
+    VfsDestroy(&wapp);
+
+    char buf[8];
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(peer, r, buf, sizeof(buf)));
+    VfsClose(peer, r);
+}
+
+TEST(pipe_eof, TheReaderDoesNotSeeEndOfStreamWhileTheWappRuns) {
+    wappOut("run.out", true);
+    int r = VfsOpen(peer, "/dev/pipe/run.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    TEST_ASSERT_TRUE(r >= 0);
+    char buf[8];
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(peer, r, buf, sizeof(buf)));
+    VfsClose(peer, r);
+}
+
+TEST(pipe_eof, AnInPipeRefusesWritesOnceItsWappEnds) {
+    wappIn("job.in", true);
+    int w = VfsOpen(peer, "/dev/pipe/job.in", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(w >= 0);
+    TEST_ASSERT_EQUAL_INT(2, VfsWrite(peer, w, "hi", 2));
+
+    VfsDestroy(&wapp);
+
+    TEST_ASSERT_EQUAL_INT(-EPIPE, VfsWrite(peer, w, "no", 2));
+    uint32_t avail = 0;
+    int ready = VfsPoll(peer, w, &avail);
+    TEST_ASSERT_TRUE((ready & VFS_POLL_HUP) != 0);
+    VfsClose(peer, w);
+}
+
+TEST(pipe_eof, AnInPipeDropsTheBytesItNeverRead) {
+    wappIn("drop.in", true);
+    int w = VfsOpen(peer, "/dev/pipe/drop.in", VFS_O_WRONLY);
+    TEST_ASSERT_EQUAL_INT(4, VfsWrite(peer, w, "left", 4));
+    VfsDestroy(&wapp);
+
+    /* A new reader finds an empty pipe, not the bytes of the ended wapp. */
+    int r = VfsOpen(peer, "/dev/pipe/drop.in", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    char buf[8];
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(peer, r, buf, sizeof(buf)));
+    VfsClose(peer, r);
+    VfsClose(peer, w);
+}
+
+TEST(pipe_eof, ANewReaderLiftsTheRefusal) {
+    wappIn("again.in", true);
+    int w = VfsOpen(peer, "/dev/pipe/again.in", VFS_O_WRONLY);
+    VfsDestroy(&wapp);
+    TEST_ASSERT_EQUAL_INT(-EPIPE, VfsWrite(peer, w, "x", 1));
+
+    int r = VfsOpen(peer, "/dev/pipe/again.in", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(r >= 0);
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(peer, w, "x", 1));
+    VfsClose(peer, r);
+    VfsClose(peer, w);
+}
+
+TEST(pipe_eof, ARestartedWappReachesThePeerOnTheSameDescriptor) {
+    wappOut("svc2.out", false);
+    int r = VfsOpen(peer, "/dev/pipe/svc2.out", VFS_O_RDONLY);
+    VfsDestroy(&wapp);
+    wapp = VfsInit();
+    wappOut("svc2.out", false);
+    TEST_ASSERT_EQUAL_INT(2, VfsWrite(wapp, VFS_STDOUT, "up", 2));
+    char buf[4] = {0};
+    TEST_ASSERT_EQUAL_INT(2, VfsRead(peer, r, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("up", buf, 2);
+    VfsClose(peer, r);
+}
+
+TEST(pipe_eof, APeerThatClosedFindsAFreshPipeOnTheNextRun) {
+    wappOut("next.out", true);
+    int r = VfsOpen(peer, "/dev/pipe/next.out", VFS_O_RDONLY);
+    VfsDestroy(&wapp);
+    char buf[4];
+    TEST_ASSERT_EQUAL_INT(0, VfsRead(peer, r, buf, sizeof(buf)));
+    VfsClose(peer, r);
+
+    wapp = VfsInit();
+    wappOut("next.out", true);
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(wapp, VFS_STDOUT, "n", 1));
+    r = VfsOpen(peer, "/dev/pipe/next.out", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(1, VfsRead(peer, r, buf, sizeof(buf)));
+    VfsClose(peer, r);
+}
+
+TEST(pipe_eof, AnOutputWriterIsToldWhenItsInPeerEnded) {
+    /* A pipeline: one wapp's out feeds another's in, which then ends. */
+    wappOut("x", false);
+    vfs_ctx_t sink = VfsInit();
+    VfsRegister(sink, "<stdin>",
+                VfsPipeConsoleCreate(estore, "x", true, VFS_O_RDONLY, true));
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(wapp, VFS_STDOUT, "a", 1));
+    VfsDestroy(&sink);
+    TEST_ASSERT_EQUAL_INT(-EPIPE, VfsWrite(wapp, VFS_STDOUT, "b", 1));
+}
+
+TEST_GROUP_RUNNER(pipe_eof) {
+    RUN_TEST_CASE(pipe_eof, TheReaderGetsTheBufferedBytesThenEndOfStream);
+    RUN_TEST_CASE(pipe_eof, WithoutEofTheStreamDoesNotEnd);
+    RUN_TEST_CASE(pipe_eof, TheReaderDoesNotSeeEndOfStreamWhileTheWappRuns);
+    RUN_TEST_CASE(pipe_eof, AnInPipeRefusesWritesOnceItsWappEnds);
+    RUN_TEST_CASE(pipe_eof, AnInPipeDropsTheBytesItNeverRead);
+    RUN_TEST_CASE(pipe_eof, ANewReaderLiftsTheRefusal);
+    RUN_TEST_CASE(pipe_eof, ARestartedWappReachesThePeerOnTheSameDescriptor);
+    RUN_TEST_CASE(pipe_eof, APeerThatClosedFindsAFreshPipeOnTheNextRun);
+    RUN_TEST_CASE(pipe_eof, AnOutputWriterIsToldWhenItsInPeerEnded);
+}
+
+/***************************************/
+TEST_GROUP(pipe_handles);
+/***************************************/
+
+TEST_SETUP(pipe_handles) { SetupPipeVfs(); }
+
+TEST_TEAR_DOWN(pipe_handles) { TeardownPipeVfs(); }
+
+/* A wapp holds at most 16 open pipe descriptors, the directory included. */
+TEST(pipe_handles, TheSeventeenthDescriptorIsRefused) {
+    int fds[16];
+    for (int i = 0; i < 16; i++) {
+        fds[i] = VfsOpen(vfs, "/dev/pipe/many", VFS_O_RDONLY);
+        TEST_ASSERT_TRUE(fds[i] >= 0);
+    }
+    TEST_ASSERT_EQUAL_INT(-EMFILE,
+                          VfsOpen(vfs, "/dev/pipe/many", VFS_O_RDONLY));
+    VfsClose(vfs, fds[0]);
+    int again = VfsOpen(vfs, "/dev/pipe/many", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(again >= 0);
+    VfsClose(vfs, again);
+    for (int i = 1; i < 16; i++)
+        VfsClose(vfs, fds[i]);
+}
+
+TEST(pipe_handles, TheDirectoryCountsAgainstTheCap) {
+    int fds[16];
+    int dir = VfsOpen(vfs, "/dev/pipe", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(dir >= 0);
+    for (int i = 0; i < 15; i++) {
+        fds[i] = VfsOpen(vfs, "/dev/pipe/many", VFS_O_RDONLY);
+        TEST_ASSERT_TRUE(fds[i] >= 0);
+    }
+    TEST_ASSERT_EQUAL_INT(-EMFILE,
+                          VfsOpen(vfs, "/dev/pipe/many", VFS_O_RDONLY));
+    for (int i = 0; i < 15; i++)
+        VfsClose(vfs, fds[i]);
+    VfsClose(vfs, dir);
+}
+
+TEST(pipe_handles, SetFlagsSwitchesAnOpenEndToNonBlocking) {
+    int w = VfsOpen(vfs, "/dev/pipe/flip", VFS_O_WRONLY);
+    int r = VfsOpen(vfs, "/dev/pipe/flip", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(r >= 0);
+    TEST_ASSERT_EQUAL_INT(0, VfsSetFlags(vfs, r, VFS_O_NONBLOCK));
+    char buf[4];
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(vfs, r, buf, sizeof(buf)));
+    VfsClose(vfs, r);
+    VfsClose(vfs, w);
+}
+
+TEST(pipe_handles, EndingAWappClosesWhatItLeftOpen) {
+    pipe_store_t *shared2 = PipeStoreNew();
+    vfs_ctx_t a = VfsInit();
+    vfs_ctx_t b = VfsInit();
+    DevFs_Register(a, "pipe", PipeDriverCreate(shared2));
+    DevFs_Register(b, "pipe", PipeDriverCreate(shared2));
+    int w = VfsOpen(a, "/dev/pipe/left", VFS_O_WRONLY);
+    int r = VfsOpen(b, "/dev/pipe/left", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(w >= 0);
+
+    VfsDestroy(&a);
+
+    char buf[4];
+    TEST_ASSERT_EQUAL_INT(0, VfsRead(b, r, buf, sizeof(buf)));
+    VfsClose(b, r);
+    VfsDestroy(&b);
+    PipeStoreFree(shared2);
+}
+
+TEST_GROUP_RUNNER(pipe_handles) {
+    RUN_TEST_CASE(pipe_handles, TheSeventeenthDescriptorIsRefused);
+    RUN_TEST_CASE(pipe_handles, TheDirectoryCountsAgainstTheCap);
+    RUN_TEST_CASE(pipe_handles, SetFlagsSwitchesAnOpenEndToNonBlocking);
+    RUN_TEST_CASE(pipe_handles, EndingAWappClosesWhatItLeftOpen);
 }

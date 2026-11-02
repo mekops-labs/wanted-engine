@@ -87,35 +87,8 @@ static const char *resolveConsole(const char *name, const char *fallback) {
     return (name == NULL || name[0] == '\0') ? fallback : name;
 }
 
-static pipe_store_t *wantedPipeStore(void);
-
 /* Per-slot label used to auto-name a `pipe` console's pipe (<wapp>.<slot>). */
 static const char *const CONSOLE_SLOT[] = {"in", "out", "err"};
-
-/* Pull a `name=<pipe>` value out of a console slot's comma-separated options
- * into `out`; returns true when present. Lets a config pin the console pipe's
- * name (e.g. for a fixed reader) instead of the derived <wapp>.<slot>. */
-static bool consolePipeName(const char *opt, char *out, size_t cap) {
-    if (opt == NULL)
-        return false;
-    const char *p = opt;
-    while (*p != '\0') {
-        if (strncmp(p, "name=", 5) == 0) {
-            p += 5;
-            size_t n = 0;
-            while (p[n] != '\0' && p[n] != ',' && n < cap - 1)
-                n++;
-            memcpy(out, p, n);
-            out[n] = '\0';
-            return n > 0;
-        }
-        while (*p != '\0' && *p != ',')
-            p++;
-        if (*p == ',')
-            p++;
-    }
-    return false;
-}
 
 /* Install one console slot. A `pipe` backing auto-creates a named pipe in the
  * shared store and binds the stream fd to it; every other backing resolves
@@ -133,12 +106,19 @@ static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
     const char *options = wapp->cfg.console[idx].options;
 
     if (strcmp(name, "pipe") == 0) {
-        char pname[WAPP_MAX_NAME_LEN + 8];
-        if (!consolePipeName(options, pname, sizeof(pname)))
+        char pname[PIPE_NAME_MAX + 2];
+        bool eof;
+        int rc = PipeConsoleOptions(options, pname, sizeof(pname), &eof);
+        if (rc < 0) {
+            LOG_ERROR("console.%s: bad pipe options '%s': %s",
+                      CONSOLE_SLOT[idx], options ? options : "", strerror(-rc));
+            return rc;
+        }
+        if (pname[0] == '\0')
             snprintf(pname, sizeof(pname), "%s.%s", wapp->name,
                      CONSOLE_SLOT[idx]);
-        const vfs_driver_t *drv = VfsPipeConsoleCreate(wantedPipeStore(), pname,
-                                                       idx == 0, VFS_O_RDONLY);
+        const vfs_driver_t *drv = VfsPipeConsoleCreate(
+            PipeStoreShared(), pname, idx == 0, VFS_O_RDONLY, eof);
         if (drv == NULL)
             return -ENOMEM;
         return VfsRegister(ctx->vfs, path, withWake(ctx->vfs, drv));
@@ -330,16 +310,6 @@ static int ensureWamrInit(void) {
     RegisterWantedNatives();
     initialized = true;
     return 0;
-}
-
-/* Process-wide pipe store shared by every wapp's /dev/pipe driver, which is
- * what makes a named pipe an inter-wapp channel. First use is the supervisor's
- * thread before any other wapp exists, so the lazy init is race-free. */
-static pipe_store_t *wantedPipeStore(void) {
-    static pipe_store_t *store = NULL;
-    if (!store)
-        store = PipeStoreNew();
-    return store;
 }
 
 /* /proc/memory — wasm stack size + platform heap via PlatformMemoryStats. */
@@ -749,8 +719,6 @@ int WantedWappRun(wapp_data_t *ctx) {
      * a wapp parked in a host call. */
     VfsSetWakeFd(ctx->vfs, PlatformWakeCreate());
     DevFs_Register(ctx->vfs, "null", VfsNullInit(wapp, NULL));
-    DevFs_Register(ctx->vfs, "pipe",
-                   withWake(ctx->vfs, PipeDriverCreate(wantedPipeStore())));
 
     /* The launch config decides whether this wapp reads the privileged /proc
      * entries. */
@@ -808,8 +776,24 @@ int WantedWappRun(wapp_data_t *ctx) {
     /* drivers[]: device singletons. Each mounts at /dev/<name>; the name alone
      * determines the mount, so a config-supplied path is meaningless and
      * rejected. */
+    vfs_driver_t *pipeDrv = NULL;
     for (size_t i = 0; i < wapp->cfg.driversCnt; i++) {
         const wapp_driver_t *d = &wapp->cfg.drivers[i];
+        if (strcmp(d->name, "pipe") == 0) {
+            /* Entries of a pipe grant merge into one /dev/pipe. */
+            int rc = d->path[0] != '\0' || d->options[0] == '\0' ? -EINVAL : 0;
+            if (rc == 0 && pipeDrv == NULL) {
+                pipeDrv = PipeDriverCreateScoped(PipeStoreShared(), NULL);
+                rc = pipeDrv != NULL ? 0 : -ENOMEM;
+            }
+            if (rc == 0)
+                rc = PipeDriverGrant(pipeDrv, d->options);
+            if (rc < 0)
+                LOG_ERROR("drivers[%zu] 'pipe': bad grant '%s': %s", i,
+                          d->options, strerror(-rc));
+            ret += rc;
+            continue;
+        }
         if (d->path[0] != '\0') {
             DEBUG_TRACE("drivers[%zu] '%s': path not allowed", i, d->name);
             ret += -EINVAL;
@@ -820,6 +804,19 @@ int WantedWappRun(wapp_data_t *ctx) {
         ret += installEntry(ctx->vfs, wapp, "drivers", i, d->name, d->name,
                             mount, d->options);
     }
+
+    /* A wapp with no pipe grant reaches every pipe where the build keeps
+     * ambient pipes, and none otherwise; /dev/pipe is present either way. */
+    if (pipeDrv == NULL) {
+#ifdef CONFIG_WANTED_VFS_PIPE_AMBIENT
+        pipeDrv = PipeDriverCreate(PipeStoreShared());
+#else
+        pipeDrv = PipeDriverCreateScoped(PipeStoreShared(), NULL);
+#endif
+    }
+    if (pipeDrv == NULL ||
+        DevFs_Register(ctx->vfs, "pipe", withWake(ctx->vfs, pipeDrv)) < 0)
+        ret += -ENOMEM;
 
     /* sockets[]: named sockets created at /net/<name>. The transport spec is
      * the entry's address (carried in options, with its role and listen bounds

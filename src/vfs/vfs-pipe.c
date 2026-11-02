@@ -8,6 +8,7 @@
 #include "vfs-internal.h"
 #include <debug_trace.h>
 #include <platform.h>
+#include <vfs-drivers.h>
 #include <vfs-pipe.h>
 #include <vfs.h>
 #include <wanted-autoconf.h>
@@ -28,7 +29,7 @@
 #define PIPE_POLL_MAX_NS 5000000000ULL /* 5 s safety cap */
 
 typedef struct named_pipe_t {
-    char name[MAX_ENTRY_NAME_LEN];
+    char name[PIPE_NAME_MAX + 1];
     uint8_t buf[CONFIG_WANTED_PIPE_BUF_SIZE];
     size_t rpos;
     size_t data_len;
@@ -38,6 +39,10 @@ typedef struct named_pipe_t {
     /* A console slot's pipe outlives the wapp holding it, so the gap while a
      * writer restarts reads as "nothing yet" rather than end-of-stream. */
     bool persistent;
+    /* An eof writer attached: its departure ends the stream for good. */
+    bool end_on_exit;
+    /* An eof reader left: writers get -EPIPE until a reader attaches. */
+    bool reader_gone;
     bool active;
 } named_pipe_t;
 
@@ -46,6 +51,18 @@ struct pipe_store_t {
     named_pipe_t pipes[CONFIG_WANTED_PIPE_MAX_PIPES];
     platform_mutex_t *lock;
 };
+
+typedef struct pipe_grant_t {
+    char name[PIPE_NAME_MAX + 1];
+    bool rd;
+    bool wr;
+} pipe_grant_t;
+
+/* The names one wapp's driver reaches; a driver with no scope reaches all. */
+typedef struct pipe_scope_t {
+    size_t cnt;
+    pipe_grant_t grants[CONFIG_WANTED_PIPE_GRANTS];
+} pipe_scope_t;
 
 typedef struct pipe_handle_t {
     named_pipe_t *pipe; /* NULL for root directory handle */
@@ -92,13 +109,114 @@ void PipeStoreFree(pipe_store_t *store) {
     WantedFree(store);
 }
 
+pipe_store_t *PipeStoreShared(void) {
+    static pipe_store_t *shared = NULL;
+    if (!shared)
+        shared = PipeStoreNew();
+    return shared;
+}
+
+/* ── Names and scopes ────────────────────────────────────────────────────────
+ */
+
+static bool nameChar(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
+}
+
+int PipeNameCheck(const char *name) {
+    if (name == NULL || name[0] == '\0')
+        return -EINVAL;
+    size_t n = strnlen(name, PIPE_NAME_MAX + 1);
+    if (n > PIPE_NAME_MAX)
+        return -ENAMETOOLONG;
+    for (size_t i = 0; i < n; i++) {
+        if (!nameChar(name[i]))
+            return -EINVAL;
+    }
+    return 0;
+}
+
+static int scopeAdd(pipe_scope_t *s, const char *name, bool wr) {
+    int rc = PipeNameCheck(name);
+    if (rc < 0)
+        return rc;
+    for (size_t i = 0; i < s->cnt; i++) {
+        if (strcmp(s->grants[i].name, name) == 0) {
+            if (wr)
+                s->grants[i].wr = true;
+            else
+                s->grants[i].rd = true;
+            return 0;
+        }
+    }
+    if (s->cnt >= CONFIG_WANTED_PIPE_GRANTS)
+        return -ENOSPC;
+    pipe_grant_t *g = &s->grants[s->cnt++];
+    memcpy(g->name, name, strlen(name) + 1);
+    g->rd = !wr;
+    g->wr = wr;
+    return 0;
+}
+
+/* Add the clauses of "read=<name>,write=<name>,..." to `s`. An empty grant adds
+ * nothing. On an error `s` is left as it was. */
+static int scopeParse(pipe_scope_t *s, const char *grant) {
+    char buf[CONFIG_WANTED_MAX_OPTIONS_SIZE];
+
+    if (grant == NULL || grant[0] == '\0')
+        return 0;
+    size_t len = strnlen(grant, sizeof(buf));
+    if (len >= sizeof(buf))
+        return -EINVAL;
+    memcpy(buf, grant, len + 1);
+
+    pipe_scope_t next = *s;
+    for (char *tok = buf; tok != NULL;) {
+        char *end = strchr(tok, ',');
+        if (end != NULL)
+            *end++ = '\0';
+        int rc;
+        if (strncmp(tok, "read=", 5) == 0)
+            rc = scopeAdd(&next, tok + 5, false);
+        else if (strncmp(tok, "write=", 6) == 0)
+            rc = scopeAdd(&next, tok + 6, true);
+        else
+            rc = -EINVAL;
+        if (rc < 0)
+            return rc;
+        tok = end;
+    }
+    *s = next;
+    return 0;
+}
+
+/* 0 when the scope lets the caller open `name` in the given direction. */
+static int scopeCheck(const pipe_scope_t *s, const char *name, bool wr) {
+    for (size_t i = 0; i < s->cnt; i++) {
+        if (strcmp(s->grants[i].name, name) != 0)
+            continue;
+        bool allowed = wr ? s->grants[i].wr : s->grants[i].rd;
+        return allowed ? 0 : -EACCES;
+    }
+    return -ENOENT;
+}
+
+static bool scopeListed(const pipe_scope_t *s, const char *name) {
+    for (size_t i = 0; i < s->cnt; i++) {
+        if (strcmp(s->grants[i].name, name) == 0)
+            return true;
+    }
+    return false;
+}
+
 /* ── Ring helpers (caller holds store->lock) ─────────────────────────────────
  */
 
 static named_pipe_t *findPipe(pipe_store_t *store, const char *name) {
     for (int i = 0; i < CONFIG_WANTED_PIPE_MAX_PIPES; i++) {
         if (store->pipes[i].active &&
-            strncmp(store->pipes[i].name, name, MAX_ENTRY_NAME_LEN) == 0)
+            strncmp(store->pipes[i].name, name, PIPE_NAME_MAX + 1) == 0)
             return &store->pipes[i];
     }
     return NULL;
@@ -109,8 +227,8 @@ static named_pipe_t *allocPipe(pipe_store_t *store, const char *name) {
         if (!store->pipes[i].active) {
             named_pipe_t *p = &store->pipes[i];
             memset(p, 0, sizeof(*p));
-            strncpy(p->name, name, MAX_ENTRY_NAME_LEN - 1);
-            p->name[MAX_ENTRY_NAME_LEN - 1] = '\0';
+            strncpy(p->name, name, PIPE_NAME_MAX);
+            p->name[PIPE_NAME_MAX] = '\0';
             p->active = true;
             return p;
         }
@@ -150,15 +268,26 @@ static int ringWrite(named_pipe_t *p, const void *buf, size_t nbyte) {
     return (int)n;
 }
 
+/* True once every writer has left a pipe that reads end of stream: a plain
+ * pipe, or one whose writer ended with eof. */
+static bool atEof(const named_pipe_t *p) {
+    return p->writer_seen && p->writers <= 0 &&
+           (!p->persistent || p->end_on_exit);
+}
+
 /* Readiness of one end, mirroring what Read/Write would do. A reader at end of
- * stream is readable and hung up. */
+ * stream is readable and hung up; a writer whose reader left is writable and
+ * hung up, so its next write reports the error. */
 static int ringPoll(const named_pipe_t *p, bool writer, uint32_t *avail) {
-    if (writer)
+    if (writer) {
+        if (p->reader_gone)
+            return VFS_POLL_OUT | VFS_POLL_HUP;
         return p->data_len < CONFIG_WANTED_PIPE_BUF_SIZE ? VFS_POLL_OUT : 0;
+    }
     *avail = (uint32_t)p->data_len;
     if (p->data_len > 0)
         return VFS_POLL_IN;
-    if (p->writer_seen && p->writers <= 0 && !p->persistent)
+    if (atEof(p))
         return VFS_POLL_IN | VFS_POLL_HUP;
     return 0;
 }
@@ -176,7 +305,8 @@ static void buildTmpDriver(vfs_driver_t *drv, vfs_driver_ctx_t ctx) {
 
 /* Called by DevFS with the suffix AFTER the "pipe" prefix, e.g. "t" or "/".
  * drv->ctx is the shared pipe_store_t. */
-void *PipeDriver_Open(vfs_ctx_t c, const vfs_driver_t *drv, const char *suffix,
+void *PipeDriver_Open(vfs_ctx_t c, const vfs_driver_t *drv,
+                      const pipe_scope_t *scope, const char *suffix,
                       vfs_oflags_t flags, int *out_err) {
     (void)c;
     pipe_store_t *store = (pipe_store_t *)drv->ctx;
@@ -198,10 +328,15 @@ void *PipeDriver_Open(vfs_ctx_t c, const vfs_driver_t *drv, const char *suffix,
         return h;
     }
 
-    if ((flags & VFS_O_RDWR) == VFS_O_RDWR) {
+    int rc = PipeNameCheck(suffix);
+    if (rc == 0 && (flags & VFS_O_RDWR) == VFS_O_RDWR)
+        rc = -EINVAL;
+    if (rc == 0 && scope != NULL)
+        rc = scopeCheck(scope, suffix, (flags & 3) == VFS_O_WRONLY);
+    if (rc < 0) {
         WantedFree(h);
         if (out_err)
-            *out_err = -EINVAL;
+            *out_err = rc;
         return NULL;
     }
 
@@ -225,6 +360,7 @@ void *PipeDriver_Open(vfs_ctx_t c, const vfs_driver_t *drv, const char *suffix,
         p->writer_seen = true;
     } else {
         p->readers++;
+        p->reader_gone = false;
     }
     PlatformMutexUnlock(store->lock);
 
@@ -281,7 +417,7 @@ int PipeDriver_Read(int wakeFd, const vfs_driver_t *drv, void *handle,
         }
         /* No data buffered. EOF only once a writer has existed, all closed,
          * and the pipe is not a console's; anything else is a would-block. */
-        if (p->writer_seen && p->writers <= 0 && !p->persistent) {
+        if (atEof(p)) {
             PlatformMutexUnlock(store->lock);
             return 0;
         }
@@ -314,7 +450,7 @@ int PipeDriver_Write(int wakeFd, const vfs_driver_t *drv, void *handle,
 
     for (;;) {
         PlatformMutexLock(store->lock);
-        int n = ringWrite(p, buf, nbyte);
+        int n = p->reader_gone ? -EPIPE : ringWrite(p, buf, nbyte);
         PlatformMutexUnlock(store->lock);
         if (n != -EAGAIN)
             return n;
@@ -363,9 +499,9 @@ int PipeDriver_Stat(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
     return 0;
 }
 
-int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
-                       void *buf, size_t bufLen, uint64_t *cookie,
-                       size_t *bufUsed) {
+int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv,
+                       const pipe_scope_t *scope, void *handle, void *buf,
+                       size_t bufLen, uint64_t *cookie, size_t *bufUsed) {
     (void)c;
     const pipe_handle_t *h = handle;
     if (!h || !h->is_root)
@@ -378,7 +514,8 @@ int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
      * point into store->pipes[i].name, valid only while locked. */
     PlatformMutexLock(store->lock);
     for (int i = 0; i < CONFIG_WANTED_PIPE_MAX_PIPES; i++) {
-        if (store->pipes[i].active) {
+        if (store->pipes[i].active &&
+            (scope == NULL || scopeListed(scope, store->pipes[i].name))) {
             entries[count].name = store->pipes[i].name;
             entries[count].type = VFS_FILETYPE_CHARACTER_DEVICE;
             count++;
@@ -400,6 +537,7 @@ int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv, void *handle,
 
 typedef struct bridge_state_t {
     pipe_store_t *store; /* shared, engine-owned; NOT freed here */
+    pipe_scope_t *scope; /* NULL reaches every pipe */
     void *handles[BRIDGE_MAX_HANDLES];
     int wakeFd; /* the wapp's wake descriptor; -1 for none */
 } bridge_state_t;
@@ -430,7 +568,7 @@ static int _bOpen(vfs_driver_ctx_t dctx, const char *path, vfs_oflags_t flags) {
     int out_err = 0;
     vfs_driver_t tmp;
     buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
-    void *h = PipeDriver_Open(NULL, &tmp, path, flags, &out_err);
+    void *h = PipeDriver_Open(NULL, &tmp, s->scope, path, flags, &out_err);
     if (!h)
         return out_err;
     int fd = allocHandle(s, h);
@@ -515,7 +653,8 @@ static int _bReadDir(vfs_driver_ctx_t dctx, int fd, void *buf, size_t bufLen,
         return -EBADF;
     vfs_driver_t tmp;
     buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
-    return PipeDriver_ReadDir(NULL, &tmp, h, buf, bufLen, cookie, bufUsed);
+    return PipeDriver_ReadDir(NULL, &tmp, s->scope, h, buf, bufLen, cookie,
+                              bufUsed);
 }
 
 static int _bDestroy(vfs_driver_t *drv) {
@@ -534,6 +673,7 @@ static int _bDestroy(vfs_driver_t *drv) {
                 s->handles[i] = NULL;
             }
         }
+        WantedFree(s->scope);
         WantedFree(s); /* the store is engine-owned and outlives the driver */
     }
     WantedFree(drv);
@@ -546,8 +686,9 @@ static int _bDestroy(vfs_driver_t *drv) {
 
 typedef struct {
     pipe_store_t *store;
-    char name[MAX_ENTRY_NAME_LEN];
+    char name[PIPE_NAME_MAX + 1];
     bool forRead;
+    bool eof;
     int flags;
     int wakeFd; /* the wapp's wake descriptor; -1 for none */
 } pipe_console_t;
@@ -559,6 +700,11 @@ static void consoleDetach(pipe_console_t *c) {
         if (c->forRead) {
             if (p->readers > 0)
                 p->readers--;
+            if (c->eof && p->readers <= 0) {
+                p->data_len = 0;
+                p->rpos = 0;
+                p->reader_gone = true;
+            }
         } else if (p->writers > 0) {
             p->writers--;
         }
@@ -591,7 +737,9 @@ static int _pcWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
         named_pipe_t *p = findPipe(c->store, c->name);
         if (!p)
             p = allocPipe(c->store, c->name);
-        int n = p ? ringWrite(p, buf, nbyte) : -ENOSPC;
+        int n = -ENOSPC;
+        if (p != NULL)
+            n = p->reader_gone ? -EPIPE : ringWrite(p, buf, nbyte);
         PlatformMutexUnlock(c->store->lock);
         if (n != -EAGAIN)
             return n;
@@ -627,9 +775,9 @@ static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
             PlatformMutexUnlock(c->store->lock);
             return n;
         }
-        bool eof = p && p->writer_seen && p->writers <= 0 && !p->persistent;
+        bool ended = p && atEof(p);
         PlatformMutexUnlock(c->store->lock);
-        if (eof)
+        if (ended)
             return 0;
         if (nonblock || pollExpired(deadline))
             return -EAGAIN;
@@ -688,8 +836,8 @@ static int _pcDestroy(vfs_driver_t *drv) {
 }
 
 vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
-                                   bool forRead, vfs_oflags_t flags) {
-    if (!store || !name || name[0] == '\0')
+                                   bool forRead, vfs_oflags_t flags, bool eof) {
+    if (!store || PipeNameCheck(name) < 0)
         return NULL;
 
     vfs_driver_t *drv = WantedMalloc(sizeof(*drv));
@@ -702,9 +850,9 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
     }
     memset(c, 0, sizeof(*c));
     c->store = store;
-    strncpy(c->name, name, MAX_ENTRY_NAME_LEN - 1);
-    c->name[MAX_ENTRY_NAME_LEN - 1] = '\0';
+    memcpy(c->name, name, strlen(name) + 1);
     c->forRead = forRead;
+    c->eof = eof;
     c->flags = flags;
     c->wakeFd = -1;
 
@@ -718,9 +866,12 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
         p->persistent = true;
         if (forRead) {
             p->readers++;
+            p->reader_gone = false;
         } else {
             p->writers++;
             p->writer_seen = true;
+            if (eof)
+                p->end_on_exit = true;
         }
     }
     PlatformMutexUnlock(store->lock);
@@ -740,21 +891,22 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
     return drv;
 }
 
-vfs_driver_t *PipeDriverCreate(pipe_store_t *store) {
-    if (!store)
-        return NULL;
-
+static vfs_driver_t *createDriver(pipe_store_t *store, pipe_scope_t *scope) {
     vfs_driver_t *drv = WantedMalloc(sizeof(*drv));
-    if (!drv)
+    if (!drv) {
+        WantedFree(scope);
         return NULL;
+    }
 
     bridge_state_t *s = WantedMalloc(sizeof(*s));
     if (!s) {
+        WantedFree(scope);
         WantedFree(drv);
         return NULL;
     }
     memset(s, 0, sizeof(*s));
     s->store = store;
+    s->scope = scope;
     s->wakeFd = -1;
 
     memset(drv, 0, sizeof(*drv));
@@ -772,4 +924,70 @@ vfs_driver_t *PipeDriverCreate(pipe_store_t *store) {
     drv->Poll = _bPoll;
     drv->SetFlags = _bSetFlags;
     return drv;
+}
+
+vfs_driver_t *PipeDriverCreate(pipe_store_t *store) {
+    if (!store)
+        return NULL;
+    return createDriver(store, NULL);
+}
+
+vfs_driver_t *PipeDriverCreateScoped(pipe_store_t *store, const char *grant) {
+    if (!store)
+        return NULL;
+    pipe_scope_t *scope = WantedMalloc(sizeof(*scope));
+    if (!scope)
+        return NULL;
+    memset(scope, 0, sizeof(*scope));
+    if (scopeParse(scope, grant) < 0) {
+        WantedFree(scope);
+        return NULL;
+    }
+    return createDriver(store, scope);
+}
+
+int PipeDriverGrant(vfs_driver_t *drv, const char *grant) {
+    if (drv == NULL || drv->Open != _bOpen)
+        return -EINVAL;
+    bridge_state_t *s = (bridge_state_t *)drv->ctx;
+    if (s->scope == NULL)
+        return -EINVAL;
+    return scopeParse(s->scope, grant);
+}
+
+/* The `pipe` grant: a driver that must name at least one pipe. */
+vfs_driver_t *VfsPipeInit(const wapp_t *wapp, const char *options) {
+    (void)wapp;
+    if (options == NULL || options[0] == '\0')
+        return NULL;
+    return PipeDriverCreateScoped(PipeStoreShared(), options);
+}
+
+int PipeConsoleOptions(const char *options, char *name, size_t cap, bool *eof) {
+    *eof = false;
+    name[0] = '\0';
+    if (options == NULL)
+        return 0;
+
+    const char *p = options;
+    while (*p != '\0') {
+        size_t n = strcspn(p, ",");
+        if (n == 3 && strncmp(p, "eof", 3) == 0) {
+            *eof = true;
+        } else if (n >= 5 && strncmp(p, "name=", 5) == 0) {
+            if (n - 5 >= cap)
+                return -ENAMETOOLONG;
+            memcpy(name, p + 5, n - 5);
+            name[n - 5] = '\0';
+            int rc = PipeNameCheck(name);
+            if (rc < 0)
+                return rc;
+        } else {
+            return -EINVAL;
+        }
+        p += n;
+        if (*p == ',')
+            p++;
+    }
+    return 0;
 }
