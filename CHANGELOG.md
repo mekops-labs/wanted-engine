@@ -18,6 +18,10 @@ Unreleased
   peer's write to `in` returns `EPIPE`.
 - The `eof=ok` option ends the stream only when the wapp exits with code 0,
   for a wapp restarted after a failure.
+- The `pipes` node of `/dev/wanted/wapps/<name>/` grants and revokes pipe
+  names of a running wapp. `CONFIG_WANTED_PIPE_RUNTIME_GRANTS` sets how many
+  clauses a wapp holds (4).
+- The `out` and `err` console slots of one wapp may name the same pipe.
 - `CONFIG_WANTED_WAMR_INTERP_FAST` builds the fast WAMR interpreter on every
   target. The classic interpreter stays the default.
 - The `wbench` and `wlkload` wapps, `tools/wamr-mode-bench/`, and the

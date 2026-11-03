@@ -145,6 +145,22 @@ a stop is looking at a defect, not at a slow teardown.
 | `state` | r | Lifecycle token: `created`, `not_started`, `starting`, `running`, `exited`, `failure`. A bare `create` reservation (no config yet) reads `created`; once its `config` is written it reads `not_started`. Kept on the control plane because it spans the pre-launch lifecycle the read-only `/proc` view cannot see. |
 | `ctl` | w | `start [<image>]` launches the instance (optional explicit image overrides `config.image`); `stop` terminates it. The instance name comes from the path. |
 | `config` | w | JSON launch config (see below). Buffered and consumed by the next `start` for this name, then cleared. |
+| `pipes` | r/w | The pipe names a running wapp reaches beyond its launch config. `grant <clauses>` adds and `revoke <clauses>` removes `read=<name>` and `write=<name>` clauses (the form of a `pipe` grant's `options`), applied whole or not at all. A read lists the runtime clauses, one per line. See [Runtime pipe grants](#runtime-pipe-grants). |
+
+### Runtime pipe grants
+
+`wapps/<name>/pipes` changes which pipes a running wapp reaches without a restart:
+
+```
+write /dev/wanted/wapps/app1/pipes grant read=feed,write=ctl
+write /dev/wanted/wapps/app1/pipes revoke read=feed
+read  /dev/wanted/wapps/app1/pipes
+```
+
+- A grant takes effect at the wapp's next open of the name. A revoke refuses new opens with `ENOENT` and removes the name from the directory listing; descriptors the wapp already holds stay valid until it closes them.
+- A wapp holds at most `CONFIG_WANTED_PIPE_RUNTIME_GRANTS` runtime clauses (4 by default); a grant past the cap returns `ENOSPC`. A malformed clause returns `EINVAL` and a name over 31 characters `ENAMETOOLONG`. Nothing is applied when any clause fails.
+- A clause the launch config already grants is accepted and changes nothing, and revoking it returns `EPERM`. Revoking a clause the wapp does not hold returns `ENOENT`.
+- A wapp that is not running returns `ENOENT` on a read or a write. Runtime grants end with the wapp: a restart starts from its launch config.
 
 The control plane carries **only** lifecycle: the pure-observability reads (`image`, `version`, `id`, `exit_code`, `memory`) live in the read-only [`/proc/wapps/<name>/`](vfs-reference.md) namespace, and a wapp's captured stdout/stderr is read through a mountable [`log`](vfs-reference.md) driver. Both are reachable **without** the `/dev/wanted` control mount, so an observability wapp can watch the fleet without the authority to command it. `state` is mirrored read-only at `/proc/wapps/<name>/state` for running instances.
 
