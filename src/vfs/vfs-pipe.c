@@ -39,8 +39,8 @@ typedef struct named_pipe_t {
     /* A console slot's pipe outlives the wapp holding it, so the gap while a
      * writer restarts reads as "nothing yet" rather than end-of-stream. */
     bool persistent;
-    /* The console writer attached last has eof: once it leaves, the stream
-     * reads as ended until a writer attaches again. */
+    /* The last console writer left under its eof option: the stream reads as
+     * ended until a writer attaches again. */
     bool end_on_exit;
     /* An eof reader left: writers get -EPIPE until a reader attaches. */
     bool reader_gone;
@@ -689,25 +689,37 @@ typedef struct {
     pipe_store_t *store;
     char name[PIPE_NAME_MAX + 1];
     bool forRead;
-    bool eof;
+    pipe_eof_t eof;
+    const int32_t *exitCode; /* the wapp's, read when the console detaches */
     int flags;
     int wakeFd; /* the wapp's wake descriptor; -1 for none */
 } pipe_console_t;
 
+/* Whether the stream ends now that the wapp has: `eof=ok` only on exit 0. */
+static bool consoleEnds(const pipe_console_t *c) {
+    if (c->eof == PIPE_EOF_ANY)
+        return true;
+    return c->eof == PIPE_EOF_OK && c->exitCode != NULL && *c->exitCode == 0;
+}
+
 static void consoleDetach(pipe_console_t *c) {
+    bool ends = consoleEnds(c);
     PlatformMutexLock(c->store->lock);
     named_pipe_t *p = findPipe(c->store, c->name);
     if (p) {
         if (c->forRead) {
             if (p->readers > 0)
                 p->readers--;
-            if (c->eof && p->readers <= 0) {
+            if (ends && p->readers <= 0) {
                 p->data_len = 0;
                 p->rpos = 0;
                 p->reader_gone = true;
             }
-        } else if (p->writers > 0) {
-            p->writers--;
+        } else {
+            if (p->writers > 0)
+                p->writers--;
+            if (ends)
+                p->end_on_exit = true;
         }
         if (p->writers <= 0 && p->readers <= 0 && p->data_len == 0)
             p->active = false;
@@ -837,7 +849,8 @@ static int _pcDestroy(vfs_driver_t *drv) {
 }
 
 vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
-                                   bool forRead, vfs_oflags_t flags, bool eof) {
+                                   bool forRead, vfs_oflags_t flags,
+                                   pipe_eof_t eof, const int32_t *exitCode) {
     if (!store || PipeNameCheck(name) < 0)
         return NULL;
 
@@ -854,6 +867,7 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
     memcpy(c->name, name, strlen(name) + 1);
     c->forRead = forRead;
     c->eof = eof;
+    c->exitCode = exitCode;
     c->flags = flags;
     c->wakeFd = -1;
 
@@ -871,8 +885,8 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
         } else {
             p->writers++;
             p->writer_seen = true;
-            /* The returning writer's options decide, not an earlier run's. */
-            p->end_on_exit = eof;
+            /* A returning writer resumes the stream, whatever its options. */
+            p->end_on_exit = false;
         }
     }
     PlatformMutexUnlock(store->lock);
@@ -964,8 +978,9 @@ vfs_driver_t *VfsPipeInit(const wapp_t *wapp, const char *options) {
     return PipeDriverCreateScoped(PipeStoreShared(), options);
 }
 
-int PipeConsoleOptions(const char *options, char *name, size_t cap, bool *eof) {
-    *eof = false;
+int PipeConsoleOptions(const char *options, char *name, size_t cap,
+                       pipe_eof_t *eof) {
+    *eof = PIPE_EOF_NONE;
     name[0] = '\0';
     if (options == NULL)
         return 0;
@@ -974,7 +989,9 @@ int PipeConsoleOptions(const char *options, char *name, size_t cap, bool *eof) {
     while (*p != '\0') {
         size_t n = strcspn(p, ",");
         if (n == 3 && strncmp(p, "eof", 3) == 0) {
-            *eof = true;
+            *eof = PIPE_EOF_ANY;
+        } else if (n == 6 && strncmp(p, "eof=ok", 6) == 0) {
+            *eof = PIPE_EOF_OK;
         } else if (n >= 5 && strncmp(p, "name=", 5) == 0) {
             if (n - 5 >= cap)
                 return -ENAMETOOLONG;

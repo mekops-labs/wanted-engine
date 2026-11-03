@@ -16,6 +16,8 @@ Unreleased
 - The `eof` option of a `pipe` console slot ends the stream when the wapp ends.
   Readers of `out` and `err` get end of stream after the buffered bytes. A
   peer's write to `in` returns `EPIPE`.
+- The `eof=ok` option ends the stream only when the wapp exits with code 0,
+  for a wapp restarted after a failure.
 - `CONFIG_WANTED_WAMR_INTERP_FAST` builds the fast WAMR interpreter on every
   target. The classic interpreter stays the default.
 - The `wbench` and `wlkload` wapps, `tools/wamr-mode-bench/`, and the

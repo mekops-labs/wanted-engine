@@ -107,7 +107,7 @@ static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
 
     if (strcmp(name, "pipe") == 0) {
         char pname[PIPE_NAME_MAX + 2];
-        bool eof;
+        pipe_eof_t eof;
         int rc = PipeConsoleOptions(options, pname, sizeof(pname), &eof);
         if (rc < 0) {
             LOG_ERROR("console.%s: bad pipe options '%s': %s",
@@ -117,8 +117,9 @@ static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
         if (pname[0] == '\0')
             snprintf(pname, sizeof(pname), "%s.%s", wapp->name,
                      CONSOLE_SLOT[idx]);
-        const vfs_driver_t *drv = VfsPipeConsoleCreate(
-            PipeStoreShared(), pname, idx == 0, VFS_O_RDONLY, eof);
+        const vfs_driver_t *drv =
+            VfsPipeConsoleCreate(PipeStoreShared(), pname, idx == 0,
+                                 VFS_O_RDONLY, eof, &ctx->exit_code);
         if (drv == NULL)
             return -ENOMEM;
         return VfsRegister(ctx->vfs, path, withWake(ctx->vfs, drv));
@@ -585,6 +586,11 @@ int WantedWappRun(wapp_data_t *ctx) {
         return -1;
     }
 
+    /* exit_code is authoritative only on a clean exit; default to the sentinel
+     * so a trap, or a launch that fails first, stays distinguishable. A pipe
+     * console with `eof=ok` reads it when the wapp's VFS goes. */
+    ctx->exit_code = WAPP_EXIT_CODE_NONE;
+
     if (ensureWamrInit() < 0)
         return -1;
 
@@ -964,10 +970,6 @@ int WantedWappRun(wapp_data_t *ctx) {
 
     DEBUG_TRACE("starting wapp: %d", ctx->id);
     uint32_t callArgv[1] = {(uint32_t)ctx->id};
-
-    /* exit_code is authoritative only on a clean exit; default to the sentinel
-     * so a trap (which never reaches proc_exit) stays distinguishable. */
-    ctx->exit_code = WAPP_EXIT_CODE_NONE;
 
     if (wasm_runtime_call_wasm(ctx->wamr->exec_env, f, 1, callArgv)) {
         /* Returned without trapping — a clean exit. A WASI wapp leaves through

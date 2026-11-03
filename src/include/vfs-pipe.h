@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <vfs.h>
 
 /* Longest pipe name; names are [A-Za-z0-9._-]. */
@@ -35,12 +36,22 @@ vfs_driver_t *PipeDriverCreateScoped(pipe_store_t *store, const char *grant);
  * list too many names; -EINVAL or -ENAMETOOLONG for a bad clause or name. */
 int PipeDriverGrant(vfs_driver_t *drv, const char *grant);
 
+/* When a console pipe's stream ends with its wapp: never, on any end (`eof`),
+ * or only on a clean exit with code 0 (`eof=ok`). */
+typedef enum {
+    PIPE_EOF_NONE,
+    PIPE_EOF_ANY,
+    PIPE_EOF_OK,
+} pipe_eof_t;
+
 /* Parse a pipe console's name=<pipe> and eof options; `name` is "" when none
  * is pinned. -ENAMETOOLONG or -EINVAL for a bad name or option. */
-int PipeConsoleOptions(const char *options, char *name, size_t cap, bool *eof);
+int PipeConsoleOptions(const char *options, char *name, size_t cap,
+                       pipe_eof_t *eof);
 
-/* Console driver on pipe `name`; `forRead` selects `in`. With `eof` the stream
- * ends when the console is destroyed: readers see end of stream, writers to
- * `in` get -EPIPE. NULL when `name` fails PipeNameCheck. */
+/* Console driver on pipe `name`; `forRead` selects `in`. When `eof` matches
+ * how the wapp ended (`*exitCode`, NULL is not clean), readers get end of
+ * stream and writers to `in` -EPIPE. NULL when `name` fails PipeNameCheck. */
 vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
-                                   bool forRead, vfs_oflags_t flags, bool eof);
+                                   bool forRead, vfs_oflags_t flags,
+                                   pipe_eof_t eof, const int32_t *exitCode);

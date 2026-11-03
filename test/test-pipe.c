@@ -15,6 +15,7 @@
 #include <vfs-pipe.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
+#include <wanted-api.h>
 #include <wanted-autoconf.h>
 
 /* Each test group that needs a VFS with a pipe driver gets its own fixture.
@@ -449,18 +450,21 @@ TEST_TEAR_DOWN(pipe_console) {
 
 static void consoleOut(const char *name) {
     VfsRegister(cvfs, "<stdout>",
-                VfsPipeConsoleCreate(cstore, name, false, VFS_O_WRONLY, false));
+                VfsPipeConsoleCreate(cstore, name, false, VFS_O_WRONLY,
+                                     PIPE_EOF_NONE, NULL));
 }
 
 static void consoleOutNonblock(const char *name) {
     VfsRegister(cvfs, "<stdout>",
                 VfsPipeConsoleCreate(cstore, name, false,
-                                     VFS_O_WRONLY | VFS_O_NONBLOCK, false));
+                                     VFS_O_WRONLY | VFS_O_NONBLOCK,
+                                     PIPE_EOF_NONE, NULL));
 }
 
 static void consoleIn(const char *name) {
     VfsRegister(cvfs, "<stdin>",
-                VfsPipeConsoleCreate(cstore, name, true, VFS_O_RDONLY, false));
+                VfsPipeConsoleCreate(cstore, name, true, VFS_O_RDONLY,
+                                     PIPE_EOF_NONE, NULL));
 }
 
 /* A console writer delivers or waits; it never discards buffered bytes to
@@ -610,7 +614,7 @@ TEST(pipe_wake, WriteToAFullRingEndsOnTheWake) {
 TEST(pipe_wake, ConsoleReadEndsOnTheWake) {
     VfsRegister(wvfs, "<stdin>",
                 withWake(VfsPipeConsoleCreate(wstore, "in", true, VFS_O_RDONLY,
-                                              false)));
+                                              PIPE_EOF_NONE, NULL)));
 
     PlatformWakeRaise(wake);
     char buf[8];
@@ -675,37 +679,47 @@ TEST(pipe_names, ABadCharacterIsRefusedAtOpen) {
 }
 
 TEST(pipe_names, ConsoleRefusesABadName) {
-    TEST_ASSERT_NULL(VfsPipeConsoleCreate(store, "a b", false, 0, false));
-    TEST_ASSERT_NULL(VfsPipeConsoleCreate(store, "", false, 0, false));
+    TEST_ASSERT_NULL(
+        VfsPipeConsoleCreate(store, "a b", false, 0, PIPE_EOF_NONE, NULL));
+    TEST_ASSERT_NULL(
+        VfsPipeConsoleCreate(store, "", false, 0, PIPE_EOF_NONE, NULL));
 }
 
 TEST(pipe_names, ConsoleOptionsParseNameAndEof) {
     char name[PIPE_NAME_MAX + 2];
-    bool eof = true;
+    pipe_eof_t eof = PIPE_EOF_ANY;
     TEST_ASSERT_EQUAL_INT(0,
                           PipeConsoleOptions(NULL, name, sizeof(name), &eof));
-    TEST_ASSERT_FALSE(eof);
+    TEST_ASSERT_EQUAL_INT(PIPE_EOF_NONE, eof);
     TEST_ASSERT_EQUAL_STRING("", name);
 
     TEST_ASSERT_EQUAL_INT(
         0, PipeConsoleOptions("name=wire", name, sizeof(name), &eof));
     TEST_ASSERT_EQUAL_STRING("wire", name);
-    TEST_ASSERT_FALSE(eof);
+    TEST_ASSERT_EQUAL_INT(PIPE_EOF_NONE, eof);
 
     TEST_ASSERT_EQUAL_INT(
         0, PipeConsoleOptions("eof,name=w.1", name, sizeof(name), &eof));
     TEST_ASSERT_EQUAL_STRING("w.1", name);
-    TEST_ASSERT_TRUE(eof);
+    TEST_ASSERT_EQUAL_INT(PIPE_EOF_ANY, eof);
 
     TEST_ASSERT_EQUAL_INT(0,
                           PipeConsoleOptions("eof", name, sizeof(name), &eof));
     TEST_ASSERT_EQUAL_STRING("", name);
-    TEST_ASSERT_TRUE(eof);
+    TEST_ASSERT_EQUAL_INT(PIPE_EOF_ANY, eof);
+
+    TEST_ASSERT_EQUAL_INT(
+        0, PipeConsoleOptions("name=j,eof=ok", name, sizeof(name), &eof));
+    TEST_ASSERT_EQUAL_STRING("j", name);
+    TEST_ASSERT_EQUAL_INT(PIPE_EOF_OK, eof);
+
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL, PipeConsoleOptions("eof=no", name, sizeof(name), &eof));
 }
 
 TEST(pipe_names, ConsoleOptionsRefuseWhatTheyDoNotKnow) {
     char name[PIPE_NAME_MAX + 2];
-    bool eof;
+    pipe_eof_t eof;
     TEST_ASSERT_EQUAL_INT(
         -EINVAL, PipeConsoleOptions("bogus", name, sizeof(name), &eof));
     TEST_ASSERT_EQUAL_INT(
@@ -959,9 +973,11 @@ TEST_GROUP(pipe_eof);
 static pipe_store_t *estore;
 static vfs_ctx_t wapp;
 static vfs_ctx_t peer;
+static int32_t exitCode; /* how the modelled wapp ended */
 
 TEST_SETUP(pipe_eof) {
     estore = PipeStoreNew();
+    exitCode = WAPP_EXIT_CODE_NONE;
     wapp = VfsInit();
     peer = VfsInit();
     DevFs_Register(peer, "pipe", PipeDriverCreate(estore));
@@ -974,18 +990,20 @@ TEST_TEAR_DOWN(pipe_eof) {
     estore = NULL;
 }
 
-static void wappOut(const char *name, bool eof) {
+static void wappOut(const char *name, pipe_eof_t eof) {
     VfsRegister(wapp, "<stdout>",
-                VfsPipeConsoleCreate(estore, name, false, VFS_O_WRONLY, eof));
+                VfsPipeConsoleCreate(estore, name, false, VFS_O_WRONLY, eof,
+                                     &exitCode));
 }
 
-static void wappIn(const char *name, bool eof) {
-    VfsRegister(wapp, "<stdin>",
-                VfsPipeConsoleCreate(estore, name, true, VFS_O_RDONLY, eof));
+static void wappIn(const char *name, pipe_eof_t eof) {
+    VfsRegister(
+        wapp, "<stdin>",
+        VfsPipeConsoleCreate(estore, name, true, VFS_O_RDONLY, eof, &exitCode));
 }
 
 TEST(pipe_eof, TheReaderGetsTheBufferedBytesThenEndOfStream) {
-    wappOut("job.out", true);
+    wappOut("job.out", PIPE_EOF_ANY);
     TEST_ASSERT_EQUAL_INT(3, VfsWrite(wapp, VFS_STDOUT, "abc", 3));
     int r = VfsOpen(peer, "/dev/pipe/job.out", VFS_O_RDONLY);
     TEST_ASSERT_TRUE(r >= 0);
@@ -1004,7 +1022,7 @@ TEST(pipe_eof, TheReaderGetsTheBufferedBytesThenEndOfStream) {
 }
 
 TEST(pipe_eof, WithoutEofTheStreamDoesNotEnd) {
-    wappOut("svc.out", false);
+    wappOut("svc.out", PIPE_EOF_NONE);
     int r = VfsOpen(peer, "/dev/pipe/svc.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
     TEST_ASSERT_TRUE(r >= 0);
 
@@ -1016,7 +1034,7 @@ TEST(pipe_eof, WithoutEofTheStreamDoesNotEnd) {
 }
 
 TEST(pipe_eof, TheReaderDoesNotSeeEndOfStreamWhileTheWappRuns) {
-    wappOut("run.out", true);
+    wappOut("run.out", PIPE_EOF_ANY);
     int r = VfsOpen(peer, "/dev/pipe/run.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
     TEST_ASSERT_TRUE(r >= 0);
     char buf[8];
@@ -1025,7 +1043,7 @@ TEST(pipe_eof, TheReaderDoesNotSeeEndOfStreamWhileTheWappRuns) {
 }
 
 TEST(pipe_eof, AnInPipeRefusesWritesOnceItsWappEnds) {
-    wappIn("job.in", true);
+    wappIn("job.in", PIPE_EOF_ANY);
     int w = VfsOpen(peer, "/dev/pipe/job.in", VFS_O_WRONLY);
     TEST_ASSERT_TRUE(w >= 0);
     TEST_ASSERT_EQUAL_INT(2, VfsWrite(peer, w, "hi", 2));
@@ -1040,7 +1058,7 @@ TEST(pipe_eof, AnInPipeRefusesWritesOnceItsWappEnds) {
 }
 
 TEST(pipe_eof, AnInPipeDropsTheBytesItNeverRead) {
-    wappIn("drop.in", true);
+    wappIn("drop.in", PIPE_EOF_ANY);
     int w = VfsOpen(peer, "/dev/pipe/drop.in", VFS_O_WRONLY);
     TEST_ASSERT_EQUAL_INT(4, VfsWrite(peer, w, "left", 4));
     VfsDestroy(&wapp);
@@ -1054,7 +1072,7 @@ TEST(pipe_eof, AnInPipeDropsTheBytesItNeverRead) {
 }
 
 TEST(pipe_eof, ANewReaderLiftsTheRefusal) {
-    wappIn("again.in", true);
+    wappIn("again.in", PIPE_EOF_ANY);
     int w = VfsOpen(peer, "/dev/pipe/again.in", VFS_O_WRONLY);
     VfsDestroy(&wapp);
     TEST_ASSERT_EQUAL_INT(-EPIPE, VfsWrite(peer, w, "x", 1));
@@ -1067,11 +1085,11 @@ TEST(pipe_eof, ANewReaderLiftsTheRefusal) {
 }
 
 TEST(pipe_eof, ARestartedWappReachesThePeerOnTheSameDescriptor) {
-    wappOut("svc2.out", false);
+    wappOut("svc2.out", PIPE_EOF_NONE);
     int r = VfsOpen(peer, "/dev/pipe/svc2.out", VFS_O_RDONLY);
     VfsDestroy(&wapp);
     wapp = VfsInit();
-    wappOut("svc2.out", false);
+    wappOut("svc2.out", PIPE_EOF_NONE);
     TEST_ASSERT_EQUAL_INT(2, VfsWrite(wapp, VFS_STDOUT, "up", 2));
     char buf[4] = {0};
     TEST_ASSERT_EQUAL_INT(2, VfsRead(peer, r, buf, sizeof(buf)));
@@ -1080,7 +1098,7 @@ TEST(pipe_eof, ARestartedWappReachesThePeerOnTheSameDescriptor) {
 }
 
 TEST(pipe_eof, APeerThatClosedFindsAFreshPipeOnTheNextRun) {
-    wappOut("next.out", true);
+    wappOut("next.out", PIPE_EOF_ANY);
     int r = VfsOpen(peer, "/dev/pipe/next.out", VFS_O_RDONLY);
     VfsDestroy(&wapp);
     char buf[4];
@@ -1088,7 +1106,7 @@ TEST(pipe_eof, APeerThatClosedFindsAFreshPipeOnTheNextRun) {
     VfsClose(peer, r);
 
     wapp = VfsInit();
-    wappOut("next.out", true);
+    wappOut("next.out", PIPE_EOF_ANY);
     TEST_ASSERT_EQUAL_INT(1, VfsWrite(wapp, VFS_STDOUT, "n", 1));
     r = VfsOpen(peer, "/dev/pipe/next.out", VFS_O_RDONLY);
     TEST_ASSERT_EQUAL_INT(1, VfsRead(peer, r, buf, sizeof(buf)));
@@ -1097,13 +1115,20 @@ TEST(pipe_eof, APeerThatClosedFindsAFreshPipeOnTheNextRun) {
 
 TEST(pipe_eof, AnOutputWriterIsToldWhenItsInPeerEnded) {
     /* A pipeline: one wapp's out feeds another's in, which then ends. */
-    wappOut("x", false);
+    wappOut("x", PIPE_EOF_NONE);
     vfs_ctx_t sink = VfsInit();
     VfsRegister(sink, "<stdin>",
-                VfsPipeConsoleCreate(estore, "x", true, VFS_O_RDONLY, true));
+                VfsPipeConsoleCreate(estore, "x", true, VFS_O_RDONLY,
+                                     PIPE_EOF_ANY, NULL));
     TEST_ASSERT_EQUAL_INT(1, VfsWrite(wapp, VFS_STDOUT, "a", 1));
     VfsDestroy(&sink);
     TEST_ASSERT_EQUAL_INT(-EPIPE, VfsWrite(wapp, VFS_STDOUT, "b", 1));
+}
+
+/* The modelled wapp ends with `code`, then its VFS goes. */
+static void wappEnds(int32_t code) {
+    exitCode = code;
+    VfsDestroy(&wapp);
 }
 
 /* A non-blocking read of a fresh peer descriptor: 0 at end of stream. */
@@ -1116,30 +1141,73 @@ static int peerRead(const char *path) {
     return n;
 }
 
+TEST(pipe_eof, EofOkEndsTheStreamOnACleanExit) {
+    wappOut("ok.out", PIPE_EOF_OK);
+    int r = VfsOpen(peer, "/dev/pipe/ok.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    wappEnds(0);
+    char buf[4];
+    TEST_ASSERT_EQUAL_INT(0, VfsRead(peer, r, buf, sizeof(buf)));
+    VfsClose(peer, r);
+}
+
+TEST(pipe_eof, EofOkKeepsTheStreamAfterAFailingExit) {
+    wappOut("fail.out", PIPE_EOF_OK);
+    int r = VfsOpen(peer, "/dev/pipe/fail.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    wappEnds(3);
+    char buf[4];
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(peer, r, buf, sizeof(buf)));
+    VfsClose(peer, r);
+}
+
+TEST(pipe_eof, EofOkKeepsTheStreamAfterATrap) {
+    wappOut("trap.out", PIPE_EOF_OK);
+    int r = VfsOpen(peer, "/dev/pipe/trap.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    wappEnds(WAPP_EXIT_CODE_NONE);
+    char buf[4];
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(peer, r, buf, sizeof(buf)));
+    VfsClose(peer, r);
+}
+
+TEST(pipe_eof, EofOkKeepsAnInPipeOpenAfterAFailingExit) {
+    wappIn("fail.in", PIPE_EOF_OK);
+    int w = VfsOpen(peer, "/dev/pipe/fail.in", VFS_O_WRONLY);
+    wappEnds(1);
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(peer, w, "x", 1));
+    VfsClose(peer, w);
+}
+
+TEST(pipe_eof, EofOkClosesAnInPipeOnACleanExit) {
+    wappIn("ok.in", PIPE_EOF_OK);
+    int w = VfsOpen(peer, "/dev/pipe/ok.in", VFS_O_WRONLY);
+    wappEnds(0);
+    TEST_ASSERT_EQUAL_INT(-EPIPE, VfsWrite(peer, w, "x", 1));
+    VfsClose(peer, w);
+}
+
 TEST(pipe_eof, AWriterWithoutEofClearsAnEndedStream) {
     /* An eof run ends, then the wapp returns without eof (its restart policy
      * changed) and leaves again: the reader must not see an end. */
     int keep = VfsOpen(peer, "/dev/pipe/sw.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
-    wappOut("sw.out", true);
-    VfsDestroy(&wapp);
+    wappOut("sw.out", PIPE_EOF_ANY);
+    wappEnds(0);
     TEST_ASSERT_EQUAL_INT(0, peerRead("/dev/pipe/sw.out"));
 
     wapp = VfsInit();
-    wappOut("sw.out", false);
-    VfsDestroy(&wapp);
+    wappOut("sw.out", PIPE_EOF_NONE);
+    wappEnds(0);
     TEST_ASSERT_EQUAL_INT(-EAGAIN, peerRead("/dev/pipe/sw.out"));
     VfsClose(peer, keep);
 }
 
 TEST(pipe_eof, AReturningWriterResumesAnEndedStream) {
-    wappOut("back.out", true);
+    wappOut("back.out", PIPE_EOF_ANY);
     int r = VfsOpen(peer, "/dev/pipe/back.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
-    VfsDestroy(&wapp);
+    wappEnds(0);
     char buf[4] = {0};
     TEST_ASSERT_EQUAL_INT(0, VfsRead(peer, r, buf, sizeof(buf)));
 
     wapp = VfsInit();
-    wappOut("back.out", true);
+    wappOut("back.out", PIPE_EOF_ANY);
     TEST_ASSERT_EQUAL_INT(2, VfsWrite(wapp, VFS_STDOUT, "up", 2));
     TEST_ASSERT_EQUAL_INT(2, VfsRead(peer, r, buf, sizeof(buf)));
     VfsClose(peer, r);
@@ -1155,6 +1223,11 @@ TEST_GROUP_RUNNER(pipe_eof) {
     RUN_TEST_CASE(pipe_eof, ARestartedWappReachesThePeerOnTheSameDescriptor);
     RUN_TEST_CASE(pipe_eof, APeerThatClosedFindsAFreshPipeOnTheNextRun);
     RUN_TEST_CASE(pipe_eof, AnOutputWriterIsToldWhenItsInPeerEnded);
+    RUN_TEST_CASE(pipe_eof, EofOkEndsTheStreamOnACleanExit);
+    RUN_TEST_CASE(pipe_eof, EofOkKeepsTheStreamAfterAFailingExit);
+    RUN_TEST_CASE(pipe_eof, EofOkKeepsTheStreamAfterATrap);
+    RUN_TEST_CASE(pipe_eof, EofOkKeepsAnInPipeOpenAfterAFailingExit);
+    RUN_TEST_CASE(pipe_eof, EofOkClosesAnInPipeOnACleanExit);
     RUN_TEST_CASE(pipe_eof, AWriterWithoutEofClearsAnEndedStream);
     RUN_TEST_CASE(pipe_eof, AReturningWriterResumesAnEndedStream);
 }
