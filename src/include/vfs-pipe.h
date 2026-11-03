@@ -36,6 +36,20 @@ vfs_driver_t *PipeDriverCreateScoped(pipe_store_t *store, const char *grant);
  * list too many names; -EINVAL or -ENAMETOOLONG for a bad clause or name. */
 int PipeDriverGrant(vfs_driver_t *drv, const char *grant);
 
+/* Name `drv` as the pipe driver of the running wapp `wapp`, so the supervisor
+ * can grant it runtime clauses. The binding ends with the driver. -EINVAL for
+ * a driver that is not a pipe driver, -ENOSPC when the table is full. */
+int PipeDriverBind(vfs_driver_t *drv, const char *wapp);
+
+/* Add (or, with `revoke`, remove) a running wapp's runtime clauses, all or
+ * none. Errors: -ENOSPC full, -EINVAL bad clause, -ENOENT wapp not running or
+ * clause not held, -EPERM a revoked clause only the launch grant gives. */
+int PipeRuntimeGrant(const char *wapp, bool revoke, const char *clauses);
+
+/* Write the runtime clauses of a running wapp, one "read=<name>" or
+ * "write=<name>" per line. The length, or -ENOENT when it is not running. */
+int PipeRuntimeList(const char *wapp, char *buf, size_t cap);
+
 /* When a console pipe's stream ends with its wapp: never, on any end (`eof`),
  * or only on a clean exit with code 0 (`eof=ok`). */
 typedef enum {

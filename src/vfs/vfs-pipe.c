@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "vfs-internal.h"
@@ -11,6 +12,7 @@
 #include <vfs-drivers.h>
 #include <vfs-pipe.h>
 #include <vfs.h>
+#include <wanted-api.h>
 #include <wanted-autoconf.h>
 #include <wanted_malloc.h>
 
@@ -59,10 +61,14 @@ typedef struct pipe_grant_t {
     bool wr;
 } pipe_grant_t;
 
-/* The names one wapp's driver reaches; a driver with no scope reaches all. */
+/* The names one wapp's driver reaches: launch grants in grants[], the
+ * supervisor's runtime clauses in rt[], or every pipe when `all` is set. */
 typedef struct pipe_scope_t {
+    bool all;
     size_t cnt;
     pipe_grant_t grants[CONFIG_WANTED_PIPE_GRANTS];
+    size_t rtCnt;
+    pipe_grant_t rt[CONFIG_WANTED_PIPE_RUNTIME_GRANTS];
 } pipe_scope_t;
 
 typedef struct pipe_handle_t {
@@ -194,21 +200,113 @@ static int scopeParse(pipe_scope_t *s, const char *grant) {
 
 /* 0 when the scope lets the caller open `name` in the given direction. */
 static int scopeCheck(const pipe_scope_t *s, const char *name, bool wr) {
+    bool seen = false;
+
+    if (s->all)
+        return 0;
     for (size_t i = 0; i < s->cnt; i++) {
         if (strcmp(s->grants[i].name, name) != 0)
             continue;
-        bool allowed = wr ? s->grants[i].wr : s->grants[i].rd;
-        return allowed ? 0 : -EACCES;
+        if (wr ? s->grants[i].wr : s->grants[i].rd)
+            return 0;
+        seen = true;
     }
-    return -ENOENT;
+    for (size_t i = 0; i < s->rtCnt; i++) {
+        if (strcmp(s->rt[i].name, name) != 0)
+            continue;
+        if (wr ? s->rt[i].wr : s->rt[i].rd)
+            return 0;
+        seen = true;
+    }
+    return seen ? -EACCES : -ENOENT;
 }
 
 static bool scopeListed(const pipe_scope_t *s, const char *name) {
+    if (s->all)
+        return true;
     for (size_t i = 0; i < s->cnt; i++) {
         if (strcmp(s->grants[i].name, name) == 0)
             return true;
     }
+    for (size_t i = 0; i < s->rtCnt; i++) {
+        if (strcmp(s->rt[i].name, name) == 0)
+            return true;
+    }
     return false;
+}
+
+/* True when a launch grant lets `name` be opened in the direction. */
+static bool launchCovers(const pipe_scope_t *s, const char *name, bool wr) {
+    for (size_t i = 0; i < s->cnt; i++) {
+        if (strcmp(s->grants[i].name, name) == 0)
+            return wr ? s->grants[i].wr : s->grants[i].rd;
+    }
+    return false;
+}
+
+static int rtIndex(const pipe_scope_t *s, const char *name, bool wr) {
+    for (size_t i = 0; i < s->rtCnt; i++) {
+        if (strcmp(s->rt[i].name, name) == 0 &&
+            (wr ? s->rt[i].wr : s->rt[i].rd))
+            return (int)i;
+    }
+    return -1;
+}
+
+/* Grant or revoke the runtime clauses of "read=<name>,write=<name>,...". The
+ * whole list applies or none of it does. */
+static int scopeRuntime(pipe_scope_t *s, bool revoke, const char *clauses) {
+    char buf[CONFIG_WANTED_MAX_OPTIONS_SIZE];
+
+    if (clauses == NULL || clauses[0] == '\0')
+        return -EINVAL;
+    size_t len = strnlen(clauses, sizeof(buf));
+    if (len >= sizeof(buf))
+        return -EINVAL;
+    memcpy(buf, clauses, len + 1);
+
+    pipe_scope_t next = *s;
+    for (char *tok = buf; tok != NULL;) {
+        char *end = strchr(tok, ',');
+        bool wr;
+        const char *name;
+        if (end != NULL)
+            *end++ = '\0';
+        if (strncmp(tok, "read=", 5) == 0) {
+            wr = false;
+            name = tok + 5;
+        } else if (strncmp(tok, "write=", 6) == 0) {
+            wr = true;
+            name = tok + 6;
+        } else {
+            return -EINVAL;
+        }
+        int rc = PipeNameCheck(name);
+        if (rc < 0)
+            return rc;
+        int at = rtIndex(&next, name, wr);
+        if (!revoke) {
+            if (next.all || launchCovers(&next, name, wr) || at >= 0) {
+                tok = end;
+                continue;
+            }
+            if (next.rtCnt >= CONFIG_WANTED_PIPE_RUNTIME_GRANTS)
+                return -ENOSPC;
+            pipe_grant_t *g = &next.rt[next.rtCnt++];
+            memcpy(g->name, name, strlen(name) + 1);
+            g->rd = !wr;
+            g->wr = wr;
+        } else {
+            if (at < 0)
+                return launchCovers(&next, name, wr) ? -EPERM : -ENOENT;
+            for (size_t i = (size_t)at; i + 1 < next.rtCnt; i++)
+                next.rt[i] = next.rt[i + 1];
+            next.rtCnt--;
+        }
+        tok = end;
+    }
+    *s = next;
+    return 0;
 }
 
 /* ── Ring helpers (caller holds store->lock) ─────────────────────────────────
@@ -332,8 +430,11 @@ void *PipeDriver_Open(vfs_ctx_t c, const vfs_driver_t *drv,
     int rc = PipeNameCheck(suffix);
     if (rc == 0 && (flags & VFS_O_RDWR) == VFS_O_RDWR)
         rc = -EINVAL;
-    if (rc == 0 && scope != NULL)
+    if (rc == 0 && scope != NULL) {
+        PlatformMutexLock(store->lock);
         rc = scopeCheck(scope, suffix, (flags & 3) == VFS_O_WRONLY);
+        PlatformMutexUnlock(store->lock);
+    }
     if (rc < 0) {
         WantedFree(h);
         if (out_err)
@@ -538,10 +639,26 @@ int PipeDriver_ReadDir(vfs_ctx_t c, const vfs_driver_t *drv,
 
 typedef struct bridge_state_t {
     pipe_store_t *store; /* shared, engine-owned; NOT freed here */
-    pipe_scope_t *scope; /* NULL reaches every pipe */
+    pipe_scope_t *scope; /* what the driver reaches; never NULL */
     void *handles[BRIDGE_MAX_HANDLES];
     int wakeFd; /* the wapp's wake descriptor; -1 for none */
 } bridge_state_t;
+
+/* The running wapps' pipe drivers by wapp name, for the supervisor's runtime
+ * grants. Guarded by the shared store's lock. */
+static struct {
+    char wapp[WAPP_MAX_NAME_LEN];
+    bridge_state_t *state;
+} binds[CONFIG_WANTED_MAX_WAPPS];
+
+static void unbindState(bridge_state_t *s) {
+    PlatformMutexLock(s->store->lock);
+    for (size_t i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
+        if (binds[i].state == s)
+            memset(&binds[i], 0, sizeof(binds[i]));
+    }
+    PlatformMutexUnlock(s->store->lock);
+}
 
 static int allocHandle(bridge_state_t *s, void *h) {
     for (int i = 0; i < BRIDGE_MAX_HANDLES; i++) {
@@ -674,6 +791,7 @@ static int _bDestroy(vfs_driver_t *drv) {
                 s->handles[i] = NULL;
             }
         }
+        unbindState(s);
         WantedFree(s->scope);
         WantedFree(s); /* the store is engine-owned and outlives the driver */
     }
@@ -944,7 +1062,12 @@ static vfs_driver_t *createDriver(pipe_store_t *store, pipe_scope_t *scope) {
 vfs_driver_t *PipeDriverCreate(pipe_store_t *store) {
     if (!store)
         return NULL;
-    return createDriver(store, NULL);
+    pipe_scope_t *scope = WantedMalloc(sizeof(*scope));
+    if (!scope)
+        return NULL;
+    memset(scope, 0, sizeof(*scope));
+    scope->all = true;
+    return createDriver(store, scope);
 }
 
 vfs_driver_t *PipeDriverCreateScoped(pipe_store_t *store, const char *grant) {
@@ -965,9 +1088,80 @@ int PipeDriverGrant(vfs_driver_t *drv, const char *grant) {
     if (drv == NULL || drv->Open != _bOpen)
         return -EINVAL;
     bridge_state_t *s = (bridge_state_t *)drv->ctx;
-    if (s->scope == NULL)
+    if (s->scope == NULL || s->scope->all)
         return -EINVAL;
     return scopeParse(s->scope, grant);
+}
+
+int PipeDriverBind(vfs_driver_t *drv, const char *wapp) {
+    if (drv == NULL || drv->Open != _bOpen || wapp == NULL || wapp[0] == '\0' ||
+        strnlen(wapp, WAPP_MAX_NAME_LEN) >= WAPP_MAX_NAME_LEN)
+        return -EINVAL;
+    bridge_state_t *s = (bridge_state_t *)drv->ctx;
+    int rc = -ENOSPC;
+
+    PlatformMutexLock(s->store->lock);
+    for (size_t i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
+        if (binds[i].state != NULL && strcmp(binds[i].wapp, wapp) == 0) {
+            memset(&binds[i], 0, sizeof(binds[i]));
+            break;
+        }
+    }
+    for (size_t i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
+        if (binds[i].state == NULL) {
+            memcpy(binds[i].wapp, wapp, strlen(wapp) + 1);
+            binds[i].state = s;
+            rc = 0;
+            break;
+        }
+    }
+    PlatformMutexUnlock(s->store->lock);
+    return rc;
+}
+
+static bridge_state_t *boundState(const char *wapp) {
+    for (size_t i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
+        if (binds[i].state != NULL && strcmp(binds[i].wapp, wapp) == 0)
+            return binds[i].state;
+    }
+    return NULL;
+}
+
+int PipeRuntimeGrant(const char *wapp, bool revoke, const char *clauses) {
+    pipe_store_t *store = PipeStoreShared();
+    if (store == NULL || wapp == NULL)
+        return -EINVAL;
+    PlatformMutexLock(store->lock);
+    bridge_state_t *s = boundState(wapp);
+    int rc = s != NULL ? scopeRuntime(s->scope, revoke, clauses) : -ENOENT;
+    PlatformMutexUnlock(store->lock);
+    return rc;
+}
+
+int PipeRuntimeList(const char *wapp, char *buf, size_t cap) {
+    pipe_store_t *store = PipeStoreShared();
+    if (store == NULL || wapp == NULL || buf == NULL || cap == 0)
+        return -EINVAL;
+    PlatformMutexLock(store->lock);
+    bridge_state_t *s = boundState(wapp);
+    if (s == NULL) {
+        PlatformMutexUnlock(store->lock);
+        return -ENOENT;
+    }
+    size_t used = 0;
+    buf[0] = '\0';
+    for (size_t i = 0; i < s->scope->rtCnt; i++) {
+        const pipe_grant_t *g = &s->scope->rt[i];
+        int w = snprintf(buf + used, cap - used, "%s=%s\n",
+                         g->wr ? "write" : "read", g->name);
+        if (w < 0 || (size_t)w >= cap - used) {
+            PlatformMutexUnlock(store->lock);
+            return -EMSGSIZE;
+        }
+        used += (size_t)w;
+    }
+    PlatformMutexUnlock(store->lock);
+    return (int)used;
 }
 
 /* The `pipe` grant: a driver that must name at least one pipe. */

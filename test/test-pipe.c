@@ -1213,7 +1213,29 @@ TEST(pipe_eof, AReturningWriterResumesAnEndedStream) {
     VfsClose(peer, r);
 }
 
+TEST(pipe_eof, TwoSlotsOnOnePipeShareOneStreamThatEndsWithTheWapp) {
+    wappOut("both", PIPE_EOF_ANY);
+    VfsRegister(wapp, "<stderr>",
+                VfsPipeConsoleCreate(estore, "both", false, VFS_O_WRONLY,
+                                     PIPE_EOF_ANY, &exitCode));
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(wapp, VFS_STDOUT, "a", 1));
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(wapp, VFS_STDERR, "b", 1));
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(wapp, VFS_STDOUT, "c", 1));
+    int r = VfsOpen(peer, "/dev/pipe/both", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    TEST_ASSERT_TRUE(r >= 0);
+
+    char buf[8] = {0};
+    TEST_ASSERT_EQUAL_INT(3, VfsRead(peer, r, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("abc", buf, 3);
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsRead(peer, r, buf, sizeof(buf)));
+
+    VfsDestroy(&wapp);
+    TEST_ASSERT_EQUAL_INT(0, VfsRead(peer, r, buf, sizeof(buf)));
+    VfsClose(peer, r);
+}
+
 TEST_GROUP_RUNNER(pipe_eof) {
+    RUN_TEST_CASE(pipe_eof, TwoSlotsOnOnePipeShareOneStreamThatEndsWithTheWapp);
     RUN_TEST_CASE(pipe_eof, TheReaderGetsTheBufferedBytesThenEndOfStream);
     RUN_TEST_CASE(pipe_eof, WithoutEofTheStreamDoesNotEnd);
     RUN_TEST_CASE(pipe_eof, TheReaderDoesNotSeeEndOfStreamWhileTheWappRuns);
@@ -1307,4 +1329,223 @@ TEST_GROUP_RUNNER(pipe_handles) {
     RUN_TEST_CASE(pipe_handles, TheDirectoryCountsAgainstTheCap);
     RUN_TEST_CASE(pipe_handles, SetFlagsSwitchesAnOpenEndToNonBlocking);
     RUN_TEST_CASE(pipe_handles, EndingAWappClosesWhatItLeftOpen);
+}
+
+/***************************************/
+TEST_GROUP(pipe_runtime);
+/***************************************/
+
+/* The supervisor grants and revokes names of a running wapp. `rwapp` holds a
+ * launch grant and is bound as "w1"; `rother` reaches every pipe. */
+static pipe_store_t *rstore;
+static vfs_ctx_t rwapp;
+static vfs_ctx_t rother;
+
+static void boundWith(const char *grant) {
+    vfs_driver_t *drv = PipeDriverCreateScoped(rstore, grant);
+    DevFs_Register(rwapp, "pipe", drv);
+    TEST_ASSERT_EQUAL_INT(0, PipeDriverBind(drv, "w1"));
+}
+
+static bool listed(vfs_ctx_t v, const char *name) {
+    int dir = VfsOpen(v, "/dev/pipe", VFS_O_RDONLY);
+    uint8_t buf[256];
+    uint64_t cookie = 0;
+    size_t used = 0;
+    bool found;
+
+    TEST_ASSERT_TRUE(dir >= 0);
+    TEST_ASSERT_EQUAL_INT(0,
+                          VfsReadDir(v, dir, buf, sizeof(buf), &cookie, &used));
+    found = HasBytes(buf, used, name, strlen(name));
+    VfsClose(v, dir);
+    return found;
+}
+
+TEST_SETUP(pipe_runtime) {
+    rstore = PipeStoreNew();
+    rwapp = VfsInit();
+    rother = VfsInit();
+    DevFs_Register(rother, "pipe", PipeDriverCreate(rstore));
+}
+
+TEST_TEAR_DOWN(pipe_runtime) {
+    VfsDestroy(&rwapp);
+    VfsDestroy(&rother);
+    PipeStoreFree(rstore);
+    rstore = NULL;
+}
+
+TEST(pipe_runtime, AGrantOpensANameAtTheNextOpen) {
+    boundWith("read=base");
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpen(rwapp, "/dev/pipe/extra", VFS_O_RDONLY));
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", false, "read=extra"));
+    int fd = VfsOpen(rwapp, "/dev/pipe/extra", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    VfsClose(rwapp, fd);
+}
+
+TEST(pipe_runtime, AGrantHoldsOneDirection) {
+    boundWith("read=base");
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", false, "write=out"));
+    TEST_ASSERT_EQUAL_INT(-EACCES,
+                          VfsOpen(rwapp, "/dev/pipe/out", VFS_O_RDONLY));
+    int fd = VfsOpen(rwapp, "/dev/pipe/out", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    VfsClose(rwapp, fd);
+}
+
+TEST(pipe_runtime, ARevokeStopsNewOpensAndKeepsOpenDescriptors) {
+    boundWith("read=base");
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", false, "write=out"));
+    int w = VfsOpen(rwapp, "/dev/pipe/out", VFS_O_WRONLY);
+    int r = VfsOpen(rother, "/dev/pipe/out", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    TEST_ASSERT_TRUE(w >= 0);
+    TEST_ASSERT_TRUE(r >= 0);
+
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", true, "write=out"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpen(rwapp, "/dev/pipe/out", VFS_O_WRONLY));
+    TEST_ASSERT_EQUAL_INT(2, VfsWrite(rwapp, w, "ok", 2));
+    char buf[4] = {0};
+    TEST_ASSERT_EQUAL_INT(2, VfsRead(rother, r, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING_LEN("ok", buf, 2);
+    VfsClose(rwapp, w);
+    VfsClose(rother, r);
+}
+
+TEST(pipe_runtime, TheListingFollowsTheRuntimeGrants) {
+    boundWith("read=base");
+    int peerFd = VfsOpen(rother, "/dev/pipe/extra", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(peerFd >= 0);
+    TEST_ASSERT_FALSE(listed(rwapp, "extra"));
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", false, "read=extra"));
+    TEST_ASSERT_TRUE(listed(rwapp, "extra"));
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", true, "read=extra"));
+    TEST_ASSERT_FALSE(listed(rwapp, "extra"));
+    VfsClose(rother, peerFd);
+}
+
+TEST(pipe_runtime, TheListNamesTheRuntimeClauses) {
+    boundWith("read=base");
+    char buf[128];
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeList("w1", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", false, "read=a,write=b"));
+    int n = PipeRuntimeList("w1", buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_INT(15, n);
+    TEST_ASSERT_EQUAL_STRING("read=a\nwrite=b\n", buf);
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", true, "read=a"));
+    TEST_ASSERT_EQUAL_INT(8, PipeRuntimeList("w1", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_STRING("write=b\n", buf);
+}
+
+TEST(pipe_runtime, AGrantAppliesWholeOrNotAtAll) {
+    boundWith("read=base");
+    char buf[128];
+    TEST_ASSERT_EQUAL_INT(-EINVAL,
+                          PipeRuntimeGrant("w1", false, "read=a,write=b c"));
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeList("w1", buf, sizeof(buf)));
+
+    char many[CONFIG_WANTED_MAX_OPTIONS_SIZE];
+    size_t used = 0;
+    for (int i = 0; i <= CONFIG_WANTED_PIPE_RUNTIME_GRANTS; i++) {
+        int n = snprintf(many + used, sizeof(many) - used, "%sread=r%d",
+                         i ? "," : "", i);
+        TEST_ASSERT_TRUE(n > 0);
+        used += (size_t)n;
+    }
+    TEST_ASSERT_EQUAL_INT(-ENOSPC, PipeRuntimeGrant("w1", false, many));
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeList("w1", buf, sizeof(buf)));
+}
+
+TEST(pipe_runtime, ARevokeAppliesWholeOrNotAtAll) {
+    boundWith("read=base");
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", false, "read=a"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          PipeRuntimeGrant("w1", true, "read=a,read=never"));
+    char buf[64];
+    TEST_ASSERT_EQUAL_INT(7, PipeRuntimeList("w1", buf, sizeof(buf)));
+}
+
+TEST(pipe_runtime, ALaunchClauseChangesNothingAndCannotBeRevoked) {
+    boundWith("read=base");
+    char buf[64];
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", false, "read=base"));
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeList("w1", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_INT(-EPERM, PipeRuntimeGrant("w1", true, "read=base"));
+    int fd = VfsOpen(rwapp, "/dev/pipe/base", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    VfsClose(rwapp, fd);
+}
+
+TEST(pipe_runtime, AMalformedClauseIsRefused) {
+    boundWith("read=base");
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeRuntimeGrant("w1", false, "bogus"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeRuntimeGrant("w1", false, "read="));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeRuntimeGrant("w1", false, ""));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, PipeRuntimeGrant("w1", false, NULL));
+    TEST_ASSERT_EQUAL_INT(
+        -ENAMETOOLONG,
+        PipeRuntimeGrant("w1", false, "read=0123456789012345678901234567890x"));
+}
+
+TEST(pipe_runtime, AWappThatIsNotRunningHoldsNoGrants) {
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(-ENOENT, PipeRuntimeGrant("ghost", false, "read=a"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, PipeRuntimeList("ghost", buf, sizeof(buf)));
+}
+
+TEST(pipe_runtime, RuntimeGrantsEndWithTheWapp) {
+    boundWith("read=base");
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", false, "read=extra"));
+    VfsDestroy(&rwapp);
+
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(-ENOENT, PipeRuntimeGrant("w1", false, "read=a"));
+    rwapp = VfsInit();
+    boundWith("read=base");
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeList("w1", buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_INT(-ENOENT,
+                          VfsOpen(rwapp, "/dev/pipe/extra", VFS_O_RDONLY));
+}
+
+TEST(pipe_runtime, ANewLaunchReplacesTheBindingOfItsName) {
+    boundWith("read=base");
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", false, "read=first"));
+    vfs_ctx_t again = VfsInit();
+    vfs_driver_t *drv = PipeDriverCreateScoped(rstore, "read=base");
+    DevFs_Register(again, "pipe", drv);
+    TEST_ASSERT_EQUAL_INT(0, PipeDriverBind(drv, "w1"));
+    char buf[32];
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeList("w1", buf, sizeof(buf)));
+    VfsDestroy(&again);
+}
+
+TEST(pipe_runtime, AnAmbientWappTakesAGrantAndChangesNothing) {
+    vfs_driver_t *drv = PipeDriverCreate(rstore);
+    DevFs_Register(rwapp, "pipe", drv);
+    TEST_ASSERT_EQUAL_INT(0, PipeDriverBind(drv, "w1"));
+    char buf[16];
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeGrant("w1", false, "read=a"));
+    TEST_ASSERT_EQUAL_INT(0, PipeRuntimeList("w1", buf, sizeof(buf)));
+    int fd = VfsOpen(rwapp, "/dev/pipe/anything", VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    VfsClose(rwapp, fd);
+}
+
+TEST_GROUP_RUNNER(pipe_runtime) {
+    RUN_TEST_CASE(pipe_runtime, AGrantOpensANameAtTheNextOpen);
+    RUN_TEST_CASE(pipe_runtime, AGrantHoldsOneDirection);
+    RUN_TEST_CASE(pipe_runtime, ARevokeStopsNewOpensAndKeepsOpenDescriptors);
+    RUN_TEST_CASE(pipe_runtime, TheListingFollowsTheRuntimeGrants);
+    RUN_TEST_CASE(pipe_runtime, TheListNamesTheRuntimeClauses);
+    RUN_TEST_CASE(pipe_runtime, AGrantAppliesWholeOrNotAtAll);
+    RUN_TEST_CASE(pipe_runtime, ARevokeAppliesWholeOrNotAtAll);
+    RUN_TEST_CASE(pipe_runtime, ALaunchClauseChangesNothingAndCannotBeRevoked);
+    RUN_TEST_CASE(pipe_runtime, AMalformedClauseIsRefused);
+    RUN_TEST_CASE(pipe_runtime, AWappThatIsNotRunningHoldsNoGrants);
+    RUN_TEST_CASE(pipe_runtime, RuntimeGrantsEndWithTheWapp);
+    RUN_TEST_CASE(pipe_runtime, ANewLaunchReplacesTheBindingOfItsName);
+    RUN_TEST_CASE(pipe_runtime, AnAmbientWappTakesAGrantAndChangesNothing);
 }

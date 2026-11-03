@@ -8,6 +8,7 @@
 
 #include <cwalk.h>
 #include <vfs-drivers.h>
+#include <vfs-pipe.h>
 #include <vfs.h>
 
 #include <platform.h>
@@ -28,6 +29,13 @@
  * "create <name>" and "delete <name>". */
 #define WAPPS_LINE_MAX 32
 
+/* The widest write to a wapp's pipes node: a verb and its clause list. */
+#define WAPPS_PIPES_LINE_MAX (CONFIG_WANTED_MAX_OPTIONS_SIZE + 8)
+
+/* The runtime clauses of a wapp, one per line, as a read of the pipes node. */
+#define WAPPS_PIPES_READ_MAX                                                   \
+    ((CONFIG_WANTED_PIPE_RUNTIME_GRANTS * (PIPE_NAME_MAX + 8)) + 1)
+
 typedef enum {
     NODE_NONE = 0,
     NODE_ROOT,   /* wapps/             */
@@ -35,6 +43,7 @@ typedef enum {
     NODE_CTL,    /* wapps/<name>/ctl   */
     NODE_STATE,  /* wapps/<name>/state */
     NODE_CONFIG, /* wapps/<name>/config */
+    NODE_PIPES,  /* wapps/<name>/pipes  */
 } wapp_node_t;
 
 #define WAPPS_MAX_OPEN 8
@@ -94,6 +103,7 @@ static const struct {
     {"ctl", NODE_CTL},
     {"state", NODE_STATE},
     {"config", NODE_CONFIG},
+    {"pipes", NODE_PIPES},
 };
 #define N_LEAVES (sizeof(LEAVES) / sizeof(LEAVES[0]))
 
@@ -392,6 +402,18 @@ static int _Read(vfs_driver_ctx_t d, int fd, void *buf, size_t nbyte) {
     if (d->fds[fd].read_done)
         return 0; /* EOF, latched per-fd */
 
+    if (node == NODE_PIPES) {
+        char list[WAPPS_PIPES_READ_MAX];
+        int n = PipeRuntimeList(d->fds[fd].name, list, sizeof(list));
+        if (n < 0)
+            return n;
+        if ((size_t)n > nbyte)
+            return -EMSGSIZE;
+        memcpy(buf, list, (size_t)n);
+        d->fds[fd].read_done = true;
+        return n;
+    }
+
     char line[WAPPS_LINE_MAX];
     size_t n = renderRead(node, d->fds[fd].name, line, sizeof(line));
     if (n >= sizeof(line))
@@ -460,6 +482,34 @@ static int _Write(vfs_driver_ctx_t d, int fd, const void *buf, size_t nbyte) {
         strncpy(p->name, name, WAPP_MAX_NAME_LEN - 1);
         p->name[WAPP_MAX_NAME_LEN - 1] = '\0';
         return (int)nbyte;
+    }
+
+    if (node == NODE_PIPES) {
+        /* "grant <clauses>" | "revoke <clauses>", applied whole or not at
+         * all. The clauses are the form of a pipe grant's options. */
+        char line[WAPPS_PIPES_LINE_MAX];
+        if (nbyte >= sizeof(line))
+            return -EMSGSIZE;
+        memcpy(line, buf, nbyte);
+        line[nbyte] = '\0';
+        size_t end = nbyte;
+        while (end > 0 && (line[end - 1] == '\n' || line[end - 1] == '\r' ||
+                           line[end - 1] == ' ' || line[end - 1] == '\t'))
+            line[--end] = '\0';
+
+        bool revoke;
+        const char *clauses;
+        if (strncmp(line, "grant ", 6) == 0) {
+            revoke = false;
+            clauses = line + 6;
+        } else if (strncmp(line, "revoke ", 7) == 0) {
+            revoke = true;
+            clauses = line + 7;
+        } else {
+            return -EINVAL;
+        }
+        int ret = PipeRuntimeGrant(name, revoke, clauses);
+        return ret < 0 ? ret : (int)nbyte;
     }
 
     if (node == NODE_ROOT || node == NODE_WAPP)

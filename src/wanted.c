@@ -823,6 +823,8 @@ int WantedWappRun(wapp_data_t *ctx) {
     if (pipeDrv == NULL ||
         DevFs_Register(ctx->vfs, "pipe", withWake(ctx->vfs, pipeDrv)) < 0)
         ret += -ENOMEM;
+    else if (wapp->name[0] != '\0' && PipeDriverBind(pipeDrv, wapp->name) < 0)
+        ret += -ENOSPC;
 
     /* sockets[]: named sockets created at /net/<name>. The transport spec is
      * the entry's address (carried in options, with its role and listen bounds
