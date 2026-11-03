@@ -1063,6 +1063,52 @@ static void pipe_grant_check(void) {
     delete_wapp(PG_READER);
 }
 
+/* The supervisor grants a running wapp a pipe it could not open, the wapp reads
+ * from it, and a revoke turns a later open of the name into a refusal. */
+#define RT_READER "rtreader"
+#define RT_WRITER "rtwriter"
+#define RT_PIPES "/dev/wanted/wapps/" RT_READER "/pipes"
+
+static void pipe_runtime_check(void) {
+    char buf[128];
+
+    int ok = create_wapp(RT_READER) &&
+             write_path(PG_CFG(RT_READER),
+                        PG_BODY("rtreader", "read=elsewhere")) >= 0 &&
+             start_wapp(RT_READER);
+    int granted = 0;
+    for (int i = 0; i < 10 && !granted; i++) {
+        granted = write_path(RT_PIPES, "grant read=duplex") >= 0;
+        if (!granted)
+            sleep(1);
+    }
+    int listed = read_path(RT_PIPES, buf, sizeof(buf)) > 0 &&
+                 strstr(buf, "read=duplex") != NULL;
+    int sent = pg_run(RT_WRITER, PG_CFG(RT_WRITER),
+                      PG_BODY("writer", "write=duplex"));
+
+    int got = 0;
+    for (int i = 0; i < 6 && !got; i++) {
+        got = read_path(LOG_MOUNT "/" RT_READER, buf, sizeof(buf)) > 0 &&
+              strstr(buf, DUPLEX_PAYLOAD) != NULL;
+        if (!got)
+            sleep(1);
+    }
+    tap_ok(ok && granted && listed && sent && got,
+           "pipe runtime: a pipe granted to a running wapp opens and carries "
+           "data");
+
+    int revoked = write_path(RT_PIPES, "revoke read=duplex") >= 0;
+    wait_dead(RT_READER);
+    int denied = read_path(LOG_MOUNT "/" RT_READER, buf, sizeof(buf)) > 0 &&
+                 strstr(buf, "reopen: denied") != NULL;
+    tap_ok(revoked && denied && pg_exit_is(PG_EXIT(RT_READER), "0"),
+           "pipe runtime: after a revoke a new open of the name is refused");
+
+    delete_wapp(RT_WRITER);
+    delete_wapp(RT_READER);
+}
+
 /* argv and environ passthrough plus exit-code exposure. argenv prints its known
  * args and envs to its log and exits non-zero; assert the values reached it and
  * that the clean exit surfaces on exit_code, where a trap would leave -1. */
@@ -1720,6 +1766,7 @@ int main(void) {
         {"input_check", input_check},
         {"pipe_duplex_check", pipe_duplex_check},
         {"pipe_grant_check", pipe_grant_check},
+        {"pipe_runtime_check", pipe_runtime_check},
         {"multi_reader_pipe_check", multi_reader_pipe_check},
         {"robustness_checks", robustness_checks},
         {"containment_checks", containment_checks},

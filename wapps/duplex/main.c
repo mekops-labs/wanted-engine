@@ -23,6 +23,30 @@ int main(void) {
         return 0;
     }
 
+    if (role != NULL && strcmp(role, "rtreader") == 0) {
+        /* The grant arrives while this runs: retry the open until it does,
+         * read once, then try the name again after the supervisor's revoke. */
+        char got[64];
+        int fd = -1;
+        for (int i = 0; i < 100 && fd < 0; i++) {
+            fd = open(CHAN, O_RDONLY);
+            if (fd < 0)
+                usleep(50000);
+        }
+        if (fd < 0)
+            return 1;
+        int n = read(fd, got, sizeof(got));
+        if (n <= 0)
+            return 1;
+        write(STDOUT_FILENO, got, n);
+        sleep(3);
+        int again = open(CHAN, O_RDONLY);
+        const char *verdict = again < 0 ? "\nreopen: denied\n" : "\nreopen: allowed\n";
+        write(STDOUT_FILENO, verdict, strlen(verdict));
+        close(fd);
+        return again < 0 ? 0 : 2;
+    }
+
     /* reader (default) */
     char buf[64];
     int fd = open(CHAN, O_RDONLY);
