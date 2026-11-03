@@ -52,7 +52,7 @@ if sys.argv[4] == "1":
     cfg["system"]["inputs"] = [
         {"name": n, "types": ["key", "text", "rel"], "keymap": "us"}
         for n in ("kbd", "kbd2")]
-json.dump(cfg, open(sys.argv[2], "w"), indent=4)
+json.dump(cfg, open(sys.argv[2], "w"), separators=(",", ":"))
 PY
     echo "$out"
 }
