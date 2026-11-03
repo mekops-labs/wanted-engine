@@ -1106,6 +1106,45 @@ TEST(pipe_eof, AnOutputWriterIsToldWhenItsInPeerEnded) {
     TEST_ASSERT_EQUAL_INT(-EPIPE, VfsWrite(wapp, VFS_STDOUT, "b", 1));
 }
 
+/* A non-blocking read of a fresh peer descriptor: 0 at end of stream. */
+static int peerRead(const char *path) {
+    int r = VfsOpen(peer, path, VFS_O_RDONLY | VFS_O_NONBLOCK);
+    TEST_ASSERT_TRUE(r >= 0);
+    char buf[8];
+    int n = VfsRead(peer, r, buf, sizeof(buf));
+    VfsClose(peer, r);
+    return n;
+}
+
+TEST(pipe_eof, AWriterWithoutEofClearsAnEndedStream) {
+    /* An eof run ends, then the wapp returns without eof (its restart policy
+     * changed) and leaves again: the reader must not see an end. */
+    int keep = VfsOpen(peer, "/dev/pipe/sw.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    wappOut("sw.out", true);
+    VfsDestroy(&wapp);
+    TEST_ASSERT_EQUAL_INT(0, peerRead("/dev/pipe/sw.out"));
+
+    wapp = VfsInit();
+    wappOut("sw.out", false);
+    VfsDestroy(&wapp);
+    TEST_ASSERT_EQUAL_INT(-EAGAIN, peerRead("/dev/pipe/sw.out"));
+    VfsClose(peer, keep);
+}
+
+TEST(pipe_eof, AReturningWriterResumesAnEndedStream) {
+    wappOut("back.out", true);
+    int r = VfsOpen(peer, "/dev/pipe/back.out", VFS_O_RDONLY | VFS_O_NONBLOCK);
+    VfsDestroy(&wapp);
+    char buf[4] = {0};
+    TEST_ASSERT_EQUAL_INT(0, VfsRead(peer, r, buf, sizeof(buf)));
+
+    wapp = VfsInit();
+    wappOut("back.out", true);
+    TEST_ASSERT_EQUAL_INT(2, VfsWrite(wapp, VFS_STDOUT, "up", 2));
+    TEST_ASSERT_EQUAL_INT(2, VfsRead(peer, r, buf, sizeof(buf)));
+    VfsClose(peer, r);
+}
+
 TEST_GROUP_RUNNER(pipe_eof) {
     RUN_TEST_CASE(pipe_eof, TheReaderGetsTheBufferedBytesThenEndOfStream);
     RUN_TEST_CASE(pipe_eof, WithoutEofTheStreamDoesNotEnd);
@@ -1116,6 +1155,8 @@ TEST_GROUP_RUNNER(pipe_eof) {
     RUN_TEST_CASE(pipe_eof, ARestartedWappReachesThePeerOnTheSameDescriptor);
     RUN_TEST_CASE(pipe_eof, APeerThatClosedFindsAFreshPipeOnTheNextRun);
     RUN_TEST_CASE(pipe_eof, AnOutputWriterIsToldWhenItsInPeerEnded);
+    RUN_TEST_CASE(pipe_eof, AWriterWithoutEofClearsAnEndedStream);
+    RUN_TEST_CASE(pipe_eof, AReturningWriterResumesAnEndedStream);
 }
 
 /***************************************/

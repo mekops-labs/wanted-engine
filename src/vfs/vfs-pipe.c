@@ -39,7 +39,8 @@ typedef struct named_pipe_t {
     /* A console slot's pipe outlives the wapp holding it, so the gap while a
      * writer restarts reads as "nothing yet" rather than end-of-stream. */
     bool persistent;
-    /* An eof writer attached: its departure ends the stream for good. */
+    /* The console writer attached last has eof: once it leaves, the stream
+     * reads as ended until a writer attaches again. */
     bool end_on_exit;
     /* An eof reader left: writers get -EPIPE until a reader attaches. */
     bool reader_gone;
@@ -870,8 +871,8 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
         } else {
             p->writers++;
             p->writer_seen = true;
-            if (eof)
-                p->end_on_exit = true;
+            /* The returning writer's options decide, not an earlier run's. */
+            p->end_on_exit = eof;
         }
     }
     PlatformMutexUnlock(store->lock);
