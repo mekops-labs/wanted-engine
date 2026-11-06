@@ -129,7 +129,8 @@ The waits a wapp can enter:
 |------|-------------|
 | socket accept, socket read | the wake descriptor, watched with `select()` beside the socket |
 | `uart` read, `uart` write | the wake descriptor, checked between poll attempts |
-| pipe read, pipe write | the signal, or the wake descriptor checked between 1 ms sleeps; any wait ends at a cap of about 5 s with `-EAGAIN` |
+| pipe read, pipe write, `poll_oneoff` on pipes alone | the wapp's ready event, which a pipe change raises and a stop ends with `-EINTR`; there is no timer and no cap |
+| `poll_oneoff` that also subscribes a socket, an `input`, a `uart` or another descriptor | the signal, or the wake descriptor, checked between 1 ms sleeps |
 | `uart` transmit drain before a line-rate change | a cap of 1 s |
 
 A stopped wapp answers `-EINTR` from the call it was in, unwinds, and the

@@ -22,6 +22,8 @@ Unreleased
   names of a running wapp. `CONFIG_WANTED_PIPE_RUNTIME_GRANTS` sets how many
   clauses a wapp holds (4).
 - The `out` and `err` console slots of one wapp may name the same pipe.
+- `PlatformReadyNew`, `PlatformReadyRaise`, `PlatformReadyStop` and
+  `PlatformReadyWait` give each wapp a ready event that a stop also ends.
 - `CONFIG_WANTED_WAMR_INTERP_FAST` builds the fast WAMR interpreter on every
   target. The classic interpreter stays the default.
 - The `wbench` and `wlkload` wapps, `tools/wamr-mode-bench/`, and the
@@ -29,6 +31,8 @@ Unreleased
 
 ### Changed
 
+- A pipe read, a pipe write and a `poll_oneoff` over pipes sleep until a pipe
+  changes or the wapp is stopped. The 5 s `EAGAIN` cap and the recheck are gone.
 - A pipe name over 31 characters returns `ENAMETOOLONG` and a name with a
   character outside `[A-Za-z0-9._-]` returns `EINVAL`. The engine no longer
   truncates a name.
