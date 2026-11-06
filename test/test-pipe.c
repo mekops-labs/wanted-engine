@@ -1,11 +1,16 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#define _GNU_SOURCE /* RUSAGE_THREAD */
+
 #include "unity_fixture.h"
 
 #include <errno.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/resource.h>
+#include <unistd.h>
 #include <vfs-drivers.h>
 
 #include "test-utils.h"
@@ -17,6 +22,8 @@
 #include <vfs/vfs-internal.h>
 #include <wanted-api.h>
 #include <wanted-autoconf.h>
+#include <wasi/wasi-internal.h>
+#include <wasi/wasi_types.h>
 
 /* Each test group that needs a VFS with a pipe driver gets its own fixture.
  * The pipe storage now lives in a shared pipe_store_t the fixture owns; the
@@ -182,30 +189,6 @@ TEST(pipe_rw, DataPersistsAfterWriterCloses) {
     VfsClose(vfs, reader);
 }
 
-/* A blocking writer waits for the reader to drain and gives up at the safety
- * cap. Nothing drains here, so the write reaches the cap and reports EAGAIN. */
-TEST(pipe_rw, WriteToFullBufferReturnsEagain) {
-    /* Fill the ring, then write one byte past it. */
-    int writer = VfsOpen(vfs, "/dev/pipe/full", VFS_O_WRONLY);
-    int reader = VfsOpen(vfs, "/dev/pipe/full", VFS_O_RDONLY);
-    TEST_ASSERT_TRUE(writer >= 0);
-    TEST_ASSERT_TRUE(reader >= 0);
-
-    static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
-    memset(payload, 0xAB, sizeof(payload));
-
-    int n = VfsWrite(vfs, writer, payload, sizeof(payload));
-    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_PIPE_BUF_SIZE, n);
-
-    /* Buffer is full — any further write returns -EAGAIN. */
-    uint8_t extra = 0xFF;
-    n = VfsWrite(vfs, writer, &extra, 1);
-    TEST_ASSERT_EQUAL_INT(-EAGAIN, n);
-
-    VfsClose(vfs, writer);
-    VfsClose(vfs, reader);
-}
-
 TEST(pipe_rw, NonblockWriteToFullBufferReturnsEagainAtOnce) {
     int writer =
         VfsOpen(vfs, "/dev/pipe/nbfull", VFS_O_WRONLY | VFS_O_NONBLOCK);
@@ -258,7 +241,6 @@ TEST_GROUP_RUNNER(pipe_rw) {
     RUN_TEST_CASE(pipe_rw, ReadWithNoDataAndWriterActiveReturnsEagain);
     RUN_TEST_CASE(pipe_rw, ReadAfterWriterClosedWithNoDataReturnsEof);
     RUN_TEST_CASE(pipe_rw, DataPersistsAfterWriterCloses);
-    RUN_TEST_CASE(pipe_rw, WriteToFullBufferReturnsEagain);
     RUN_TEST_CASE(pipe_rw, NonblockWriteToFullBufferReturnsEagainAtOnce);
     RUN_TEST_CASE(pipe_rw, PartialReadLeavesRemainder);
 }
@@ -461,27 +443,22 @@ static void consoleOutNonblock(const char *name) {
                                      PIPE_EOF_NONE, NULL));
 }
 
+static void consoleInNonblock(const char *name) {
+    VfsRegister(cvfs, "<stdin>",
+                VfsPipeConsoleCreate(cstore, name, true,
+                                     VFS_O_RDONLY | VFS_O_NONBLOCK,
+                                     PIPE_EOF_NONE, NULL));
+}
+
 static void consoleIn(const char *name) {
     VfsRegister(cvfs, "<stdin>",
                 VfsPipeConsoleCreate(cstore, name, true, VFS_O_RDONLY,
                                      PIPE_EOF_NONE, NULL));
 }
 
-/* A console writer delivers or waits; it never discards buffered bytes to
- * make room, which would corrupt a framed stream without telling either end. */
-TEST(pipe_console, FullRingShortWritesRatherThanDropping) {
-    consoleOut("wire");
-
-    static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
-    memset(payload, 0xAB, sizeof(payload));
-    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_PIPE_BUF_SIZE,
-                          VfsWrite(cvfs, VFS_STDOUT, payload, sizeof(payload)));
-
-    uint8_t extra = 0xFF;
-    TEST_ASSERT_EQUAL_INT(-EAGAIN, VfsWrite(cvfs, VFS_STDOUT, &extra, 1));
-}
-
-/* O_NONBLOCK gives a producer that cannot wait an immediate refusal. */
+/* A console writer delivers or refuses; it never discards buffered bytes to
+ * make room, which would corrupt a framed stream without telling either end.
+ * O_NONBLOCK gives a producer that cannot wait an immediate refusal. */
 TEST(pipe_console, NonblockWriterRefusesAFullRingAtOnce) {
     consoleOutNonblock("nbwire");
 
@@ -497,7 +474,7 @@ TEST(pipe_console, NonblockWriterRefusesAFullRingAtOnce) {
 /* The first bytes written must still be the first bytes read: a ring that
  * dropped its oldest to fit would hand the reader a stream missing its head. */
 TEST(pipe_console, KeepsTheOldestBytesWhenTheRingFills) {
-    consoleOut("head");
+    consoleOutNonblock("head");
     consoleIn("head");
 
     static uint8_t payload[CONFIG_WANTED_PIPE_BUF_SIZE];
@@ -519,7 +496,7 @@ TEST(pipe_console, KeepsTheOldestBytesWhenTheRingFills) {
  */
 TEST(pipe_console, WriterLeavingIsNotEndOfStream) {
     consoleOut("restart");
-    consoleIn("restart");
+    consoleInNonblock("restart");
 
     VfsClose(cvfs, VFS_STDOUT); /* the producer exits */
 
@@ -545,7 +522,6 @@ TEST(pipe_console, BufferedBytesSurviveTheWriterLeaving) {
 }
 
 TEST_GROUP_RUNNER(pipe_console) {
-    RUN_TEST_CASE(pipe_console, FullRingShortWritesRatherThanDropping);
     RUN_TEST_CASE(pipe_console, NonblockWriterRefusesAFullRingAtOnce);
     RUN_TEST_CASE(pipe_console, KeepsTheOldestBytesWhenTheRingFills);
     RUN_TEST_CASE(pipe_console, WriterLeavingIsNotEndOfStream);
@@ -1548,4 +1524,251 @@ TEST_GROUP_RUNNER(pipe_runtime) {
     RUN_TEST_CASE(pipe_runtime, RuntimeGrantsEndWithTheWapp);
     RUN_TEST_CASE(pipe_runtime, ANewLaunchReplacesTheBindingOfItsName);
     RUN_TEST_CASE(pipe_runtime, AnAmbientWappTakesAGrantAndChangesNothing);
+}
+
+/***************************************/
+TEST_GROUP(pipe_ready);
+/***************************************/
+
+/* A wapp blocked on a pipe sleeps on its ready event. Each case runs the
+ * blocked call on its own thread against a context with an event, and acts on
+ * the pipe from a second context. */
+
+#define READY_SETTLE_US 150000
+
+static pipe_store_t *rstore;
+static vfs_ctx_t rvfs; /* the blocked wapp */
+static vfs_ctx_t pvfs; /* its peer */
+static plat_ready_t *rready;
+
+typedef struct {
+    int fd;
+    char buf[32];
+    int result;
+    long switches; /* voluntary context switches the call cost */
+    uint64_t pollKind;
+    pthread_t thread;
+} blocked_t;
+
+static long voluntarySwitches(void) {
+    struct rusage ru;
+
+    getrusage(RUSAGE_THREAD, &ru);
+    return ru.ru_nvcsw;
+}
+
+static void *blockedRead(void *arg) {
+    blocked_t *b = arg;
+    long before = voluntarySwitches();
+
+    b->result = VfsRead(rvfs, b->fd, b->buf, sizeof(b->buf));
+    b->switches = voluntarySwitches() - before;
+    return NULL;
+}
+
+static void *blockedWrite(void *arg) {
+    blocked_t *b = arg;
+    static uint8_t more[4] = {1, 2, 3, 4};
+
+    b->result = VfsWrite(rvfs, b->fd, more, sizeof(more));
+    return NULL;
+}
+
+static void *blockedPoll(void *arg) {
+    blocked_t *b = arg;
+    __wasi_subscription_t sub[2];
+    __wasi_event_t ev[2];
+    uint32_t n = 0;
+    long before = voluntarySwitches();
+
+    memset(sub, 0, sizeof(sub));
+    sub[0].userdata = 1;
+    sub[0].type = __WASI_EVENTTYPE_FD_READ;
+    sub[0].u.fd_readwrite.fd = (uint32_t)b->fd;
+    sub[1].userdata = 2;
+    sub[1].type = __WASI_EVENTTYPE_CLOCK;
+    sub[1].u.clock.id = PLAT_CLOCKID_MONOTONIC;
+    sub[1].u.clock.timeout = 60ULL * 1000000000ULL;
+    b->result = (int)WasiPollOneoff(rvfs, sub, ev, 2, &n);
+    b->switches = voluntarySwitches() - before;
+    b->pollKind = n > 0 ? ev[0].userdata : 0;
+    return NULL;
+}
+
+static void startBlocked(blocked_t *b, void *(*fn)(void *)) {
+    TEST_ASSERT_EQUAL_INT(0, pthread_create(&b->thread, NULL, fn, b));
+    usleep(READY_SETTLE_US);
+}
+
+static void joinBlocked(blocked_t *b) {
+    TEST_ASSERT_EQUAL_INT(0, pthread_join(b->thread, NULL));
+}
+
+static vfs_driver_t *withReady(vfs_driver_t *drv, vfs_ctx_t vfs) {
+    TEST_ASSERT_NOT_NULL(drv);
+    TEST_ASSERT_NOT_NULL(drv->SetWake);
+    TEST_ASSERT_NOT_NULL(drv->SetReady);
+    drv->SetWake(drv->ctx, VfsWakeFd(vfs));
+    drv->SetReady(drv->ctx, VfsReady(vfs));
+    return drv;
+}
+
+TEST_SETUP(pipe_ready) {
+    rstore = PipeStoreNew();
+    rvfs = VfsInit();
+    pvfs = VfsInit();
+    rready = PlatformReadyNew();
+    TEST_ASSERT_NOT_NULL(rready);
+    VfsSetWakeFd(rvfs, PlatformWakeCreate());
+    VfsSetReady(rvfs, rready);
+    DevFs_Register(rvfs, "pipe", withReady(PipeDriverCreate(rstore), rvfs));
+    DevFs_Register(pvfs, "pipe", PipeDriverCreate(rstore));
+}
+
+TEST_TEAR_DOWN(pipe_ready) {
+    VfsDestroy(&pvfs);
+    VfsDestroy(&rvfs); /* frees the ready event */
+    PipeStoreFree(rstore);
+    rstore = NULL;
+}
+
+TEST(pipe_ready, AnIdleReadWakesOnlyWhenDataArrives) {
+    blocked_t b = {0};
+    b.fd = VfsOpen(rvfs, "/dev/pipe/idle", VFS_O_RDONLY);
+    int wr = VfsOpen(pvfs, "/dev/pipe/idle", VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(b.fd >= 0);
+    TEST_ASSERT_TRUE(wr >= 0);
+
+    startBlocked(&b, blockedRead);
+    usleep(300000);
+    TEST_ASSERT_EQUAL_INT(2, VfsWrite(pvfs, wr, "hi", 2));
+    joinBlocked(&b);
+
+    TEST_ASSERT_EQUAL_INT(2, b.result);
+    TEST_ASSERT_EQUAL_STRING_LEN("hi", b.buf, 2);
+    /* A 1 ms recheck costs about 450 switches over this wait. */
+    TEST_ASSERT_LESS_THAN_INT(20, (int)b.switches);
+}
+
+TEST(pipe_ready, ReadingWakesAWriterBlockedOnAFullRing) {
+    blocked_t b = {0};
+    static uint8_t fill[CONFIG_WANTED_PIPE_BUF_SIZE];
+    b.fd = VfsOpen(rvfs, "/dev/pipe/room", VFS_O_WRONLY);
+    int rd = VfsOpen(pvfs, "/dev/pipe/room", VFS_O_RDONLY);
+    TEST_ASSERT_EQUAL_INT(CONFIG_WANTED_PIPE_BUF_SIZE,
+                          VfsWrite(rvfs, b.fd, fill, sizeof(fill)));
+
+    startBlocked(&b, blockedWrite);
+    uint8_t got[4];
+    TEST_ASSERT_EQUAL_INT(4, VfsRead(pvfs, rd, got, sizeof(got)));
+    joinBlocked(&b);
+    TEST_ASSERT_EQUAL_INT(4, b.result);
+}
+
+TEST(pipe_ready, TheLastWriterClosingWakesAReader) {
+    blocked_t b = {0};
+    b.fd = VfsOpen(rvfs, "/dev/pipe/last", VFS_O_RDONLY);
+    int wr = VfsOpen(pvfs, "/dev/pipe/last", VFS_O_WRONLY);
+
+    startBlocked(&b, blockedRead);
+    VfsClose(pvfs, wr);
+    joinBlocked(&b);
+    TEST_ASSERT_EQUAL_INT(0, b.result);
+}
+
+TEST(pipe_ready, TheEndOfAConsoleStreamWakesItsReader) {
+    blocked_t b = {0};
+    VfsRegister(
+        rvfs, "<stdin>",
+        withReady(VfsPipeConsoleCreate(rstore, "stream", true, VFS_O_RDONLY,
+                                       PIPE_EOF_NONE, NULL),
+                  rvfs));
+    VfsRegister(pvfs, "<stdout>",
+                VfsPipeConsoleCreate(rstore, "stream", false, VFS_O_WRONLY,
+                                     PIPE_EOF_ANY, NULL));
+    b.fd = VFS_STDIN;
+
+    startBlocked(&b, blockedRead);
+    VfsDestroy(&pvfs); /* the writer's wapp ends */
+    pvfs = VfsInit();
+    joinBlocked(&b);
+    TEST_ASSERT_EQUAL_INT(0, b.result);
+}
+
+TEST(pipe_ready, AStopEndsAPipeWaitWithEintr) {
+    blocked_t b = {0};
+    b.fd = VfsOpen(rvfs, "/dev/pipe/stop", VFS_O_RDONLY);
+
+    startBlocked(&b, blockedRead);
+    PlatformReadyStop(rready);
+    joinBlocked(&b);
+    TEST_ASSERT_EQUAL_INT(-EINTR, b.result);
+}
+
+TEST(pipe_ready, AWakeWithNoChangeLeavesTheCallRunning) {
+    blocked_t b = {0};
+    b.fd = VfsOpen(rvfs, "/dev/pipe/spur", VFS_O_RDONLY);
+    int wr = VfsOpen(pvfs, "/dev/pipe/spur", VFS_O_WRONLY);
+
+    startBlocked(&b, blockedRead);
+    PlatformReadyRaise(rready);
+    usleep(READY_SETTLE_US);
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(pvfs, wr, "x", 1));
+    joinBlocked(&b);
+    TEST_ASSERT_EQUAL_INT(1, b.result);
+}
+
+TEST(pipe_ready, PollOneoffOnAPipeSleepsUntilDataArrives) {
+    blocked_t b = {0};
+    b.fd = VfsOpen(rvfs, "/dev/pipe/poll", VFS_O_RDONLY);
+    int wr = VfsOpen(pvfs, "/dev/pipe/poll", VFS_O_WRONLY);
+
+    startBlocked(&b, blockedPoll);
+    usleep(300000);
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(pvfs, wr, "x", 1));
+    joinBlocked(&b);
+    TEST_ASSERT_EQUAL_INT(__WASI_ERRNO_SUCCESS, b.result);
+    TEST_ASSERT_EQUAL_UINT64(1, b.pollKind);
+    TEST_ASSERT_LESS_THAN_INT(20, (int)b.switches);
+}
+
+TEST(pipe_ready, PollOneoffEndsOnAStop) {
+    blocked_t b = {0};
+    b.fd = VfsOpen(rvfs, "/dev/pipe/pstop", VFS_O_RDONLY);
+
+    startBlocked(&b, blockedPoll);
+    PlatformReadyStop(rready);
+    joinBlocked(&b);
+    TEST_ASSERT_EQUAL_INT(__WASI_ERRNO_INTR, b.result);
+}
+
+TEST(pipe_ready, PollOneoffWatchesAPipeOpenedThroughAConsole) {
+    blocked_t b = {0};
+    VfsRegister(
+        rvfs, "<stdin>",
+        withReady(VfsPipeConsoleCreate(rstore, "cpoll", true, VFS_O_RDONLY,
+                                       PIPE_EOF_NONE, NULL),
+                  rvfs));
+    VfsRegister(pvfs, "<stdout>",
+                VfsPipeConsoleCreate(rstore, "cpoll", false, VFS_O_WRONLY,
+                                     PIPE_EOF_NONE, NULL));
+    b.fd = VFS_STDIN;
+
+    startBlocked(&b, blockedPoll);
+    TEST_ASSERT_EQUAL_INT(1, VfsWrite(pvfs, VFS_STDOUT, "x", 1));
+    joinBlocked(&b);
+    TEST_ASSERT_EQUAL_INT(__WASI_ERRNO_SUCCESS, b.result);
+    TEST_ASSERT_EQUAL_UINT64(1, b.pollKind);
+}
+
+TEST_GROUP_RUNNER(pipe_ready) {
+    RUN_TEST_CASE(pipe_ready, AnIdleReadWakesOnlyWhenDataArrives);
+    RUN_TEST_CASE(pipe_ready, ReadingWakesAWriterBlockedOnAFullRing);
+    RUN_TEST_CASE(pipe_ready, TheLastWriterClosingWakesAReader);
+    RUN_TEST_CASE(pipe_ready, TheEndOfAConsoleStreamWakesItsReader);
+    RUN_TEST_CASE(pipe_ready, AStopEndsAPipeWaitWithEintr);
+    RUN_TEST_CASE(pipe_ready, AWakeWithNoChangeLeavesTheCallRunning);
+    RUN_TEST_CASE(pipe_ready, PollOneoffOnAPipeSleepsUntilDataArrives);
+    RUN_TEST_CASE(pipe_ready, PollOneoffEndsOnAStop);
+    RUN_TEST_CASE(pipe_ready, PollOneoffWatchesAPipeOpenedThroughAConsole);
 }

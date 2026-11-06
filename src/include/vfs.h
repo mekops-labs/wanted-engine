@@ -100,6 +100,7 @@ typedef struct vfs_dir_entry_t {
 int VfsFlatDirReadDir(const vfs_dir_entry_t *entries, size_t count, void *buf,
                       size_t bufLen, uint64_t *cookie, size_t *bufUsed);
 
+struct plat_ready_t;
 typedef struct vfs_driver_ctx_t *vfs_driver_ctx_t;
 
 typedef struct vfs_driver_t {
@@ -148,6 +149,18 @@ typedef struct vfs_driver_t {
      * interrupts by signal and the driver blocks as before. */
     void (*SetWake)(vfs_driver_ctx_t d, int fd);
 
+    /* Optional. Adopt the wapp's ready event. A driver that sets it raises
+     * the event on every change a blocked call or poll_oneoff waits for, and
+     * sets `raisesReady` so poll_oneoff may sleep on it. */
+    void (*SetReady)(vfs_driver_ctx_t d, struct plat_ready_t *ready);
+    bool raisesReady;
+
+    /* Optional, with raisesReady. Add (arm) or remove `ready` among the
+     * waiters of the object behind `fd`, so a poll_oneoff sleeps until it
+     * changes. */
+    void (*PollWatch)(vfs_driver_ctx_t d, int fd, struct plat_ready_t *ready,
+                      bool arm);
+
     /* Network operations */
 
     /* `wakeFd` is the wapp's wake descriptor, watched beside the listener so a
@@ -191,6 +204,11 @@ void VfsSetPrivileged(vfs_ctx_t c, bool privileged);
  * it is serving, so a stop ends the wait. -1 when the platform has none. */
 void VfsSetWakeFd(vfs_ctx_t c, int fd);
 int VfsWakeFd(vfs_ctx_t c);
+
+/* The wapp's ready event, which a driver raises when a blocked call may now
+ * proceed. The context owns it and frees it on destroy. NULL when none. */
+void VfsSetReady(vfs_ctx_t c, struct plat_ready_t *ready);
+struct plat_ready_t *VfsReady(vfs_ctx_t c);
 int VfsRegister(vfs_ctx_t c, const char *path, const vfs_driver_t *driver);
 
 int VfsOpen(vfs_ctx_t c, const char *path, vfs_oflags_t flags);
@@ -228,6 +246,12 @@ int VfsRenumber(vfs_ctx_t c, int from, int to);
 /* The fd's readiness as VFS_POLL_* bits, or a negative errno; never blocks.
  * `avail` gets the bytes readable, 0 when unknown. */
 int VfsPoll(vfs_ctx_t c, int fd, uint32_t *avail);
+
+/* Whether a change to the object behind `fd` raises the wapp's ready event, so
+ * a poll_oneoff on it may sleep. A descriptor that never blocks counts. */
+bool VfsPollRaisesReady(vfs_ctx_t c, int fd);
+/* Add (arm) or remove the wapp's ready event among the waiters of `fd`. */
+void VfsPollWatch(vfs_ctx_t c, int fd, bool arm);
 
 int VfsReadDir(vfs_ctx_t c, int fd, void *buf, size_t bufLen, uint64_t *cookie,
                size_t *bufUsed);

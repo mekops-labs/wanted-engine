@@ -73,6 +73,31 @@ static bool fdFired(vfs_ctx_t c, const __wasi_subscription_t *s,
     return true;
 }
 
+static bool isFdSub(const __wasi_subscription_t *s) {
+    return s->type == __WASI_EVENTTYPE_FD_READ ||
+           s->type == __WASI_EVENTTYPE_FD_WRITE;
+}
+
+/* True when a change to every subscribed descriptor raises the ready event, so
+ * the call may sleep on it. */
+static bool allRaiseReady(vfs_ctx_t c, const __wasi_subscription_t *in,
+                          uint32_t n) {
+    for (uint32_t i = 0; i < n; i++) {
+        if (isFdSub(&in[i]) &&
+            !VfsPollRaisesReady(c, (int)in[i].u.fd_readwrite.fd))
+            return false;
+    }
+    return true;
+}
+
+static void watchAll(vfs_ctx_t c, const __wasi_subscription_t *in, uint32_t n,
+                     bool arm) {
+    for (uint32_t i = 0; i < n; i++) {
+        if (isFdSub(&in[i]))
+            VfsPollWatch(c, (int)in[i].u.fd_readwrite.fd, arm);
+    }
+}
+
 __wasi_errno_t WasiPollOneoff(vfs_ctx_t c, const __wasi_subscription_t *in,
                               __wasi_event_t *out, uint32_t n,
                               uint32_t *nevents) {
@@ -84,6 +109,13 @@ __wasi_errno_t WasiPollOneoff(vfs_ctx_t c, const __wasi_subscription_t *in,
     memset(&pc, 0, sizeof(pc));
     for (uint32_t i = 0; i < n; i++)
         hasFd = hasFd || in[i].type != __WASI_EVENTTYPE_CLOCK;
+
+    plat_ready_t *ready = VfsReady(c);
+    bool sleepOnReady = hasFd && ready != NULL && allRaiseReady(c, in, n);
+
+    /* Watch before the first check, so a change after it is not missed. */
+    if (sleepOnReady)
+        watchAll(c, in, n, true);
 
     for (;;) {
         uint32_t fired = 0;
@@ -114,8 +146,19 @@ __wasi_errno_t WasiPollOneoff(vfs_ctx_t c, const __wasi_subscription_t *in,
                 out[fired++] = ev;
         }
         if (fired > 0) {
+            if (sleepOnReady)
+                watchAll(c, in, n, false);
             *nevents = fired;
             return __WASI_ERRNO_SUCCESS;
+        }
+
+        if (sleepOnReady) {
+            int64_t limit = wait > (uint64_t)INT64_MAX ? -1 : (int64_t)wait;
+            if (PlatformReadyWait(ready, limit) == -EINTR) {
+                watchAll(c, in, n, false);
+                return __WASI_ERRNO_INTR;
+            }
+            continue;
         }
 
         int wakeFd = VfsWakeFd(c);

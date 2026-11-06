@@ -139,6 +139,7 @@ struct vfs_ctx_t {
     /* Raised to end a blocking wait when the wapp is stopping; -1 when the
      * platform interrupts by signal. Owned here, closed by VfsDestroy. */
     int wake_fd;
+    struct plat_ready_t *ready;
 };
 
 int VfsFindEntry(const char *path, const vfs_entry_t *files,

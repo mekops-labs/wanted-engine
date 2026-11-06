@@ -912,6 +912,9 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
     if (drv->SetWake != NULL) {
         drv->SetWake(drv->ctx, VfsWakeFd(c));
     }
+    if (drv->SetReady != NULL) {
+        drv->SetReady(drv->ctx, VfsReady(c));
+    }
 
     return installTo(c, path, drv);
 }

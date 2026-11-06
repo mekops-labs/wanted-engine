@@ -20,15 +20,8 @@
  * ring in a process-wide store shared by every wapp, which is what makes it an
  * inter-wapp channel. Every access to that store is guarded by store->lock. */
 
-/* Blocking-read poll cadence. A read with no data sleeps unlocked between
- * rechecks, which is cancellation-safe. The cap bounds the wait so a
- * never-arriving peer becomes -EAGAIN rather than a hang. */
+/* Recheck cadence for a blocked call that has no ready event to sleep on. */
 #define PIPE_POLL_INTERVAL_NS 1000000ULL /* 1 ms */
-
-/* The cap is a deadline: a platform whose sleep rounds up to a scheduler tick
- * would otherwise wait ten times as long as this says. */
-
-#define PIPE_POLL_MAX_NS 5000000000ULL /* 5 s safety cap */
 
 typedef struct named_pipe_t {
     char name[PIPE_NAME_MAX + 1];
@@ -47,6 +40,9 @@ typedef struct named_pipe_t {
     /* An eof reader left: writers get -EPIPE until a reader attaches. */
     bool reader_gone;
     bool active;
+    /* Ready events of the wapps blocked on this pipe, one entry per wapp. */
+    plat_ready_t *waiters[CONFIG_WANTED_MAX_WAPPS];
+    size_t waitCnt;
 } named_pipe_t;
 
 /* Shared, engine-owned storage. One instance backs every wapp's /dev/pipe. */
@@ -76,26 +72,6 @@ typedef struct pipe_handle_t {
     int flags;
     bool is_root;
 } pipe_handle_t;
-
-/* A blocking read or write ends its wait at a deadline, thus the cap means the
- * same on a platform whose sleep rounds up to a scheduler tick.
- */
-
-static plat_timestamp_t pollDeadline(void) {
-    plat_timestamp_t now = 0;
-
-    if (PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &now) < 0)
-        return 0; /* no clock: the sleep below still answers a wake */
-    return now + PIPE_POLL_MAX_NS;
-}
-
-static bool pollExpired(plat_timestamp_t deadline) {
-    plat_timestamp_t now = 0;
-
-    if (deadline == 0 || PlatformClockGetTime(PLAT_CLOCKID_MONOTONIC, &now) < 0)
-        return false;
-    return now >= deadline;
-}
 
 /* ── Shared store lifecycle ──────────────────────────────────────────────────
  */
@@ -335,6 +311,53 @@ static named_pipe_t *allocPipe(pipe_store_t *store, const char *name) {
     return NULL;
 }
 
+/* Wake every wapp blocked on `p`. A change that no waiter needs costs the
+ * waiter one recheck. */
+static void pipeNotify(named_pipe_t *p) {
+    for (size_t i = 0; i < p->waitCnt; i++)
+        PlatformReadyRaise(p->waiters[i]);
+}
+
+static void waitAdd(named_pipe_t *p, plat_ready_t *r) {
+    for (size_t i = 0; i < p->waitCnt; i++) {
+        if (p->waiters[i] == r)
+            return;
+    }
+    /* A wapp has one ready event and one entry, so the list never fills. */
+    if (p->waitCnt < CONFIG_WANTED_MAX_WAPPS)
+        p->waiters[p->waitCnt++] = r;
+}
+
+static void waitDel(named_pipe_t *p, const plat_ready_t *r) {
+    for (size_t i = 0; i < p->waitCnt; i++) {
+        if (p->waiters[i] != r)
+            continue;
+        p->waiters[i] = p->waiters[--p->waitCnt];
+        return;
+    }
+}
+
+/* Sleep until `p` may have changed or the wapp is stopped. The caller added
+ * `ready` to the waiters under the lock, so a later change is pending. Without
+ * an event the call rechecks every millisecond. */
+static int blockOn(pipe_store_t *store, named_pipe_t *p, plat_ready_t *ready,
+                   int wakeFd) {
+    if (ready == NULL || p == NULL) {
+        /* Sleep UNLOCKED so a worker torn down here cannot strand the shared
+         * mutex. A signalled stop interrupts the sleep (EINTR); a raised wake
+         * descriptor ends the wait at the next check. */
+        if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
+                                   PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
+            return -EINTR;
+        return PlatformWakeRaised(wakeFd) ? -EINTR : 0;
+    }
+    int rc = PlatformReadyWait(ready, -1);
+    PlatformMutexLock(store->lock);
+    waitDel(p, ready);
+    PlatformMutexUnlock(store->lock);
+    return rc == -EINTR ? -EINTR : 0;
+}
+
 static int ringRead(named_pipe_t *p, void *buf, size_t nbyte) {
     size_t n = nbyte < p->data_len ? nbyte : p->data_len;
     size_t first = CONFIG_WANTED_PIPE_BUF_SIZE - p->rpos;
@@ -346,6 +369,7 @@ static int ringRead(named_pipe_t *p, void *buf, size_t nbyte) {
     }
     p->rpos = (p->rpos + n) % CONFIG_WANTED_PIPE_BUF_SIZE;
     p->data_len -= n;
+    pipeNotify(p);
     return (int)n;
 }
 
@@ -364,6 +388,7 @@ static int ringWrite(named_pipe_t *p, const void *buf, size_t nbyte) {
         memcpy(p->buf, (const uint8_t *)buf + first, n - first);
     }
     p->data_len += n;
+    pipeNotify(p);
     return (int)n;
 }
 
@@ -464,6 +489,7 @@ void *PipeDriver_Open(vfs_ctx_t c, const vfs_driver_t *drv,
         p->readers++;
         p->reader_gone = false;
     }
+    pipeNotify(p);
     PlatformMutexUnlock(store->lock);
 
     h->pipe = p;
@@ -488,6 +514,7 @@ int PipeDriver_Close(vfs_ctx_t c, const vfs_driver_t *drv, void *handle) {
             p->writers--;
         else
             p->readers--;
+        pipeNotify(p);
         /* Keep the pipe alive while data is pending so a later reader (possibly
          * in another wapp) can still drain it. */
         if (p->writers <= 0 && p->readers <= 0 && p->data_len == 0)
@@ -498,8 +525,8 @@ int PipeDriver_Close(vfs_ctx_t c, const vfs_driver_t *drv, void *handle) {
     return 0;
 }
 
-int PipeDriver_Read(int wakeFd, const vfs_driver_t *drv, void *handle,
-                    void *buf, size_t nbyte) {
+int PipeDriver_Read(int wakeFd, plat_ready_t *ready, const vfs_driver_t *drv,
+                    void *handle, void *buf, size_t nbyte) {
     pipe_handle_t *h = handle;
     if (!h || h->is_root || !h->pipe)
         return -EBADF;
@@ -507,8 +534,6 @@ int PipeDriver_Read(int wakeFd, const vfs_driver_t *drv, void *handle,
     pipe_store_t *store = (pipe_store_t *)drv->ctx;
     named_pipe_t *p = h->pipe;
     bool nonblock = (h->flags & VFS_O_NONBLOCK) != 0;
-
-    plat_timestamp_t deadline = pollDeadline();
 
     for (;;) {
         PlatformMutexLock(store->lock);
@@ -523,23 +548,22 @@ int PipeDriver_Read(int wakeFd, const vfs_driver_t *drv, void *handle,
             PlatformMutexUnlock(store->lock);
             return 0;
         }
+        if (nonblock) {
+            PlatformMutexUnlock(store->lock);
+            return -EAGAIN;
+        }
+        if (ready != NULL)
+            waitAdd(p, ready);
         PlatformMutexUnlock(store->lock);
 
-        if (nonblock || pollExpired(deadline))
-            return -EAGAIN;
-        /* Sleep UNLOCKED so a worker torn down here cannot strand the shared
-         * mutex. A signalled stop interrupts the sleep (EINTR); a raised wake
-         * descriptor ends the wait at the next check. */
-        if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
-                                   PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
-            return -EINTR;
-        if (PlatformWakeRaised(wakeFd))
-            return -EINTR;
+        int rc = blockOn(store, p, ready, wakeFd);
+        if (rc < 0)
+            return rc;
     }
 }
 
-int PipeDriver_Write(int wakeFd, const vfs_driver_t *drv, void *handle,
-                     const void *buf, size_t nbyte) {
+int PipeDriver_Write(int wakeFd, plat_ready_t *ready, const vfs_driver_t *drv,
+                     void *handle, const void *buf, size_t nbyte) {
     pipe_handle_t *h = handle;
     if (!h || h->is_root || !h->pipe)
         return -EBADF;
@@ -548,27 +572,21 @@ int PipeDriver_Write(int wakeFd, const vfs_driver_t *drv, void *handle,
     named_pipe_t *p = h->pipe;
     bool nonblock = (h->flags & VFS_O_NONBLOCK) != 0;
 
-    plat_timestamp_t deadline = pollDeadline();
-
     for (;;) {
         PlatformMutexLock(store->lock);
         int n = p->reader_gone ? -EPIPE : ringWrite(p, buf, nbyte);
-        PlatformMutexUnlock(store->lock);
-        if (n != -EAGAIN)
+        if (n != -EAGAIN || nonblock) {
+            PlatformMutexUnlock(store->lock);
             return n;
+        }
+        /* Full ring: a blocking writer waits for the reader to drain. */
+        if (ready != NULL)
+            waitAdd(p, ready);
+        PlatformMutexUnlock(store->lock);
 
-        /* Full ring. A blocking writer waits for the reader to drain, up to
-         * the same safety cap the read side uses. */
-        if (nonblock || pollExpired(deadline))
-            return -EAGAIN;
-        /* Sleep UNLOCKED so a worker torn down here cannot strand the shared
-         * mutex. A signalled stop interrupts the sleep (EINTR); a raised wake
-         * descriptor ends the wait at the next check. */
-        if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
-                                   PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
-            return -EINTR;
-        if (PlatformWakeRaised(wakeFd))
-            return -EINTR;
+        int rc = blockOn(store, p, ready, wakeFd);
+        if (rc < 0)
+            return rc;
     }
 }
 
@@ -641,7 +659,8 @@ typedef struct bridge_state_t {
     pipe_store_t *store; /* shared, engine-owned; NOT freed here */
     pipe_scope_t *scope; /* what the driver reaches; never NULL */
     void *handles[BRIDGE_MAX_HANDLES];
-    int wakeFd; /* the wapp's wake descriptor; -1 for none */
+    int wakeFd;          /* the wapp's wake descriptor; -1 for none */
+    plat_ready_t *ready; /* the wapp's ready event; NULL for none */
 } bridge_state_t;
 
 /* The running wapps' pipe drivers by wapp name, for the supervisor's runtime
@@ -716,7 +735,7 @@ static int _bRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
         return -EBADF;
     vfs_driver_t tmp;
     buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
-    return PipeDriver_Read(s->wakeFd, &tmp, h, buf, nbyte);
+    return PipeDriver_Read(s->wakeFd, s->ready, &tmp, h, buf, nbyte);
 }
 
 static int _bWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
@@ -727,7 +746,7 @@ static int _bWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
         return -EBADF;
     vfs_driver_t tmp;
     buildTmpDriver(&tmp, (vfs_driver_ctx_t)s->store);
-    return PipeDriver_Write(s->wakeFd, &tmp, h, buf, nbyte);
+    return PipeDriver_Write(s->wakeFd, s->ready, &tmp, h, buf, nbyte);
 }
 
 static int _bStat(vfs_driver_ctx_t dctx, int fd, vfs_stat_t *stat) {
@@ -761,6 +780,25 @@ static int _bSetFlags(vfs_driver_ctx_t dctx, int fd, vfs_oflags_t flags) {
 
 static void _bSetWake(vfs_driver_ctx_t dctx, int fd) {
     ((bridge_state_t *)dctx)->wakeFd = fd;
+}
+
+static void _bSetReady(vfs_driver_ctx_t dctx, plat_ready_t *ready) {
+    ((bridge_state_t *)dctx)->ready = ready;
+}
+
+static void _bWatch(vfs_driver_ctx_t dctx, int fd, plat_ready_t *ready,
+                    bool arm) {
+    bridge_state_t *s = (bridge_state_t *)dctx;
+    pipe_handle_t *h = getHandle(s, fd);
+
+    if (h == NULL || h->pipe == NULL || ready == NULL)
+        return;
+    PlatformMutexLock(s->store->lock);
+    if (arm)
+        waitAdd(h->pipe, ready);
+    else
+        waitDel(h->pipe, ready);
+    PlatformMutexUnlock(s->store->lock);
 }
 
 static int _bReadDir(vfs_driver_ctx_t dctx, int fd, void *buf, size_t bufLen,
@@ -810,7 +848,8 @@ typedef struct {
     pipe_eof_t eof;
     const int32_t *exitCode; /* the wapp's, read when the console detaches */
     int flags;
-    int wakeFd; /* the wapp's wake descriptor; -1 for none */
+    int wakeFd;          /* the wapp's wake descriptor; -1 for none */
+    plat_ready_t *ready; /* the wapp's ready event; NULL for none */
 } pipe_console_t;
 
 /* Whether the stream ends now that the wapp has: `eof=ok` only on exit 0. */
@@ -839,6 +878,7 @@ static void consoleDetach(pipe_console_t *c) {
             if (ends)
                 p->end_on_exit = true;
         }
+        pipeNotify(p);
         if (p->writers <= 0 && p->readers <= 0 && p->data_len == 0)
             p->active = false;
     }
@@ -861,7 +901,6 @@ static int _pcWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
         return -EBADF; /* the `in` console is read-only */
 
     bool nonblock = (c->flags & VFS_O_NONBLOCK) != 0;
-    plat_timestamp_t deadline = pollDeadline();
 
     for (;;) {
         PlatformMutexLock(c->store->lock);
@@ -871,19 +910,18 @@ static int _pcWrite(vfs_driver_ctx_t dctx, int fd, const void *buf,
         int n = -ENOSPC;
         if (p != NULL)
             n = p->reader_gone ? -EPIPE : ringWrite(p, buf, nbyte);
-        PlatformMutexUnlock(c->store->lock);
-        if (n != -EAGAIN)
+        if (n != -EAGAIN || nonblock) {
+            PlatformMutexUnlock(c->store->lock);
             return n;
+        }
+        /* Full ring: a blocking writer waits for the reader to drain. */
+        if (c->ready != NULL)
+            waitAdd(p, c->ready);
+        PlatformMutexUnlock(c->store->lock);
 
-        /* Full ring. A blocking writer waits for the reader to drain, up to
-         * the same safety cap the read side uses. */
-        if (nonblock || pollExpired(deadline))
-            return -EAGAIN;
-        if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
-                                   PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
-            return -EINTR;
-        if (PlatformWakeRaised(c->wakeFd))
-            return -EINTR;
+        int rc = blockOn(c->store, p, c->ready, c->wakeFd);
+        if (rc < 0)
+            return rc;
     }
 }
 
@@ -896,7 +934,6 @@ static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
         return 0; /* out/err read as EOF */
 
     bool nonblock = (c->flags & VFS_O_NONBLOCK) != 0;
-    plat_timestamp_t deadline = pollDeadline();
 
     for (;;) {
         PlatformMutexLock(c->store->lock);
@@ -906,22 +943,48 @@ static int _pcRead(vfs_driver_ctx_t dctx, int fd, void *buf, size_t nbyte) {
             PlatformMutexUnlock(c->store->lock);
             return n;
         }
-        bool ended = p && atEof(p);
-        PlatformMutexUnlock(c->store->lock);
-        if (ended)
+        if (p && atEof(p)) {
+            PlatformMutexUnlock(c->store->lock);
             return 0;
-        if (nonblock || pollExpired(deadline))
+        }
+        if (nonblock) {
+            PlatformMutexUnlock(c->store->lock);
             return -EAGAIN;
-        if (PlatformClockNanoSleep(PLAT_CLOCKID_MONOTONIC,
-                                   PIPE_POLL_INTERVAL_NS, 0) == -EINTR)
-            return -EINTR;
-        if (PlatformWakeRaised(c->wakeFd))
-            return -EINTR;
+        }
+        if (p != NULL && c->ready != NULL)
+            waitAdd(p, c->ready);
+        PlatformMutexUnlock(c->store->lock);
+
+        int rc = blockOn(c->store, p, c->ready, c->wakeFd);
+        if (rc < 0)
+            return rc;
     }
 }
 
 static void _pcSetWake(vfs_driver_ctx_t dctx, int fd) {
     ((pipe_console_t *)dctx)->wakeFd = fd;
+}
+
+static void _pcSetReady(vfs_driver_ctx_t dctx, plat_ready_t *ready) {
+    ((pipe_console_t *)dctx)->ready = ready;
+}
+
+static void _pcWatch(vfs_driver_ctx_t dctx, int fd, plat_ready_t *ready,
+                     bool arm) {
+    (void)fd;
+    pipe_console_t *c = (pipe_console_t *)dctx;
+
+    if (ready == NULL)
+        return;
+    PlatformMutexLock(c->store->lock);
+    named_pipe_t *p = findPipe(c->store, c->name);
+    if (p != NULL) {
+        if (arm)
+            waitAdd(p, ready);
+        else
+            waitDel(p, ready);
+    }
+    PlatformMutexUnlock(c->store->lock);
 }
 
 static int _pcPoll(vfs_driver_ctx_t dctx, int fd, uint32_t *avail) {
@@ -1006,6 +1069,7 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
             /* A returning writer resumes the stream, whatever its options. */
             p->end_on_exit = false;
         }
+        pipeNotify(p);
     }
     PlatformMutexUnlock(store->lock);
 
@@ -1015,6 +1079,9 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
     drv->ctx = (vfs_driver_ctx_t)c;
     drv->Destroy = _pcDestroy;
     drv->SetWake = _pcSetWake;
+    drv->SetReady = _pcSetReady;
+    drv->PollWatch = _pcWatch;
+    drv->raisesReady = true;
     drv->Close = _pcClose;
     drv->Read = _pcRead;
     drv->Write = _pcWrite;
@@ -1048,6 +1115,9 @@ static vfs_driver_t *createDriver(pipe_store_t *store, pipe_scope_t *scope) {
     drv->ctx = (vfs_driver_ctx_t)s;
     drv->Destroy = _bDestroy;
     drv->SetWake = _bSetWake;
+    drv->SetReady = _bSetReady;
+    drv->PollWatch = _bWatch;
+    drv->raisesReady = true;
     drv->Open = _bOpen;
     drv->Close = _bClose;
     drv->Read = _bRead;

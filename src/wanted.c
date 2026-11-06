@@ -97,6 +97,8 @@ static const char *const CONSOLE_SLOT[] = {"in", "out", "err"};
 static const vfs_driver_t *withWake(vfs_ctx_t vfs, const vfs_driver_t *drv) {
     if (drv != NULL && drv->SetWake != NULL)
         drv->SetWake(drv->ctx, VfsWakeFd(vfs));
+    if (drv != NULL && drv->SetReady != NULL)
+        drv->SetReady(drv->ctx, VfsReady(vfs));
     return drv;
 }
 
@@ -724,6 +726,7 @@ int WantedWappRun(wapp_data_t *ctx) {
     /* A blocking driver watches this beside its own resource, so a stop reaches
      * a wapp parked in a host call. */
     VfsSetWakeFd(ctx->vfs, PlatformWakeCreate());
+    VfsSetReady(ctx->vfs, PlatformReadyNew());
     DevFs_Register(ctx->vfs, "null", VfsNullInit(wapp, NULL));
 
     /* The launch config decides whether this wapp reads the privileged /proc
