@@ -1053,24 +1053,29 @@ vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
     c->wakeFd = -1;
 
     /* Attach now so the pipe exists and is discoverable before the wapp's first
-     * write, and a peer reader sees writer_seen for clean EOF. */
+     * write, and a peer reader sees writer_seen for clean EOF. The attach keeps
+     * the pipe in the store for the console's lifetime. */
     PlatformMutexLock(store->lock);
     named_pipe_t *p = findPipe(store, c->name);
     if (!p)
         p = allocPipe(store, c->name);
-    if (p) {
-        p->persistent = true;
-        if (forRead) {
-            p->readers++;
-            p->reader_gone = false;
-        } else {
-            p->writers++;
-            p->writer_seen = true;
-            /* A returning writer resumes the stream, whatever its options. */
-            p->end_on_exit = false;
-        }
-        pipeNotify(p);
+    if (!p) {
+        PlatformMutexUnlock(store->lock);
+        WantedFree(c);
+        WantedFree(drv);
+        return NULL;
     }
+    p->persistent = true;
+    if (forRead) {
+        p->readers++;
+        p->reader_gone = false;
+    } else {
+        p->writers++;
+        p->writer_seen = true;
+        /* A returning writer resumes the stream, whatever its options. */
+        p->end_on_exit = false;
+    }
+    pipeNotify(p);
     PlatformMutexUnlock(store->lock);
 
     memset(drv, 0, sizeof(*drv));

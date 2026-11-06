@@ -65,7 +65,8 @@ int PipeConsoleOptions(const char *options, char *name, size_t cap,
 
 /* Console driver on pipe `name`; `forRead` selects `in`. When `eof` matches
  * how the wapp ended (`*exitCode`, NULL is not clean), readers get end of
- * stream and writers to `in` -EPIPE. NULL when `name` fails PipeNameCheck. */
+ * stream and writers to `in` -EPIPE. NULL when `name` fails PipeNameCheck, the
+ * store is full, or memory runs out. */
 vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
                                    bool forRead, vfs_oflags_t flags,
                                    pipe_eof_t eof, const int32_t *exitCode);

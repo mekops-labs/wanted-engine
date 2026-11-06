@@ -521,11 +521,28 @@ TEST(pipe_console, BufferedBytesSurviveTheWriterLeaving) {
     TEST_ASSERT_EQUAL_STRING_LEN(msg, buf, sizeof(msg) - 1);
 }
 
+TEST(pipe_console, AConsoleOnAFullStoreIsNotCreated) {
+    vfs_driver_t *held[CONFIG_WANTED_PIPE_MAX_PIPES];
+    char name[8];
+
+    for (int i = 0; i < CONFIG_WANTED_PIPE_MAX_PIPES; i++) {
+        snprintf(name, sizeof(name), "f%d", i);
+        held[i] = VfsPipeConsoleCreate(cstore, name, true, VFS_O_RDONLY,
+                                       PIPE_EOF_NONE, NULL);
+        TEST_ASSERT_NOT_NULL(held[i]);
+    }
+    TEST_ASSERT_NULL(VfsPipeConsoleCreate(cstore, "extra", true, VFS_O_RDONLY,
+                                          PIPE_EOF_NONE, NULL));
+    for (int i = 0; i < CONFIG_WANTED_PIPE_MAX_PIPES; i++)
+        held[i]->Destroy(held[i]);
+}
+
 TEST_GROUP_RUNNER(pipe_console) {
     RUN_TEST_CASE(pipe_console, NonblockWriterRefusesAFullRingAtOnce);
     RUN_TEST_CASE(pipe_console, KeepsTheOldestBytesWhenTheRingFills);
     RUN_TEST_CASE(pipe_console, WriterLeavingIsNotEndOfStream);
     RUN_TEST_CASE(pipe_console, BufferedBytesSurviveTheWriterLeaving);
+    RUN_TEST_CASE(pipe_console, AConsoleOnAFullStoreIsNotCreated);
 }
 
 /***************************************/

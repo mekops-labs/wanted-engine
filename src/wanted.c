@@ -128,11 +128,20 @@ static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
         if (pname[0] == '\0')
             snprintf(pname, sizeof(pname), "%s.%s", wapp->name,
                      CONSOLE_SLOT[idx]);
+        rc = PipeNameCheck(pname);
+        if (rc < 0) {
+            LOG_ERROR("console.%s: bad pipe name '%s': %s", CONSOLE_SLOT[idx],
+                      pname, strerror(-rc));
+            return rc;
+        }
         const vfs_driver_t *drv =
             VfsPipeConsoleCreate(PipeStoreShared(), pname, idx == 0,
                                  VFS_O_RDONLY, eof, &ctx->exit_code);
-        if (drv == NULL)
-            return -ENOMEM;
+        if (drv == NULL) {
+            LOG_ERROR("console.%s: pipe '%s' cannot be created: store full",
+                      CONSOLE_SLOT[idx], pname);
+            return -ENOSPC;
+        }
         return VfsRegister(ctx->vfs, path, withWake(ctx->vfs, drv));
     }
 
