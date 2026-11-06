@@ -53,8 +53,11 @@ _config:
     marker={{ build_dir }}/.wanted-defconfig-seeded
     want=""
     if [ -n "{{ defconfig }}" ]; then
-        want="{{ defconfig }}_defconfig"
         path=$(just _defconfig_path "{{ defconfig }}")
+        # The marker names the defconfig and its digest, so an edit to the
+        # defconfig re-seeds the build dir instead of keeping its old .config.
+        want="{{ defconfig }}_defconfig"
+        [ -f "$path" ] && want="$want $(sha256sum "$path" | cut -c1-64)"
     fi
     seeded=$(cat "$marker" 2>/dev/null || true)
     if [ -n "$want" ] && { [ ! -f {{ build_dir }}/.config ] || [ "$seeded" != "$want" ]; }; then

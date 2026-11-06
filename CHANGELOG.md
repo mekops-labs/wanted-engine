@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Changed
+
+- A `DEFCONFIG` build seeds the build dir's `.config` again when the
+  defconfig's contents change, not only its name.
+
 0.30.0 (2026-11-06)
 -------------------
 

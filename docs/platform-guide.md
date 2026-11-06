@@ -354,11 +354,13 @@ Each build directory owns its own `.config`, so a debug build, a cross build, an
 ```bash
 just menuconfig                  # edit this build dir's configuration
 just defconfig small             # seed it from a named envelope
-DEFCONFIG=openwrt just build     # seed on first configure, then build
+DEFCONFIG=openwrt just build     # seed when new or changed, then build
 just savedefconfig my_board      # write the minimal diff back
 ```
 
 `DEFCONFIG` and the `defconfig` / `savedefconfig` recipes name the envelope **without** the `_defconfig` suffix; the file is `configs/<name>_defconfig`.
+
+A `DEFCONFIG` build seeds `.config` again when it names another envelope or when the envelope's contents changed since the last seed. The seed drops any `setconfig` change made in that build dir.
 
 Editing `.config` re-runs the configure step and regenerates the header, so a changed configuration cannot leave stale values compiled in.
 
