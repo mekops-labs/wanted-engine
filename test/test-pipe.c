@@ -931,13 +931,9 @@ TEST(pipe_scope, AnUnscopedDriverTakesNoGrant) {
     drv->Destroy(drv);
 }
 
-TEST(pipe_scope, TheGrantInitDemandsAName) {
+TEST(pipe_scope, TheTableInitInstallsNothing) {
     TEST_ASSERT_NULL(VfsPipeInit(NULL, NULL));
-    TEST_ASSERT_NULL(VfsPipeInit(NULL, ""));
-    TEST_ASSERT_NULL(VfsPipeInit(NULL, "bogus"));
-    vfs_driver_t *drv = VfsPipeInit(NULL, "read=boot.in");
-    TEST_ASSERT_NOT_NULL(drv);
-    drv->Destroy(drv);
+    TEST_ASSERT_NULL(VfsPipeInit(NULL, "read=boot.in"));
 }
 
 TEST_GROUP_RUNNER(pipe_scope) {
@@ -954,7 +950,7 @@ TEST_GROUP_RUNNER(pipe_scope) {
     RUN_TEST_CASE(pipe_scope, AFailedGrantAddsNothing);
     RUN_TEST_CASE(pipe_scope, GrantsAcrossCallsShareTheCap);
     RUN_TEST_CASE(pipe_scope, AnUnscopedDriverTakesNoGrant);
-    RUN_TEST_CASE(pipe_scope, TheGrantInitDemandsAName);
+    RUN_TEST_CASE(pipe_scope, TheTableInitInstallsNothing);
 }
 
 /***************************************/

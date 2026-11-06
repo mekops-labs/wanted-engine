@@ -1266,12 +1266,12 @@ int PipeRuntimeList(const char *wapp, char *buf, size_t cap) {
     return rc;
 }
 
-/* The `pipe` grant: a driver that must name at least one pipe. */
+/* `pipe` is listed and reserved in the driver table, but the launch installs
+ * it only from drivers[] and console slots, so any other placement fails. */
 vfs_driver_t *VfsPipeInit(const wapp_t *wapp, const char *options) {
     (void)wapp;
-    if (options == NULL || options[0] == '\0')
-        return NULL;
-    return PipeDriverCreateScoped(PipeStoreShared(), options);
+    (void)options;
+    return NULL;
 }
 
 int PipeConsoleOptions(const char *options, char *name, size_t cap,
