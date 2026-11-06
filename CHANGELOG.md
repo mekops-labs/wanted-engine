@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.30.0 (2026-11-06)
+-------------------
 
 ### Added
 
@@ -16,8 +16,8 @@ Unreleased
 - The `eof` option of a `pipe` console slot ends the stream when the wapp ends.
   Readers of `out` and `err` get end of stream after the buffered bytes. A
   peer's write to `in` returns `EPIPE`.
-- The `eof=ok` option ends the stream only when the wapp exits with code 0,
-  for a wapp restarted after a failure.
+- The `eof=ok` option ends the stream only when the wapp exits with code 0.
+  After a trap, a stop or a non-zero exit the stream stays open.
 - The `pipes` node of `/dev/wanted/wapps/<name>/` grants and revokes pipe
   names of a running wapp. `CONFIG_WANTED_PIPE_RUNTIME_GRANTS` sets how many
   clauses a wapp holds (4).
