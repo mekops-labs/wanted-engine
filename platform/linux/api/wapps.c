@@ -235,6 +235,7 @@ int PlatformWappStop(const char *name) {
      * call, so the worker reaches that boundary promptly. */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
     PlatformWakeRaise(VfsWakeFd(state.threads[slot].data.vfs));
+    PlatformReadyStop(VfsReady(state.threads[slot].data.vfs));
     worker = state.threads[slot].t;
 
     pthread_mutex_unlock(&state_mtx);

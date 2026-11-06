@@ -193,6 +193,7 @@ int PlatformWappStop(const char *name) {
      * descriptor so a blocked host call ends and that boundary is reached. */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
     PlatformWakeRaise(VfsWakeFd(state.threads[slot].data.vfs));
+    PlatformReadyStop(VfsReady(state.threads[slot].data.vfs));
 
     pthread_mutex_unlock(&state_mtx);
 

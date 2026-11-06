@@ -84,6 +84,7 @@ set(platform_srcs
     # declares renameat/mkdirat but never links them.
     ${ENGINE}/platform/posix/clock.c
     ${ENGINE}/platform/posix/mutex.c
+    ${ENGINE}/platform/posix/ready-event.c
     ${ENGINE}/platform/posix/ready.c
     # lwIP exposes the same BSD socket API this file already targets (it is also
     # the NuttX platform's socket.c, unmodified); its TLS branches turn on with

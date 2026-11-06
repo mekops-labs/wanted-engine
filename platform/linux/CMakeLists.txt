@@ -27,6 +27,7 @@ set(sources
     ${CMAKE_SOURCE_DIR}/platform/posix/led-state.c
     ${CMAKE_SOURCE_DIR}/platform/posix/motor-state.c
     ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/ready-event.c
     wake.c
     ${CMAKE_SOURCE_DIR}/platform/posix/ready.c
     ${CMAKE_SOURCE_DIR}/platform/posix/persist-mem.c

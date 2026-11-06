@@ -15,6 +15,8 @@ set(sources
     dummy-net.c
     dummy-ota.c
     ${CMAKE_SOURCE_DIR}/platform/posix/led-state.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/mutex.c
+    ${CMAKE_SOURCE_DIR}/platform/posix/ready-event.c
     ${CMAKE_SOURCE_DIR}/platform/posix/motor-state.c
     ${CMAKE_SOURCE_DIR}/platform/posix/sha256.c)
 add_library(platform_dummy STATIC ${sources})
@@ -26,3 +28,5 @@ target_include_directories(
     PUBLIC ${CMAKE_SOURCE_DIR}/include
     PRIVATE ${CMAKE_SOURCE_DIR}/platform/include
     PRIVATE ${CMAKE_SOURCE_DIR}/src/include)
+
+target_link_libraries(platform_dummy PUBLIC pthread)
