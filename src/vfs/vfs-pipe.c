@@ -664,19 +664,26 @@ typedef struct bridge_state_t {
 } bridge_state_t;
 
 /* The running wapps' pipe drivers by wapp name, for the supervisor's runtime
- * grants. Guarded by the shared store's lock. */
+ * grants. Guarded by the shared store's lock; a driver's scope is guarded by
+ * its own store's lock, taken second. */
 static struct {
     char wapp[WAPP_MAX_NAME_LEN];
     bridge_state_t *state;
 } binds[CONFIG_WANTED_MAX_WAPPS];
 
-static void unbindState(bridge_state_t *s) {
-    PlatformMutexLock(s->store->lock);
+static platform_mutex_t *bindsLock(void) {
+    pipe_store_t *shared = PipeStoreShared();
+    return shared != NULL ? shared->lock : NULL;
+}
+
+static void unbindState(const bridge_state_t *s) {
+    platform_mutex_t *lock = bindsLock();
+    PlatformMutexLock(lock);
     for (size_t i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
         if (binds[i].state == s)
             memset(&binds[i], 0, sizeof(binds[i]));
     }
-    PlatformMutexUnlock(s->store->lock);
+    PlatformMutexUnlock(lock);
 }
 
 static int allocHandle(bridge_state_t *s, void *h) {
@@ -1173,9 +1180,10 @@ int PipeDriverBind(vfs_driver_t *drv, const char *wapp) {
         strnlen(wapp, WAPP_MAX_NAME_LEN) >= WAPP_MAX_NAME_LEN)
         return -EINVAL;
     bridge_state_t *s = (bridge_state_t *)drv->ctx;
+    platform_mutex_t *lock = bindsLock();
     int rc = -ENOSPC;
 
-    PlatformMutexLock(s->store->lock);
+    PlatformMutexLock(lock);
     for (size_t i = 0; i < CONFIG_WANTED_MAX_WAPPS; i++) {
         if (binds[i].state != NULL && strcmp(binds[i].wapp, wapp) == 0) {
             memset(&binds[i], 0, sizeof(binds[i]));
@@ -1190,7 +1198,7 @@ int PipeDriverBind(vfs_driver_t *drv, const char *wapp) {
             break;
         }
     }
-    PlatformMutexUnlock(s->store->lock);
+    PlatformMutexUnlock(lock);
     return rc;
 }
 
@@ -1202,41 +1210,60 @@ static bridge_state_t *boundState(const char *wapp) {
     return NULL;
 }
 
+/* Lock a bound driver's scope, under the binds lock the caller holds. */
+static void scopeLock(const bridge_state_t *s, bool lock) {
+    if (s->store == PipeStoreShared())
+        return;
+    if (lock)
+        PlatformMutexLock(s->store->lock);
+    else
+        PlatformMutexUnlock(s->store->lock);
+}
+
 int PipeRuntimeGrant(const char *wapp, bool revoke, const char *clauses) {
-    pipe_store_t *store = PipeStoreShared();
-    if (store == NULL || wapp == NULL)
+    if (wapp == NULL)
         return -EINVAL;
-    PlatformMutexLock(store->lock);
+    platform_mutex_t *lock = bindsLock();
+    PlatformMutexLock(lock);
     bridge_state_t *s = boundState(wapp);
-    int rc = s != NULL ? scopeRuntime(s->scope, revoke, clauses) : -ENOENT;
-    PlatformMutexUnlock(store->lock);
+    int rc = -ENOENT;
+    if (s != NULL) {
+        scopeLock(s, true);
+        rc = scopeRuntime(s->scope, revoke, clauses);
+        scopeLock(s, false);
+    }
+    PlatformMutexUnlock(lock);
     return rc;
 }
 
-int PipeRuntimeList(const char *wapp, char *buf, size_t cap) {
-    pipe_store_t *store = PipeStoreShared();
-    if (store == NULL || wapp == NULL || buf == NULL || cap == 0)
-        return -EINVAL;
-    PlatformMutexLock(store->lock);
-    bridge_state_t *s = boundState(wapp);
-    if (s == NULL) {
-        PlatformMutexUnlock(store->lock);
-        return -ENOENT;
-    }
+static int runtimeList(const pipe_scope_t *scope, char *buf, size_t cap) {
     size_t used = 0;
     buf[0] = '\0';
-    for (size_t i = 0; i < s->scope->rtCnt; i++) {
-        const pipe_grant_t *g = &s->scope->rt[i];
+    for (size_t i = 0; i < scope->rtCnt; i++) {
+        const pipe_grant_t *g = &scope->rt[i];
         int w = snprintf(buf + used, cap - used, "%s=%s\n",
                          g->wr ? "write" : "read", g->name);
-        if (w < 0 || (size_t)w >= cap - used) {
-            PlatformMutexUnlock(store->lock);
+        if (w < 0 || (size_t)w >= cap - used)
             return -EMSGSIZE;
-        }
         used += (size_t)w;
     }
-    PlatformMutexUnlock(store->lock);
     return (int)used;
+}
+
+int PipeRuntimeList(const char *wapp, char *buf, size_t cap) {
+    if (wapp == NULL || buf == NULL || cap == 0)
+        return -EINVAL;
+    platform_mutex_t *lock = bindsLock();
+    PlatformMutexLock(lock);
+    const bridge_state_t *s = boundState(wapp);
+    int rc = -ENOENT;
+    if (s != NULL) {
+        scopeLock(s, true);
+        rc = runtimeList(s->scope, buf, cap);
+        scopeLock(s, false);
+    }
+    PlatformMutexUnlock(lock);
+    return rc;
 }
 
 /* The `pipe` grant: a driver that must name at least one pipe. */
