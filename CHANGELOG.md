@@ -37,6 +37,10 @@ Unreleased
   character outside `[A-Za-z0-9._-]` returns `EINVAL`. The engine no longer
   truncates a name.
 - A `pipe` console slot refuses an unknown option or a bad `name=` at launch.
+- A wapp whose name holds a character outside `[A-Za-z0-9._-]` needs `name=`
+  on a `pipe` console slot.
+- A `pipe` console slot fails the launch with `ENOSPC` when the store is full.
+- A `pipe` entry in `mounts[]` fails the launch.
 - An ESP-IDF build sets the WAMR interpreter in sdkconfig from the board
   defconfig, and stops when sdkconfig names the other interpreter.
 
