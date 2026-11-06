@@ -88,10 +88,9 @@ typedef struct vfs_dirent_t {
         d_type; // The type of the file referred to by this directory entry.
 } vfs_dirent_t;
 
-/* Flat-directory readdir helper — shared by DevFS root, NetFS root, ProcFS,
- * and any driver whose own subtree is a fixed list of entries. Iterates
- * `entries[0..count)`, packing vfs_dirent_t structs into buf using *cookie as
- * the resume index. Sets *bufUsed on return. */
+/* Readdir over a fixed list of entries, for DevFS, NetFS, ProcFS and similar
+ * drivers. Packs `entries[*cookie..count)` as vfs_dirent_t into buf and sets
+ * *bufUsed. */
 typedef struct vfs_dir_entry_t {
     const char *name;
     vfs_filetype_t type;

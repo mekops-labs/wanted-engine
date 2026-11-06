@@ -63,10 +63,9 @@ typedef enum {
 int PipeConsoleOptions(const char *options, char *name, size_t cap,
                        pipe_eof_t *eof);
 
-/* Console driver on pipe `name`; `forRead` selects `in`. When `eof` matches
- * how the wapp ended (`*exitCode`, NULL is not clean), readers get end of
- * stream and writers to `in` -EPIPE. NULL when `name` fails PipeNameCheck, the
- * store is full, or memory runs out. */
+/* Console driver on pipe `name`; `forRead` selects `in`. When `eof` matches how
+ * the wapp ended (`*exitCode`, NULL is unclean), the stream ends. NULL on a bad
+ * name, a full store or no memory. */
 vfs_driver_t *VfsPipeConsoleCreate(pipe_store_t *store, const char *name,
                                    bool forRead, vfs_oflags_t flags,
                                    pipe_eof_t eof, const int32_t *exitCode);

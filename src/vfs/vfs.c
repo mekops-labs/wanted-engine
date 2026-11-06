@@ -1289,10 +1289,9 @@ int VfsRename(vfs_ctx_t c, int old_fd, const char *old_path, int new_fd,
     if (!old_path || !new_path)
         return -EINVAL;
 
-    /* PLATFORM parents, relative paths: each driver resolves its own path
-     * against its own preopen, bypassing the mount table — same bypass
-     * VfsUnlink uses, and for the same reason (a host dirfd only the driver
-     * holds). */
+    /* PLATFORM parents with relative paths: each driver resolves its path
+     * against its own preopen, past the mount table, as VfsUnlink does,
+     * because only the driver holds the host dirfd. */
     if (c->fds[old_fd].type == VFS_TYPE_PLATFORM && old_path[0] != '/' &&
         c->fds[new_fd].type == VFS_TYPE_PLATFORM && new_path[0] != '/') {
         const vfs_driver_t *old_drv = c->fds[old_fd].driver;
