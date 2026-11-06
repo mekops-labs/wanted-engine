@@ -107,10 +107,18 @@ static bool nameChar(char c) {
            (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
 }
 
+/* Length of `s`, or `max` when no terminator falls within its first `max`. */
+static size_t boundedLen(const char *s, size_t max) {
+    size_t n = 0;
+    while (n < max && s[n] != '\0')
+        n++;
+    return n;
+}
+
 int PipeNameCheck(const char *name) {
     if (name == NULL || name[0] == '\0')
         return -EINVAL;
-    size_t n = strnlen(name, PIPE_NAME_MAX + 1);
+    size_t n = boundedLen(name, PIPE_NAME_MAX + 1);
     if (n > PIPE_NAME_MAX)
         return -ENAMETOOLONG;
     for (size_t i = 0; i < n; i++) {
@@ -120,169 +128,150 @@ int PipeNameCheck(const char *name) {
     return 0;
 }
 
-static int scopeAdd(pipe_scope_t *s, const char *name, bool wr) {
-    int rc = PipeNameCheck(name);
-    if (rc < 0)
-        return rc;
-    for (size_t i = 0; i < s->cnt; i++) {
-        if (strcmp(s->grants[i].name, name) == 0) {
-            if (wr)
-                s->grants[i].wr = true;
-            else
-                s->grants[i].rd = true;
-            return 0;
-        }
+/* Which direction a lookup asks for. */
+typedef enum { DIR_ANY, DIR_READ, DIR_WRITE } pipe_dir_t;
+
+static pipe_dir_t dirOf(bool wr) { return wr ? DIR_WRITE : DIR_READ; }
+
+/* Index of the first entry naming `name` that covers `dir`, or -1. */
+static int grantFind(const pipe_grant_t *g, size_t cnt, const char *name,
+                     pipe_dir_t dir) {
+    for (size_t i = 0; i < cnt; i++) {
+        if (strcmp(g[i].name, name) != 0)
+            continue;
+        if (dir == DIR_ANY || (dir == DIR_WRITE ? g[i].wr : g[i].rd))
+            return (int)i;
     }
-    if (s->cnt >= CONFIG_WANTED_PIPE_GRANTS)
-        return -ENOSPC;
-    pipe_grant_t *g = &s->grants[s->cnt++];
+    return -1;
+}
+
+/* Call `fn` for each clause of "read=<name>,write=<name>,...", in order, after
+ * checking its name. Stops at the first error and returns it. */
+static int clauseEach(const char *list,
+                      int (*fn)(void *arg, const char *name, bool wr),
+                      void *arg) {
+    char buf[CONFIG_WANTED_MAX_OPTIONS_SIZE];
+
+    size_t len = boundedLen(list, sizeof(buf));
+    if (len >= sizeof(buf))
+        return -EINVAL;
+    memcpy(buf, list, len + 1);
+
+    for (char *tok = buf; tok != NULL;) {
+        char *end = strchr(tok, ',');
+        if (end != NULL)
+            *end++ = '\0';
+        bool wr;
+        if (strncmp(tok, "read=", 5) == 0) {
+            wr = false;
+            tok += 5;
+        } else if (strncmp(tok, "write=", 6) == 0) {
+            wr = true;
+            tok += 6;
+        } else {
+            return -EINVAL;
+        }
+        int rc = PipeNameCheck(tok);
+        if (rc == 0)
+            rc = fn(arg, tok, wr);
+        if (rc < 0)
+            return rc;
+        tok = end;
+    }
+    return 0;
+}
+
+static void grantSet(pipe_grant_t *g, const char *name, bool wr) {
     memcpy(g->name, name, strlen(name) + 1);
     g->rd = !wr;
     g->wr = wr;
+}
+
+/* A launch clause: a listed name gains the direction, a new one an entry. */
+static int scopeAdd(void *arg, const char *name, bool wr) {
+    pipe_scope_t *s = arg;
+    int at = grantFind(s->grants, s->cnt, name, DIR_ANY);
+    if (at >= 0) {
+        if (wr)
+            s->grants[at].wr = true;
+        else
+            s->grants[at].rd = true;
+        return 0;
+    }
+    if (s->cnt >= CONFIG_WANTED_PIPE_GRANTS)
+        return -ENOSPC;
+    grantSet(&s->grants[s->cnt++], name, wr);
     return 0;
 }
 
 /* Add the clauses of "read=<name>,write=<name>,..." to `s`. An empty grant adds
  * nothing. On an error `s` is left as it was. */
 static int scopeParse(pipe_scope_t *s, const char *grant) {
-    char buf[CONFIG_WANTED_MAX_OPTIONS_SIZE];
-
     if (grant == NULL || grant[0] == '\0')
         return 0;
-    size_t len = strnlen(grant, sizeof(buf));
-    if (len >= sizeof(buf))
-        return -EINVAL;
-    memcpy(buf, grant, len + 1);
-
     pipe_scope_t next = *s;
-    for (char *tok = buf; tok != NULL;) {
-        char *end = strchr(tok, ',');
-        if (end != NULL)
-            *end++ = '\0';
-        int rc;
-        if (strncmp(tok, "read=", 5) == 0)
-            rc = scopeAdd(&next, tok + 5, false);
-        else if (strncmp(tok, "write=", 6) == 0)
-            rc = scopeAdd(&next, tok + 6, true);
-        else
-            rc = -EINVAL;
-        if (rc < 0)
-            return rc;
-        tok = end;
-    }
-    *s = next;
-    return 0;
+    int rc = clauseEach(grant, scopeAdd, &next);
+    if (rc == 0)
+        *s = next;
+    return rc;
 }
 
 /* 0 when the scope lets the caller open `name` in the given direction. */
 static int scopeCheck(const pipe_scope_t *s, const char *name, bool wr) {
-    bool seen = false;
-
-    if (s->all)
+    if (s->all || grantFind(s->grants, s->cnt, name, dirOf(wr)) >= 0 ||
+        grantFind(s->rt, s->rtCnt, name, dirOf(wr)) >= 0)
         return 0;
-    for (size_t i = 0; i < s->cnt; i++) {
-        if (strcmp(s->grants[i].name, name) != 0)
-            continue;
-        if (wr ? s->grants[i].wr : s->grants[i].rd)
-            return 0;
-        seen = true;
-    }
-    for (size_t i = 0; i < s->rtCnt; i++) {
-        if (strcmp(s->rt[i].name, name) != 0)
-            continue;
-        if (wr ? s->rt[i].wr : s->rt[i].rd)
-            return 0;
-        seen = true;
-    }
-    return seen ? -EACCES : -ENOENT;
+    if (grantFind(s->grants, s->cnt, name, DIR_ANY) >= 0 ||
+        grantFind(s->rt, s->rtCnt, name, DIR_ANY) >= 0)
+        return -EACCES;
+    return -ENOENT;
 }
 
 static bool scopeListed(const pipe_scope_t *s, const char *name) {
-    if (s->all)
-        return true;
-    for (size_t i = 0; i < s->cnt; i++) {
-        if (strcmp(s->grants[i].name, name) == 0)
-            return true;
-    }
-    for (size_t i = 0; i < s->rtCnt; i++) {
-        if (strcmp(s->rt[i].name, name) == 0)
-            return true;
-    }
-    return false;
+    return s->all || grantFind(s->grants, s->cnt, name, DIR_ANY) >= 0 ||
+           grantFind(s->rt, s->rtCnt, name, DIR_ANY) >= 0;
 }
 
-/* True when a launch grant lets `name` be opened in the direction. */
-static bool launchCovers(const pipe_scope_t *s, const char *name, bool wr) {
-    for (size_t i = 0; i < s->cnt; i++) {
-        if (strcmp(s->grants[i].name, name) == 0)
-            return wr ? s->grants[i].wr : s->grants[i].rd;
-    }
-    return false;
-}
+typedef struct {
+    pipe_scope_t *scope;
+    bool revoke;
+} runtime_op_t;
 
-static int rtIndex(const pipe_scope_t *s, const char *name, bool wr) {
-    for (size_t i = 0; i < s->rtCnt; i++) {
-        if (strcmp(s->rt[i].name, name) == 0 &&
-            (wr ? s->rt[i].wr : s->rt[i].rd))
-            return (int)i;
+/* A runtime clause: a grant the scope already covers is a no-op; a revoke
+ * removes only a runtime clause. */
+static int runtimeApply(void *arg, const char *name, bool wr) {
+    runtime_op_t *op = arg;
+    pipe_scope_t *s = op->scope;
+    bool launch = grantFind(s->grants, s->cnt, name, dirOf(wr)) >= 0;
+    int at = grantFind(s->rt, s->rtCnt, name, dirOf(wr));
+
+    if (!op->revoke) {
+        if (s->all || launch || at >= 0)
+            return 0;
+        if (s->rtCnt >= CONFIG_WANTED_PIPE_RUNTIME_GRANTS)
+            return -ENOSPC;
+        grantSet(&s->rt[s->rtCnt++], name, wr);
+        return 0;
     }
-    return -1;
+    if (at < 0)
+        return launch ? -EPERM : -ENOENT;
+    for (size_t i = (size_t)at; i + 1 < s->rtCnt; i++)
+        s->rt[i] = s->rt[i + 1];
+    s->rtCnt--;
+    return 0;
 }
 
 /* Grant or revoke the runtime clauses of "read=<name>,write=<name>,...". The
  * whole list applies or none of it does. */
 static int scopeRuntime(pipe_scope_t *s, bool revoke, const char *clauses) {
-    char buf[CONFIG_WANTED_MAX_OPTIONS_SIZE];
-
     if (clauses == NULL || clauses[0] == '\0')
         return -EINVAL;
-    size_t len = strnlen(clauses, sizeof(buf));
-    if (len >= sizeof(buf))
-        return -EINVAL;
-    memcpy(buf, clauses, len + 1);
-
     pipe_scope_t next = *s;
-    for (char *tok = buf; tok != NULL;) {
-        char *end = strchr(tok, ',');
-        bool wr;
-        const char *name;
-        if (end != NULL)
-            *end++ = '\0';
-        if (strncmp(tok, "read=", 5) == 0) {
-            wr = false;
-            name = tok + 5;
-        } else if (strncmp(tok, "write=", 6) == 0) {
-            wr = true;
-            name = tok + 6;
-        } else {
-            return -EINVAL;
-        }
-        int rc = PipeNameCheck(name);
-        if (rc < 0)
-            return rc;
-        int at = rtIndex(&next, name, wr);
-        if (!revoke) {
-            if (next.all || launchCovers(&next, name, wr) || at >= 0) {
-                tok = end;
-                continue;
-            }
-            if (next.rtCnt >= CONFIG_WANTED_PIPE_RUNTIME_GRANTS)
-                return -ENOSPC;
-            pipe_grant_t *g = &next.rt[next.rtCnt++];
-            memcpy(g->name, name, strlen(name) + 1);
-            g->rd = !wr;
-            g->wr = wr;
-        } else {
-            if (at < 0)
-                return launchCovers(&next, name, wr) ? -EPERM : -ENOENT;
-            for (size_t i = (size_t)at; i + 1 < next.rtCnt; i++)
-                next.rt[i] = next.rt[i + 1];
-            next.rtCnt--;
-        }
-        tok = end;
-    }
-    *s = next;
-    return 0;
+    runtime_op_t op = {&next, revoke};
+    int rc = clauseEach(clauses, runtimeApply, &op);
+    if (rc == 0)
+        *s = next;
+    return rc;
 }
 
 /* ── Ring helpers (caller holds store->lock) ─────────────────────────────────
@@ -1177,7 +1166,7 @@ int PipeDriverGrant(vfs_driver_t *drv, const char *grant) {
 
 int PipeDriverBind(vfs_driver_t *drv, const char *wapp) {
     if (drv == NULL || drv->Open != _bOpen || wapp == NULL || wapp[0] == '\0' ||
-        strnlen(wapp, WAPP_MAX_NAME_LEN) >= WAPP_MAX_NAME_LEN)
+        boundedLen(wapp, WAPP_MAX_NAME_LEN) >= WAPP_MAX_NAME_LEN)
         return -EINVAL;
     bridge_state_t *s = (bridge_state_t *)drv->ctx;
     platform_mutex_t *lock = bindsLock();
