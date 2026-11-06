@@ -81,33 +81,81 @@ void PlatformReadyStop(plat_ready_t *r) {
     pthread_mutex_unlock(&r->mtx);
 }
 
-static void deadlineAfter(clockid_t clock, int64_t ns, struct timespec *ts) {
-    clock_gettime(clock, ts);
-    ts->tv_sec += ns / 1000000000LL;
-    ts->tv_nsec += (long)(ns % 1000000000LL);
-    if (ts->tv_nsec >= 1000000000L) {
-        ts->tv_sec++;
-        ts->tv_nsec -= 1000000000L;
+#define NS_PER_S 1000000000LL
+/* Longest single timed wait on the wall clock, so a clock set back costs at
+ * most this much extra sleep. */
+#define REALTIME_STEP_NS (10 * NS_PER_S)
+
+/* The largest time_t, for an integer time_t of 32 or 64 bits. */
+#define TIME_T_MAX                                                             \
+    ((time_t)(sizeof(time_t) == 4 ? (int64_t)INT32_MAX : INT64_MAX))
+
+static bool nowNs(clockid_t clock, int64_t *ns) {
+    struct timespec ts;
+
+    if (clock_gettime(clock, &ts) != 0)
+        return false;
+    *ns = (int64_t)ts.tv_sec * NS_PER_S + ts.tv_nsec;
+    return true;
+}
+
+/* `ns` from now on `clock`, saturated at the largest representable time. */
+static bool deadlineAfter(clockid_t clock, int64_t ns, struct timespec *ts) {
+    if (clock_gettime(clock, ts) != 0)
+        return false;
+    int64_t secs = ns / NS_PER_S;
+    ts->tv_nsec += (long)(ns % NS_PER_S);
+    if (ts->tv_nsec >= NS_PER_S) {
+        secs++;
+        ts->tv_nsec -= NS_PER_S;
     }
+    if (secs > (int64_t)(TIME_T_MAX - ts->tv_sec)) {
+        ts->tv_sec = TIME_T_MAX;
+        ts->tv_nsec = NS_PER_S - 1;
+    } else {
+        ts->tv_sec += (time_t)secs;
+    }
+    return true;
 }
 
 int PlatformReadyWait(plat_ready_t *r, int64_t timeoutNs) {
     struct timespec until = {0, 0};
+    int64_t end = 0;
     int ret = 0;
 
     if (!r)
         return -EINVAL;
-    if (timeoutNs >= 0)
-        deadlineAfter(r->clock, timeoutNs, &until);
+    /* The time left is kept on the monotonic clock; each timed wait on the
+     * wall clock is cut to REALTIME_STEP_NS. */
+    if (timeoutNs >= 0) {
+        int64_t now;
+        if (!nowNs(CLOCK_MONOTONIC, &now))
+            return -EINVAL;
+        end = now > INT64_MAX - timeoutNs ? INT64_MAX : now + timeoutNs;
+    }
     pthread_mutex_lock(&r->mtx);
     while (!r->raised && !r->stopped) {
-        int rc = timeoutNs >= 0
-                     ? pthread_cond_timedwait(&r->cond, &r->mtx, &until)
-                     : pthread_cond_wait(&r->cond, &r->mtx);
-        if (rc == ETIMEDOUT) {
+        if (timeoutNs < 0) {
+            pthread_cond_wait(&r->cond, &r->mtx);
+            continue;
+        }
+        int64_t now;
+        if (!nowNs(CLOCK_MONOTONIC, &now)) {
+            ret = -EINVAL;
+            break;
+        }
+        int64_t left = end - now;
+        if (left <= 0) {
             ret = -ETIMEDOUT;
             break;
         }
+        if (r->clock != CLOCK_MONOTONIC && left > REALTIME_STEP_NS)
+            left = REALTIME_STEP_NS;
+        if (!deadlineAfter(r->clock, left, &until)) {
+            ret = -EINVAL;
+            break;
+        }
+        pthread_cond_timedwait(&r->cond, &r->mtx, &until);
     }
     if (ret == 0) {
         if (r->stopped)

@@ -120,7 +120,7 @@ void PlatformReadyRaise(plat_ready_t *r);
 void PlatformReadyStop(plat_ready_t *r);
 /* Sleep until raised (0), stopped (-EINTR) or `timeoutNs` passes (-ETIMEDOUT).
  * A negative timeout waits without a limit. A raise that came first ends the
- * wait at once. */
+ * wait at once. -EINVAL when the clock cannot be read. */
 int PlatformReadyWait(plat_ready_t *r, int64_t timeoutNs);
 
 /* Why the current boot started, as a short stable token ("poweron", "sw",

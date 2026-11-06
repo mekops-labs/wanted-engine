@@ -1778,6 +1778,21 @@ TEST(pipe_ready, PollOneoffWatchesAPipeOpenedThroughAConsole) {
     TEST_ASSERT_EQUAL_UINT64(1, b.pollKind);
 }
 
+static void *raiseLater(void *arg) {
+    usleep(READY_SETTLE_US);
+    PlatformReadyRaise(arg);
+    return NULL;
+}
+
+TEST(pipe_ready, ATimeoutPastTheClockRangeStillWaits) {
+    pthread_t t;
+
+    TEST_ASSERT_EQUAL_INT(0, pthread_create(&t, NULL, raiseLater, rready));
+    TEST_ASSERT_EQUAL_INT(0, PlatformReadyWait(rready, INT64_MAX));
+    TEST_ASSERT_EQUAL_INT(0, pthread_join(t, NULL));
+    TEST_ASSERT_EQUAL_INT(-ETIMEDOUT, PlatformReadyWait(rready, 1000000));
+}
+
 TEST(pipe_ready, AStopOnceTeardownBeganTouchesNothing) {
     wapp_data_t d;
 
@@ -1801,5 +1816,6 @@ TEST_GROUP_RUNNER(pipe_ready) {
     RUN_TEST_CASE(pipe_ready, PollOneoffOnAPipeSleepsUntilDataArrives);
     RUN_TEST_CASE(pipe_ready, PollOneoffEndsOnAStop);
     RUN_TEST_CASE(pipe_ready, PollOneoffWatchesAPipeOpenedThroughAConsole);
+    RUN_TEST_CASE(pipe_ready, ATimeoutPastTheClockRangeStillWaits);
     RUN_TEST_CASE(pipe_ready, AStopOnceTeardownBeganTouchesNothing);
 }

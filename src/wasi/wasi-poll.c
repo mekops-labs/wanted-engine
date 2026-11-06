@@ -154,11 +154,16 @@ __wasi_errno_t WasiPollOneoff(vfs_ctx_t c, const __wasi_subscription_t *in,
 
         if (sleepOnReady) {
             int64_t limit = wait > (uint64_t)INT64_MAX ? -1 : (int64_t)wait;
-            if (PlatformReadyWait(ready, limit) == -EINTR) {
+            int rc = PlatformReadyWait(ready, limit);
+            if (rc == -EINTR) {
                 watchAll(c, in, n, false);
                 return __WASI_ERRNO_INTR;
             }
-            continue;
+            if (rc == 0 || rc == -ETIMEDOUT)
+                continue;
+            /* The event cannot time a wait: recheck instead. */
+            watchAll(c, in, n, false);
+            sleepOnReady = false;
         }
 
         int wakeFd = VfsWakeFd(c);
