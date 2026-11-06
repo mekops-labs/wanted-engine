@@ -3,6 +3,7 @@
 /* duplex — one image, two inter-wapp pipe roles selected by the ROLE env var,
  * proving /dev/pipe is a process-wide channel between separate namespaces. The
  * selftest stages this source under two registry names and launches both. */
+#include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,7 +26,7 @@ int main(void) {
 
     if (role != NULL && strcmp(role, "rtreader") == 0) {
         /* The grant arrives while this runs: retry the open until it does,
-         * read once, then try the name again after the supervisor's revoke. */
+         * read once, then reopen the name until the supervisor's revoke lands. */
         char got[64];
         int fd = -1;
         for (int i = 0; i < 100 && fd < 0; i++) {
@@ -39,12 +40,20 @@ int main(void) {
         if (n <= 0)
             return 1;
         write(STDOUT_FILENO, got, n);
-        sleep(3);
-        int again = open(CHAN, O_RDONLY);
-        const char *verdict = again < 0 ? "\nreopen: denied\n" : "\nreopen: allowed\n";
+        int denied = 0;
+        for (int i = 0; i < 150 && !denied; i++) {
+            int again = open(CHAN, O_RDONLY);
+            if (again >= 0) {
+                close(again);
+                usleep(200000);
+            } else {
+                denied = errno == ENOENT;
+            }
+        }
+        const char *verdict = denied ? "\nreopen: denied\n" : "\nreopen: allowed\n";
         write(STDOUT_FILENO, verdict, strlen(verdict));
         close(fd);
-        return again < 0 ? 0 : 2;
+        return denied ? 0 : 2;
     }
 
     /* reader (default) */
