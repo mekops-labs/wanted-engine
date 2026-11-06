@@ -31,6 +31,8 @@ Unreleased
 
 ### Changed
 
+- The bundled Sheriff is v0.17.0. It merges several `pipe` entries of one
+  wapp, which v0.16.0 refused.
 - A pipe read, a pipe write and a `poll_oneoff` over pipes sleep until a pipe
   changes or the wapp is stopped. The 5 s `EAGAIN` cap and the recheck are gone.
 - A pipe name over 31 characters returns `ENAMETOOLONG` and a name with a
