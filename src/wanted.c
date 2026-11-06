@@ -87,6 +87,15 @@ static const char *resolveConsole(const char *name, const char *fallback) {
     return (name == NULL || name[0] == '\0') ? fallback : name;
 }
 
+/* Orders WantedWappTerminate against the worker freeing what it touches. */
+static platform_mutex_t *wappTeardownLock;
+
+static void setEnding(wapp_data_t *ctx, bool ending) {
+    PlatformMutexLock(wappTeardownLock);
+    ctx->ending = ending;
+    PlatformMutexUnlock(wappTeardownLock);
+}
+
 /* Per-slot label used to auto-name a `pipe` console's pipe (<wapp>.<slot>). */
 static const char *const CONSOLE_SLOT[] = {"in", "out", "err"};
 
@@ -592,6 +601,7 @@ int WantedWappRun(wapp_data_t *ctx) {
      * so a trap, or a launch that fails first, stays distinguishable. A pipe
      * console with `eof=ok` reads it when the wapp's VFS goes. */
     ctx->exit_code = WAPP_EXIT_CODE_NONE;
+    setEnding(ctx, false);
 
     if (ensureWamrInit() < 0)
         return -1;
@@ -1005,18 +1015,21 @@ int WantedWappRun(wapp_data_t *ctx) {
     return 0;
 
 _freeVfs:
+    setEnding(ctx, true);
     VfsDestroy(&ctx->vfs);
 _freeWasiCtx:
     FreeWasiContext(wasiCtx);
 _destroyExecEnv:
     wasm_runtime_destroy_exec_env(ctx->wamr->exec_env);
 _deinstantiate:
+    setEnding(ctx, true);
     wasm_runtime_deinstantiate(ctx->wamr->instance);
 _unloadModule:
     wasm_runtime_unload(ctx->wamr->module);
 _freeWasmBytes:
     PlatformExtramFree(ctx->wamr->wasm_bytes);
 _freeWamr:
+    setEnding(ctx, true);
     WantedFree(ctx->wamr);
     /* The platform slot keeps pointing at this wapp_data_t; null the freed WAMR
      * handle so a later PlatformWappGetState (which samples per-wapp memory)
@@ -1037,6 +1050,7 @@ void WantedWappStop(wapp_data_t *ctx) {
     if (ctx->lastStatus == 0) {
         DEBUG_TRACE("start");
 
+        setEnding(ctx, true);
         VfsDestroy(&ctx->vfs);
 
         wasi_ctx_t *wasiCtx =
@@ -1060,13 +1074,18 @@ void WantedWappStop(wapp_data_t *ctx) {
 }
 
 void WantedWappTerminate(wapp_data_t *ctx) {
-    /* Abort an instance's in-flight WASM execution: the worker's
-     * wasm_runtime_call_wasm returns false and the thread unwinds through its
-     * cleanup handler. Self-guards when the wapp has no live instance. */
-    if (ctx == NULL || ctx->wamr == NULL || ctx->wamr->instance == NULL) {
+    if (ctx == NULL)
         return;
+    PlatformMutexLock(wappTeardownLock);
+    if (!ctx->ending) {
+        /* The terminate flag ends the WASM call at its next instruction; the
+         * wake and the ready stop end a blocked host call. */
+        if (ctx->wamr != NULL && ctx->wamr->instance != NULL)
+            wasm_runtime_terminate(ctx->wamr->instance);
+        PlatformWakeRaise(VfsWakeFd(ctx->vfs));
+        PlatformReadyStop(VfsReady(ctx->vfs));
     }
-    wasm_runtime_terminate(ctx->wamr->instance);
+    PlatformMutexUnlock(wappTeardownLock);
 }
 
 /* Reload state. Single bytes are atomic on every target; `volatile` keeps the
@@ -1408,6 +1427,8 @@ int WantedStart(const char *cfg, size_t cfgLen) {
     LogStoreUptimeInit();
     LogStorePersistInit(LogStore());
     RegistryInit();
+    if (wappTeardownLock == NULL)
+        wappTeardownLock = PlatformMutexNew();
 
     ret = WantedParseConfig(cfg, cfgLen);
     DEBUG_TRACE("WantedParseConfig -> %d", ret);

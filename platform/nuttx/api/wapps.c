@@ -293,7 +293,6 @@ int PlatformWappStop(const char *name) {
      * returns false at the next instruction boundary, then signal the worker so
      * a blocked host call EINTRs and that boundary is reached promptly. */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
-    PlatformReadyStop(VfsReady(state.threads[slot].data.vfs));
     worker = state.threads[slot].t;
 
     pthread_mutex_unlock(&state_mtx);

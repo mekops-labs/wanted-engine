@@ -1761,6 +1761,19 @@ TEST(pipe_ready, PollOneoffWatchesAPipeOpenedThroughAConsole) {
     TEST_ASSERT_EQUAL_UINT64(1, b.pollKind);
 }
 
+TEST(pipe_ready, AStopOnceTeardownBeganTouchesNothing) {
+    wapp_data_t d;
+
+    memset(&d, 0, sizeof(d));
+    d.vfs = rvfs;
+    d.ending = true;
+    WantedWappTerminate(&d);
+    TEST_ASSERT_EQUAL_INT(-ETIMEDOUT, PlatformReadyWait(rready, 0));
+    d.ending = false;
+    WantedWappTerminate(&d);
+    TEST_ASSERT_EQUAL_INT(-EINTR, PlatformReadyWait(rready, 0));
+}
+
 TEST_GROUP_RUNNER(pipe_ready) {
     RUN_TEST_CASE(pipe_ready, AnIdleReadWakesOnlyWhenDataArrives);
     RUN_TEST_CASE(pipe_ready, ReadingWakesAWriterBlockedOnAFullRing);
@@ -1771,4 +1784,5 @@ TEST_GROUP_RUNNER(pipe_ready) {
     RUN_TEST_CASE(pipe_ready, PollOneoffOnAPipeSleepsUntilDataArrives);
     RUN_TEST_CASE(pipe_ready, PollOneoffEndsOnAStop);
     RUN_TEST_CASE(pipe_ready, PollOneoffWatchesAPipeOpenedThroughAConsole);
+    RUN_TEST_CASE(pipe_ready, AStopOnceTeardownBeganTouchesNothing);
 }
