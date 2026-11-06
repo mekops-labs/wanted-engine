@@ -753,6 +753,7 @@ static vfs_driver_t *platformFsInitRW(const wapp_t *wapp, const char *options) {
  * first, so no other table can shadow a security-relevant name. */
 static const vfs_driver_table_t core_driver_table[] = {
     {"null", VfsNullInit},
+    {"pipe", VfsPipeInit},
     {"log", VfsLogInit},
     {"platform", platformFsInitRW},
 #ifdef CONFIG_WANTED_VFS_9P
@@ -910,6 +911,9 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
     /* A driver that blocks watches this beside its own resource. */
     if (drv->SetWake != NULL) {
         drv->SetWake(drv->ctx, VfsWakeFd(c));
+    }
+    if (drv->SetReady != NULL) {
+        drv->SetReady(drv->ctx, VfsReady(c));
     }
 
     return installTo(c, path, drv);

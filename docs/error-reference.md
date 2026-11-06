@@ -30,8 +30,8 @@ the same code can mean different things than it would on a native filesystem.
 | `EROFS` | The mount or driver is read-only. | Writing TarFS (`/`), a `platform`/`volume` mount opened with `ro`, or any driver whose write op is `NULL`. |
 | `EISDIR` / `ENOTDIR` | The path is a directory used as a file, or vice-versa. | `read`/`write` on a directory fd; opening a file path with `O_DIRECTORY`. |
 | `EEXIST` | The target already exists and exclusive creation was requested. | `O_CREAT|O_EXCL` on an existing file; `mkdir` of an existing directory. |
-| `ENAMETOOLONG` | A path or a config buffer exceeds its compile-time bound. | A path longer than `MAX_PATH_LEN`; a volume/host path that overflows its buffer. |
-| `EACCES` | The operation is not permitted for how the fd was opened. | Writing a file opened read-only. |
+| `ENAMETOOLONG` | A path or a config buffer exceeds its compile-time bound. | A path longer than `MAX_PATH_LEN`; a volume/host path that overflows its buffer; a pipe name longer than 31 characters. |
+| `EACCES` | The operation is not permitted for how the fd was opened. | Writing a file opened read-only; opening a granted pipe name in a direction its `pipe` grant omits. |
 | `EXDEV` | A rename that crosses drivers/mounts. | `rename` between two different VFS namespaces (renames are within one driver only). |
 | `ENOTSUP` | The driver does not implement this operation. | `OpenAt`/`readdir` on a driver that is a flat leaf; an op a virtual driver does not provide; `fcntl` changing the sync flags or the host console's mode; `fd_renumber` on a console slot or a preopen; `fd_fdstat_set_rights`; `proc_raise`. |
 | `ENOSYS` | The platform provides no backing for this call. | A filesystem op stubbed out on a constrained target (e.g. rename on a registry-only store). |
@@ -47,6 +47,7 @@ the same code can mean different things than it would on a native filesystem.
 | `ECONNABORTED` | The connection could not be established or was torn down. | `open` on a socket node whose connect failed. |
 | `EMSGSIZE` | The datagram or framed message exceeds the transport limit. | A UDP/pipe write larger than the buffer. |
 | `EAGAIN` | A non-blocking operation would block. | Reading an empty pipe or socket with no data ready. |
+| `EPIPE` | A write to a pipe whose reader has gone. | Writing a pipe whose `eof` console `in` end ended with its wapp, until a reader opens the pipe again. |
 | `EINTR` | A blocking call was interrupted. | A wapp `stop` interrupting a blocked `read`/`sleep` so the interpreter can unwind. |
 
 ## Resource limits

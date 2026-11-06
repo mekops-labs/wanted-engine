@@ -110,6 +110,19 @@ void PlatformWakeRaise(int fd);
 bool PlatformWakeRaised(int fd);
 void PlatformWakeClose(int fd);
 
+/* A wapp's ready event, raised when something a blocked call waits for may
+ * have changed. A raise ends one wait with 0 and is consumed; a stop ends
+ * every wait with -EINTR from then on. Raise and Stop tolerate NULL. */
+typedef struct plat_ready_t plat_ready_t;
+plat_ready_t *PlatformReadyNew(void);
+void PlatformReadyFree(plat_ready_t *r);
+void PlatformReadyRaise(plat_ready_t *r);
+void PlatformReadyStop(plat_ready_t *r);
+/* Sleep until raised (0), stopped (-EINTR) or `timeoutNs` passes (-ETIMEDOUT).
+ * A negative timeout waits without a limit. A raise that came first ends the
+ * wait at once. -EINVAL when the clock cannot be read. */
+int PlatformReadyWait(plat_ready_t *r, int64_t timeoutNs);
+
 /* Why the current boot started, as a short stable token ("poweron", "sw",
  * "panic", "task_wdt", "int_wdt", "brownout", "deepsleep", "unknown").
  * Writes at most `len` bytes incl. terminator; 0 if the platform can't tell. */

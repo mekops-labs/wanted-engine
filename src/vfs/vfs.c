@@ -424,6 +424,8 @@ void VfsDestroy(vfs_ctx_t *c) {
     destroyStreamFd(*c, VFS_STDIN);
     PlatformWakeClose((*c)->wake_fd);
     (*c)->wake_fd = -1;
+    PlatformReadyFree((*c)->ready);
+    (*c)->ready = NULL;
     if ((*c)->tarfs)
         TarFsDestroy((*c)->tarfs);
 
@@ -442,6 +444,13 @@ void VfsSetWakeFd(vfs_ctx_t c, int fd) {
 }
 
 int VfsWakeFd(vfs_ctx_t c) { return c ? c->wake_fd : -1; }
+
+void VfsSetReady(vfs_ctx_t c, plat_ready_t *ready) {
+    if (c)
+        c->ready = ready;
+}
+
+plat_ready_t *VfsReady(vfs_ctx_t c) { return c ? c->ready : NULL; }
 
 const vfs_driver_t *VfsStreamDriver(vfs_ctx_t c, int slot) {
     if (!c || slot < 0 || slot >= VFS_MAX_FDS)
@@ -961,6 +970,49 @@ int VfsPoll(vfs_ctx_t c, int fd, uint32_t *avail) {
     default:
         return POLL_ALWAYS; /* TarFS, /proc, mount dirs: never block */
     }
+}
+
+/* The driver behind a descriptor and its own fd, NULL when the descriptor has
+ * no driver of its own to ask. */
+static const vfs_driver_t *pollTarget(vfs_ctx_t c, int fd, int *drvFd) {
+    if (!checkFd(c, fd))
+        return NULL;
+    switch (c->fds[fd].type) {
+    case VFS_TYPE_DEV:
+        return DevFs_HandleDriver(c->fds[fd].internal_ctx, drvFd);
+    case VFS_TYPE_STREAM:
+    case VFS_TYPE_PLATFORM:
+    case VFS_TYPE_DRIVER:
+        *drvFd = c->fds[fd].drv_fd;
+        return c->fds[fd].driver;
+    default:
+        return NULL;
+    }
+}
+
+bool VfsPollRaisesReady(vfs_ctx_t c, int fd) {
+    int drvFd = 0;
+
+    if (VfsReady(c) == NULL)
+        return false;
+    if (!checkFd(c, fd))
+        return true; /* answers EBADF at once */
+    if (c->fds[fd].type == VFS_TYPE_NET)
+        return false;
+    const vfs_driver_t *drv = pollTarget(c, fd, &drvFd);
+    /* A descriptor with no Poll never blocks, so there is nothing to wait on.
+     */
+    if (drv == NULL || drv->Poll == NULL)
+        return true;
+    return drv->raisesReady && drv->PollWatch != NULL;
+}
+
+void VfsPollWatch(vfs_ctx_t c, int fd, bool arm) {
+    int drvFd = 0;
+    const vfs_driver_t *drv = pollTarget(c, fd, &drvFd);
+
+    if (drv != NULL && drv->raisesReady && drv->PollWatch != NULL)
+        drv->PollWatch(drv->ctx, drvFd, VfsReady(c), arm);
 }
 
 /* Cookie high bit separates TarFS phase (bit=0) from mount-table phase (bit=1)

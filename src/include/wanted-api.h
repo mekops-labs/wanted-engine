@@ -112,6 +112,8 @@ typedef struct wapp_data_t {
      * Authoritative only when the slot's status is EXITED. Lives in each
      * platform's persistent wapp slot, so it survives the run. */
     int32_t exit_code;
+    /* Set once teardown begins; WantedWappTerminate then touches nothing. */
+    bool ending;
 } wapp_data_t;
 
 typedef enum status_t {
@@ -173,9 +175,9 @@ int WantedWappRun(wapp_data_t *ctx);
  *  WAMR env. Idempotent, so every worker-thread exit may call it. */
 void WantedWappStop(wapp_data_t *ctx);
 
-/** Abort @p ctx's in-flight WASM so its worker unwinds through
- *  WantedWappStop(), for platforms without thread cancellation. A NULL ctx or
- *  a dead instance is a no-op. */
+/** Abort @p ctx's in-flight WASM and end its blocked host call, so its worker
+ *  unwinds through WantedWappStop(). Safe against a concurrent teardown; a
+ *  NULL ctx or a wapp already tearing down is a no-op. */
 void WantedWappTerminate(wapp_data_t *ctx);
 
 /** The supervisor descriptor, built on first call from the config or the

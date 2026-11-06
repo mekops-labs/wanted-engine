@@ -272,7 +272,7 @@ selftest() {
     pid=$!
     tail -n +1 -f "$log" 2>/dev/null &
     tpid=$!
-    for _ in $(seq 1 90); do
+    for _ in $(seq 1 150); do
         grep -qE '^1\.\.' "$log" 2>/dev/null && break
         kill -0 "$pid" 2>/dev/null || break
         sleep 1

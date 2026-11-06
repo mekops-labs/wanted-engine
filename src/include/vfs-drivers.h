@@ -44,6 +44,7 @@ vfs_driver_t *VfsLogInit(const wapp_t *wapp, const char *options);
 vfs_driver_t *VfsPlatformFsInit(const wapp_t *wapp, const char *options,
                                 bool readonly);
 vfs_driver_t *VfsVirtualInit(const wapp_t *wapp, const char *options);
+vfs_driver_t *VfsPipeInit(const wapp_t *wapp, const char *options);
 
 /* Configurable. Each declaration is gated with its source so a call from a
  * build that deselected the driver fails at compile time, naming the symbol,

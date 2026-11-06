@@ -9,8 +9,10 @@
 #include "test-utils.h"
 
 #include <platform.h>
+#include <vfs-pipe.h>
 #include <vfs.h>
 #include <wanted-api.h>
+#include <wanted-autoconf.h>
 #include <wanted-vfs-api.h>
 
 #include "dummy-fs.h"
@@ -102,6 +104,7 @@ TEST(vfs_wanted_wapps, ReadDirWapp_ListsControlFiles) {
     TEST_ASSERT_TRUE(HasBytes(buf, used, "ctl", 3));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "state", 5));
     TEST_ASSERT_TRUE(HasBytes(buf, used, "config", 6));
+    TEST_ASSERT_TRUE(HasBytes(buf, used, "pipes", 5));
     /* Observability reads moved to /proc/wapps; logs are a mountable driver. */
     TEST_ASSERT_FALSE(HasBytes(buf, used, "version", 7));
     TEST_ASSERT_FALSE(HasBytes(buf, used, "log", 3));
@@ -473,8 +476,85 @@ TEST(vfs_wanted_wapps, OpenExhaustsFdTable_ReturnsEmfile) {
     TEST_ASSERT_EQUAL_INT(-EMFILE, last);
 }
 
+/* pipes node: the supervisor's runtime pipe grants */
+
+static vfs_driver_t *BindPipes(const char *wapp) {
+    vfs_driver_t *pd = PipeDriverCreateScoped(PipeStoreShared(), "read=base");
+    TEST_ASSERT_NOT_NULL(pd);
+    TEST_ASSERT_EQUAL_INT(0, PipeDriverBind(pd, wapp));
+    return pd;
+}
+
+static int WritePipes(const char *wapp, const char *text) {
+    char path[64];
+    snprintf(path, sizeof(path), "%s/pipes", wapp);
+    int fd = drv->Open(drv->ctx, path, VFS_O_WRONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    int n = drv->Write(drv->ctx, fd, text, strlen(text));
+    drv->Close(drv->ctx, fd);
+    return n;
+}
+
+static int ReadPipes(const char *wapp, char *out, size_t cap) {
+    char path[64];
+    snprintf(path, sizeof(path), "%s/pipes", wapp);
+    int fd = drv->Open(drv->ctx, path, VFS_O_RDONLY);
+    TEST_ASSERT_TRUE(fd >= 0);
+    int n = drv->Read(drv->ctx, fd, out, cap);
+    drv->Close(drv->ctx, fd);
+    if (n >= 0)
+        out[n] = '\0';
+    return n;
+}
+
+TEST(vfs_wanted_wapps, PipesGrantRevokeAndList) {
+    CreateWapp("alpha");
+    vfs_driver_t *pd = BindPipes("alpha");
+    char out[64];
+
+    TEST_ASSERT_EQUAL_INT(0, ReadPipes("alpha", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_INT(21, WritePipes("alpha", "grant read=x,write=y\n"));
+    TEST_ASSERT_EQUAL_INT(15, ReadPipes("alpha", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("read=x\nwrite=y\n", out);
+    TEST_ASSERT_EQUAL_INT(13, WritePipes("alpha", "revoke read=x"));
+    TEST_ASSERT_EQUAL_INT(8, ReadPipes("alpha", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("write=y\n", out);
+    pd->Destroy(pd);
+}
+
+TEST(vfs_wanted_wapps, PipesRefusesWhatThePipeDriverRefuses) {
+    CreateWapp("alpha");
+    vfs_driver_t *pd = BindPipes("alpha");
+
+    TEST_ASSERT_EQUAL_INT(-EINVAL, WritePipes("alpha", "grant bogus"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, WritePipes("alpha", "allow read=x"));
+    TEST_ASSERT_EQUAL_INT(-EINVAL, WritePipes("alpha", "grant"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, WritePipes("alpha", "revoke read=x"));
+    TEST_ASSERT_EQUAL_INT(-EPERM, WritePipes("alpha", "revoke read=base"));
+    pd->Destroy(pd);
+}
+
+TEST(vfs_wanted_wapps, PipesOfAWappThatIsNotRunningAreAbsent) {
+    char out[16];
+    CreateWapp("alpha");
+    TEST_ASSERT_EQUAL_INT(-ENOENT, WritePipes("alpha", "grant read=x"));
+    TEST_ASSERT_EQUAL_INT(-ENOENT, ReadPipes("alpha", out, sizeof(out)));
+}
+
+TEST(vfs_wanted_wapps, PipesOversizedWriteReturnsEmsgsize) {
+    char big[CONFIG_WANTED_MAX_OPTIONS_SIZE + 16];
+    memset(big, 'a', sizeof(big) - 1);
+    big[sizeof(big) - 1] = '\0';
+    CreateWapp("alpha");
+    TEST_ASSERT_EQUAL_INT(-EMSGSIZE, WritePipes("alpha", big));
+}
+
 TEST_GROUP_RUNNER(vfs_wanted_wapps) {
     RUN_TEST_CASE(vfs_wanted_wapps, ReadDirRoot_EnumeratesKnownWapps);
+    RUN_TEST_CASE(vfs_wanted_wapps, PipesGrantRevokeAndList);
+    RUN_TEST_CASE(vfs_wanted_wapps, PipesRefusesWhatThePipeDriverRefuses);
+    RUN_TEST_CASE(vfs_wanted_wapps, PipesOfAWappThatIsNotRunningAreAbsent);
+    RUN_TEST_CASE(vfs_wanted_wapps, PipesOversizedWriteReturnsEmsgsize);
     RUN_TEST_CASE(vfs_wanted_wapps, ReadDirWapp_ListsControlFiles);
     RUN_TEST_CASE(vfs_wanted_wapps, Stat_RootIsDir_LeafIsCharDevice);
     RUN_TEST_CASE(vfs_wanted_wapps, OpenUnknownLeaf_ReturnsEnoent);

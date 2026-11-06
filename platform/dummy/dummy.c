@@ -71,15 +71,3 @@ int PlatformSerialNumber(char *buf, size_t bufLen) {
     memcpy(buf, DUMMY_SERIAL, len + 1);
     return (int)len;
 }
-
-/* The dummy platform is single-threaded (unit tests), so the mutex is a no-op.
- * A non-NULL sentinel is returned so callers can still distinguish allocation
- * failure (NULL) from a successfully created lock. */
-static int dummy_mutex_sentinel;
-
-platform_mutex_t *PlatformMutexNew(void) {
-    return (platform_mutex_t *)&dummy_mutex_sentinel;
-}
-void PlatformMutexLock(platform_mutex_t *m) { (void)m; }
-void PlatformMutexUnlock(platform_mutex_t *m) { (void)m; }
-void PlatformMutexFree(platform_mutex_t *m) { (void)m; }

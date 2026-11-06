@@ -15,8 +15,8 @@ int main(void) {
     if (fd < 0)
         return 1;
 
-    /* No writer ever attaches, so every read returns EAGAIN (negative); loop so
-     * the wapp can only be ended by the stop interrupt, not a self-return. */
+    /* No writer ever attaches, so the read blocks. Loop on a failed read so
+     * only the stop interrupt ends the wapp, not a self-return. */
     while (read(fd, buf, sizeof(buf)) < 0) {
     }
 

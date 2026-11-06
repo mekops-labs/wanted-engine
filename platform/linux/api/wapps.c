@@ -234,7 +234,6 @@ int PlatformWappStop(const char *name) {
      * next instruction boundary; the wake and the signal end a blocked host
      * call, so the worker reaches that boundary promptly. */
     WantedWappTerminate((wapp_data_t *)&state.threads[slot].data);
-    PlatformWakeRaise(VfsWakeFd(state.threads[slot].data.vfs));
     worker = state.threads[slot].t;
 
     pthread_mutex_unlock(&state_mtx);

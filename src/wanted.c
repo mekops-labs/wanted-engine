@@ -87,35 +87,17 @@ static const char *resolveConsole(const char *name, const char *fallback) {
     return (name == NULL || name[0] == '\0') ? fallback : name;
 }
 
-static pipe_store_t *wantedPipeStore(void);
+/* Orders WantedWappTerminate against the worker freeing what it touches. */
+static platform_mutex_t *wappTeardownLock;
+
+static void setEnding(wapp_data_t *ctx, bool ending) {
+    PlatformMutexLock(wappTeardownLock);
+    ctx->ending = ending;
+    PlatformMutexUnlock(wappTeardownLock);
+}
 
 /* Per-slot label used to auto-name a `pipe` console's pipe (<wapp>.<slot>). */
 static const char *const CONSOLE_SLOT[] = {"in", "out", "err"};
-
-/* Pull a `name=<pipe>` value out of a console slot's comma-separated options
- * into `out`; returns true when present. Lets a config pin the console pipe's
- * name (e.g. for a fixed reader) instead of the derived <wapp>.<slot>. */
-static bool consolePipeName(const char *opt, char *out, size_t cap) {
-    if (opt == NULL)
-        return false;
-    const char *p = opt;
-    while (*p != '\0') {
-        if (strncmp(p, "name=", 5) == 0) {
-            p += 5;
-            size_t n = 0;
-            while (p[n] != '\0' && p[n] != ',' && n < cap - 1)
-                n++;
-            memcpy(out, p, n);
-            out[n] = '\0';
-            return n > 0;
-        }
-        while (*p != '\0' && *p != ',')
-            p++;
-        if (*p == ',')
-            p++;
-    }
-    return false;
-}
 
 /* Install one console slot. A `pipe` backing auto-creates a named pipe in the
  * shared store and binds the stream fd to it; every other backing resolves
@@ -124,6 +106,8 @@ static bool consolePipeName(const char *opt, char *out, size_t cap) {
 static const vfs_driver_t *withWake(vfs_ctx_t vfs, const vfs_driver_t *drv) {
     if (drv != NULL && drv->SetWake != NULL)
         drv->SetWake(drv->ctx, VfsWakeFd(vfs));
+    if (drv != NULL && drv->SetReady != NULL)
+        drv->SetReady(drv->ctx, VfsReady(vfs));
     return drv;
 }
 
@@ -133,14 +117,31 @@ static int installConsoleSlot(wapp_data_t *ctx, const wapp_t *wapp, int idx,
     const char *options = wapp->cfg.console[idx].options;
 
     if (strcmp(name, "pipe") == 0) {
-        char pname[WAPP_MAX_NAME_LEN + 8];
-        if (!consolePipeName(options, pname, sizeof(pname)))
+        char pname[PIPE_NAME_MAX + 2];
+        pipe_eof_t eof;
+        int rc = PipeConsoleOptions(options, pname, sizeof(pname), &eof);
+        if (rc < 0) {
+            LOG_ERROR("console.%s: bad pipe options '%s': %s",
+                      CONSOLE_SLOT[idx], options ? options : "", strerror(-rc));
+            return rc;
+        }
+        if (pname[0] == '\0')
             snprintf(pname, sizeof(pname), "%s.%s", wapp->name,
                      CONSOLE_SLOT[idx]);
-        const vfs_driver_t *drv = VfsPipeConsoleCreate(wantedPipeStore(), pname,
-                                                       idx == 0, VFS_O_RDONLY);
-        if (drv == NULL)
-            return -ENOMEM;
+        rc = PipeNameCheck(pname);
+        if (rc < 0) {
+            LOG_ERROR("console.%s: bad pipe name '%s': %s", CONSOLE_SLOT[idx],
+                      pname, strerror(-rc));
+            return rc;
+        }
+        const vfs_driver_t *drv =
+            VfsPipeConsoleCreate(PipeStoreShared(), pname, idx == 0,
+                                 VFS_O_RDONLY, eof, &ctx->exit_code);
+        if (drv == NULL) {
+            LOG_ERROR("console.%s: pipe '%s' cannot be created: store full",
+                      CONSOLE_SLOT[idx], pname);
+            return -ENOSPC;
+        }
         return VfsRegister(ctx->vfs, path, withWake(ctx->vfs, drv));
     }
 
@@ -330,16 +331,6 @@ static int ensureWamrInit(void) {
     RegisterWantedNatives();
     initialized = true;
     return 0;
-}
-
-/* Process-wide pipe store shared by every wapp's /dev/pipe driver, which is
- * what makes a named pipe an inter-wapp channel. First use is the supervisor's
- * thread before any other wapp exists, so the lazy init is race-free. */
-static pipe_store_t *wantedPipeStore(void) {
-    static pipe_store_t *store = NULL;
-    if (!store)
-        store = PipeStoreNew();
-    return store;
 }
 
 /* /proc/memory — wasm stack size + platform heap via PlatformMemoryStats. */
@@ -615,6 +606,12 @@ int WantedWappRun(wapp_data_t *ctx) {
         return -1;
     }
 
+    /* exit_code is authoritative only on a clean exit; default to the sentinel
+     * so a trap, or a launch that fails first, stays distinguishable. A pipe
+     * console with `eof=ok` reads it when the wapp's VFS goes. */
+    ctx->exit_code = WAPP_EXIT_CODE_NONE;
+    setEnding(ctx, false);
+
     if (ensureWamrInit() < 0)
         return -1;
 
@@ -748,9 +745,8 @@ int WantedWappRun(wapp_data_t *ctx) {
     /* A blocking driver watches this beside its own resource, so a stop reaches
      * a wapp parked in a host call. */
     VfsSetWakeFd(ctx->vfs, PlatformWakeCreate());
+    VfsSetReady(ctx->vfs, PlatformReadyNew());
     DevFs_Register(ctx->vfs, "null", VfsNullInit(wapp, NULL));
-    DevFs_Register(ctx->vfs, "pipe",
-                   withWake(ctx->vfs, PipeDriverCreate(wantedPipeStore())));
 
     /* The launch config decides whether this wapp reads the privileged /proc
      * entries. */
@@ -808,8 +804,24 @@ int WantedWappRun(wapp_data_t *ctx) {
     /* drivers[]: device singletons. Each mounts at /dev/<name>; the name alone
      * determines the mount, so a config-supplied path is meaningless and
      * rejected. */
+    vfs_driver_t *pipeDrv = NULL;
     for (size_t i = 0; i < wapp->cfg.driversCnt; i++) {
         const wapp_driver_t *d = &wapp->cfg.drivers[i];
+        if (strcmp(d->name, "pipe") == 0) {
+            /* Entries of a pipe grant merge into one /dev/pipe. */
+            int rc = d->path[0] != '\0' || d->options[0] == '\0' ? -EINVAL : 0;
+            if (rc == 0 && pipeDrv == NULL) {
+                pipeDrv = PipeDriverCreateScoped(PipeStoreShared(), NULL);
+                rc = pipeDrv != NULL ? 0 : -ENOMEM;
+            }
+            if (rc == 0)
+                rc = PipeDriverGrant(pipeDrv, d->options);
+            if (rc < 0)
+                LOG_ERROR("drivers[%zu] 'pipe': bad grant '%s': %s", i,
+                          d->options, strerror(-rc));
+            ret += rc;
+            continue;
+        }
         if (d->path[0] != '\0') {
             DEBUG_TRACE("drivers[%zu] '%s': path not allowed", i, d->name);
             ret += -EINVAL;
@@ -820,6 +832,21 @@ int WantedWappRun(wapp_data_t *ctx) {
         ret += installEntry(ctx->vfs, wapp, "drivers", i, d->name, d->name,
                             mount, d->options);
     }
+
+    /* A wapp with no pipe grant reaches every pipe where the build keeps
+     * ambient pipes, and none otherwise; /dev/pipe is present either way. */
+    if (pipeDrv == NULL) {
+#ifdef CONFIG_WANTED_VFS_PIPE_AMBIENT
+        pipeDrv = PipeDriverCreate(PipeStoreShared());
+#else
+        pipeDrv = PipeDriverCreateScoped(PipeStoreShared(), NULL);
+#endif
+    }
+    if (pipeDrv == NULL ||
+        DevFs_Register(ctx->vfs, "pipe", withWake(ctx->vfs, pipeDrv)) < 0)
+        ret += -ENOMEM;
+    else if (wapp->name[0] != '\0' && PipeDriverBind(pipeDrv, wapp->name) < 0)
+        ret += -ENOSPC;
 
     /* sockets[]: named sockets created at /net/<name>. The transport spec is
      * the entry's address (carried in options, with its role and listen bounds
@@ -968,10 +995,6 @@ int WantedWappRun(wapp_data_t *ctx) {
     DEBUG_TRACE("starting wapp: %d", ctx->id);
     uint32_t callArgv[1] = {(uint32_t)ctx->id};
 
-    /* exit_code is authoritative only on a clean exit; default to the sentinel
-     * so a trap (which never reaches proc_exit) stays distinguishable. */
-    ctx->exit_code = WAPP_EXIT_CODE_NONE;
-
     if (wasm_runtime_call_wasm(ctx->wamr->exec_env, f, 1, callArgv)) {
         /* Returned without trapping — a clean exit. A WASI wapp leaves through
          * proc_exit; a bare wapp just returns. The recorded code is
@@ -1001,18 +1024,21 @@ int WantedWappRun(wapp_data_t *ctx) {
     return 0;
 
 _freeVfs:
+    setEnding(ctx, true);
     VfsDestroy(&ctx->vfs);
 _freeWasiCtx:
     FreeWasiContext(wasiCtx);
 _destroyExecEnv:
     wasm_runtime_destroy_exec_env(ctx->wamr->exec_env);
 _deinstantiate:
+    setEnding(ctx, true);
     wasm_runtime_deinstantiate(ctx->wamr->instance);
 _unloadModule:
     wasm_runtime_unload(ctx->wamr->module);
 _freeWasmBytes:
     PlatformExtramFree(ctx->wamr->wasm_bytes);
 _freeWamr:
+    setEnding(ctx, true);
     WantedFree(ctx->wamr);
     /* The platform slot keeps pointing at this wapp_data_t; null the freed WAMR
      * handle so a later PlatformWappGetState (which samples per-wapp memory)
@@ -1033,6 +1059,7 @@ void WantedWappStop(wapp_data_t *ctx) {
     if (ctx->lastStatus == 0) {
         DEBUG_TRACE("start");
 
+        setEnding(ctx, true);
         VfsDestroy(&ctx->vfs);
 
         wasi_ctx_t *wasiCtx =
@@ -1056,13 +1083,18 @@ void WantedWappStop(wapp_data_t *ctx) {
 }
 
 void WantedWappTerminate(wapp_data_t *ctx) {
-    /* Abort an instance's in-flight WASM execution: the worker's
-     * wasm_runtime_call_wasm returns false and the thread unwinds through its
-     * cleanup handler. Self-guards when the wapp has no live instance. */
-    if (ctx == NULL || ctx->wamr == NULL || ctx->wamr->instance == NULL) {
+    if (ctx == NULL)
         return;
+    PlatformMutexLock(wappTeardownLock);
+    if (!ctx->ending) {
+        /* The terminate flag ends the WASM call at its next instruction; the
+         * wake and the ready stop end a blocked host call. */
+        if (ctx->wamr != NULL && ctx->wamr->instance != NULL)
+            wasm_runtime_terminate(ctx->wamr->instance);
+        PlatformWakeRaise(VfsWakeFd(ctx->vfs));
+        PlatformReadyStop(VfsReady(ctx->vfs));
     }
-    wasm_runtime_terminate(ctx->wamr->instance);
+    PlatformMutexUnlock(wappTeardownLock);
 }
 
 /* Reload state. Single bytes are atomic on every target; `volatile` keeps the
@@ -1404,6 +1436,8 @@ int WantedStart(const char *cfg, size_t cfgLen) {
     LogStoreUptimeInit();
     LogStorePersistInit(LogStore());
     RegistryInit();
+    if (wappTeardownLock == NULL)
+        wappTeardownLock = PlatformMutexNew();
 
     ret = WantedParseConfig(cfg, cfgLen);
     DEBUG_TRACE("WantedParseConfig -> %d", ret);

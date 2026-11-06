@@ -572,6 +572,12 @@ No target uses `pthread_cancel` — it is unreliable on NuttX and leaves WAMR st
 
 Two details are not obvious. The signal is **`SIGUSR2`**: WAMR reserves `SIGUSR1` for its own blocking-op wakeup and keeps it masked on every wasm thread, so a `SIGUSR1` sent to a worker is never delivered. And on **NuttX the signal wakes a sleep but the sleep still reports success**, so the timer return alone cannot distinguish an interrupt from an elapsed wait — the handler records the interrupt on the worker's own slot and `PlatformClockNanoSleep` consumes it to report `EINTR`. On **Linux** a signal that lands while the worker is between two sleeps of a polling wait ends no sleep, so the stop also raises the wake descriptor, which those waits check after every sleep. ESP-IDF wires no signal wakeup at all, so a worker blocked in a host call unwinds once that call returns.
 
+### The ready event
+
+Each wapp owns a ready event, `plat_ready_t`, which a driver raises when a call the wapp is blocked in may now proceed. `PlatformReadyWait` sleeps until a raise (answers `0` and consumes it), a stop (`-EINTR`, and every later wait answers the same) or the timeout (`-ETIMEDOUT`). A raise that comes before the wait ends it at once, so a change between a driver's check and its wait is not lost. The event is separate from the wake descriptor and does not replace it: the drivers that watch a socket, a UART or an input device still use the descriptor.
+
+`PlatformWappStop` calls `PlatformReadyStop` on every target, because a pthread condition wait is not ended by a signal. `platform/posix/ready-event.c` implements the event over a mutex and a condition variable with a monotonic clock, and every target links it; a platform whose condition variable has no monotonic clock waits on the wall clock.
+
 ### Worker stacks and scheduling
 
 Every platform sets the worker's native C stack **explicitly** from `CONFIG_WANTED_WASM_WORKER_STACK_SIZE`, floored at `PTHREAD_STACK_MIN`, rather than taking the host default: the classic WAMR interpreter is recursive and the WASI/VFS host calls add frames, so an RTOS default (NuttX's `CONFIG_PTHREAD_STACK_DEFAULT` is ~2 KB) overflows the moment real wasm runs, while glibc's 8 MB is wasteful.
