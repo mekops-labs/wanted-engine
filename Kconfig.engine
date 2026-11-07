@@ -294,11 +294,12 @@ config WANTED_PIPE_RUNTIME_GRANTS
 
 config WANTED_VFS_PIPE_AMBIENT
 	bool "Wapps without a pipe grant reach every pipe"
-	default y
+	default n
 	help
-	  Without a pipe grant a wapp reaches every named pipe in the engine.
-	  A wapp that holds a grant always reaches only the names it lists.
-	  Deselect to give a wapp with no grant an empty /dev/pipe.
+	  Select to let a wapp with no pipe grant reach every named pipe in
+	  the engine. A wapp that holds a grant always reaches only the names
+	  it lists. Without this option, a wapp with no grant sees an empty
+	  /dev/pipe.
 
 config WANTED_GPIO_MAX_PINS
 	int "Pins per gpio grant"

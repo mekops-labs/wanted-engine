@@ -32,7 +32,7 @@ A named pipe over a single process-wide store: a pipe opened by one wapp is visi
 - **A `pipe` grant lists the names a wapp reaches** and in which direction. A grant is a `drivers[]` entry whose `options` is a comma-separated list of `read=<name>` and `write=<name>` clauses; a name may appear in both. A name the grant does not list returns `ENOENT`, whether or not the pipe exists. A listed name opened in the other direction returns `EACCES`. Reading `/dev/pipe` lists only the existing pipes the grant names.
 - **A grant may span several entries.** The entries of one wapp merge, so a wapp whose clauses exceed one `options` string (128 bytes by default) repeats the entry. A wapp lists at most `CONFIG_WANTED_PIPE_GRANTS` distinct names (8 by default).
 - **The supervisor can grant and revoke names while a wapp runs** through [`wapps/<name>/pipes`](control-plane-reference.md#runtime-pipe-grants). A wapp holds at most `CONFIG_WANTED_PIPE_RUNTIME_GRANTS` such clauses (4 by default), and they end with the wapp.
-- **A wapp with no `pipe` grant reaches every pipe** when the build keeps `CONFIG_WANTED_VFS_PIPE_AMBIENT` (the default), and none otherwise. `/dev/pipe` is present either way.
+- **A wapp with no `pipe` grant reaches no pipe**, unless the build selects `CONFIG_WANTED_VFS_PIPE_AMBIENT`, which lets it reach every pipe. `/dev/pipe` is present either way.
 - **A wapp reaches its own console pipes** through its console slots without a grant (see [Control Plane Reference](control-plane-reference.md)).
 
 - **Ring buffer** of 4096 bytes; up to 8 concurrent named pipes.
@@ -202,7 +202,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `log` | `mounts[]` | chosen `path` | Read-only directory view of per-wapp captured logs. `<path>/<name>` reads wapp `<name>`'s ring-buffered output; the mount enumerates wapps with a live log slot. A `name=<wapp>` option scopes it to one wapp (default: all). The engine's own error channel appears as `.engine`, a name no image reference can carry; `name=.engine` scopes a grant to it alone. Grantable independently of `/dev/wanted`. Each line is prefixed `[+<ms>] ` — see [Log line stamps](#log-line-stamps). |
 | `socket` | `sockets[]` | `/net/<name>` | TCP / UDP / TLS streams; see below. |
 | `log` | console slot | — | Console capture: routes a wapp's stdout/stderr into its per-wapp log slot (read back via a `log` mount). |
-| `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` short-write, then wait on a full ring until the reader drains or the wapp is stopped, never dropping bytes; `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
+| `pipe` | console slot | `/dev/pipe/<wapp>.<slot>` | Live console: backs a stdio slot with a named pipe a peer wapp with a `read=` grant for the name can read at `/dev/pipe/<wapp>.<slot>` (or the `options` `name=`). `out`/`err` short-write, then wait on a full ring until the reader drains or the wapp is stopped, never dropping bytes; `in` reads a peer's writes. Distinct from `log` (buffered pull) — `pipe` is a live push to a peer. |
 
 ### Log line stamps
 
