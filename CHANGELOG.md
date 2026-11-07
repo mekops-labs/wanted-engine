@@ -6,6 +6,10 @@ Unreleased
 
 ### Changed
 
+- **Breaking:** `CONFIG_WANTED_VFS_PIPE_AMBIENT` defaults to off: a wapp with
+  no `pipe` grant sees an empty `/dev/pipe` and opening a pipe gives `ENOENT`.
+- A build dir configured before keeps ambient pipes on. Seed it again with
+  `just defconfig <name>`, or delete it, to take the new default.
 - A `DEFCONFIG` build seeds the build dir's `.config` again when the
   defconfig's contents change, not only its name.
 
