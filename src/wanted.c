@@ -833,15 +833,9 @@ int WantedWappRun(wapp_data_t *ctx) {
                             mount, d->options);
     }
 
-    /* A wapp with no pipe grant reaches every pipe where the build keeps
-     * ambient pipes, and none otherwise; /dev/pipe is present either way. */
-    if (pipeDrv == NULL) {
-#ifdef CONFIG_WANTED_VFS_PIPE_AMBIENT
-        pipeDrv = PipeDriverCreate(PipeStoreShared());
-#else
+    /* A wapp with no pipe grant reaches no pipe; /dev/pipe is present. */
+    if (pipeDrv == NULL)
         pipeDrv = PipeDriverCreateScoped(PipeStoreShared(), NULL);
-#endif
-    }
     if (pipeDrv == NULL ||
         DevFs_Register(ctx->vfs, "pipe", withWake(ctx->vfs, pipeDrv)) < 0)
         ret += -ENOMEM;

@@ -96,7 +96,7 @@ Five `/dev/` entries are always present (`/dev/null`, `/dev/pipe/<name>`, and th
 
 ## Inter-wapp IPC
 
-`/dev/pipe/<name>` is a process-wide named pipe: a pipe one wapp opens is visible to another, making it a wapp-to-wapp channel. A wapp reaches the names its launch config's `pipe` grant lists, for example `{"name": "pipe", "options": "read=smoke"}`; a build that selects ambient pipes (off by default) lets a wapp with no grant reach every name. A name is 1 to 31 characters of `[A-Za-z0-9._-]`.
+`/dev/pipe/<name>` is a process-wide named pipe: a pipe one wapp opens is visible to another, making it a wapp-to-wapp channel. A wapp reaches the names its launch config's `pipe` grant lists, for example `{"name": "pipe", "options": "read=smoke"}`; a wapp with no grant reaches no name. A name is 1 to 31 characters of `[A-Za-z0-9._-]`.
 
 ```c
 /* writer */

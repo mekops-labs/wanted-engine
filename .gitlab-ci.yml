@@ -88,17 +88,6 @@ build-clang:
     BUILD_DIR: build-clang
     CC: clang
 
-# Ambient pipes stay a build option until they are removed, so keep that path
-# built and tested.
-build-pipe-ambient:
-  <<: *build_defs
-  script:
-    - just setconfig WANTED_VFS_PIPE_AMBIENT=y
-    - just build
-  variables:
-    BUILD_DIR: build-pipe-ambient
-    CC: gcc
-
 build-wsh:
   <<: *build_defs
   script:
@@ -121,13 +110,6 @@ unit-test-gcc:
     - build-gcc
   variables:
     BUILD_DIR: build-gcc
-
-unit-test-pipe-ambient:
-  <<: *unit_defs
-  needs:
-    - build-pipe-ambient
-  variables:
-    BUILD_DIR: build-pipe-ambient
 
 unit-test-clang:
   <<: *unit_defs
