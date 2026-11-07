@@ -12,6 +12,7 @@
 #include <vfs-drivers.h>
 #include <vfs.h>
 #include <vfs/vfs-internal.h>
+#include <wanted-vfs-api.h>
 
 /* /dev/gpio: the per-pin subtree, the grant grammar, and the least-privilege
  * boundary. The dummy platform backs each granted address with an in-memory
@@ -128,11 +129,33 @@ TEST(gpio_grant, InitOnAnInputFailsLaunch) {
     TEST_ASSERT_NULL(VfsGpioInit(NULL, "pins=led:21:out:init=2"));
 }
 
+/* A failed install reports why: a pin another grant holds is EBUSY, and a
+ * malformed grant is EINVAL, so an operator can tell the two apart. */
+TEST(gpio_grant, InstallReportsWhyTheGrantFailed) {
+    vfs_ctx_t held = VfsInit();
+    vfs_ctx_t c = VfsInit();
+    wapp_t w;
+    memset(&w, 0, sizeof(w));
+
+    TEST_ASSERT_EQUAL_INT(0, WantedInstallDriver(held, &w, "gpio", "/dev/gpio",
+                                                 "pins=led:4:out"));
+    TEST_ASSERT_EQUAL_INT(
+        -EBUSY,
+        WantedInstallDriver(c, &w, "gpio", "/dev/gpio", "pins=btn:4:in"));
+    TEST_ASSERT_EQUAL_INT(
+        -EINVAL,
+        WantedInstallDriver(c, &w, "gpio", "/dev/gpio", "pins=led:21"));
+
+    VfsDestroy(&c);
+    VfsDestroy(&held);
+}
+
 TEST_GROUP_RUNNER(gpio_grant) {
     RUN_TEST_CASE(gpio_grant, MissingPinsClauseFailsLaunch);
     RUN_TEST_CASE(gpio_grant, MalformedEntryFailsLaunch);
     RUN_TEST_CASE(gpio_grant, AddressCarryingASeparatorFailsLaunch);
     RUN_TEST_CASE(gpio_grant, DuplicateNameOrAddressFailsLaunch);
+    RUN_TEST_CASE(gpio_grant, InstallReportsWhyTheGrantFailed);
     RUN_TEST_CASE(gpio_grant, OutputTakesTheLevelOfItsInitClause);
     RUN_TEST_CASE(gpio_grant, InitOnAnInputFailsLaunch);
 }

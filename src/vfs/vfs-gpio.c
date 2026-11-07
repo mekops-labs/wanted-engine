@@ -295,6 +295,7 @@ vfs_driver_t *VfsGpioInit(const wapp_t *wapp, const char *options) {
     vfs_driver_t *driver = (vfs_driver_t *)WantedMalloc(sizeof(vfs_driver_t));
     if (NULL == driver) {
         DEBUG_TRACE("can't allocate memory");
+        errno = ENOMEM;
         return NULL;
     }
 
@@ -303,6 +304,7 @@ vfs_driver_t *VfsGpioInit(const wapp_t *wapp, const char *options) {
     if (NULL == ctx) {
         DEBUG_TRACE("can't allocate memory");
         WantedFree(driver);
+        errno = ENOMEM;
         return NULL;
     }
     memset(ctx, 0, sizeof(*ctx));
@@ -319,8 +321,11 @@ vfs_driver_t *VfsGpioInit(const wapp_t *wapp, const char *options) {
     driver->Write = _Write;
     driver->ReadDir = _ReadDir;
 
-    if (parsePins(ctx, options) < 0) {
+    int rc = parsePins(ctx, options);
+    if (rc < 0) {
         _Destroy(driver);
+        /* The grammar's EINVAL, or the backing's ENOENT, EBUSY or ENOTSUP. */
+        errno = -rc;
         return NULL;
     }
 

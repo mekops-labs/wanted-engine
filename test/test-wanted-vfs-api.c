@@ -177,6 +177,23 @@ TEST(wanted_vfs_api, InstallUnavailableDriverReturnsEnodev) {
     VfsDestroy(&c);
 }
 
+/* An init that fails without setting errno is reported as EINVAL, whatever
+ * errno held before the install. */
+TEST(wanted_vfs_api, InstallFailureWithoutErrnoIsEinval) {
+    vfs_ctx_t c = VfsInit();
+    TEST_ASSERT_NOT_NULL(c);
+    wapp_t *w = WantedMalloc(sizeof(wapp_t));
+    TEST_ASSERT_NOT_NULL(w);
+    memset(w, 0, sizeof(*w));
+
+    errno = ENOENT;
+    int ret = WantedInstallDriver(c, w, "pipe", "/dev/pipe", "bogus");
+    TEST_ASSERT_EQUAL_INT(-EINVAL, ret);
+
+    WantedFree(w);
+    VfsDestroy(&c);
+}
+
 /* The core drivers are always resolvable; WantedListDrivers reports them so a
  * supervisor can read available capability off /proc/wanted. */
 TEST(wanted_vfs_api, ListDriversReportsCoreDrivers) {
@@ -300,6 +317,7 @@ TEST_GROUP_RUNNER(wanted_vfs_api) {
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigImage);
     RUN_TEST_CASE(wanted_vfs_api, WantedParseWappConfigImagePinnedTag);
     RUN_TEST_CASE(wanted_vfs_api, InstallUnavailableDriverReturnsEnodev);
+    RUN_TEST_CASE(wanted_vfs_api, InstallFailureWithoutErrnoIsEinval);
     RUN_TEST_CASE(wanted_vfs_api, ListDriversReportsCoreDrivers);
     RUN_TEST_CASE(wanted_vfs_api, OverlaySuppliesAddressesTheConfigLacks);
     RUN_TEST_CASE(wanted_vfs_api, AbsentOverlayIsNotAnError);

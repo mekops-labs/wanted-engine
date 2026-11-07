@@ -25,6 +25,8 @@ enum vfs_socket_type_t {
                      * (CONFIG_WANTED_VFS_SOCKET_UNIX), hosted only. */
 };
 
+/* An init that fails returns NULL and sets errno to the reason. The install
+ * reports that errno, or EINVAL when the init leaves errno at 0. */
 typedef vfs_driver_t *(*VfsInitFunction_t)(const wapp_t *wapp,
                                            const char *options);
 

@@ -13,6 +13,11 @@ Unreleased
 - A `DEFCONFIG` build seeds the build dir's `.config` again when the
   defconfig's contents change, not only its name.
 
+### Fixed
+
+- A driver that fails to install reports its own error, such as `EBUSY` for a
+  pin another `gpio` grant holds. A driver init that fails may set `errno`.
+
 0.30.0 (2026-11-06)
 -------------------
 

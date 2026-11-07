@@ -902,10 +902,12 @@ int WantedInstallDriver(struct vfs_ctx_t *c, const wapp_t *w, const char *name,
         return -ENODEV;
     }
 
+    errno = 0;
     drv = init(w, options);
     if (NULL == drv) {
-        DEBUG_TRACE("can't load %s driver", name);
-        return -EINVAL;
+        int err = errno > 0 ? errno : EINVAL;
+        DEBUG_TRACE("can't load %s driver: %d", name, -err);
+        return -err;
     }
 
     /* A driver that blocks watches this beside its own resource. */
