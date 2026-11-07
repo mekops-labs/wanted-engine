@@ -804,6 +804,9 @@ static const vfs_driver_table_t core_driver_table[] = {
 #ifdef CONFIG_WANTED_VFS_OTA
     {"ota", VfsOtaInit},
 #endif
+#ifdef CONFIG_WANTED_VFS_WBUS
+    {"wbus", VfsWbusInit},
+#endif
 #ifdef CONFIG_WANTED_VFS_WANTED
     {"wanted", VfsWantedInit},
 #endif

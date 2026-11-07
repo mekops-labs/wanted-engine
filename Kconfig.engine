@@ -248,6 +248,15 @@ config WANTED_VFS_OTA
 	  Deselect on a target with no A/B mechanism to update into — an OpenWRT
 	  host is updated by its own package manager, not through this driver.
 
+config WANTED_VFS_WBUS
+	bool "wbus — local message bus"
+	default y
+	help
+	  /dev/wbus/{msg,status}: named objects, method calls with one reply,
+	  and events, routed by the engine under the launch grants. The
+	  engine stamps every sender and never reads a payload. Allocates its
+	  message pool when the first wapp launches. Off in the tiny envelope.
+
 config WANTED_VFS_WANTED
 	bool "wanted — the control-plane namespace"
 	default y
@@ -291,6 +300,76 @@ config WANTED_PIPE_RUNTIME_GRANTS
 	  Clauses (one name and one direction each) the supervisor may grant
 	  a running wapp. Sizes a table inside the wapp's pipe grant, allocated
 	  once at launch.
+
+config WANTED_WBUS_PAYLOAD_MAX
+	int "wbus payload bytes"
+	depends on WANTED_VFS_WBUS
+	default 256
+	range 16 65535
+	help
+	  Largest payload of one wbus message. A slot is this plus the
+	  64-byte header.
+
+config WANTED_WBUS_POOL
+	int "wbus message slots"
+	depends on WANTED_VFS_WBUS
+	default 16
+	range 2 256
+	help
+	  Message slots shared by the whole engine, allocated at the first
+	  grant. A call takes two: the request and its reserved reply.
+
+config WANTED_WBUS_QUEUE
+	int "wbus messages queued per endpoint"
+	depends on WANTED_VFS_WBUS
+	default 8
+	range 1 64
+
+config WANTED_WBUS_PENDING
+	int "wbus calls pending per endpoint"
+	depends on WANTED_VFS_WBUS
+	default 4
+	range 1 16
+	help
+	  Calls an endpoint may have sent without a reply. Also sizes the
+	  engine-wide table of pending calls, endpoints times this.
+
+config WANTED_WBUS_EP_PER_WAPP
+	int "wbus endpoints per wapp"
+	depends on WANTED_VFS_WBUS
+	default 2
+	range 1 8
+
+config WANTED_WBUS_ENDPOINTS
+	int "wbus endpoints in the engine"
+	depends on WANTED_VFS_WBUS
+	default 0
+	range 0 128
+	help
+	  0 means WANTED_MAX_WAPPS plus 2.
+
+config WANTED_WBUS_SUBS
+	int "wbus subscriptions per endpoint"
+	depends on WANTED_VFS_WBUS
+	default 4
+	range 1 16
+
+config WANTED_WBUS_CLAUSES
+	int "wbus clauses per grant"
+	depends on WANTED_VFS_WBUS
+	default 8
+	range 1 16
+	help
+	  Clauses one wapp's wbus grant may list. A longer grant fails the
+	  launch.
+
+config WANTED_WBUS_OBJECTS
+	int "wbus objects in the engine"
+	depends on WANTED_VFS_WBUS
+	default 8
+	range 1 64
+	help
+	  Objects all wapps may serve at once.
 
 config WANTED_GPIO_MAX_PINS
 	int "Pins per gpio grant"

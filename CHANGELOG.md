@@ -1,6 +1,20 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Added
+
+- The `wbus` driver at `/dev/wbus/{msg,status}`: named objects, calls with one
+  reply, and events, between wapps. The grant is `serve=`, `call=`, `listen=`.
+- The engine stamps the sender of each message and never reads a payload.
+- `include/wbus.h` holds the message header for C and Zig wapps.
+- `/proc/wanted` reports `wbus_payload`, the largest payload, with the driver.
+- `CONFIG_WANTED_VFS_WBUS` and the `CONFIG_WANTED_WBUS_*` sizes; off in `tiny`.
+- The selftest checks a call between two wapps and a wapp with no grant.
+- The shipped Sheriff launch configs grant it `serve=supervisor`.
+
 0.31.0 (2026-11-07)
 -------------------
 

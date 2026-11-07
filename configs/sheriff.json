@@ -13,7 +13,8 @@
                 {"name": "wanted"},
                 {"name": "sha256"},
                 {"name": "ed25519"},
-                {"name": "inflate"}
+                {"name": "inflate"},
+                {"name": "wbus", "options": "serve=supervisor"}
             ],
             "mounts": [
                 {"name": "platform", "path": "/var/lib/sheriff"},

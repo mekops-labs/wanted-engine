@@ -18,6 +18,9 @@
 #include <vfs-devfs.h>
 #include <vfs-drivers.h>
 #include <vfs-pipe.h>
+#ifdef CONFIG_WANTED_VFS_WBUS
+#include <vfs-wbus.h>
+#endif
 #include <vfs-procfs.h>
 #ifdef CONFIG_WANTED_VFS_RTC
 #include <vfs-rtc.h>
@@ -455,6 +458,17 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
     if (w < 0)
         return -EIO;
 
+#ifdef CONFIG_WANTED_VFS_WBUS
+    /* The largest wbus payload, which sizes a reader's buffer. Absent without
+     * the driver. */
+    if (w < (int)bufLen) {
+        int n = snprintf((char *)buf + w, (size_t)((int)bufLen - w),
+                         "wbus_payload:\t%d\n", CONFIG_WANTED_WBUS_PAYLOAD_MAX);
+        if (n > 0 && w + n < (int)bufLen)
+            w += n;
+    }
+#endif
+
     /* Build-time image digest, on a platform that stamps one. The line is
      * absent elsewhere, so a reader never mistakes an empty value for an
      * image that hashes to nothing. */
@@ -800,6 +814,19 @@ int WantedWappRun(wapp_data_t *ctx) {
     DevFs_Register(
         ctx->vfs, "stderr",
         VfsStdioAliasInit(VfsStreamDriver(ctx->vfs, VFS_STDERR), VFS_STDERR));
+
+#ifdef CONFIG_WANTED_VFS_WBUS
+    /* The bus store exists from the first wbus grant on. Wapps launch on their
+     * own threads, so the lock orders its creation. */
+    for (size_t i = 0; i < wapp->cfg.driversCnt; i++) {
+        if (strcmp(wapp->cfg.drivers[i].name, "wbus") != 0)
+            continue;
+        PlatformMutexLock(wappTeardownLock);
+        (void)WbusStoreShared();
+        PlatformMutexUnlock(wappTeardownLock);
+        break;
+    }
+#endif
 
     /* drivers[]: device singletons. Each mounts at /dev/<name>; the name alone
      * determines the mount, so a config-supplied path is meaningless and

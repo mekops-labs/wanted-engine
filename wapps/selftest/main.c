@@ -17,6 +17,7 @@
 #include <wasi/libc.h>
 
 #include "tap.h"
+#include "wbus.h"
 
 #define WANTED_CTL "/dev/wanted/ctl"
 #define TRAPPER "trapper"
@@ -1635,6 +1636,95 @@ static int has_driver(const char *name) {
     return 0;
 }
 
+/* The supervisor serves an object on wbus and answers a call from a granted
+ * wapp. A wapp holding a narrower grant is refused, and one with no grant has
+ * no /dev/wbus at all. */
+#define WB_CALLER "wbcaller"
+#define WB_DENIED "wbdenied"
+#define WB_PROBE "wbprobe"
+#define WB_DRIVER(options) ",\"drivers\":[{\"name\":\"wbus\",\"options\":\"" options "\"}]"
+
+static int wb_send(int fd, uint8_t type, const char *object, uint32_t id,
+                   const char *payload) {
+    uint8_t buf[WBUS_HEADER_SIZE + 8];
+    wbus_header_t h;
+    size_t len = payload != NULL ? strlen(payload) : 0;
+
+    memset(&h, 0, sizeof(h));
+    h.version = WBUS_VERSION;
+    h.type = type;
+    h.len = (uint16_t)len;
+    h.id = id;
+    strncpy(h.object, object, WBUS_NAME_MAX);
+    memcpy(buf, &h, sizeof(h));
+    if (len > 0)
+        memcpy(buf + WBUS_HEADER_SIZE, payload, len);
+    return (int)write(fd, buf, WBUS_HEADER_SIZE + len);
+}
+
+static int wb_run(const char *name, const char *role, const char *grant) {
+    char cfg[320], path[64];
+    snprintf(cfg, sizeof(cfg),
+             "{\"image\":\"wbuscheck\",\"console\":{\"in\":{\"name\":\"null\"},"
+             "\"out\":{\"name\":\"log\"},\"err\":{\"name\":\"log\"}},"
+             "\"envs\":[\"ROLE=%s\"]%s}",
+             role, grant);
+    snprintf(path, sizeof(path), "/dev/wanted/wapps/%s/config", name);
+    return create_wapp(name) && write_path(path, cfg) >= 0 && start_wapp(name);
+}
+
+static void wbus_check(void) {
+    static uint8_t buf[WBUS_HEADER_SIZE + 8];
+    wbus_header_t h;
+    struct pollfd p;
+
+    if (!has_driver("wbus")) {
+        tap_diag("wbus: skipped — engine built without the wbus driver");
+        return;
+    }
+    int fd = open(WBUS_MSG_PATH, O_RDWR);
+    tap_ok(fd >= 0 && wb_send(fd, WBUS_SERVE, WBUS_SUPERVISOR, 0, NULL) > 0,
+           "wbus: the supervisor serves its object");
+
+    int ok = wb_run(WB_CALLER, "caller",
+                    WB_DRIVER("call=supervisor.ping"));
+    /* poll sleeps on the engine's ready event until the call arrives. */
+    p.fd = fd;
+    p.events = POLLIN;
+    int ready = poll(&p, 1, 5000) == 1;
+    int n = ready ? (int)read(fd, buf, sizeof(buf)) : -1;
+    memset(&h, 0, sizeof(h));
+    if (n >= WBUS_HEADER_SIZE)
+        memcpy(&h, buf, sizeof(h));
+    tap_ok(ok && n == WBUS_HEADER_SIZE + 4 && h.type == WBUS_CALL &&
+               strncmp(h.member, "ping", WBUS_NAME_SIZE) == 0 &&
+               strncmp(h.peer, WB_CALLER, WBUS_NAME_SIZE) == 0 &&
+               memcmp(buf + WBUS_HEADER_SIZE, "ping", 4) == 0,
+           "wbus: a call arrives stamped with the caller's name");
+    tap_ok(n > 0 && wb_send(fd, WBUS_REPLY, "", h.id, "pong") > 0,
+           "wbus: the supervisor answers it");
+    wait_dead(WB_CALLER);
+    tap_ok(pg_exit_is(PG_EXIT(WB_CALLER), "0"),
+           "wbus: the caller got its own id back, with the supervisor as peer");
+    delete_wapp(WB_CALLER);
+
+    ok = wb_run(WB_DENIED, "denied", WB_DRIVER("call=supervisor.ping"));
+    wait_dead(WB_DENIED);
+    tap_ok(ok && pg_exit_is(PG_EXIT(WB_DENIED), "0"),
+           "wbus: a call, a subscription or a serve outside the grant is "
+           "refused");
+    delete_wapp(WB_DENIED);
+
+    ok = wb_run(WB_PROBE, "probe", "");
+    wait_dead(WB_PROBE);
+    tap_ok(ok && pg_exit_is(PG_EXIT(WB_PROBE), "0"),
+           "wbus: a wapp with no grant has no /dev/wbus");
+    delete_wapp(WB_PROBE);
+
+    if (fd >= 0)
+        close(fd);
+}
+
 /* One wapp draws and flushes; another, launched first and blocked in poll() on
  * damage and a socket, wakes on the flush and reads the flushed pixels. */
 static void fb_check(void) {
@@ -1768,6 +1858,7 @@ int main(void) {
         {"pipe_grant_check", pipe_grant_check},
         {"pipe_runtime_check", pipe_runtime_check},
         {"multi_reader_pipe_check", multi_reader_pipe_check},
+        {"wbus_check", wbus_check},
         {"robustness_checks", robustness_checks},
         {"containment_checks", containment_checks},
         {"memcap_checks", memcap_checks},
