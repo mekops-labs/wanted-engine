@@ -13,6 +13,7 @@ Unreleased
 - `/proc/wanted` reports `wbus_payload`, the largest payload, with the driver.
 - `CONFIG_WANTED_VFS_WBUS` and the `CONFIG_WANTED_WBUS_*` sizes; off in `tiny`.
 - The selftest checks a call between two wapps and a wapp with no grant.
+- The shipped Sheriff launch configs grant it `serve=supervisor`.
 
 0.31.0 (2026-11-07)
 -------------------
