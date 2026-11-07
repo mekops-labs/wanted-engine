@@ -109,6 +109,9 @@ vfs_driver_t *VfsRtcInit(const wapp_t *wapp, const char *options);
 #ifdef CONFIG_WANTED_VFS_LORA
 vfs_driver_t *VfsLoraInit(const wapp_t *wapp, const char *options);
 #endif
+#ifdef CONFIG_WANTED_VFS_WBUS
+vfs_driver_t *VfsWbusInit(const wapp_t *wapp, const char *options);
+#endif
 vfs_driver_t *VfsWifiInit(const wapp_t *wapp, const char *options);
 #ifdef CONFIG_WANTED_VFS_OTA
 vfs_driver_t *VfsOtaInit(const wapp_t *wapp, const char *options);
