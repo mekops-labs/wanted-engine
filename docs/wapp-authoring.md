@@ -120,6 +120,31 @@ Semantics to design around:
 - **A name outside the grant** returns `ENOENT`; a granted name opened in the other direction returns `EACCES`.
 - **EOF** is delivered only after a writer has attached and all writers have closed — so a reader that starts first waits for the writer rather than seeing a premature EOF.
 
+### Calling another wapp
+
+A wapp that needs a reply, or wants to serve one, uses `wbus` instead of a pipe pair. The launch config grants the reach, for example `{"name": "wbus", "options": "call=svc.*,listen=svc.changed"}`, and the wapp opens `/dev/wbus/msg` with `O_RDWR`. One `write` sends one message and one `read` returns one; the 64-byte header is `wbus.h` in the engine's `include/`, which C wapps include and Zig wapps import with `@cImport`.
+
+```c
+#include "wbus.h"
+
+int fd = open(WBUS_MSG_PATH, O_RDWR);
+uint8_t buf[WBUS_HEADER_SIZE + 256] = {0};    /* 64 + wbus_payload of /proc/wanted */
+wbus_header_t *h = (wbus_header_t *)buf;
+h->version = WBUS_VERSION;  h->type = WBUS_CALL;  h->len = 4;  h->id = 1;
+strcpy(h->object, "svc");  strcpy(h->member, "ping");
+memcpy(buf + WBUS_HEADER_SIZE, "ping", 4);
+write(fd, buf, WBUS_HEADER_SIZE + 4);        /* EACCES, ENOENT or EAGAIN fail here */
+struct pollfd p = {.fd = fd, .events = POLLIN};
+if (poll(&p, 1, 5000) == 1)                  /* the engine never times a call out */
+    read(fd, buf, sizeof buf);               /* the REPLY: id 1, peer the server's name */
+```
+
+- **A call has no deadline.** A server that never answers holds the call, so wait with `poll()` and give up on your own timer.
+- **The server's name is the engine's.** `peer` on every message you read is the sender's instance name; decide what a caller may do from it and from the payload.
+- **An event that finds your queue full is lost, not delayed.** The next message you read carries `dropped`.
+- **A stopped server answers with `status` 64 (`EPIPE`).** Retry the call once the object is served again.
+- **The status node** `/dev/wbus/status` shows your own endpoints, queue and pool use as `key=value` lines.
+
 ## Preopens
 
 A preopen is a host directory the engine binds into the wapp's namespace as **read-write** storage that survives restarts — the wapp's only writable filesystem. Declare it as a `mounts[]` entry with the `platform` backend, giving the path it should appear at:

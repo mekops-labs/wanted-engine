@@ -193,6 +193,7 @@ Beyond the fixed namespace above, a wapp sees whatever its launch config grants 
 | `power` | `drivers[]` | `/dev/power/<name>/` | The power-mode ladder: a wapp declares which of five modes it uses and when to enter them, the engine runs the timers and the two-phase transitions, and the board supplies the hooks and the safety limits; see below. Built with `CONFIG_WANTED_VFS_POWER`. |
 | `haptic` | `drivers[]` | `/dev/haptic/<name>/` | Vibration motors: named effects and timed pulses, one subtree per granted motor; see below. Pin motors are backed by ESP-IDF (GPIO) and by a state-only backing on Linux. Built with `CONFIG_WANTED_VFS_HAPTIC`. |
 | `rtc` | `drivers[]` | `/dev/rtc/<name>/` | A wall-clock device: `time`, `status` and `source`; see below. The device named `main` is the engine's system clock. Built with `CONFIG_WANTED_VFS_RTC`. |
+| `wbus` | `drivers[]` | `/dev/wbus/` | The local message bus: named objects, method calls with one reply, and events, between wapps; see below. Built with `CONFIG_WANTED_VFS_WBUS`. |
 | `wifi` | `drivers[]` | `/dev/wifi/` | Wi-Fi station and access-point control; see below. Backed by ESP-IDF and NuttX; `-ENODEV` elsewhere. |
 | `ota` | `drivers[]` | `/dev/ota` | A/B firmware update. `/dev/ota` is the control/status node — `write` one command per call (`begin` / `commit` / `abort` / `confirm` / `rollback`), `read` drains a status snapshot (`active_slot`, `status`, `pending_slot`, `last_failed_slot`, `boot_attempts`, and `pending_digest` — the staged image's own build-time digest, the value `/proc/wanted`'s `digest` reports once it boots, so confirming an update compares like with like; the line is absent when nothing is staged or the platform stamps none); `/dev/ota/slot` is the write-only streaming image sink for the inactive slot. End every `begin`: `commit` makes the staged image bootable, `abort` discards it. A session left open holds the slot, and every later `begin` answers `-EBUSY` until the board reboots. `rollback` reverts a booted image and reboots the board; it does not end a streaming write. Backed by ESP-IDF (`esp_ota_ops`) and Linux (slot directories under a boot root); `-ENOSYS` on NuttX. |
 | `platform` | `mounts[]` | chosen `path` | A bind mount of a host directory as a native WASI preopen. `options` set the host source (`src=`) and access mode (`ro`/`rw`); a `ro` mount rejects every write with `-EROFS`. As a *console* backing instead, `platform` redirects the engine's native stdio (fds 0/1/2). |
@@ -941,6 +942,113 @@ a name, a chip name for `status`, the backing's operations (`configure`,
 `start`, `stop`, `sleep`, and optional `transmit` and `channel_active`), and its
 bands. The backing pushes each received frame with `LoraDevicePush` and never
 touches the queue or the account.
+
+### `wbus` — local message bus
+
+Wapps on one engine exchange typed messages through `/dev/wbus/msg`: a wapp
+serves a named object, another calls a method of it and gets one reply, and the
+server emits events to subscribers. The engine routes on a fixed header, stamps
+the sender of every message, and never reads a payload. Payloads are the
+wapps' own; CBOR by convention. Bulk or continuous data goes through a
+[pipe](#devpipename--inter-wapp-ipc) named in a message.
+
+```json
+{"name": "wbus", "options": "serve=tg-display,call=supervisor.*,listen=supervisor.exited"}
+```
+
+- **The grant is one `drivers[]` entry** whose `options` are comma-separated
+  clauses, each of which may repeat: `serve=<object>`, `call=<object>.<method>`
+  and `listen=<object>.<event>`. `call=<object>.*` and `listen=<object>.*` allow
+  every method or event of the object. Names hold 1 to 15 characters of
+  `[A-Za-z0-9_-]`; `*` is valid only as a whole method or event name. A
+  malformed clause, a bad name, an empty grant or more than
+  `CONFIG_WANTED_WBUS_CLAUSES` clauses (8) fails the launch.
+- **A wapp with no grant has no `/dev/wbus`:** every path under it returns
+  `ENOENT`.
+- **`supervisor` is reserved.** Only the supervisor instance may hold
+  `serve=supervisor`; any other launch config that holds it fails.
+- **`msg` opens only with `O_RDWR`** (`EINVAL` otherwise). Each open is one
+  endpoint. A wapp holds `CONFIG_WANTED_WBUS_EP_PER_WAPP` endpoints (2) and the
+  engine `CONFIG_WANTED_WBUS_ENDPOINTS` (0: `CONFIG_WANTED_MAX_WAPPS` plus 2);
+  an open past either returns `ENOSPC`.
+- **One write is one message and one read is one message.** `wbus.h` holds the
+  header; integers are little-endian.
+
+| Offset | Size | Field | Meaning |
+|--------|------|-------|---------|
+| 0 | 1 | `version` | `1` |
+| 1 | 1 | `type` | `1` CALL, `2` REPLY, `3` EVENT, `4` SERVE, `5` UNSERVE, `6` SUBSCRIBE, `7` UNSUBSCRIBE |
+| 2 | 2 | `len` | Payload bytes, at most `CONFIG_WANTED_WBUS_PAYLOAD_MAX` (256) |
+| 4 | 4 | `id` | Call identifier |
+| 8 | 4 | `status` | In a REPLY, 0 or a WASI errno value; ignored on any other write |
+| 12 | 2 | `dropped` | On read: events this endpoint lost since its previous read |
+| 14 | 2 | reserved | Zero |
+| 16 | 16 | `object` | NUL-padded name |
+| 32 | 16 | `member` | NUL-padded method or event name; empty for SERVE and UNSERVE |
+| 48 | 16 | `peer` | On read: the sender's instance name, set by the engine. On an EVENT write: the wapp to address, or empty |
+
+- **A write that is not one whole, well-formed message returns `EINVAL`:** a
+  length other than `64 + len`, an unknown `version` or `type`, a non-zero
+  reserved field, or a name that breaks the rules above. A `len` past the limit
+  returns `EMSGSIZE`. A read into a buffer smaller than the next message
+  returns `EINVAL` and consumes nothing.
+- **SERVE** registers `object` on the endpoint: `EACCES` without a `serve`
+  clause, `EBUSY` while another endpoint serves it, `ENOSPC` when
+  `CONFIG_WANTED_WBUS_OBJECTS` (8) are served. UNSERVE removes it, and
+  returns `EINVAL` for an object the endpoint does not serve.
+- **CALL** sends `member` of `object` to its server. It returns `EACCES` with
+  no matching `call` clause, `ENOENT` with no server, and `EAGAIN` while the
+  endpoint has `CONFIG_WANTED_WBUS_PENDING` calls (4) whose reply it has not
+  read. A call waits
+  for room in the pool or the server's queue, or returns `EAGAIN` on an
+  `O_NONBLOCK` endpoint. The engine never checks that the server implements the
+  method; a server answers an unknown one with `status` `ENOSYS` (52).
+- **The server reads the call with `peer` set to the caller** and an
+  identifier the engine assigned. It answers with a REPLY that carries that
+  identifier. The caller reads the REPLY with its own `id` back, `peer` set to
+  the server, and the called `object` and `member`. A REPLY for an identifier
+  the endpoint does not hold, or a second REPLY, returns `EINVAL`. A REPLY never
+  waits: the call reserved its slot.
+- **SUBSCRIBE** names `object` and `member` and needs a matching `listen`
+  clause (`EACCES`); a server need not exist. An endpoint holds
+  `CONFIG_WANTED_WBUS_SUBS` subscriptions (4), then `ENOSPC`. UNSUBSCRIBE
+  removes one, and returns `EINVAL` when there is none.
+- **EVENT** is written by the endpoint that serves `object` (`EACCES`
+  otherwise) and never blocks. Every endpoint subscribed to it gets a copy with
+  `peer` set to the server. A copy that finds the subscriber's queue
+  (`CONFIG_WANTED_WBUS_QUEUE`, 8) or the pool full is discarded and counted in
+  the subscriber's next `dropped`. An EVENT with `peer` naming a wapp reaches
+  only that wapp's subscribed endpoints; a wapp that does not exist, or has no
+  subscription, receives nothing and the write still succeeds. The addressed
+  wapp still needs its `listen` clause.
+- **Messages share one pool** of `CONFIG_WANTED_WBUS_POOL` slots (16), each
+  `64 + CONFIG_WANTED_WBUS_PAYLOAD_MAX` bytes, allocated when the first
+  wapp with a `wbus` grant launches. A call takes two slots, the request and its reply. Messages from
+  one endpoint to another arrive in the order written.
+- **A read blocks** until a message is queued, and `O_NONBLOCK` returns `EAGAIN`
+  instead. Nothing else ends the wait but a stop, which returns `EINTR`.
+  `poll()` reports an endpoint readable when a message is queued and writable
+  when the pool holds a call. Writable does not mean the server's queue has
+  room, so a non-blocking CALL can still return `EAGAIN`; retry it on a timer
+  rather than on the next `POLLOUT`. A blocked wapp costs no CPU.
+- **Closing an endpoint, or the wapp stopping or exiting, releases it.** It
+  unregisters its objects and subscriptions and frees its queued messages. Each
+  call pending at a released server gets a REPLY with `status` `EPIPE` (64)
+  and an empty payload. A call pending from a released client is cancelled; the
+  server's later REPLY succeeds and is discarded. After a supervisor respawn
+  the `supervisor` object returns once the new instance serves it, and a call
+  made before returns `ENOENT`.
+- **`status`** is a read-only text node of `key=value` lines about the reading
+  wapp's own endpoints: `endpoints`, `serving`, `subscribed` (as
+  `object.event`), `pending`, `queued`, `dropped`, and the engine-wide
+  `pool_free`. Ignore a key you do not know.
+
+```c
+#include "wbus.h"
+
+int fd = open(WBUS_MSG_PATH, O_RDWR);
+/* write a CALL header and payload, poll for the reply, read it */
+```
 
 ### `wifi` — Wi-Fi station and access point
 
