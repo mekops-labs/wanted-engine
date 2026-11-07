@@ -17,6 +17,7 @@ Unreleased
 
 - A driver that fails to install reports its own error, such as `EBUSY` for a
   pin another `gpio` grant holds. A driver init that fails may set `errno`.
+- The footprint report reads an RP2350 board as 32-bit; it printed both ABIs.
 
 0.30.0 (2026-11-06)
 -------------------

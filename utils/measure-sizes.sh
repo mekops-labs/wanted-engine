@@ -166,7 +166,7 @@ openwrt_sdk_abi() { # $1 = SDK keyword | URL | directory
 }
 
 detect_abi() { # $1 = .config path
-    local cfg="$1" target board sdk chip
+    local cfg="$1" target board sdk chip arch
     target=$(sed -nE 's/^CONFIG_WANTED_TARGET="(.*)"$/\1/p' "$cfg")
     case "$target" in
         linux)
@@ -179,10 +179,14 @@ detect_abi() { # $1 = .config path
             esac ;;
         nuttx)
             board=$(sed -nE 's/^CONFIG_WANTED_TARGET_NUTTX_BOARD="(.*)"$/\1/p' "$cfg")
-            case "$board" in
-                sim:*)          ABI_KEY=linux; ABI_WHY="NuttX board '$board' — the sim runs on the host" ;;
-                esp32*|rp2350*) ABI_KEY=nuttx; ABI_WHY="NuttX board '$board' — 32-bit" ;;
-                *)              ABI_KEY="";    ABI_WHY="NuttX board '$board' — architecture not recognised" ;;
+            # The vendored tree files a board under boards/<arch>/<chip>/.
+            arch=$(ls -d "$ENGINE_DIR"/third_party/nuttx/boards/*/*/"${board%%:*}" 2>/dev/null |
+                head -1 | awk -F/ '{print $(NF-2)}')
+            case "$board:$arch" in
+                sim:*)                 ABI_KEY=linux; ABI_WHY="NuttX board '$board' — the sim runs on the host" ;;
+                *:arm|*:xtensa)        ABI_KEY=nuttx; ABI_WHY="NuttX board '$board' — 32-bit $arch" ;;
+                *esp32*|*rp2350*|*rp23xx*) ABI_KEY=nuttx; ABI_WHY="NuttX board '$board' — 32-bit (from the name)" ;;
+                *)                     ABI_KEY="";    ABI_WHY="NuttX board '$board' — architecture not recognised" ;;
             esac ;;
         openwrt)
             sdk=$(sed -nE 's/^CONFIG_WANTED_TARGET_OPENWRT_SDK="(.*)"$/\1/p' "$cfg")
