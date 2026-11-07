@@ -13,9 +13,11 @@ CLANG ?= /opt/wasi-sdk/bin/clang
 # The wasi-sdk clang defaults to its own sysroot and compiler-rt for the
 # wasm32-wasi target, so no explicit --sysroot / --rtlib is needed.
 TARGET_FLAGS = --target=wasm32-wasi
+# The engine owns the wbus message header, shared with wapps.
+INCLUDES = -I$(abspath $(dir $(mkfile_path))../../include)
 # --compress-relocations: without it lld pads call_indirect's table index to
 # 5 bytes, which the engine's WAMR build (reference types off) rejects.
-CLANG_FLAGS = -Wl,-export-dynamic -Wl,--initial-memory=65536 -Wl,--max-memory=65536 -z stack-size=4096 -Os -Wl,--strip-all -Wl,--compress-relocations -s $(TARGET_FLAGS)
+CLANG_FLAGS = $(INCLUDES) -Wl,-export-dynamic -Wl,--initial-memory=65536 -Wl,--max-memory=65536 -z stack-size=4096 -Os -Wl,--strip-all -Wl,--compress-relocations -s $(TARGET_FLAGS)
 
 SRCS := $(wildcard *.c)
 
