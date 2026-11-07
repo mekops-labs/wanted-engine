@@ -458,6 +458,17 @@ int WantedProcReadInfo(vfs_ctx_t c, void *buf, size_t bufLen) {
     if (w < 0)
         return -EIO;
 
+#ifdef CONFIG_WANTED_VFS_WBUS
+    /* The largest wbus payload, which sizes a reader's buffer. Absent without
+     * the driver. */
+    if (w < (int)bufLen) {
+        int n = snprintf((char *)buf + w, (size_t)((int)bufLen - w),
+                         "wbus_payload:\t%d\n", CONFIG_WANTED_WBUS_PAYLOAD_MAX);
+        if (n > 0 && w + n < (int)bufLen)
+            w += n;
+    }
+#endif
+
     /* Build-time image digest, on a platform that stamps one. The line is
      * absent elsewhere, so a reader never mistakes an empty value for an
      * image that hashes to nothing. */

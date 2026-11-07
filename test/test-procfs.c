@@ -665,6 +665,11 @@ TEST(procfs_wanted_info, CeilingValuesAreTheConfiguredOnes) {
     snprintf(expect, sizeof(expect), "max_wapps:\t%d\n",
              CONFIG_WANTED_MAX_WAPPS);
     TEST_ASSERT_NOT_NULL(strstr(info_buf, expect));
+#ifdef CONFIG_WANTED_VFS_WBUS
+    snprintf(expect, sizeof(expect), "wbus_payload:\t%d\n",
+             CONFIG_WANTED_WBUS_PAYLOAD_MAX);
+    TEST_ASSERT_NOT_NULL(strstr(info_buf, expect));
+#endif
 }
 
 /* The layer ceiling is a build knob, and the reported value has to follow it

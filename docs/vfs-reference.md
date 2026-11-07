@@ -66,7 +66,7 @@ A read-only namespace exposing system state. Privileged entries are visible only
 | `/proc/uptime` | r | no | `uptime_ms` — milliseconds since the engine started, the origin captured log lines are stamped from. |
 | `/proc/net` | r (dir) | no | A directory: one flat file per `sockets[]` entry *this wapp* holds, named after the entry (`readdir` enumerates them). Reads the wapp's own per-wapp socket table, so a wapp can never see another wapp's sockets. |
 | `/proc/net/<name>` | r | no | `connected` (`0`/`1`), `type` (the socket's scheme — known from config alone, always present), and `local` (the connected local endpoint, `<scheme>://<host>:<port>` or a bare path for `serial://`/`unix://` — present only once connected). |
-| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `max_layers`, `max_args`, `max_envs`, `reg_slots` (always `0`: the registry is bounded by the room in its stores, not by a count of images), `image_verify` and `image_verify_floor` (`enforcing` or `reporting` — the effective posture and the compiled-in floor a configuration cannot lower), `drivers` (the drivers available on this build), `digest` (present where the platform stamps a build-time image digest), `serial` (present where the platform has a hardware serial to report), and `firmware_board` and `firmware_variant` (present where the build names its firmware: `WANTED_FIRMWARE_BOARD` and the first line of `WANTED_FIRMWARE_VARIANT_FILE`, set in an ESP-IDF board's `board.cmake` or as CMake cache variables, each matching `[A-Za-z0-9._]+`). |
+| `/proc/wanted` | r | no | Engine identity and compile-time ceilings — `platform`, `version`, `supervisor_abi`, `max_wapps`, `max_wapp_name`, `max_path`, `wasm_stack`, `wasm_heap`, `wasm_worker_stack`, `wasm_max_pages`, `max_drivers`, `max_options`, `log_slots`, `max_layers`, `max_args`, `max_envs`, `wbus_payload` (the largest [`wbus`](#wbus--local-message-bus) payload in bytes, present on a build with that driver), `reg_slots` (always `0`: the registry is bounded by the room in its stores, not by a count of images), `image_verify` and `image_verify_floor` (`enforcing` or `reporting` — the effective posture and the compiled-in floor a configuration cannot lower), `drivers` (the drivers available on this build), `digest` (present where the platform stamps a build-time image digest), `serial` (present where the platform has a hardware serial to report), and `firmware_board` and `firmware_variant` (present where the build names its firmware: `WANTED_FIRMWARE_BOARD` and the first line of `WANTED_FIRMWARE_VARIANT_FILE`, set in an ESP-IDF board's `board.cmake` or as CMake cache variables, each matching `[A-Za-z0-9._]+`). |
 
 Each entry reads its value in one shot; a second read on the same fd returns EOF, regenerating on a fresh open.
 
@@ -991,7 +991,8 @@ wapps' own; CBOR by convention. Bulk or continuous data goes through a
   length other than `64 + len`, an unknown `version` or `type`, a non-zero
   reserved field, or a name that breaks the rules above. A `len` past the limit
   returns `EMSGSIZE`. A read into a buffer smaller than the next message
-  returns `EINVAL` and consumes nothing.
+  returns `EINVAL` and consumes nothing, so size the buffer as 64 plus the
+  `wbus_payload` that `/proc/wanted` reports.
 - **SERVE** registers `object` on the endpoint: `EACCES` without a `serve`
   clause, `EBUSY` while another endpoint serves it, `ENOSPC` when
   `CONFIG_WANTED_WBUS_OBJECTS` (8) are served. UNSERVE removes it, and
