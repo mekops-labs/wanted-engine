@@ -24,8 +24,8 @@ pipe_store_t *PipeStoreShared(void);
 /* 0 for a valid name; -ENAMETOOLONG past PIPE_NAME_MAX, -EINVAL otherwise. */
 int PipeNameCheck(const char *name);
 
-/* Create a /dev/pipe driver over `store` that reaches every pipe. The pipe
- * storage outlives the driver. */
+/* Create a /dev/pipe driver over `store` that reaches every pipe, for tests.
+ * The engine gives every wapp a scoped driver. The storage outlives it. */
 vfs_driver_t *PipeDriverCreate(pipe_store_t *store);
 
 /* As PipeDriverCreate, reaching only the read=/write= names `grant` lists.

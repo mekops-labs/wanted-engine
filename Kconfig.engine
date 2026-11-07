@@ -292,15 +292,6 @@ config WANTED_PIPE_RUNTIME_GRANTS
 	  a running wapp. Sizes a table inside the wapp's pipe grant, allocated
 	  once at launch.
 
-config WANTED_VFS_PIPE_AMBIENT
-	bool "Wapps without a pipe grant reach every pipe"
-	default n
-	help
-	  Select to let a wapp with no pipe grant reach every named pipe in
-	  the engine. A wapp that holds a grant always reaches only the names
-	  it lists. Without this option, a wapp with no grant sees an empty
-	  /dev/pipe.
-
 config WANTED_GPIO_MAX_PINS
 	int "Pins per gpio grant"
 	default 8
