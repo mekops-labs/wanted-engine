@@ -19,10 +19,11 @@ log() { printf '\n=== %s ===\n' "$*"; }
 # Generic per-architecture SDKs, deliberately board-independent, so a lane built
 # from them proves the architecture rather than one router. Same release and
 # toolchain for both, so a difference between them is a difference in the arch.
-OPENWRT_RELEASE="24.10.0"
+OPENWRT_RELEASE="25.12.6"
+OPENWRT_GCC="14.3.0"
 openwrt_sdk_url() { # $1 = target path, $2 = target slug
-    printf 'https://downloads.openwrt.org/releases/%s/targets/%s/openwrt-sdk-%s-%s_gcc-13.3.0_musl.Linux-x86_64.tar.zst' \
-        "$OPENWRT_RELEASE" "$1" "$OPENWRT_RELEASE" "$2"
+    printf 'https://downloads.openwrt.org/releases/%s/targets/%s/openwrt-sdk-%s-%s_gcc-%s_musl.Linux-x86_64.tar.zst' \
+        "$OPENWRT_RELEASE" "$1" "$OPENWRT_RELEASE" "$2" "$OPENWRT_GCC"
 }
 case "$SDK_ARG" in
     aarch64) SDK_ARG="$(openwrt_sdk_url armsr/armv8 armsr-armv8)" ;;
