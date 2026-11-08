@@ -15,6 +15,11 @@ Changelog
 - The selftest checks a call between two wapps and a wapp with no grant.
 - The shipped Sheriff launch configs grant it `serve=supervisor`.
 
+### Changed
+
+- The bundled Sheriff is v0.18.0. It serves the `supervisor` object on the
+  `wbus` bus, and every call gets `ENOSYS`.
+
 0.31.0 (2026-11-07)
 -------------------
 
