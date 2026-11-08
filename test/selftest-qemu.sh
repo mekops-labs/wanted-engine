@@ -29,8 +29,8 @@ command -v "$QEMU" >/dev/null 2>&1 || {
 # TLS off: this lane exercises engine and wapp lifecycle, and skipping it avoids
 # the SDK's one-time OpenSSL stage. Secure sockets are a configuration symbol,
 # so they are turned off there.
-log "cross-building selftest engine for $OPKG_ARCH"
-bdir="$REPO/build-selftest-$OPKG_ARCH"
+log "cross-building selftest engine for $PKG_ARCH"
+bdir="$REPO/build-selftest-$PKG_ARCH"
 # WAMR detects stack overflow with guard pages and a SIGSEGV handler, which
 # qemu-user emulates imperfectly, so the runtime can take a real SIGSEGV first.
 # Software bound checking keeps the lane testing the engine, not the emulator.
@@ -56,8 +56,8 @@ exec $QEMU -L "$SDK_TARGET_ROOT" "$bdir/cmd/wanted-cli" "\$@"
 EOF
 chmod +x "$runner"
 
-log "selftest under $QEMU ($OPKG_ARCH)"
+log "selftest under $QEMU ($PKG_ARCH)"
 "$REPO/test/selftest.sh" "$runner" "$CONFIG"
 
-log "packaging + init-script check under $QEMU ($OPKG_ARCH)"
-"$REPO/test/selftest-openwrt-init.sh" "$bdir/cmd/wanted-cli" "$QEMU" "$UCI_ROOT" "$OPKG_ARCH"
+log "packaging + init-script check under $QEMU ($PKG_ARCH)"
+"$REPO/test/selftest-openwrt-init.sh" "$bdir/cmd/wanted-cli" "$QEMU" "$UCI_ROOT" "$PKG_ARCH" "$SDK"

@@ -31,7 +31,7 @@ wasm/registry-seed/
 # RP2350 dev signing key (test/rp2350-sign-verify.sh) - generated locally,
 # never committed. A real production key would live outside this repo entirely.
 /keys/
-# OpenWRT .ipk output
+# OpenWRT .apk output
 /dist/
 
 # container scratch written into the mounted repo

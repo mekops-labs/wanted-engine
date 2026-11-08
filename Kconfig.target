@@ -32,7 +32,7 @@ config WANTED_TARGET_ESP_IDF
 config WANTED_TARGET_OPENWRT
 	bool "openwrt — OpenWrt package"
 	help
-	  Cross-builds an .ipk from an OpenWrt SDK.
+	  Cross-builds an .apk from an OpenWrt 25.12 SDK.
 
 endchoice
 

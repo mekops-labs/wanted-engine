@@ -9,7 +9,7 @@
 #      STAGE_SSL — "1" to stage libopenssl into the SDK (once per SDK)
 #      STAGE_UCI — "1" to cross-build uci + jshn into the SDK (once per SDK)
 # Out: SDK, SDK_TARGET_ROOT, UCI_ROOT (empty unless STAGE_UCI populated one),
-#      OPKG_ARCH, QEMU_ARCH, plus the OPENWRT_* and STAGING_DIR variables
+#      PKG_ARCH, QEMU_ARCH, plus the OPENWRT_* and STAGING_DIR variables
 #      cmake/toolchain-openwrt.cmake reads.
 
 SDK_CACHE="$REPO/.openwrt-sdk"
@@ -70,14 +70,14 @@ tc_dir="$(basename "$(ls -d "$SDK"/staging_dir/toolchain-* | head -1)")"
 tgt_dir="$(basename "$(ls -d "$SDK"/staging_dir/target-* | head -1)")"
 cross="$(basename "$(ls "$SDK/staging_dir/$tc_dir/bin/"*-openwrt-linux-*-gcc | head -1)")"
 cross="${cross%-gcc}"
-OPKG_ARCH="${tgt_dir#target-}"; OPKG_ARCH="${OPKG_ARCH%_musl}"; OPKG_ARCH="${OPKG_ARCH%_glibc}"
+PKG_ARCH="${tgt_dir#target-}"; PKG_ARCH="${PKG_ARCH%_musl}"; PKG_ARCH="${PKG_ARCH%_glibc}"
 case "$cross" in
     aarch64-*) wamr_arch=aarch64; QEMU_ARCH=aarch64 ;;
     mipsel-*)  wamr_arch=mips;    QEMU_ARCH=mipsel ;;
     mips-*)    wamr_arch=mips;    QEMU_ARCH=mips ;;
     *) echo "unsupported arch '$cross' — extend cmake/toolchain-openwrt.cmake and this case" >&2; return 1 ;;
 esac
-log "target: cross=$cross opkg_arch=$OPKG_ARCH wamr_arch=$wamr_arch"
+log "target: cross=$cross pkg_arch=$PKG_ARCH wamr_arch=$wamr_arch"
 
 # Loader root for the cross-built binary, where qemu's -L resolves the dynamic
 # linker and shared libraries: a board SDK's staged target rootfs when present,

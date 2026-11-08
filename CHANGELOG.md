@@ -19,6 +19,10 @@ Changelog
 
 - The bundled Sheriff is v0.18.0. It serves the `supervisor` object on the
   `wbus` bus, and every call gets `ENOSYS`.
+- **Breaking:** the OpenWrt package is an `.apk` for OpenWrt 25.12 and later,
+  built with the SDK's `apk`. `make-ipk.sh` and the `.ipk` are gone.
+- A development build packages as `<tag>_git<timestamp>~<hash>`, a valid `apk`
+  version.
 - The OpenWrt selftest lanes build with the 25.12.6 SDKs and gcc 14.3.0.
 
 0.31.0 (2026-11-07)

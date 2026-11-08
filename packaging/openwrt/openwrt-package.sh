@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# Build a production OpenWRT .ipk: download/extract the SDK, stage libopenssl,
+# Build a production OpenWRT .apk: download/extract the SDK, stage libopenssl,
 # cross-build with TLS, package. Configuration is the build dir's .config, with
 # no defconfig applied implicitly. See packaging/openwrt/README.md.
 #
@@ -11,7 +11,7 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 SDK_ARG="${1:?usage: openwrt-package.sh <sdk-url-or-dir> [supervisor.tar]}"
 OUT="$REPO/dist/openwrt"
 
-# Where the .ipk installs it; the engine must be compiled to read it there.
+# Where the .apk installs it; the engine must be compiled to read it there.
 PACKAGED_IMAGE="/usr/share/wanted/supervisor.tar"
 
 DOTCONFIG="${WANTED_CONFIG:-${BUILD_DIR:-build}/.config}"
@@ -59,13 +59,13 @@ fi
 
 # --- resolve the SDK ------------------------------------------------------
 # After the checks above: this downloads and stages, which is minutes on the
-# wrong side of a configuration error. Exports SDK and OPKG_ARCH.
+# wrong side of a configuration error. Exports SDK and PKG_ARCH.
 STAGE_SSL=1
 # shellcheck source=packaging/openwrt/sdk-env.sh
 . "$REPO/packaging/openwrt/sdk-env.sh"
 
 # --- cross-build the engine with SSL --------------------------------------
-bdir="$REPO/build-openwrt-$OPKG_ARCH"
+bdir="$REPO/build-openwrt-$PKG_ARCH"
 # The SDK is baked into CMakeCache; a different one leaves it stale.
 stamp="$bdir/.sdk"
 if [ -f "$stamp" ] && [ "$(cat "$stamp")" != "$SDK" ]; then
@@ -90,25 +90,26 @@ if ! grep -q "^CONFIG_WANTED_SUPERVISOR_IMAGE_PATH=\"$PACKAGED_IMAGE\"\$" "$bdir
         "WANTED_SUPERVISOR_IMAGE_PATH=$PACKAGED_IMAGE" )
 fi
 
-log "configuring engine build for $OPKG_ARCH ($(basename "$bdir"))"
+log "configuring engine build for $PKG_ARCH ($(basename "$bdir"))"
 cmake -B "$bdir" -S "$REPO" -G Ninja \
       -DCMAKE_TOOLCHAIN_FILE="$REPO/cmake/toolchain-openwrt.cmake" \
       -DBUILD_TESTING=OFF
 
-log "cross-building engine (SSL) for $OPKG_ARCH"
+log "cross-building engine (SSL) for $PKG_ARCH"
 cmake --build "$bdir" -j"$(nproc)"
 
-# --- assemble the .ipk ----------------------------------------------------
-log "packaging .ipk"
+# --- assemble the .apk ----------------------------------------------------
+log "packaging .apk"
 # Becomes the package's /etc/wanted/config.json; validated before packaging.
 cfg_sym=$(sed -nE 's/^CONFIG_WANTED_DEFAULT_CONFIG="(.*)"$/\1/p' "$DOTCONFIG")
 CONFIG_JSON="$("$REPO/utils/default-config.sh" "$REPO" "${cfg_sym:-configs/example_config.json}")"
 log "default configuration: ${cfg_sym:-configs/example_config.json}"
 # A tagged, clean checkout packages as the tag alone (e.g. "0.16.0"). Anything
-# else — a commit past the tag, or uncommitted changes — packages as an
-# extended version carrying the short hash, a "dirty" marker when applicable,
-# and a build timestamp, so two .ipk's from an unclean tree are never mistaken
-# for the same build: "0.16.0-g1234567-dirty-20260908143022".
+# else — a commit past the tag, or uncommitted changes — packages as an apk
+# development version: a build timestamp and the short hash after the tag,
+# "0.16.0_git20260908143022~1234567". apk sorts it after the tag and before the
+# next release; it has no place for a dirty marker, so the timestamp keeps two
+# builds from an unclean tree apart.
 build_stamp="$(date -u +%Y%m%d%H%M%S)"
 raw="$(cd "$REPO" && git describe --tags --dirty --long --match 'v*' 2>/dev/null || true)"
 if [[ "$raw" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g([0-9a-f]+)(-dirty)?$ ]]; then
@@ -119,15 +120,13 @@ if [[ "$raw" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g([0-9a-f]+)(-dirty)?$ ]]; t
     if [ "$count" = "0" ] && [ -z "$dirty" ]; then
         ver="$tag"
     else
-        ver="${tag}-g${hash}${dirty}-${build_stamp}"
+        ver="${tag}_git${build_stamp}~${hash}"
     fi
 else
-    # No reachable "v*" tag at all: always an extended version, never a bare
+    # No reachable "v*" tag at all: always a development version, never a bare
     # "0.0.0" that could collide with a real early release.
     hash="$(cd "$REPO" && git rev-parse --short=7 HEAD 2>/dev/null || echo 0000000)"
-    dirty=""
-    (cd "$REPO" && git diff --quiet && git diff --cached --quiet) || dirty="-dirty"
-    ver="0.0.0-g${hash}${dirty}-${build_stamp}"
+    ver="0.0.0_git${build_stamp}~${hash}"
 fi
-sh "$REPO/packaging/openwrt/make-ipk.sh" "$OPKG_ARCH" "$bdir/cmd/wanted-cli" \
+sh "$REPO/packaging/openwrt/make-apk.sh" "$SDK" "$PKG_ARCH" "$bdir/cmd/wanted-cli" \
    "$SUPERVISOR" "$ver" "$OUT" "$CONFIG_JSON"

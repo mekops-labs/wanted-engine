@@ -1,10 +1,10 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# Packaging + init-script check for the OpenWRT `.ipk`. The QEMU leg installs
+# Packaging + init-script check for the OpenWRT `.apk`. The QEMU leg installs
 # no package, so this covers the init script in CI.
 #
 # Two things are checked, both real (no reimplementation of either):
-#   1. The .ipk's data.tar.gz lays out exactly the files packaging promises.
+#   1. The .apk lays out exactly the files packaging promises.
 #   2. /etc/init.d/wanted's own render_config() — sourced unmodified, not
 #      reimplemented — merges UCI into the packaged base config correctly,
 #      with and without an operator-pinned manager/registry.
@@ -19,15 +19,17 @@
 # /lib and /etc paths — the init script and uci.sh's own compatibility layer
 # hardcode those, so this must run in a throwaway container, not a real host.
 #
-# Usage: selftest-openwrt-init.sh <wanted-cli> <qemu-binary-name> <uci-root> <opkg-arch>
+# Usage: selftest-openwrt-init.sh <wanted-cli> <qemu-binary-name> <uci-root> <pkg-arch>
+#                                <sdk-dir>
 set -euo pipefail
 
-USAGE="usage: selftest-openwrt-init.sh <wanted-cli> <qemu> <uci-root> <opkg-arch>"
+USAGE="usage: selftest-openwrt-init.sh <wanted-cli> <qemu> <uci-root> <pkg-arch> <sdk>"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 WANTED_CLI="${1:?$USAGE}"
 QEMU="${2:?$USAGE}"
 UCI_ROOT="${3:?$USAGE}"
-OPKG_ARCH="${4:?$USAGE}"
+PKG_ARCH="${4:?$USAGE}"
+SDK="${5:?$USAGE}"
 
 die() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 
@@ -54,14 +56,18 @@ cp "$UCI_ROOT/lib/config/uci.sh" /lib/config/uci.sh
 # functions.sh (config_load/config_get/config/option) belongs to base-files,
 # not uci — plain shell, no build needed, taken straight from the feed source
 # STAGE_UCI already pulled in.
-FEED_BASE_FILES="$(ls -d "$REPO"/.openwrt-sdk/*/feeds/base/package/base-files 2>/dev/null | head -1)"
-[ -f "$FEED_BASE_FILES/files/lib/functions.sh" ] || die "base-files feed not found under .openwrt-sdk — run sdk-env.sh with STAGE_UCI=1 first"
+# The base feed sits under base_root/ in 25.12 SDKs, under base/ before.
+FEED_BASE_FILES=""
+for d in "$SDK/feeds/base_root/package/base-files" "$SDK/feeds/base/package/base-files"; do
+    [ -f "$d/files/lib/functions.sh" ] && { FEED_BASE_FILES="$d"; break; }
+done
+[ -n "$FEED_BASE_FILES" ] || die "base-files feed not found in $SDK — run sdk-env.sh with STAGE_UCI=1 first"
 cp "$FEED_BASE_FILES/files/lib/functions.sh" /lib/functions.sh
 
-# ---- 1. package the real .ipk and check its layout ------------------------
+# ---- 1. package the real .apk and check its layout ------------------------
 
 log() { printf '\n=== %s ===\n' "$*"; }
-log "packaging: build .ipk and check data.tar.gz's layout"
+log "packaging: build .apk and check its layout"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -72,21 +78,22 @@ sup="$work/supervisor.tar"
 ( d="$work/sup" && mkdir -p "$d" && : > "$d/app.wasm" && tar -C "$d" -cf "$sup" app.wasm )
 
 mkdir -p "$work/out"
-"$REPO/packaging/openwrt/make-ipk.sh" "$OPKG_ARCH" "$WANTED_CLI" "$sup" "selftest" \
+"$REPO/packaging/openwrt/make-apk.sh" "$SDK" "$PKG_ARCH" "$WANTED_CLI" "$sup" "0.0.0" \
     "$work/out" "$REPO/configs/openwrt.json" >/dev/null
-built_ipk="$(ls "$work/out"/*.ipk | head -1)"
-[ -f "$built_ipk" ] || die "make-ipk.sh produced no .ipk"
+built_apk="$(ls "$work/out"/*.apk | head -1)"
+[ -f "$built_apk" ] || die "make-apk.sh produced no .apk"
 
 data_dir="$work/data"
 mkdir -p "$data_dir"
-tar -xOf "$built_ipk" ./data.tar.gz | tar -xzf - -C "$data_dir"
+"$SDK/staging_dir/host/bin/apk" extract --allow-untrusted --destination "$data_dir" \
+    "$built_apk" >/dev/null
 
 for f in usr/bin/wanted-cli usr/share/wanted/supervisor.tar etc/wanted/config.json \
          etc/init.d/wanted etc/config/wanted; do
-    [ -e "$data_dir/$f" ] || die ".ipk carries no $f"
+    [ -e "$data_dir/$f" ] || die ".apk carries no $f"
 done
 [ -x "$data_dir/etc/init.d/wanted" ] || die "etc/init.d/wanted is not executable in the package"
-echo "PASS: the .ipk installs wanted-cli, the supervisor image, and the init/UCI files where packaging promises"
+echo "PASS: the .apk installs wanted-cli, the supervisor image, and the init/UCI files where packaging promises"
 
 # ---- 2. render_config(), sourced unmodified from the real init script -----
 
