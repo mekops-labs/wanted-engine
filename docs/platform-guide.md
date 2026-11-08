@@ -314,10 +314,10 @@ The two firmware labels exist because `podman` always writes the layer as a **gz
 
 ## OpenWrt
 
-Routers, built as an `.ipk` package from an OpenWrt SDK. Unlike NuttX and ESP-IDF, OpenWrt builds the engine as an **external package** — it compiles no engine sources into its own tree and shares no symbol namespace.
+Routers, built as an `.apk` package from an OpenWrt 25.12 SDK, for OpenWrt 25.12 and later. Unlike NuttX and ESP-IDF, OpenWrt builds the engine as an **external package** — it compiles no engine sources into its own tree and shares no symbol namespace.
 
 ```bash
-just target openwrt && just build    # -> dist/wanted-engine_<ver>_<arch>.ipk
+just target openwrt && just build    # -> dist/openwrt/wanted-engine-<ver>.apk
 ```
 
 The **OpenWrt SDK** choice picks which SDK cross-builds the package:
@@ -335,7 +335,7 @@ For any other target, choose **custom** and give `CONFIG_WANTED_TARGET_OPENWRT_S
 ```bash
 just target openwrt
 just setconfig WANTED_OPENWRT_SDK_CUSTOM=y
-just setconfig 'WANTED_TARGET_OPENWRT_SDK_URL="https://downloads.openwrt.org/releases/24.10.0/targets/ath79/generic/openwrt-sdk-24.10.0-ath79-generic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"'
+just setconfig 'WANTED_TARGET_OPENWRT_SDK_URL="https://downloads.openwrt.org/releases/25.12.6/targets/ath79/generic/openwrt-sdk-25.12.6-ath79-generic_gcc-14.3.0_musl.Linux-x86_64.tar.zst"'
 just build
 ```
 
@@ -388,7 +388,7 @@ Because `.config` is per build directory, two targets can be configured side by 
 ```bash
 BUILD_DIR=build-mips just target openwrt
 BUILD_DIR=build-mips just setconfig WANTED_OPENWRT_SDK_MIPSEL=y
-BUILD_DIR=build-mips just build      # .ipk, while build/ stays on linux
+BUILD_DIR=build-mips just build      # .apk, while build/ stays on linux
 ```
 
 The cost of configuring rather than naming the target is that a stale `.config` builds something other than what you expected. That is why the target is echoed at the top of every build.
@@ -502,7 +502,7 @@ Three engine-controlled regions are passed to WAMR per instance:
 |---|---|---|
 | `xiao_esp32s3` | ESP-IDF | ESP32-S3, octal PSRAM, app heap off, linear memory capped at 2 pages so a full house fits the 8 MB part; `-storage` variant trades wapp slots for persist space |
 | `esp32-esp-idf` | ESP-IDF | classic ESP32, quad PSRAM, 4 MB flash, single-factory-app layout, internal-RAM worker stacks |
-| `openwrt` | OpenWrt | packaged `.ipk`; supervisor read from its install path |
+| `openwrt` | OpenWrt | packaged `.apk`; supervisor read from its install path |
 
 A board defconfig exists only where the board needs something an envelope does not give it — a launch config, an install path, a supervisor choice, or a limit the envelope gets wrong.
 

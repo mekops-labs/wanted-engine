@@ -70,7 +70,7 @@ can be configured side by side:
 ```bash
 BUILD_DIR=build-mips just target openwrt
 BUILD_DIR=build-mips just setconfig WANTED_OPENWRT_SDK_MIPSEL=y
-BUILD_DIR=build-mips just build      # .ipk, while build/ stays on linux
+BUILD_DIR=build-mips just build      # .apk, while build/ stays on linux
 ```
 
 See the [Quick Start](docs/quickstart.md) and [Testing Guide](docs/testing-guide.md) for details.

@@ -1,8 +1,9 @@
 # OpenWRT packaging
 
-Builds an OpenWRT `.ipk` for the WANTED engine, one per target architecture. The
+Builds an OpenWRT `.apk` for the WANTED engine, one per target architecture. The
 engine runs as a `procd` service on the router, provisioned from a config file
-on the writable overlay.
+on the writable overlay. The package needs OpenWrt 25.12 or later, whose package
+manager is `apk`; build it from a 25.12 SDK.
 
 ## What the package installs
 
@@ -60,7 +61,7 @@ supervisor is updated without replacing the package.
 
 ## Building
 
-One command builds a production `.ipk` for any router — pass the target's SDK
+One command builds a production `.apk` for any router — pass the target's SDK
 URL from [downloads.openwrt.org](https://downloads.openwrt.org/) (find your
 router's target/subtarget there):
 
@@ -75,7 +76,7 @@ make openwrt-package SDK=<sdk-url-or-dir>
 
 The recipe downloads + caches the SDK (under `.openwrt-sdk/`), stages OpenSSL
 into it, auto-detects the arch, cross-builds the engine **with TLS**, and writes
-the `.ipk` to `dist/`. The SDK argument can also be a path to an already-extracted
+the `.apk` to `dist/openwrt/`. The SDK argument can also be a path to an already-extracted
 SDK directory. Runs inside the standard build container.
 
 **Configuration.** The build uses the build dir's `.config` — what `make
@@ -88,32 +89,37 @@ make menuconfig                                     # adjust, including the supe
 make defconfig openwrt                              # reload the envelope, discarding local edits
 ```
 
-The supervisor variant selected there decides which image the `.ipk` carries, so
+The supervisor variant selected there decides which image the `.apk` carries, so
 a package configured for `sheriff` needs `make sheriff` to have built
 `wasm/supervisor/sheriff/supervisor.tar` — the packaging step fails loudly if it
 is missing rather than substituting another. Pass an image path as the second
 argument to `openwrt-package.sh` to override the choice. The one value the
-package pins itself is `CONFIG_WANTED_SUPERVISOR_IMAGE_PATH`: the `.ipk` installs
+package pins itself is `CONFIG_WANTED_SUPERVISOR_IMAGE_PATH`: the `.apk` installs
 the image at a fixed path, so the binary is compiled to read it from there.
 
 **Production / OpenSSL.** The engine links OpenSSL for real TLS sockets and
 Ed25519 signature verification. OpenSSL is not shipped in the SDK, so the recipe
 stages it once per SDK (`scripts/feeds` + `make package/openssl/compile`); the
-result is cached in the SDK. Runtime `Depends` are derived from the binary's
+result is cached in the SDK. Runtime dependencies are derived from the binary's
 linked libraries (`libopenssl3`, plus `libatomic` on 32-bit MIPS).
 
+**Version.** A clean checkout of a tag packages as the tag, e.g. `0.32.0`. Any
+other tree packages as `<tag>_git<UTC timestamp>~<short hash>`, which `apk` sorts
+after the tag and before the next release.
+
 Under the hood the recipe calls `openwrt-package.sh`, which drives
-`cmake/toolchain-openwrt.cmake` and `make-ipk.sh` — use those directly for a
+`cmake/toolchain-openwrt.cmake` and `make-apk.sh` — use those directly for a
 custom build (e.g. `-DSECURE_SOCKETS=OFF` for a no-TLS bring-up build).
 
 ## Installing on the router
 
 ```sh
-opkg install wanted-engine_<version>_<arch>.ipk
+apk add --allow-untrusted ./wanted-engine-<version>.apk
 ```
 
-`opkg` places the files, registers both config files as conffiles (edits survive
-upgrades), and enables the `procd` service, which starts with no configuration
+The package is not signed, so `apk` needs `--allow-untrusted`. It places the
+files, registers both config files as conffiles (edits survive upgrades and
+sysupgrade), and enables the `procd` service, which starts with no configuration
 at all. Drop the provisioning blob at `/srv/wanted/sheriff/provision`,
 `/etc/init.d/wanted restart`, and the device enrols and takes its control-plane
 and registry addresses from that blob. Check `logread -e wanted` if it does not
@@ -129,4 +135,6 @@ reach a specific endpoint regardless of what it is enrolled against.
 - `wsh`, the self-contained debug shell, boots standalone; it ignores the UCI
   endpoints and identity, which only the control-plane supervisor consumes.
   Either variant can be the packaged built-in or staged at the overlay path.
-- The `.ipk` is a gzipped tar (not a Debian `ar` archive) — the OpenWRT format.
+- `make-apk.sh` builds the package with the SDK's own `apk mkpkg`, under the
+  SDK's `fakeroot`, and writes the `lib/apk/packages/wanted-engine.*` metadata
+  an OpenWrt package build writes.
