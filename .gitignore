@@ -16,6 +16,9 @@ wasm/supervisor/wifi-connect/app.wasm
 wapps/*/*.wasm
 wapps/*/*.version
 wapps/*/*.wasm.h
+# Sheriff submodule describe stamps (wapps/sheriff-tree.mk).
+wapps/*/.sheriff-tree
+wasm/supervisor/.sheriff-tree
 wapps/*/*.o
 # Registry root (REGISTRY_ROOT): packaged .wapp images staged at runtime/test.
 /registry/

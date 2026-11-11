@@ -76,10 +76,12 @@ endif
 ifeq ($(VARIANT),sheriff)
 ZIG         ?= zig
 SHERIFF_SRC := $(DIR)../../wapps/sheriff
+include $(DIR)../../wapps/sheriff-tree.mk
 # app.version records the tree the wasm was built from, so the engine can tell
 # a bundled supervisor from an installed one. Written by the rule that produces
 # the wasm, so it cannot name a version the image is not.
-$(VARIANT_DIR)/app.wasm $(VARIANT_DIR)/app.version &: $(wildcard $(SHERIFF_SRC)/src/*.zig) $(SHERIFF_SRC)/build.zig
+$(VARIANT_DIR)/app.wasm $(VARIANT_DIR)/app.version &: $(wildcard $(SHERIFF_SRC)/src/*.zig) \
+                                                       $(SHERIFF_SRC)/build.zig $(SHERIFF_TREE)
 	mkdir -p $(VARIANT_DIR)
 	cd $(SHERIFF_SRC) && $(ZIG) build
 	cp $(SHERIFF_SRC)/zig-out/bin/sheriff.wasm $(VARIANT_DIR)/app.wasm
@@ -99,4 +101,4 @@ endif
 
 clean:
 	rm -f $(addsuffix /supervisor.tar,$(addprefix $(DIR),$(ALL_VARIANTS))) \
-	      $(DIR)sheriff/app.wasm
+	      $(DIR)sheriff/app.wasm $(DIR).sheriff-tree

@@ -22,15 +22,17 @@ VERSION     := $(DIR)provisioning.version
 
 all: $(WASM) $(VERSION)
 
+include $(DIR)../sheriff-tree.mk
+
 # provisioning's own sources are prerequisites too: it is built from
 # wapps/provisioning/ inside the submodule, and listing only src/ meant a
 # change there produced no rebuild.
 $(WASM) $(VERSION) &: $(wildcard $(SHERIFF_SRC)/src/*.zig) \
                       $(wildcard $(SHERIFF_SRC)/wapps/provisioning/*.zig) \
-                      $(SHERIFF_SRC)/build.zig
+                      $(SHERIFF_SRC)/build.zig $(SHERIFF_TREE)
 	cd $(SHERIFF_SRC) && $(ZIG) build
 	cp $(SHERIFF_SRC)/zig-out/bin/provisioning.wasm $(WASM)
 	$(DIR)../registry-version.sh $(SHERIFF_SRC) > $(VERSION)
 
 clean:
-	rm -f $(WASM) $(VERSION)
+	rm -f $(WASM) $(VERSION) $(SHERIFF_TREE)

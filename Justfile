@@ -342,7 +342,8 @@ clean:
     rm -rf platform/esp-idf/project/build
     # Every supervisor app.wasm is a gitignored build output, sheriff's included.
     rm -f wasm/*.wasm* wasm/supervisor/*/supervisor.tar wasm/supervisor/*/app.wasm
-    rm -f wapps/*/*.wasm wapps/*/*.wasm.h wapps/*/*.o
+    rm -f wapps/*/*.wasm wapps/*/*.wasm.h wapps/*/*.o wapps/*/.sheriff-tree
+    rm -f wasm/supervisor/.sheriff-tree
     # NuttX kernel objects + .config live in the submodule tree; an incremental
     # rebuild over a stale tree silently runs old code, so distclean it too.
     ./test/nuttx-sim.sh clean

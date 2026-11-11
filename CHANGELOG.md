@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Fixed
+
+- A Sheriff submodule bump or new tag rebuilds the bundled Sheriff wasm. A
+  build tree that held an older one shipped it under the new version.
+
 0.32.1 (2026-11-11)
 -------------------
 

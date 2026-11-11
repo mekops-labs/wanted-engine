@@ -22,15 +22,17 @@ VERSION     := $(DIR)flasher.version
 
 all: $(WASM) $(VERSION)
 
+include $(DIR)../sheriff-tree.mk
+
 # The flasher's own sources are prerequisites too: it is built from
 # wapps/flasher/ inside the submodule, and listing only src/ meant a change
 # there produced no rebuild.
 $(WASM) $(VERSION) &: $(wildcard $(SHERIFF_SRC)/src/*.zig) \
                       $(wildcard $(SHERIFF_SRC)/wapps/flasher/*.zig) \
-                      $(SHERIFF_SRC)/build.zig
+                      $(SHERIFF_SRC)/build.zig $(SHERIFF_TREE)
 	cd $(SHERIFF_SRC) && $(ZIG) build
 	cp $(SHERIFF_SRC)/zig-out/bin/flasher.wasm $(WASM)
 	$(DIR)../registry-version.sh $(SHERIFF_SRC) > $(VERSION)
 
 clean:
-	rm -f $(WASM) $(VERSION)
+	rm -f $(WASM) $(VERSION) $(SHERIFF_TREE)
