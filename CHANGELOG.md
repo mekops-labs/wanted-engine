@@ -1,6 +1,15 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+### Changed
+
+- The bundled Sheriff is v0.19.0. With `SHERIFF_NET_AT_BOOT=background` it
+  starts the wapps before the Wi-Fi join, and it runs catalog applications.
+- The seeded `wifi-mgr` takes `-s`, which keeps a stored station intent.
+
 0.32.0 (2026-11-08)
 -------------------
 
